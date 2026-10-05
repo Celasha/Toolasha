@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.5.0
+ * Version: 3.6.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, loadoutState, storage, i18n_js, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, dom, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, equipmentParser_js, marketplaceSession_js, actionCalculator_js, efficiency_js, materialCalculator_js, experienceCalculator_js, tooltipObserver, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, loadoutState, storage, i18n_js, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, marketData_js, warningIcon_js, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, dom, enhancementCalculator_js, enhancementConfig_js, teaParser_js, marketValuesAPI, abilityCostCalculator_js, equipmentParser_js, marketplaceSession_js, actionCalculator_js, efficiency_js, materialCalculator_js, experienceCalculator_js, tooltipObserver, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -6699,6 +6699,7 @@
             // Calculate total revenue from loot (with null check)
             let totalPriceAsk = 0;
             let totalPriceBid = 0;
+            let hasOutlierPrices = false;
 
             if (message.unit.totalLootMap) {
                 for (const loot of Object.values(message.unit.totalLootMap)) {
@@ -6710,10 +6711,11 @@
                         totalPriceBid += itemCount;
                     } else {
                         // Other items: get market price
-                        const prices = marketAPI.getPrice(loot.itemHrid);
+                        const prices = marketData_js.getItemPrices(loot.itemHrid);
                         if (prices) {
                             totalPriceAsk += prices.ask * itemCount;
                             totalPriceBid += prices.bid * itemCount;
+                            if (prices.askOutlier || prices.bidOutlier) hasOutlierPrices = true;
                         }
                     }
                 }
@@ -6733,7 +6735,7 @@
 
             // Wait for battle panel to appear and inject summary
             const tryTimes = 0;
-            this.findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes);
+            this.findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes, hasOutlierPrices);
         }
 
         /**
@@ -6743,8 +6745,9 @@
          * @param {number} totalPriceBid - Total loot value at bid price
          * @param {number} totalSkillsExp - Total experience gained
          * @param {number} tryTimes - Retry counter
+         * @param {boolean} hasOutlierPrices - Whether any priced loot item was substituted by the outlier guard
          */
-        findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes) {
+        findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes, hasOutlierPrices) {
             tryTimes++;
 
             // Find the experience section parent
@@ -6797,7 +6800,7 @@
                     .querySelector('div#mwi-combat-encounters')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue" style="color: ${textColor};">${i18n_js.t('combatSummary.totalRevenue', { ask: formatters_js.formatLargeNumber(Math.round(totalPriceAsk)), bid: formatters_js.formatLargeNumber(Math.round(totalPriceBid)) })}</div>`
+                        `<div id="mwi-combat-revenue" style="color: ${textColor};">${i18n_js.t('combatSummary.totalRevenue', { ask: formatters_js.formatLargeNumber(Math.round(totalPriceAsk)), bid: formatters_js.formatLargeNumber(Math.round(totalPriceBid)) })}${warningIcon_js.buildOutlierPriceWarningIcon(hasOutlierPrices)}</div>`
                     );
 
                 // Per-hour revenue
@@ -6809,7 +6812,7 @@
                         .querySelector('div#mwi-combat-revenue')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">${i18n_js.t('combatSummary.revenuePerHour', { ask: formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk)), bid: formatters_js.formatLargeNumber(Math.round(revenuePerHourBid)) })}</div>`
+                            `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">${i18n_js.t('combatSummary.revenuePerHour', { ask: formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk)), bid: formatters_js.formatLargeNumber(Math.round(revenuePerHourBid)) })}${warningIcon_js.buildOutlierPriceWarningIcon(hasOutlierPrices)}</div>`
                         );
 
                     // Per-day revenue
@@ -6817,7 +6820,7 @@
                         .querySelector('div#mwi-combat-revenue-hour')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-revenue-day" style="color: ${textColor};">${i18n_js.t('combatSummary.revenuePerDay', { ask: formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk * 24)), bid: formatters_js.formatLargeNumber(Math.round(revenuePerHourBid * 24)) })}</div>`
+                            `<div id="mwi-combat-revenue-day" style="color: ${textColor};">${i18n_js.t('combatSummary.revenuePerDay', { ask: formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk * 24)), bid: formatters_js.formatLargeNumber(Math.round(revenuePerHourBid * 24)) })}${warningIcon_js.buildOutlierPriceWarningIcon(hasOutlierPrices)}</div>`
                         );
                 }
 
@@ -6875,7 +6878,14 @@
             } else if (tryTimes <= 10) {
                 // Retry if element not found
                 const retryTimeout = setTimeout(() => {
-                    this.findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes);
+                    this.findAndInjectSummary(
+                        message,
+                        totalPriceAsk,
+                        totalPriceBid,
+                        totalSkillsExp,
+                        tryTimes,
+                        hasOutlierPrices
+                    );
                 }, 200);
                 this.timerRegistry.registerTimeout(retryTimeout);
             } else {
@@ -7687,14 +7697,14 @@
         /**
          * Inject or update the ask/bid price element inside an item
          * @param {Element} itemEl
-         * @param {{ ask: number, bid: number }} price
+         * @param {{ ask: number, bid: number, askOutlier: boolean, bidOutlier: boolean }} price
          */
         injectPrice(itemEl, price) {
             const existing = itemEl.querySelector('.mwi-labyrinth-shop-price');
 
             if (existing) {
-                existing.querySelector('.mwi-lsp-ask').textContent = formatters_js.formatKMB(price.ask);
-                existing.querySelector('.mwi-lsp-bid').textContent = formatters_js.formatKMB(price.bid);
+                existing.querySelector('.mwi-lsp-ask').textContent = formatters_js.formatKMB(price.ask) + (price.askOutlier ? ' ⚠' : '');
+                existing.querySelector('.mwi-lsp-bid').textContent = formatters_js.formatKMB(price.bid) + (price.bidOutlier ? ' ⚠' : '');
                 return;
             }
 
@@ -7711,7 +7721,7 @@
             const askSpan = document.createElement('span');
             askSpan.className = 'mwi-lsp-ask';
             askSpan.style.color = config.COLOR_INVBADGE_ASK;
-            askSpan.textContent = formatters_js.formatKMB(price.ask);
+            askSpan.textContent = formatters_js.formatKMB(price.ask) + (price.askOutlier ? ' ⚠' : '');
 
             const sepSpan = document.createElement('span');
             sepSpan.style.color = '#888';
@@ -7720,7 +7730,7 @@
             const bidSpan = document.createElement('span');
             bidSpan.className = 'mwi-lsp-bid';
             bidSpan.style.color = config.COLOR_INVBADGE_BID;
-            bidSpan.textContent = formatters_js.formatKMB(price.bid);
+            bidSpan.textContent = formatters_js.formatKMB(price.bid) + (price.bidOutlier ? ' ⚠' : '');
 
             container.appendChild(askSpan);
             container.appendChild(sepSpan);
@@ -7739,7 +7749,7 @@
                     return;
                 }
 
-                const price = marketAPI.getPrice(itemHrid);
+                const price = marketData_js.getItemPrices(itemHrid);
                 if (!price) {
                     return; // Not tradeable or no price data yet
                 }
@@ -9054,8 +9064,8 @@
      * Calculate dungeon key costs from a drop map.
      * Entry keys (1:1 with regular chests) + chest keys (1:1 with all chests).
      * @param {Map<string, number>} dropMap - itemHrid → expected count from calculateExpectedDrops
-     * @param {Function} getBuyPrice - Function to get buy price for an item (from UI)
-     * @returns {Array<{itemHrid: string, name: string, count: number, unitCost: number, totalCost: number}>}
+     * @param {Function} getBuyPrice - Function (itemHrid) => {value, isOutlier} to get the buy price for an item
+     * @returns {Array<{itemHrid: string, name: string, count: number, unitCost: number, totalCost: number, isOutlier: boolean}>}
      */
     function calculateDungeonKeyCosts(dropMap, getBuyPrice) {
         const costs = [];
@@ -9080,7 +9090,7 @@
         }
 
         for (const [keyHrid, count] of Object.entries(keyCounts)) {
-            const unitCost = getBuyPrice(keyHrid);
+            const { value: unitCost, isOutlier } = getBuyPrice(keyHrid);
             const keyDetails = dataManager.getItemDetails(keyHrid);
             costs.push({
                 itemHrid: keyHrid,
@@ -9088,6 +9098,7 @@
                 count,
                 unitCost,
                 totalCost: count * unitCost,
+                isOutlier,
             });
         }
 
@@ -9095,17 +9106,14 @@
     }
 
     /**
-     * Get the buy price for an item based on the global pricing mode.
-     * @param {Object|null} priceData - { bid, ask } from marketAPI.getPrice()
-     * @returns {number}
+     * Resolve the buy-side price for an item, outlier-guard aware (routes through
+     * expectedValueCalculator.resolveBuySideValue instead of a raw marketAPI.getPrice lookup).
+     * @param {string} itemHrid
+     * @returns {{value: number, isOutlier: boolean}}
      */
-    function getBuyPrice(priceData) {
-        if (!priceData) return 0;
-        const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-        if (mode === 'optimistic' || mode === 'patientBuy') {
-            return priceData.bid > 0 ? priceData.bid : 0;
-        }
-        return priceData.ask > 0 ? priceData.ask : 0;
+    function resolveBuyPrice(itemHrid) {
+        const resolved = expectedValueCalculator.resolveBuySideValue(itemHrid);
+        return resolved ? { value: resolved.value, isOutlier: resolved.isOutlier } : { value: 0, isOutlier: false };
     }
 
     /**
@@ -9140,7 +9148,13 @@
             revenuePerHour += perHour;
             if (unitValue > 0) {
                 const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
-                dropEntries.push({ name: itemName, countPerHour: total / hours, unitValue, totalValue: perHour });
+                dropEntries.push({
+                    name: itemName,
+                    countPerHour: total / hours,
+                    unitValue,
+                    totalValue: perHour,
+                    isOutlier: resolved.isOutlier,
+                });
             }
         }
         dropEntries.sort((a, b) => b.totalValue - a.totalValue);
@@ -9149,18 +9163,24 @@
         const consumableEntries = [];
         const consumablesUsed = simResult.consumablesUsed?.[playerHrid] || {};
         for (const [itemHrid, count] of Object.entries(consumablesUsed)) {
-            const unitCost = getBuyPrice(marketAPI.getPrice(itemHrid));
+            const { value: unitCost, isOutlier } = resolveBuyPrice(itemHrid);
             const perHour = (count / hours) * unitCost;
             costPerHour += perHour;
             if (unitCost > 0) {
                 const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
-                consumableEntries.push({ name: itemName, countPerHour: count / hours, unitCost, totalCost: perHour });
+                consumableEntries.push({
+                    name: itemName,
+                    countPerHour: count / hours,
+                    unitCost,
+                    totalCost: perHour,
+                    isOutlier,
+                });
             }
         }
 
         let keyCostPerHour = 0;
         if (simResult.isDungeon) {
-            const keyCosts = calculateDungeonKeyCosts(dropMap, (keyHrid) => getBuyPrice(marketAPI.getPrice(keyHrid)));
+            const keyCosts = calculateDungeonKeyCosts(dropMap, resolveBuyPrice);
             for (const key of keyCosts) {
                 keyCostPerHour += key.totalCost / hours;
             }
@@ -16441,8 +16461,12 @@
             return Math.max(bid, productionCost);
         }
 
-        // No market data - use production cost as fallback
-        return productionCost;
+        // No market data - use production cost as fallback, then the game's own reference market
+        // value for items with neither a market nor a computable recipe (e.g. loot-only equipment).
+        if (productionCost > 0) {
+            return productionCost;
+        }
+        return marketValuesAPI.getValue(itemHrid, 0) || 0;
     }
 
     /**
@@ -17716,7 +17740,7 @@
      * cost genuinely couldn't be priced must never be ranked as a known zero-cost upgrade.
      * @param {Object} candidate - Candidate from generateCandidates()
      * @param {Object} gameData - Game data
-     * @returns {{cost: number, costIsIncomplete: boolean}}
+     * @returns {{cost: number, costIsIncomplete: boolean, isOutlier: boolean}}
      */
     function calculateUpgradeCost(candidate, gameData) {
         if (candidate.type === 'ability_level') {
@@ -17724,29 +17748,31 @@
             // current level - substituting the threshold treats every ability as if it had just
             // barely dinged its current level with zero progress, overstating the real book cost.
             const currentXp = candidate.currentXp ?? 0;
-            const cost = abilityCostCalculator_js.calculateAbilityLevelUpCost(
+            const { cost, isOutlier } = abilityCostCalculator_js.calculateAbilityLevelUpCost(
                 candidate.currentHrid,
                 candidate.currentLevel,
                 currentXp,
                 candidate.upgradeLevel
             );
-            return { cost, costIsIncomplete: false };
+            return { cost, costIsIncomplete: false, isOutlier };
         }
 
         if (candidate.type === 'ability_swap') {
-            const cost = abilityCostCalculator_js.calculateAbilityLevelUpCost(candidate.upgradeHrid, 0, 0, candidate.upgradeLevel);
-            return { cost, costIsIncomplete: false };
+            const { cost, isOutlier } = abilityCostCalculator_js.calculateAbilityLevelUpCost(candidate.upgradeHrid, 0, 0, candidate.upgradeLevel);
+            return { cost, costIsIncomplete: false, isOutlier };
         }
 
         if (candidate.type === 'cross_slot') {
             let buyCost = 0;
             let costIsIncomplete = false;
+            let isOutlier = false;
             for (const [, item] of Object.entries(candidate.addedSlots)) {
                 const price = profitHelpers_js.resolveItemPrice(item.hrid, {
                     side: 'buy',
                     enhancementLevel: item.enhancementLevel,
                 });
                 if (price.missing) costIsIncomplete = true;
+                if (price.isOutlier) isOutlier = true;
                 buyCost += price.price;
             }
             const sellResolved = profitHelpers_js.resolveItemPrice(candidate.currentHrid, {
@@ -17754,7 +17780,8 @@
                 enhancementLevel: candidate.currentLevel,
             });
             if (sellResolved.missing) costIsIncomplete = true;
-            return { cost: Math.max(0, buyCost - sellResolved.price), costIsIncomplete };
+            if (sellResolved.isOutlier) isOutlier = true;
+            return { cost: Math.max(0, buyCost - sellResolved.price), costIsIncomplete, isOutlier };
         }
 
         if (candidate.type === 'enhancement') {
@@ -17764,7 +17791,11 @@
             const currentMarket = marketData_js.getItemPrices(candidate.currentHrid, candidate.currentLevel);
 
             if (upgradedMarket?.ask > 0 && currentMarket?.bid > 0) {
-                return { cost: Math.max(0, upgradedMarket.ask - currentMarket.bid), costIsIncomplete: false };
+                return {
+                    cost: Math.max(0, upgradedMarket.ask - currentMarket.bid),
+                    costIsIncomplete: false,
+                    isOutlier: upgradedMarket.askOutlier || currentMarket.bidOutlier,
+                };
             }
 
             // Fallback: enhancement cost estimate with protection
@@ -17775,7 +17806,7 @@
                 gameData,
                 { slot: candidate.slot }
             );
-            return { cost, costIsIncomplete: false };
+            return { cost, costIsIncomplete: false, isOutlier: false };
         }
 
         if (candidate.type === 'house') {
@@ -17784,16 +17815,18 @@
 
             let total = 0;
             let costIsIncomplete = false;
+            let isOutlier = false;
             for (const item of levelCosts) {
                 if (item.itemHrid === '/items/coin') {
                     total += item.count;
                 } else {
                     const resolved = profitHelpers_js.resolveItemPrice(item.itemHrid, { side: 'buy' });
                     if (resolved.missing) costIsIncomplete = true;
+                    if (resolved.isOutlier) isOutlier = true;
                     total += resolved.price * item.count;
                 }
             }
-            return { cost: total, costIsIncomplete };
+            return { cost: total, costIsIncomplete, isOutlier };
         }
 
         // Tier upgrade: buy new item at same enhancement - sell current item
@@ -17809,6 +17842,7 @@
         return {
             cost: Math.max(0, buyResolved.price - sellResolved.price),
             costIsIncomplete: buyResolved.missing || sellResolved.missing,
+            isOutlier: buyResolved.isOutlier || sellResolved.isOutlier,
         };
     }
 
@@ -17893,8 +17927,8 @@
             playerDTOs.length
         );
         const candidatesWithCost = candidates.map((c) => {
-            const { cost, costIsIncomplete } = calculateUpgradeCost(c, gameData);
-            return { ...c, cost, costIsIncomplete };
+            const { cost, costIsIncomplete, isOutlier } = calculateUpgradeCost(c, gameData);
+            return { ...c, cost, costIsIncomplete, isOutlier };
         });
 
         // Skilling-only house rooms (no /action_types/combat actionBuffs) can never move DPS,
@@ -18274,8 +18308,8 @@
             skipBackSlot
         );
         const candidatesWithCost = candidates.map((c) => {
-            const { cost, costIsIncomplete } = calculateUpgradeCost(c, gameData);
-            return { ...c, cost, costIsIncomplete };
+            const { cost, costIsIncomplete, isOutlier } = calculateUpgradeCost(c, gameData);
+            return { ...c, cost, costIsIncomplete, isOutlier };
         });
 
         // Generate buff candidates (skilling buffs handled in skilling tab)
@@ -18630,9 +18664,10 @@
                     description: `${itemName} +${currentLevel} \u2192 +${nextBP}`,
                     type: 'enhancement',
                 };
-                const { cost, costIsIncomplete } = calculateUpgradeCost(candidate, gameData);
+                const { cost, costIsIncomplete, isOutlier } = calculateUpgradeCost(candidate, gameData);
                 candidate.cost = cost;
                 candidate.costIsIncomplete = costIsIncomplete;
+                candidate.isOutlier = isOutlier;
                 candidates.push(candidate);
             }
         }
@@ -22778,20 +22813,25 @@
                 const dropData = [...dropMap.entries()]
                     .filter(([, total]) => total > 0)
                     .map(([itemHrid, total]) => {
-                        const price = marketAPI.getPrice(itemHrid);
                         // Revenue: use sell price based on pricing mode
-                        let unitValue = this._getSellPrice(price);
+                        const priceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'sell' });
+                        let unitValue = priceInfo.value || 0;
+                        let isOutlier = priceInfo.isOutlier;
                         if (unitValue === 0 && itemHrid === '/items/coin') {
                             unitValue = 1;
+                            isOutlier = false;
                         }
                         if (unitValue === 0) {
                             // Use cached EV or calculate directly (matches combat stats approach)
                             const ev =
                                 expectedValueCalculator.getCachedValue(itemHrid) ||
                                 expectedValueCalculator.calculateSingleContainer(itemHrid);
-                            if (ev !== null && ev > 0) unitValue = ev;
+                            if (ev !== null && ev > 0) {
+                                unitValue = ev;
+                                isOutlier = false;
+                            }
                         }
-                        return { itemHrid, total, unitValue, totalGold: total * unitValue };
+                        return { itemHrid, total, unitValue, totalGold: total * unitValue, isOutlier };
                     })
                     .sort((a, b) => b.totalGold - a.totalGold); // Sort by gold value descending
 
@@ -22828,7 +22868,10 @@
                         dropGoldPerHr += goldPerHr;
                         dropGoldTotal += drop.totalGold;
 
-                        const goldHrStr = drop.unitValue > 0 ? formatters_js.formatKMB(Math.round(goldPerHr)) : '—';
+                        const goldHrStr =
+                            drop.unitValue > 0
+                                ? formatters_js.formatKMB(Math.round(goldPerHr)) + warningIcon_js.buildOutlierPriceWarningIcon(drop.isOutlier)
+                                : '—';
                         const goldDayStr = drop.unitValue > 0 ? formatters_js.formatKMB(Math.round(goldPerHr * 24)) : '—';
                         const goldTotalStr = drop.unitValue > 0 ? formatters_js.formatKMB(Math.round(drop.totalGold)) : '—';
                         const goldColor = drop.unitValue > 0 ? '#e8a87c' : '#444';
@@ -22867,10 +22910,8 @@
 
                 // Compute dungeon key costs from drop map
                 if (simResult.isDungeon) {
-                    const getBuyPriceForKey = (keyHrid) => {
-                        const price = marketAPI.getPrice(keyHrid);
-                        return this._getBuyPrice(price);
-                    };
+                    const getBuyPriceForKey = (keyHrid) =>
+                        marketData_js.getItemPriceOutlierInfo(keyHrid, { context: 'profit', side: 'buy' });
                     dungeonKeyCosts = calculateDungeonKeyCosts(dropMap, getBuyPriceForKey);
                     for (const key of dungeonKeyCosts) {
                         keyCostPerHr += (key.count / hours) * key.unitCost;
@@ -22882,9 +22923,9 @@
             // Consumable costs — same column layout as drops
             const consumableEntries = Object.entries(consumableTotals)
                 .map(([itemHrid, total]) => {
-                    const price = marketAPI.getPrice(itemHrid);
-                    const unitCost = this._getBuyPrice(price);
-                    return { itemHrid, total, unitCost, totalCost: total * unitCost };
+                    const priceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'buy' });
+                    const unitCost = priceInfo.value || 0;
+                    return { itemHrid, total, unitCost, totalCost: total * unitCost, isOutlier: priceInfo.isOutlier };
                 })
                 .sort((a, b) => b.totalCost - a.totalCost);
 
@@ -22920,7 +22961,10 @@
                     consumableGoldPerHr += costPerHr;
                     consumableGoldTotal += cons.totalCost;
 
-                    const costHrStr = cons.unitCost > 0 ? formatters_js.formatKMB(Math.round(costPerHr)) : '—';
+                    const costHrStr =
+                        cons.unitCost > 0
+                            ? formatters_js.formatKMB(Math.round(costPerHr)) + warningIcon_js.buildOutlierPriceWarningIcon(cons.isOutlier)
+                            : '—';
                     const costDayStr = cons.unitCost > 0 ? formatters_js.formatKMB(Math.round(costPerHr * 24)) : '—';
                     const costTotalStr = cons.unitCost > 0 ? formatters_js.formatKMB(Math.round(cons.totalCost)) : '—';
                     const cColor = cons.unitCost > 0 ? costColor : '#444';
@@ -22983,7 +23027,10 @@
                     const totalStr = key.count >= 1 ? formatters_js.formatWithSeparator(Math.round(key.count)) : key.count.toFixed(2);
 
                     const costPerHr = perHr * key.unitCost;
-                    const costHrStr = key.unitCost > 0 ? formatters_js.formatKMB(Math.round(costPerHr)) : '—';
+                    const costHrStr =
+                        key.unitCost > 0
+                            ? formatters_js.formatKMB(Math.round(costPerHr)) + warningIcon_js.buildOutlierPriceWarningIcon(key.isOutlier)
+                            : '—';
                     const costDayStr = key.unitCost > 0 ? formatters_js.formatKMB(Math.round(costPerHr * 24)) : '—';
                     const costTotalStr = key.unitCost > 0 ? formatters_js.formatKMB(Math.round(key.totalCost)) : '—';
                     const cColor = key.unitCost > 0 ? costColor : '#444';
@@ -23301,8 +23348,7 @@
                 const dropMap = calculateExpectedDrops(simResult, gameData, activeTab);
                 for (const [itemHrid, total] of dropMap.entries()) {
                     if (total <= 0) continue;
-                    const price = marketAPI.getPrice(itemHrid);
-                    let unitValue = this._getSellPrice(price);
+                    let unitValue = marketData_js.getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'sell' }).value || 0;
                     if (unitValue === 0 && itemHrid === '/items/coin') unitValue = 1;
                     if (unitValue === 0) {
                         const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
@@ -23316,8 +23362,7 @@
             let consumableCostPerHr = 0;
             const selfConsumables = simResult.consumablesUsed?.[activeTab] || {};
             for (const [itemHrid, count] of Object.entries(selfConsumables)) {
-                const price = marketAPI.getPrice(itemHrid);
-                const unitCost = this._getBuyPrice(price);
+                const unitCost = marketData_js.getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'buy' }).value || 0;
                 consumableCostPerHr += (count / hours) * unitCost;
             }
 
@@ -23325,10 +23370,7 @@
             let keyCostPerHrMetric = 0;
             if (simResult.isDungeon && gameData) {
                 const dropMap = calculateExpectedDrops(simResult, gameData, activeTab);
-                const getBuyPriceForKey = (keyHrid) => {
-                    const price = marketAPI.getPrice(keyHrid);
-                    return this._getBuyPrice(price);
-                };
+                const getBuyPriceForKey = (keyHrid) => marketData_js.getItemPriceOutlierInfo(keyHrid, { context: 'profit', side: 'buy' });
                 const keyCosts = calculateDungeonKeyCosts(dropMap, getBuyPriceForKey);
                 for (const key of keyCosts) {
                     keyCostPerHrMetric += (key.count / hours) * key.unitCost;
@@ -23817,22 +23859,6 @@
         }
 
         /**
-         * Get the sell price for an item based on the global pricing mode.
-         * @param {Object} priceData - { bid, ask } from marketAPI
-         * @returns {number}
-         * @private
-         */
-        _getSellPrice(priceData) {
-            if (!priceData) return 0;
-            const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-            // conservative/patientBuy → bid; hybrid/optimistic → ask
-            if (mode === 'conservative' || mode === 'patientBuy') {
-                return priceData.bid > 0 ? priceData.bid : 0;
-            }
-            return priceData.ask > 0 ? priceData.ask : 0;
-        }
-
-        /**
          * Format one player's OOM% for display (UI-001):
          * - exact 0 -> "No" in neutral/default text, never green;
          * - >0 and <0.1% -> "<0.1%" in the same neutral color as "No", never a misleading "0.0%";
@@ -23848,22 +23874,6 @@
             if (oomPercent === 0) return { text: i18n_js.t('combatSimUi.noLabel'), color: NEUTRAL };
             if (oomPercent < 0.1) return { text: i18n_js.t('combatSimUi.lessThanTenthPercent'), color: NEUTRAL };
             return { text: oomPercent.toFixed(1) + '%', color: WARNING };
-        }
-
-        /**
-         * Get the buy price for an item based on the global pricing mode.
-         * @param {Object} priceData - { bid, ask } from marketAPI
-         * @returns {number}
-         * @private
-         */
-        _getBuyPrice(priceData) {
-            if (!priceData) return 0;
-            const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-            // optimistic/patientBuy → bid; conservative/hybrid → ask
-            if (mode === 'optimistic' || mode === 'patientBuy') {
-                return priceData.bid > 0 ? priceData.bid : 0;
-            }
-            return priceData.ask > 0 ? priceData.ask : 0;
         }
 
         /**
@@ -24051,7 +24061,10 @@
                 // Incomplete cost resolution (CSIM-AUD-013) must never look like a known, precise
                 // value - a candidate whose cost genuinely couldn't be fully priced is marked with a
                 // "~" prefix rather than being ranked as if it were an exact/free upgrade.
-                const costStr = (r.candidate.costIsIncomplete ? '~' : '') + formatters_js.formatKMB(r.cost);
+                const costStr =
+                    (r.candidate.costIsIncomplete ? '~' : '') +
+                    formatters_js.formatKMB(r.cost) +
+                    warningIcon_js.buildOutlierPriceWarningIcon(r.candidate.isOutlier);
                 // A house room with no combat actionBuffs has no real DPS effect - its deltas.dps is
                 // pure sim noise, so only profit (its real effect) should brighten the row.
                 const rowColor =
@@ -25596,6 +25609,7 @@
                     desc: r.candidate?.description || '',
                     cost,
                     costStr: cost ? formatters_js.formatWithSeparator(cost) : '\u2014',
+                    isOutlier: r.candidate?.isOutlier || false,
                     winRate,
                     winRateStr: winRate.toFixed(2) + '%',
                     deltaVal: delta,
@@ -25672,7 +25686,7 @@
                 for (const row of goldRows) {
                     html += `<tr style="border-bottom:1px solid #1a1a1a;">
                     <td style="padding:3px 4px; color:#e0e0e0;">${row.desc}</td>
-                    <td style="${tdStyle} color:#ccc;">${row.costStr}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.costStr}${warningIcon_js.buildOutlierPriceWarningIcon(row.isOutlier)}</td>
                     <td style="${tdStyle} color:#ccc;">${row.winRateStr}</td>
                     <td style="${tdStyle} color:${row.deltaColor}; font-weight:600;">${row.deltaStr}</td>
                     <td style="${tdStyle} color:#888;">${row.goldPerPctStr}</td>
@@ -26063,6 +26077,7 @@
                     desc: r.candidate?.description || '',
                     cost,
                     costStr: cost ? formatters_js.formatWithSeparator(cost) : '\u2014',
+                    isOutlier: r.candidate?.isOutlier || false,
                     clearRate,
                     clearRateStr: clearRate.toFixed(1) + '%',
                     deltaVal,
@@ -26138,7 +26153,7 @@
                 for (const row of goldRows) {
                     html += `<tr style="border-bottom:1px solid #1a1a1a;">
                     <td style="padding:3px 4px; color:#e0e0e0;">${row.desc}</td>
-                    <td style="${tdStyle} color:#ccc;">${row.costStr}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.costStr}${warningIcon_js.buildOutlierPriceWarningIcon(row.isOutlier)}</td>
                     <td style="${tdStyle} color:#ccc;">${row.clearRateStr}</td>
                     <td style="${tdStyle} color:${row.deltaColor}; font-weight:600;">${row.deltaStr}</td>
                     <td style="${tdStyle} color:#888;">${row.goldPerPctStr}</td>
@@ -28136,15 +28151,18 @@
 
         // Get market buy price (min of market ask and shop cost)
         let buyPrice = null;
+        let buyPriceOutlier = false;
         if (isTradable) {
-            const marketPrice = marketData_js.getItemPrice(itemHrid, { mode, context: 'profit', side: 'buy' });
-            if (marketPrice !== null && marketPrice > 0) {
-                buyPrice = marketPrice;
+            const marketPriceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode, context: 'profit', side: 'buy' });
+            if (marketPriceInfo.value !== null && marketPriceInfo.value > 0) {
+                buyPrice = marketPriceInfo.value;
+                buyPriceOutlier = marketPriceInfo.isOutlier;
             }
         }
         const shopCost = getShopCoinCost(itemHrid);
         if (shopCost > 0 && (buyPrice === null || shopCost < buyPrice)) {
             buyPrice = shopCost;
+            buyPriceOutlier = false; // Shop cost is a fixed vendor price, never a market outlier
         }
 
         // Coins always cost 1 each
@@ -28157,6 +28175,7 @@
                 unitCost: 1,
                 totalCost: quantity,
                 buyPrice: 1,
+                isOutlier: false,
                 craftCost: null,
                 actionHrid: null,
                 actionsNeeded: 0,
@@ -28177,6 +28196,7 @@
                 unitCost: cachedUnitCost.unitCost,
                 totalCost: cachedUnitCost.unitCost * quantity,
                 buyPrice,
+                isOutlier: buyPriceOutlier,
                 craftCost: cachedUnitCost.craftCost,
                 actionHrid: cachedUnitCost.actionHrid,
                 actionsNeeded,
@@ -28218,6 +28238,7 @@
                 unitCost: buyPrice ?? Infinity,
                 totalCost: (buyPrice ?? Infinity) * quantity,
                 buyPrice,
+                isOutlier: buyPriceOutlier,
                 craftCost: null,
                 actionHrid: null,
                 actionsNeeded: 0,
@@ -28246,6 +28267,7 @@
                 unitCost,
                 totalCost: unitCost * quantity,
                 buyPrice,
+                isOutlier: buyPriceOutlier,
                 craftCost: null,
                 actionHrid: null,
                 actionsNeeded: 0,
@@ -28276,6 +28298,7 @@
                 unitCost,
                 totalCost: unitCost * quantity,
                 buyPrice,
+                isOutlier: buyPriceOutlier,
                 craftCost: null,
                 actionHrid: null,
                 actionsNeeded: 0,
@@ -28429,6 +28452,7 @@
             unitCost,
             totalCost: unitCost * quantity,
             buyPrice,
+            isOutlier: buyPriceOutlier,
             craftCost: craftCostPerUnit,
             actionHrid: strategy === 'craft' ? actionHrid : null,
             actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,
@@ -28461,8 +28485,10 @@
      * ask/bid the player already uses for buy-side profit math), not hardcoded.
      * @param {string} keyHrid
      * @param {number} [quantity=1]
-     * @returns {{strategy: 'buy'|'craft', unitCost: number, plan: Object|null}} `plan` is the full
-     *   Best Crafting Plan tree when crafting wins (for a materials/craft-steps breakdown), else null.
+     * @returns {{strategy: 'buy'|'craft', unitCost: number, isOutlier: boolean, plan: Object|null}}
+     *   `plan` is the full Best Crafting Plan tree when crafting wins (for a materials/craft-steps
+     *   breakdown), else null. `isOutlier` reflects whether the root item's own market price (shown
+     *   regardless of which strategy won) was substituted by the market-data outlier guard.
      */
     function getCheapestKeyCost(keyHrid, quantity = 1) {
         const buyMode = marketData_js.getPricingMode('profit', 'buy');
@@ -28470,6 +28496,7 @@
         return {
             strategy: plan.strategy,
             unitCost: plan.unitCost,
+            isOutlier: plan.isOutlier || false,
             plan: plan.strategy === 'craft' ? plan : null,
         };
     }
@@ -28503,14 +28530,15 @@
     /**
      * Calculate total income from loot
      * @param {Object} lootMap - totalLootMap from player data
-     * @returns {Object} { ask: number, bid: number }
+     * @returns {Object} { ask: number, bid: number, isOutlier: boolean }
      */
     function calculateIncome(lootMap) {
         let totalAsk = 0;
         let totalBid = 0;
+        let isOutlier = false;
 
         if (!lootMap) {
-            return { ask: 0, bid: 0 };
+            return { ask: 0, bid: 0, isOutlier: false };
         }
 
         for (const loot of Object.values(lootMap)) {
@@ -28533,16 +28561,17 @@
                     }
                 } else {
                     // Other items: get market price
-                    const prices = marketAPI.getPrice(loot.itemHrid);
+                    const prices = marketData_js.getItemPrices(loot.itemHrid);
                     if (prices) {
                         totalAsk += prices.ask * itemCount;
                         totalBid += prices.bid * itemCount;
+                        if (prices.askOutlier || prices.bidOutlier) isOutlier = true;
                     }
                 }
             }
         }
 
-        return { ask: totalAsk, bid: totalBid };
+        return { ask: totalAsk, bid: totalBid, isOutlier };
     }
 
     /**
@@ -28640,12 +28669,12 @@
 
         const priceKey = (keyHrid, quantity) => {
             if (isCheapest) {
-                const { unitCost, plan } = getCheapestKeyCost(keyHrid, quantity);
-                return { price: Number.isFinite(unitCost) ? unitCost : null, plan };
+                const { unitCost, isOutlier, plan } = getCheapestKeyCost(keyHrid, quantity);
+                return { price: Number.isFinite(unitCost) ? unitCost : null, isOutlier, plan };
             }
-            const keyPrices = marketAPI.getPrice(keyHrid);
-            if (!keyPrices) return { price: null, plan: null };
-            return { price: keyPrices[keyPricingSetting] ?? keyPrices.ask, plan: null };
+            const priceInfo = marketData_js.getItemPriceOutlierInfo(keyHrid, { mode: keyPricingSetting });
+            if (priceInfo.value === null) return { price: null, isOutlier: false, plan: null };
+            return { price: priceInfo.value, isOutlier: priceInfo.isOutlier, plan: null };
         };
 
         for (const loot of Object.values(lootMap)) {
@@ -28653,7 +28682,7 @@
             if (!keyHrid) continue;
 
             const chestCount = loot.count;
-            const { price: keyPrice, plan } = priceKey(keyHrid, chestCount);
+            const { price: keyPrice, isOutlier, plan } = priceKey(keyHrid, chestCount);
             if (keyPrice === null) continue;
 
             const itemCost = keyPrice * chestCount;
@@ -28671,6 +28700,7 @@
                 count: chestCount,
                 consumedPerDay,
                 pricePerItem: keyPrice,
+                isOutlier,
                 totalCost: itemCost,
                 craftPlan: plan,
             });
@@ -28685,7 +28715,7 @@
         }
 
         for (const [keyHrid, count] of Object.entries(chestKeyCounts)) {
-            const { price: keyPrice, plan } = priceKey(keyHrid, count);
+            const { price: keyPrice, isOutlier, plan } = priceKey(keyHrid, count);
             if (keyPrice === null) continue;
 
             const itemCost = keyPrice * count;
@@ -28702,6 +28732,7 @@
                 count,
                 consumedPerDay,
                 pricePerItem: keyPrice,
+                isOutlier,
                 totalCost: itemCost,
                 craftPlan: plan,
             });
@@ -28737,8 +28768,9 @@
                 continue;
             }
 
-            const prices = marketAPI.getPrice(consumable.itemHrid);
-            const itemPrice = prices ? prices.ask : 500;
+            const priceInfo = marketData_js.getItemPriceOutlierInfo(consumable.itemHrid, { mode: 'ask' });
+            const itemPrice = priceInfo.value !== null ? priceInfo.value : 500;
+            const isOutlier = priceInfo.value !== null ? priceInfo.isOutlier : false;
             const itemCost = itemPrice * consumed;
 
             totalCost += itemCost;
@@ -28753,6 +28785,7 @@
                 count: consumed,
                 consumedPerDay: consumable.consumedPerDay || 0,
                 pricePerItem: itemPrice,
+                isOutlier,
                 totalCost: itemCost,
                 startingCount: consumable.startingCount,
                 currentCount: consumable.currentCount,
@@ -28975,6 +29008,7 @@
             income: {
                 ask: income.ask,
                 bid: income.bid,
+                isOutlier: income.isOutlier,
             },
             dailyIncome: {
                 ask: dailyIncomeAsk,
@@ -29123,12 +29157,14 @@
             if (existing) {
                 existing.quantity += node.quantity;
                 existing.totalCost += node.totalCost;
+                existing.isOutlier = existing.isOutlier || node.isOutlier;
             } else {
                 buyItems.set(node.itemHrid, {
                     itemName: node.itemName,
                     quantity: node.quantity,
                     unitCost: node.unitCost,
                     totalCost: node.totalCost,
+                    isOutlier: node.isOutlier || false,
                 });
             }
             return;
@@ -29175,6 +29211,7 @@
         gap: 8px;
         padding: 2px 0;
     `;
+        if (options.title) row.title = options.title;
 
         const left = document.createElement('span');
         left.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
@@ -29290,8 +29327,11 @@
                 const qty = Math.ceil(item.quantity);
                 const cost = formatters_js.formatKMB(Math.round(item.totalCost));
                 const unit = formatters_js.formatWithSeparator(Math.round(item.unitCost));
+                const outlierSuffix = item.isOutlier ? ' ⚠' : '';
                 shoppingListContainer.appendChild(
-                    createRow(`${item.itemName} x${formatters_js.formatWithSeparator(qty)}`, `${cost} (${unit}/ea)`)
+                    createRow(`${item.itemName} x${formatters_js.formatWithSeparator(qty)}${outlierSuffix}`, `${cost} (${unit}/ea)`, {
+                        title: item.isOutlier ? i18n_js.t('marketData.outlierPriceWarningTooltip') : undefined,
+                    })
                 );
             }
 
@@ -30060,6 +30100,7 @@
                 {
                     label: i18n_js.t('combatStatsUi.incomeLabel'),
                     value: formatNum(stats.income[priceKey]),
+                    isOutlier: stats.income.isOutlier,
                     ...(stats.isDungeonRun && stats.incomeBreakdown?.length > 0
                         ? { expandable: true, incomeBreakdown: stats.incomeBreakdown }
                         : {}),
@@ -30067,6 +30108,7 @@
                 {
                     label: i18n_js.t('combatStatsUi.dailyIncomeLabel'),
                     value: i18n_js.t('combatStatsUi.perDaySuffix', { value: formatNum(stats.dailyIncome[priceKey]) }),
+                    isOutlier: stats.income.isOutlier,
                 },
                 {
                     label: i18n_js.t('combatStatsUi.consumableCostsLabel'),
@@ -30074,6 +30116,7 @@
                     color: '#ff6b6b',
                     expandable: true,
                     breakdown: stats.consumableBreakdown,
+                    isOutlier: stats.consumableBreakdown.some((item) => item.isOutlier),
                 },
                 {
                     label: i18n_js.t('combatStatsUi.dailyConsumableCostsLabel'),
@@ -30082,6 +30125,7 @@
                     expandable: true,
                     breakdown: stats.consumableBreakdown,
                     isDaily: true,
+                    isOutlier: stats.consumableBreakdown.some((item) => item.isOutlier),
                 },
                 {
                     label: i18n_js.t('combatStatsUi.lowestRunwayLabel'),
@@ -30101,6 +30145,7 @@
                               breakdown: stats.keyBreakdown,
                               hideTrackingNote: true,
                               showKeyPricingNote: true,
+                              isOutlier: stats.keyBreakdown.some((item) => item.isOutlier),
                           },
                           {
                               label: i18n_js.t('combatStatsUi.dailyKeyCostsLabel'),
@@ -30111,6 +30156,7 @@
                               isDaily: true,
                               hideTrackingNote: true,
                               showKeyPricingNote: true,
+                              isOutlier: stats.keyBreakdown.some((item) => item.isOutlier),
                           },
                       ]
                     : []),
@@ -30118,6 +30164,10 @@
                     label: i18n_js.t('combatStatsUi.dailyProfitLabel'),
                     value: i18n_js.t('combatStatsUi.perDaySuffix', { value: formatNum(stats.dailyProfit[priceKey]) }),
                     color: stats.dailyProfit[priceKey] >= 0 ? '#51cf66' : '#ff6b6b',
+                    isOutlier:
+                        stats.income.isOutlier ||
+                        stats.consumableBreakdown.some((item) => item.isOutlier) ||
+                        (stats.keyBreakdown || []).some((item) => item.isOutlier),
                 },
                 ...(stats.actualVsExpected && config.getSettingValue('combatStats_showLootLuck', true)
                     ? (() => {
@@ -30229,9 +30279,13 @@
                 label.style.color = textColor;
 
                 const value = document.createElement('span');
-                value.textContent = row.value;
+                value.textContent = row.value + (row.isOutlier ? ' ⚠' : '');
                 value.style.color = row.color || textColor;
-                if (row.title) {
+                if (row.isOutlier) {
+                    value.title = row.title
+                        ? `${row.title} ${i18n_js.t('marketData.outlierPriceWarningTooltip')}`
+                        : i18n_js.t('marketData.outlierPriceWarningTooltip');
+                } else if (row.title) {
                     value.title = row.title;
                 }
 
@@ -30551,7 +30605,7 @@
                                     itemRow.innerHTML = `
                                     <span>${item.itemName}</span>
                                     <span style="text-align: right;">${formatQuantity(displayQty, formatNum)}</span>
-                                    <span style="text-align: right;">${formatNum(displayPrice)}</span>
+                                    <span style="text-align: right;">${formatNum(displayPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier)}</span>
                                     <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
                                 `;
                                     breakdownDiv.appendChild(itemRow);
@@ -31591,9 +31645,11 @@
             const booksNeeded = this.calculateBooksNeeded(currentLevel, currentXp, targetLevel, xpPerBook);
 
             // Get market prices
-            const prices = marketAPI.getPrice(itemHrid, 0);
+            const prices = marketData_js.getItemPrices(itemHrid, 0);
             const ask = prices?.ask || 0;
             const bid = prices?.bid || 0;
+            const askOutlier = prices?.askOutlier || false;
+            const bidOutlier = prices?.bidOutlier || false;
 
             // Create calculator HTML
             const calculatorDiv = dom.createStyledDiv(
@@ -31628,8 +31684,8 @@
                 ${i18n_js.t('abilityBookCalculator.booksNeededLine', { books: formatters_js.numberFormatter(booksNeeded) })}
                 <br>
                 ${i18n_js.t('abilityBookCalculator.costAskBidLine', {
-                    askCost: formatters_js.formatKMB(Math.ceil(booksNeeded * ask)),
-                    bidCost: formatters_js.formatKMB(Math.ceil(booksNeeded * bid)),
+                    askCost: formatters_js.formatKMB(Math.ceil(booksNeeded * ask)) + warningIcon_js.buildOutlierPriceWarningIcon(askOutlier),
+                    bidCost: formatters_js.formatKMB(Math.ceil(booksNeeded * bid)) + warningIcon_js.buildOutlierPriceWarningIcon(bidOutlier),
                 })}
             </div>
         `;
@@ -31651,8 +31707,8 @@
                     ${i18n_js.t('abilityBookCalculator.booksNeededLine', { books: formatters_js.numberFormatter(books) })}
                     <br>
                     ${i18n_js.t('abilityBookCalculator.costAskBidLine', {
-                        askCost: formatters_js.formatKMB(Math.ceil(books * ask)),
-                        bidCost: formatters_js.formatKMB(Math.ceil(books * bid)),
+                        askCost: formatters_js.formatKMB(Math.ceil(books * ask)) + warningIcon_js.buildOutlierPriceWarningIcon(askOutlier),
+                        bidCost: formatters_js.formatKMB(Math.ceil(books * bid)) + warningIcon_js.buildOutlierPriceWarningIcon(bidOutlier),
                     })}
                 `;
                 } else {
@@ -32074,22 +32130,23 @@
      */
 
     /**
-     * @returns {{score: number, complete: boolean, unpricedCount: number, breakdown: Array<{name: string, value: string|null, complete: boolean, reason: string|null}>}}
+     * @returns {{score: number, complete: boolean, unpricedCount: number, hasOutlierPrice: boolean, breakdown: Array<{name: string, value: string|null, complete: boolean, reason: string|null}>}}
      */
     function emptyCategory() {
-        return { score: 0, complete: true, unpricedCount: 0, breakdown: [] };
+        return { score: 0, complete: true, unpricedCount: 0, hasOutlierPrice: false, breakdown: [] };
     }
 
     /**
      * Add one leaf into a category, in place. The leaf is always preserved in `breakdown`, priced or
      * not - only its `value` (null for "no defensible price") and `complete` flag record that.
-     * @param {{score: number, complete: boolean, unpricedCount: number, breakdown: Array}} category
-     * @param {{name: string, cost: number|null, complete: boolean, reason?: string}} leaf - cost is in raw coins
+     * @param {{score: number, complete: boolean, unpricedCount: number, hasOutlierPrice: boolean, breakdown: Array}} category
+     * @param {{name: string, cost: number|null, complete: boolean, reason?: string, isOutlier?: boolean}} leaf - cost is in raw coins
      */
     function attribute(category, leaf) {
         const complete = leaf.complete !== false;
         category.complete = category.complete && complete;
         if (!complete) category.unpricedCount += 1;
+        if (leaf.isOutlier) category.hasOutlierPrice = true;
 
         const hasKnownValue = Number.isFinite(leaf.cost) && leaf.cost > 0;
         const scoreValue = hasKnownValue ? leaf.cost / 1_000_000 : null;
@@ -32100,13 +32157,14 @@
             value: scoreValue === null ? null : scoreValue.toFixed(1),
             complete,
             reason: leaf.reason || null,
+            isOutlier: leaf.isOutlier || false,
         });
     }
 
     /**
      * Combine several category results (e.g. Houses + Abilities + Equipment + Shrines into a
      * top-level Combat/Skiller total).
-     * @param {Array<{score: number, complete: boolean, unpricedCount: number, breakdown: Array}>} parts
+     * @param {Array<{score: number, complete: boolean, unpricedCount: number, hasOutlierPrice: boolean, breakdown: Array}>} parts
      */
     function mergeCategory(parts) {
         const merged = emptyCategory();
@@ -32114,6 +32172,7 @@
             merged.score += part.score;
             merged.complete = merged.complete && part.complete;
             merged.unpricedCount += part.unpricedCount;
+            if (part.hasOutlierPrice) merged.hasOutlierPrice = true;
             merged.breakdown.push(...part.breakdown);
         }
         // N/A (value: null) leaves sink to the bottom deterministically instead of comparing via NaN.
@@ -32146,7 +32205,12 @@
         ]) {
             const { complete, breakdown } = houseCostCalculator_js.calculateHousesCostByDomain(characterHouseRooms, domain);
             for (const house of breakdown) {
-                attribute(category, { name: `${house.name} ${house.level}`, cost: house.cost, complete: house.complete });
+                attribute(category, {
+                    name: `${house.name} ${house.level}`,
+                    cost: house.cost,
+                    complete: house.complete,
+                    isOutlier: house.isOutlier,
+                });
             }
             // Fail-closed guard: an aggregate-level incompleteness with no representable room leaf
             // (e.g. missing upgradeCostsMap entirely) still marks the category incomplete.
@@ -32177,7 +32241,7 @@
         for (const ability of equippedAbilities) {
             if (!ability.abilityHrid || ability.level === 0) continue;
 
-            const { cost, complete } = abilityCostCalculator_js.calculateAbilityBookCostDataDriven(ability.abilityHrid, ability.level);
+            const { cost, complete, isOutlier } = abilityCostCalculator_js.calculateAbilityBookCostDataDriven(ability.abilityHrid, ability.level);
 
             const abilityName = ability.abilityHrid
                 .replace('/abilities/', '')
@@ -32185,7 +32249,7 @@
                 .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
                 .join(' ');
 
-            attribute(category, { name: `${abilityName} ${ability.level}`, cost, complete });
+            attribute(category, { name: `${abilityName} ${ability.level}`, cost, complete, isOutlier });
         }
 
         return category;
@@ -32342,31 +32406,44 @@
      * `(ask-or-EV * outputCount) / tokenCost`. Memoized on `context.opportunityCache`.
      * @param {string} currencyHrid
      * @param {{opportunityCache: Map}} context
-     * @returns {{value: number|null, complete: boolean}}
+     * @returns {{value: number|null, complete: boolean, isOutlier: boolean}}
      */
     function getCurrencyOpportunityValue(currencyHrid, context) {
         if (context.opportunityCache.has(currencyHrid)) return context.opportunityCache.get(currencyHrid);
 
         let bestValuePerUnit = 0;
+        let bestIsOutlier = false;
         for (const entry of getShopEntriesForCurrency(currencyHrid)) {
             let itemValue = 0;
+            let itemIsOutlier = false;
 
-            const ask = marketData_js.getItemPrice(entry.itemHrid, { mode: 'ask' });
-            if (ask > 0) itemValue = ask;
+            const askInfo = marketData_js.getItemPriceOutlierInfo(entry.itemHrid, { mode: 'ask' });
+            if (askInfo.value > 0) {
+                itemValue = askInfo.value;
+                itemIsOutlier = askInfo.isOutlier;
+            }
 
             if (entry.isOpenable) {
                 const evData = expectedValueCalculator.calculateExpectedValue(entry.itemHrid);
-                if (evData?.expectedValue > itemValue) itemValue = evData.expectedValue;
+                if (evData?.expectedValue > itemValue) {
+                    itemValue = evData.expectedValue;
+                    itemIsOutlier = evData.hasOutlierPrices || false;
+                }
             }
 
             if (!(itemValue > 0) || !(entry.tokenCost > 0)) continue;
 
             const valuePerUnit = (itemValue * entry.outputCount) / entry.tokenCost;
-            if (valuePerUnit > bestValuePerUnit) bestValuePerUnit = valuePerUnit;
+            if (valuePerUnit > bestValuePerUnit) {
+                bestValuePerUnit = valuePerUnit;
+                bestIsOutlier = itemIsOutlier;
+            }
         }
 
         const result =
-            bestValuePerUnit > 0 ? { value: bestValuePerUnit, complete: true } : { value: null, complete: false };
+            bestValuePerUnit > 0
+                ? { value: bestValuePerUnit, complete: true, isOutlier: bestIsOutlier }
+                : { value: null, complete: false, isOutlier: false };
         context.opportunityCache.set(currencyHrid, result);
         return result;
     }
@@ -32376,16 +32453,20 @@
      * official special-currency shop: `currency opportunity value * shop token cost / outputCount`.
      * @param {string} itemHrid
      * @param {{opportunityCache: Map}} context
-     * @returns {{cost: number|null, complete: boolean}}
+     * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
      */
     function getSpecialCurrencyAcquisitionCost(itemHrid, context) {
         const purchaseInfo = findShopPurchaseInfo(itemHrid);
-        if (!purchaseInfo) return { cost: null, complete: false };
+        if (!purchaseInfo) return { cost: null, complete: false, isOutlier: false };
 
         const opportunity = getCurrencyOpportunityValue(purchaseInfo.currencyHrid, context);
-        if (!opportunity.complete) return { cost: null, complete: false };
+        if (!opportunity.complete) return { cost: null, complete: false, isOutlier: false };
 
-        return { cost: (opportunity.value * purchaseInfo.tokenCost) / purchaseInfo.outputCount, complete: true };
+        return {
+            cost: (opportunity.value * purchaseInfo.tokenCost) / purchaseInfo.outputCount,
+            complete: true,
+            isOutlier: opportunity.isOutlier,
+        };
     }
 
     /**
@@ -32456,7 +32537,7 @@
      * contributes 0 - it is simply excluded from the minimum.
      * @param {string} itemHrid
      * @param {{acquisitionCache: Map, opportunityCache: Map, resolving: Set}} context
-     * @returns {{cost: number|null, complete: boolean}}
+     * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
      */
     function resolveItemAcquisitionCost(itemHrid, context) {
         const cached = context.acquisitionCache.get(itemHrid);
@@ -32464,7 +32545,7 @@
 
         if (context.resolving.has(itemHrid)) {
             // Defensive cycle guard - not cached, since a future call outside the cycle may still resolve.
-            return { cost: null, complete: false };
+            return { cost: null, complete: false, isOutlier: false };
         }
 
         context.resolving.add(itemHrid);
@@ -32482,25 +32563,26 @@
     /**
      * @param {string} itemHrid
      * @param {Object} context
-     * @returns {{cost: number|null, complete: boolean}}
+     * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
      */
     function computeItemAcquisitionCost(itemHrid, context) {
         const candidates = [];
 
         const special = getSpecialCurrencyAcquisitionCost(itemHrid, context);
-        if (special.complete) candidates.push(special.cost);
+        if (special.complete) candidates.push({ cost: special.cost, isOutlier: special.isOutlier || false });
 
-        const ask = marketData_js.getItemPrice(itemHrid, { mode: 'ask' });
-        if (ask > 0) candidates.push(ask);
+        const askInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+        if (askInfo.value > 0) candidates.push({ cost: askInfo.value, isOutlier: askInfo.isOutlier });
 
         const shopCost = getShopCoinCost(itemHrid);
-        if (shopCost > 0) candidates.push(shopCost);
+        if (shopCost > 0) candidates.push({ cost: shopCost, isOutlier: false });
 
         const craft = resolveProductionCraftCost(itemHrid, context);
-        if (craft.complete) candidates.push(craft.cost);
+        if (craft.complete) candidates.push({ cost: craft.cost, isOutlier: craft.isOutlier || false });
 
-        if (candidates.length === 0) return { cost: null, complete: false };
-        return { cost: Math.min(...candidates), complete: true };
+        if (candidates.length === 0) return { cost: null, complete: false, isOutlier: false };
+        const best = candidates.reduce((min, c) => (c.cost < min.cost ? c : min));
+        return { cost: best.cost, complete: true, isOutlier: best.isOutlier };
     }
 
     /**
@@ -32511,14 +32593,14 @@
      * contributing 0 (report's completeness-aware crafting requirement / TLA041E-19).
      * @param {string} itemHrid
      * @param {Object} context
-     * @returns {{cost: number|null, complete: boolean}}
+     * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
      */
     function resolveProductionCraftCost(itemHrid, context) {
         const gameData = dataManager.getInitClientData();
-        if (!gameData) return { cost: null, complete: false };
+        if (!gameData) return { cost: null, complete: false, isOutlier: false };
 
         const action = getActionOutputIndex(gameData).get(itemHrid);
-        if (!action) return { cost: null, complete: false };
+        if (!action) return { cost: null, complete: false, isOutlier: false };
 
         const outputCount = action.outputItems?.[0]?.count || 1;
 
@@ -32535,6 +32617,7 @@
 
         let total = 0;
         let complete = true;
+        let isOutlier = false;
 
         for (const input of action.inputItems || []) {
             if (input.itemHrid === '/items/coin') {
@@ -32547,6 +32630,7 @@
                 complete = false;
                 continue;
             }
+            if (materialCost.isOutlier) isOutlier = true;
             total += materialCost.cost * input.count * (1 - artisanBonus);
         }
 
@@ -32555,12 +32639,13 @@
             if (!upgradeCost.complete) {
                 complete = false;
             } else {
+                if (upgradeCost.isOutlier) isOutlier = true;
                 total += upgradeCost.cost;
             }
         }
 
-        if (!complete) return { cost: null, complete: false };
-        return { cost: total / outputCount, complete: true };
+        if (!complete) return { cost: null, complete: false, isOutlier: false };
+        return { cost: total / outputCount, complete: true, isOutlier };
     }
 
     /**
@@ -32570,13 +32655,14 @@
      * the whole enhancement leg to N/A.
      * @param {Object} itemDetails - Item details containing `enhancementCosts`
      * @param {Object} context
-     * @returns {{cost: number|null, complete: boolean}}
+     * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
      */
     function resolvePerAttemptMaterialCost(itemDetails, context) {
-        if (!itemDetails?.enhancementCosts?.length) return { cost: null, complete: false };
+        if (!itemDetails?.enhancementCosts?.length) return { cost: null, complete: false, isOutlier: false };
 
         let cost = 0;
         let complete = true;
+        let isOutlier = false;
 
         for (const material of itemDetails.enhancementCosts) {
             if (material.itemHrid === '/items/coin') {
@@ -32589,11 +32675,12 @@
                 complete = false;
                 continue;
             }
+            if (materialCost.isOutlier) isOutlier = true;
             cost += material.count * materialCost.cost;
         }
 
-        if (!complete) return { cost: null, complete: false };
-        return { cost, complete: true };
+        if (!complete) return { cost: null, complete: false, isOutlier: false };
+        return { cost, complete: true, isOutlier };
     }
 
     /**
@@ -33137,7 +33224,7 @@ self.onmessage = function (e) {
      * @param {Object} enhancingParams - Viewer's own params from getEnhancingParams()
      * @param {{acquisitionCache: Map, opportunityCache: Map, resolving: Set}} context - one shared,
      *   per-Score-generation acquisition context from `createAcquisitionContext()` (TLA-041E)
-     * @returns {Promise<{cost: number|null, complete: boolean, reason?: string}>}
+     * @returns {Promise<{cost: number|null, complete: boolean, reason?: string, isOutlier?: boolean}>}
      */
     async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhancingParams, context) {
         if (N === 0) {
@@ -33148,18 +33235,19 @@ self.onmessage = function (e) {
 
         // Phase 1 (cheap, synchronous, no enhancement math): exact Ask, live lower-K Asks, base
         // acquisition price.
-        const exactAsk = marketData_js.getItemPrice(itemHrid, { enhancementLevel: N, mode: 'ask' });
+        const exactAskInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { enhancementLevel: N, mode: 'ask' });
+        const exactAsk = exactAskInfo.value;
         const base = resolveItemAcquisitionCost(itemHrid, context);
         const lowerAsks = [];
         if (itemDetails?.enhancementCosts?.length) {
             for (let K = 1; K < N; K++) {
-                const kAsk = marketData_js.getItemPrice(itemHrid, { enhancementLevel: K, mode: 'ask' });
-                if (kAsk > 0) lowerAsks.push({ K, ask: kAsk });
+                const kAskInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { enhancementLevel: K, mode: 'ask' });
+                if (kAskInfo.value > 0) lowerAsks.push({ K, ask: kAskInfo.value, isOutlier: kAskInfo.isOutlier });
             }
         }
 
         const candidates = [];
-        if (exactAsk > 0) candidates.push(exactAsk);
+        if (exactAsk > 0) candidates.push({ cost: exactAsk, isOutlier: !!exactAskInfo.isOutlier });
         const best = exactAsk > 0 ? exactAsk : Infinity;
 
         // Phase 2: exact pruning.
@@ -33184,12 +33272,16 @@ self.onmessage = function (e) {
                 console.error('[EquipmentResolver] Enhancement expectation table request failed:', error);
             }
 
-            const { cost: perAttemptMaterialCost, complete: materialCostKnown } = resolvePerAttemptMaterialCost(
-                itemDetails,
-                context
-            );
+            const {
+                cost: perAttemptMaterialCost,
+                complete: materialCostKnown,
+                isOutlier: materialIsOutlier,
+            } = resolvePerAttemptMaterialCost(itemDetails, context);
 
             if (table && materialCostKnown) {
+                // getCheapestProtectionPrice() blends ask/bid/production heuristically and has no
+                // outlier visibility of its own (a pre-existing gap in that legacy helper) - a
+                // protection leg's cost can never be flagged, only the material/base/mirror legs can.
                 const { price: protectionUnitPrice } = getCheapestProtectionPrice(itemHrid);
 
                 if (needsReconstruction && base.complete) {
@@ -33198,11 +33290,16 @@ self.onmessage = function (e) {
                         // opportunity base, not a mirror-tier consumption chain (matches the existing
                         // direct-only token behavior, F-09).
                         const leg = priceLegFromTable(table, N, 0, perAttemptMaterialCost, protectionUnitPrice);
-                        if (leg.complete) candidates.push(base.cost + leg.cost);
+                        if (leg.complete) {
+                            candidates.push({
+                                cost: base.cost + leg.cost,
+                                isOutlier: !!(base.isOutlier || materialIsOutlier),
+                            });
+                        }
                     } else {
                         // Never getRealisticBaseItemPrice() here - it mixes Bid data; the Score
                         // contract is Ask/acquisition-only (report's pricing guard).
-                        const mirrorPrice = marketData_js.getItemPrice('/items/philosophers_mirror', { mode: 'ask' });
+                        const mirrorPriceInfo = marketData_js.getItemPriceOutlierInfo('/items/philosophers_mirror', { mode: 'ask' });
                         const ladder = buildTargetCostLadder(
                             table,
                             N,
@@ -33210,14 +33307,21 @@ self.onmessage = function (e) {
                             perAttemptMaterialCost,
                             protectionUnitPrice
                         );
-                        const optimized = applyMirrorOptimization(ladder, mirrorPrice);
-                        if (optimized[N] !== null) candidates.push(optimized[N]);
+                        const optimized = applyMirrorOptimization(ladder, mirrorPriceInfo.value);
+                        if (optimized[N] !== null) {
+                            candidates.push({
+                                cost: optimized[N],
+                                isOutlier: !!(base.isOutlier || materialIsOutlier || mirrorPriceInfo.isOutlier),
+                            });
+                        }
                     }
                 }
 
-                for (const { K, ask } of survivingLowerAsks) {
+                for (const { K, ask, isOutlier: kIsOutlier } of survivingLowerAsks) {
                     const leg = priceLegFromTable(table, N, K, perAttemptMaterialCost, protectionUnitPrice);
-                    if (leg.complete) candidates.push(ask + leg.cost);
+                    if (leg.complete) {
+                        candidates.push({ cost: ask + leg.cost, isOutlier: !!(kIsOutlier || materialIsOutlier) });
+                    }
                 }
             }
         }
@@ -33225,7 +33329,8 @@ self.onmessage = function (e) {
         if (candidates.length === 0) {
             return { cost: null, complete: false, reason: i18n_js.t('equipmentResolver.noCompleteRouteReason') };
         }
-        return { cost: Math.min(...candidates), complete: true };
+        const winner = candidates.reduce((min, c) => (c.cost < min.cost ? c : min));
+        return { cost: winner.cost, complete: true, isOutlier: winner.isOutlier };
     }
 
     /**
@@ -33334,28 +33439,40 @@ self.onmessage = function (e) {
      * @param {string[]} [excludeHrids=[]] - Source item hrids to skip (e.g. Guild Token itself, which
      *   carries its own guildCreditConversions and would otherwise create a circular credit value —
      *   TLA-041).
-     * @returns {{ sell: Object, buy: Object }} Map of creditItemHrid -> cheapest gold cost per credit
+     * @returns {{ sell: Object, buy: Object, sellOutlier: Object, buyOutlier: Object }} Map of
+     *   creditItemHrid -> cheapest gold cost per credit, plus parallel maps of whether that winning
+     *   source item's price was substituted by the market-data outlier guard.
      */
     function buildCheapestPerCredit(itemDetailMap, excludeHrids = []) {
         const sell = {};
         const buy = {};
+        const sellOutlier = {};
+        const buyOutlier = {};
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
             if (excludeHrids.includes(hrid)) continue;
             for (const conv of item.guildCreditConversions || []) {
                 const creditHrid = conv.creditItemHrid;
-                const sellPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
-                const buyPrice = marketData_js.getItemPrice(hrid, { mode: 'bid' });
+                const sellInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'ask' });
+                const buyInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'bid' });
+                const sellPrice = sellInfo.value;
+                const buyPrice = buyInfo.value;
                 if (sellPrice > 0) {
                     const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
-                    if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
+                    if (!sell[creditHrid] || gpc < sell[creditHrid]) {
+                        sell[creditHrid] = gpc;
+                        sellOutlier[creditHrid] = sellInfo.isOutlier;
+                    }
                 }
                 if (buyPrice > 0) {
                     const gpc = (buyPrice * conv.itemCount) / conv.creditCount;
-                    if (!buy[creditHrid] || gpc < buy[creditHrid]) buy[creditHrid] = gpc;
+                    if (!buy[creditHrid] || gpc < buy[creditHrid]) {
+                        buy[creditHrid] = gpc;
+                        buyOutlier[creditHrid] = buyInfo.isOutlier;
+                    }
                 }
             }
         }
-        return { sell, buy };
+        return { sell, buy, sellOutlier, buyOutlier };
     }
 
     /**
@@ -33365,9 +33482,11 @@ self.onmessage = function (e) {
      * can just take index 0.
      * @param {Object} itemDetailMap
      * @param {Object} creditValueTable - creditItemHrid -> coin value per credit
-     * @returns {Array<{creditItemHrid: string, itemCount: number, creditCount: number, goldPerToken: number}>}
+     * @param {Object} [creditOutlierTable={}] - creditItemHrid -> whether that value was substituted
+     *   by the market-data outlier guard (from buildCheapestPerCredit's sellOutlier/buyOutlier)
+     * @returns {Array<{creditItemHrid: string, itemCount: number, creditCount: number, goldPerToken: number, isOutlier: boolean}>}
      */
-    function buildGuildTokenValueByCredit(itemDetailMap, creditValueTable) {
+    function buildGuildTokenValueByCredit(itemDetailMap, creditValueTable, creditOutlierTable = {}) {
         const tokenItem = itemDetailMap[GUILD_TOKEN_HRID];
         const rows = [];
         for (const conv of tokenItem?.guildCreditConversions || []) {
@@ -33378,19 +33497,10 @@ self.onmessage = function (e) {
                 itemCount: conv.itemCount,
                 creditCount: conv.creditCount,
                 goldPerToken: (conv.creditCount / conv.itemCount) * creditValue,
+                isOutlier: creditOutlierTable[conv.creditItemHrid] || false,
             });
         }
         return rows.sort((a, b) => b.goldPerToken - a.goldPerToken);
-    }
-
-    /**
-     * @param {Object} itemDetailMap
-     * @param {Object} creditValueTable - creditItemHrid -> coin value per credit
-     * @returns {number} coin value per Guild Token (0 if unresolved) — the MAXIMUM foregone
-     * native Token->Credit alternative (F-12), not the minimum.
-     */
-    function calculateGuildTokenOpportunityValue(itemDetailMap, creditValueTable) {
-        return buildGuildTokenValueByCredit(itemDetailMap, creditValueTable)[0]?.goldPerToken || 0;
     }
 
     /**
@@ -33453,12 +33563,13 @@ self.onmessage = function (e) {
 
     /**
      * Sum a buff's `levelCosts[1..level]` using the resolved credit/token coin values.
-     * @returns {{cost: number, complete: boolean, tokenCount: number}}
+     * @returns {{cost: number, complete: boolean, tokenCount: number, isOutlier: boolean}}
      */
-    function sumLevelCosts(buff, level, creditValueTable, tokenValue) {
+    function sumLevelCosts(buff, level, creditValueTable, creditOutlierTable, tokenValue, tokenIsOutlier) {
         let cost = 0;
         let complete = true;
         let tokenCount = 0;
+        let isOutlier = false;
 
         for (let lvl = 1; lvl <= level; lvl++) {
             const levelCost = buff.levelCosts?.[String(lvl)];
@@ -33473,6 +33584,7 @@ self.onmessage = function (e) {
                     complete = false;
                     continue;
                 }
+                if (creditOutlierTable?.[itemHrid]) isOutlier = true;
                 cost += perCredit * count;
             }
 
@@ -33481,12 +33593,13 @@ self.onmessage = function (e) {
                 if (!(tokenValue > 0)) {
                     complete = false;
                 } else {
+                    if (tokenIsOutlier) isOutlier = true;
                     cost += tokenValue * levelCost.guildTokenCost;
                 }
             }
         }
 
-        return { cost, complete, tokenCount };
+        return { cost, complete, tokenCount, isOutlier };
     }
 
     /**
@@ -33499,8 +33612,12 @@ self.onmessage = function (e) {
         const itemDetailMap = gameData?.itemDetailMap || {};
         const guildBuffLevelMap = profileData.profile?.guildBuffLevelMap || {};
 
-        const { sell: creditValueTable } = buildCheapestPerCredit(itemDetailMap, [GUILD_TOKEN_HRID]);
-        const tokenValue = calculateGuildTokenOpportunityValue(itemDetailMap, creditValueTable);
+        const { sell: creditValueTable, sellOutlier: creditOutlierTable } = buildCheapestPerCredit(itemDetailMap, [
+            GUILD_TOKEN_HRID,
+        ]);
+        const bestTokenRow = buildGuildTokenValueByCredit(itemDetailMap, creditValueTable, creditOutlierTable)[0];
+        const tokenValue = bestTokenRow?.goldPerToken || 0;
+        const tokenIsOutlier = bestTokenRow?.isOutlier || false;
 
         const combat = emptyCategory();
         const skiller = emptyCategory();
@@ -33509,7 +33626,14 @@ self.onmessage = function (e) {
             const level = guildBuffLevelMap[buffHrid] || 0;
             if (level === 0) continue;
 
-            const { cost, complete, tokenCount } = sumLevelCosts(buff, level, creditValueTable, tokenValue);
+            const { cost, complete, tokenCount, isOutlier } = sumLevelCosts(
+                buff,
+                level,
+                creditValueTable,
+                creditOutlierTable,
+                tokenValue,
+                tokenIsOutlier
+            );
             const category = buff.isCombat ? combat : skiller;
             // Natural Guild Token count is preserved in the breakdown label even though the numeric
             // Score uses the coin-equivalent opportunity value (PB-44).
@@ -33518,6 +33642,7 @@ self.onmessage = function (e) {
                 name: `${buildGuildBuffDisplayName(buffHrid, buff)} ${level}${tokenSuffix}`,
                 cost,
                 complete,
+                isOutlier,
             });
         }
 
@@ -33563,14 +33688,19 @@ self.onmessage = function (e) {
                 // Combat score (houses + abilities + combat equipment + combat shrines)
                 total: combat.score,
                 complete: combat.complete,
+                hasOutlierPrice: combat.hasOutlierPrice,
                 house: houses.combat.score,
                 houseComplete: houses.combat.complete,
+                houseHasOutlierPrice: houses.combat.hasOutlierPrice,
                 ability: abilities.score,
                 abilityComplete: abilities.complete,
+                abilityHasOutlierPrice: abilities.hasOutlierPrice,
                 equipment: equipment.combat.score,
                 equipmentComplete: equipment.combat.complete,
+                equipmentHasOutlierPrice: equipment.combat.hasOutlierPrice,
                 shrine: shrines.combat.score,
                 shrineComplete: shrines.combat.complete,
+                shrineHasOutlierPrice: shrines.combat.hasOutlierPrice,
                 equipmentHidden: profileData.profile?.hideWearableItems || false,
                 hasEquipmentData: equipment.hasEquipmentData,
                 breakdown: {
@@ -33582,12 +33712,16 @@ self.onmessage = function (e) {
                 // Skiller score (skilling houses + skilling equipment + skilling shrines)
                 skillerTotal: skiller.score,
                 skillerComplete: skiller.complete,
+                skillerHasOutlierPrice: skiller.hasOutlierPrice,
                 skillerHouse: houses.skiller.score,
                 skillerHouseComplete: houses.skiller.complete,
+                skillerHouseHasOutlierPrice: houses.skiller.hasOutlierPrice,
                 skillerEquipment: equipment.skiller.score,
                 skillerEquipmentComplete: equipment.skiller.complete,
+                skillerEquipmentHasOutlierPrice: equipment.skiller.hasOutlierPrice,
                 skillerShrine: shrines.skiller.score,
                 skillerShrineComplete: shrines.skiller.complete,
+                skillerShrineHasOutlierPrice: shrines.skiller.hasOutlierPrice,
                 skillerBreakdown: {
                     houses: houses.skiller.breakdown,
                     equipment: equipment.skiller.breakdown,
@@ -33599,25 +33733,34 @@ self.onmessage = function (e) {
             return {
                 total: 0,
                 complete: false,
+                hasOutlierPrice: false,
                 house: 0,
                 houseComplete: false,
+                houseHasOutlierPrice: false,
                 ability: 0,
                 abilityComplete: false,
+                abilityHasOutlierPrice: false,
                 equipment: 0,
                 equipmentComplete: false,
+                equipmentHasOutlierPrice: false,
                 shrine: 0,
                 shrineComplete: false,
+                shrineHasOutlierPrice: false,
                 equipmentHidden: false,
                 hasEquipmentData: false,
                 breakdown: { houses: [], abilities: [], equipment: [], shrines: [] },
                 skillerTotal: 0,
                 skillerComplete: false,
+                skillerHasOutlierPrice: false,
                 skillerHouse: 0,
                 skillerHouseComplete: false,
+                skillerHouseHasOutlierPrice: false,
                 skillerEquipment: 0,
                 skillerEquipmentComplete: false,
+                skillerEquipmentHasOutlierPrice: false,
                 skillerShrine: 0,
                 skillerShrineComplete: false,
+                skillerShrineHasOutlierPrice: false,
                 skillerBreakdown: { houses: [], equipment: [], shrines: [] },
             };
         }
@@ -34520,8 +34663,9 @@ self.onmessage = function (e) {
         /**
          * Format one breakdown leaf's value for display (TLA-041C lower-bound provenance):
          * `N/A` for a leaf with no defensible price, `value+` for a positive-but-incomplete leaf,
-         * plain `value` for a complete leaf. A leaf `reason` renders as a small info tooltip.
-         * @param {{value: string|null, complete: boolean, reason?: string|null}} item
+         * plain `value` for a complete leaf. A leaf `reason` renders as a small info tooltip. A leaf
+         * whose price was substituted by the market-data outlier guard also gets the warning icon.
+         * @param {{value: string|null, complete: boolean, reason?: string|null, isOutlier?: boolean}} item
          * @returns {string}
          */
         formatBreakdownLeaf(item) {
@@ -34529,7 +34673,7 @@ self.onmessage = function (e) {
                 ? ` <span title="${item.reason.replace(/"/g, '&quot;')}" style="cursor: help; opacity: 0.7;">ⓘ</span>`
                 : '';
             if (item.value === null) return `${i18n_js.t('combatSimUi.notAvailableLabel')}${reasonInfo}`;
-            return `${item.value}${item.complete === false ? '+' : ''}${reasonInfo}`;
+            return `${item.value}${item.complete === false ? '+' : ''}${warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier)}${reasonInfo}`;
         }
 
         /**
@@ -34554,14 +34698,14 @@ self.onmessage = function (e) {
          * priority over the completeness suffix since there is no defensible numeric amount at all.
          * @param {number} categoryValue
          * @param {boolean} complete
-         * @param {{hidden?: boolean}} [options]
+         * @param {{hidden?: boolean, hasOutlierPrice?: boolean}} [options]
          * @returns {string}
          */
-        formatCategoryHeaderValue(categoryValue, complete, { hidden = false } = {}) {
+        formatCategoryHeaderValue(categoryValue, complete, { hidden = false, hasOutlierPrice = false } = {}) {
             if (hidden) {
                 return `${i18n_js.t('combatSimUi.notAvailableLabel')} <span title="${i18n_js.t('combatScore.hiddenEquipmentTooltip')}" style="cursor: help; opacity: 0.7;">ⓘ</span>`;
             }
-            return `${formatters_js.numberFormatter(categoryValue.toFixed(1))}${complete === false ? '+' : ''}`;
+            return `${formatters_js.numberFormatter(categoryValue.toFixed(1))}${complete === false ? '+' : ''}${hasOutlierPrice ? ' ⚠' : ''}`;
         }
 
         /**
@@ -34588,32 +34732,32 @@ self.onmessage = function (e) {
 
             return `
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-score-toggle" title="${scoreTooltip}">
-                + ${i18n_js.t('combatScore.combatScoreLine', { value: `${formatters_js.numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}` })}
+                + ${i18n_js.t('combatScore.combatScoreLine', { value: `${formatters_js.numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}${warningIcon_js.buildOutlierPriceWarningIcon(scoreData.hasOutlierPrice)}` })}
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
-                    + ${i18n_js.t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete) })}
+                    + ${i18n_js.t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete, { hasOutlierPrice: scoreData.houseHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-ability-toggle">
-                    + ${i18n_js.t('combatScore.abilityLine', { value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete) })}
+                    + ${i18n_js.t('combatScore.abilityLine', { value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete, { hasOutlierPrice: scoreData.abilityHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-ability-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.abilities)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
-                    + ${i18n_js.t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }) })}
+                    + ${i18n_js.t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData, hasOutlierPrice: scoreData.equipmentHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-shrine-toggle">
-                    + ${i18n_js.t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete) })}
+                    + ${i18n_js.t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete, { hasOutlierPrice: scoreData.shrineHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.shrines)}
@@ -34621,25 +34765,25 @@ self.onmessage = function (e) {
             </div>
 
             <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
-                + ${i18n_js.t('combatScore.skillerScoreLine', { value: `${formatters_js.numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}` })}
+                + ${i18n_js.t('combatScore.skillerScoreLine', { value: `${formatters_js.numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}${warningIcon_js.buildOutlierPriceWarningIcon(scoreData.skillerHasOutlierPrice)}` })}
             </div>
             <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-house-toggle">
-                    + ${i18n_js.t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete) })}
+                    + ${i18n_js.t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete, { hasOutlierPrice: scoreData.skillerHouseHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-skiller-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
-                    + ${i18n_js.t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }) })}
+                    + ${i18n_js.t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData, hasOutlierPrice: scoreData.skillerEquipmentHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-skiller-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-shrine-toggle">
-                    + ${i18n_js.t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete) })}
+                    + ${i18n_js.t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete, { hasOutlierPrice: scoreData.skillerShrineHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-skiller-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.shrines)}
@@ -34914,7 +35058,7 @@ self.onmessage = function (e) {
                     toggleBtn.textContent =
                         (isCollapsed ? '- ' : '+ ') +
                         i18n_js.t('combatScore.combatScoreLine', {
-                            value: `${formatters_js.numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}`,
+                            value: `${formatters_js.numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}${scoreData.hasOutlierPrice ? ' ⚠' : ''}`,
                         });
                 });
             }
@@ -34929,7 +35073,9 @@ self.onmessage = function (e) {
                     houseToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
                         i18n_js.t('combatScore.houseLine', {
-                            value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete),
+                            value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete, {
+                                hasOutlierPrice: scoreData.houseHasOutlierPrice,
+                            }),
                         });
                 });
             }
@@ -34944,7 +35090,9 @@ self.onmessage = function (e) {
                     abilityToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
                         i18n_js.t('combatScore.abilityLine', {
-                            value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete),
+                            value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete, {
+                                hasOutlierPrice: scoreData.abilityHasOutlierPrice,
+                            }),
                         });
                 });
             }
@@ -34961,6 +35109,7 @@ self.onmessage = function (e) {
                         i18n_js.t('combatScore.equipmentLine', {
                             value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, {
                                 hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData,
+                                hasOutlierPrice: scoreData.equipmentHasOutlierPrice,
                             }),
                         });
                 });
@@ -34976,7 +35125,9 @@ self.onmessage = function (e) {
                     shrineToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
                         i18n_js.t('combatScore.shrinesLine', {
-                            value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete),
+                            value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete, {
+                                hasOutlierPrice: scoreData.shrineHasOutlierPrice,
+                            }),
                         });
                 });
             }
@@ -34991,7 +35142,7 @@ self.onmessage = function (e) {
                     skillerScoreToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
                         i18n_js.t('combatScore.skillerScoreLine', {
-                            value: `${formatters_js.numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}`,
+                            value: `${formatters_js.numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}${scoreData.skillerHasOutlierPrice ? ' ⚠' : ''}`,
                         });
                 });
             }
@@ -35008,7 +35159,10 @@ self.onmessage = function (e) {
                         i18n_js.t('combatScore.houseLine', {
                             value: this.formatCategoryHeaderValue(
                                 scoreData.skillerHouse || 0,
-                                scoreData.skillerHouseComplete
+                                scoreData.skillerHouseComplete,
+                                {
+                                    hasOutlierPrice: scoreData.skillerHouseHasOutlierPrice,
+                                }
                             ),
                         });
                 });
@@ -35027,7 +35181,10 @@ self.onmessage = function (e) {
                             value: this.formatCategoryHeaderValue(
                                 scoreData.skillerEquipment,
                                 scoreData.skillerEquipmentComplete,
-                                { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }
+                                {
+                                    hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData,
+                                    hasOutlierPrice: scoreData.skillerEquipmentHasOutlierPrice,
+                                }
                             ),
                         });
                 });
@@ -35045,7 +35202,8 @@ self.onmessage = function (e) {
                         i18n_js.t('combatScore.shrinesLine', {
                             value: this.formatCategoryHeaderValue(
                                 scoreData.skillerShrine || 0,
-                                scoreData.skillerShrineComplete
+                                scoreData.skillerShrineComplete,
+                                { hasOutlierPrice: scoreData.skillerShrineHasOutlierPrice }
                             ),
                         });
                 });
@@ -36408,4 +36566,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.experienceCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.experienceCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);

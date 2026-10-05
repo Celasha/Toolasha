@@ -1,11 +1,11 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.5.0
+ * Version: 3.6.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, i18n, dataManager, loadoutState, marketAPI, storage, domObserver) {
+(function (config, i18n, dataManager, loadoutState, marketAPI, marketValuesAPI, storage, domObserver) {
     'use strict';
 
     /**
@@ -2448,9 +2448,25 @@
      * @returns {number|null} Price in gold, or null if no market data
      */
     function getItemPrice(itemHrid, options = {}) {
+        return resolveItemPrice$1(itemHrid, options).value;
+    }
+
+    /**
+     * Resolve an item price along with whether the market-data outlier guard substituted it.
+     * Same resolution logic/options as getItemPrice(), for callers that want to show a warning
+     * icon when a live price was replaced by the reference market value.
+     * @param {string} itemHrid
+     * @param {Object} options - Same shape as getItemPrice()
+     * @returns {{value: number|null, isOutlier: boolean}}
+     */
+    function getItemPriceOutlierInfo(itemHrid, options = {}) {
+        return resolveItemPrice$1(itemHrid, options);
+    }
+
+    function resolveItemPrice$1(itemHrid, options = {}) {
         // Validate inputs
         if (!itemHrid || typeof itemHrid !== 'string') {
-            return null;
+            return { value: null, isOutlier: false };
         }
 
         // Handle case where someone passes enhancementLevel as second arg (old API)
@@ -2465,21 +2481,29 @@
 
         const { enhancementLevel = 0, mode, context, side = 'sell' } = options;
 
-        // Check for custom price override
+        // Check for custom price override - a user-set price is never second-guessed
         const customPrice = getCustomPrice(itemHrid, enhancementLevel, side);
         if (customPrice !== null) {
-            return customPrice;
+            return { value: customPrice, isOutlier: false };
         }
 
         // Get raw price data from API
         const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
 
         if (!priceData) {
-            return null;
+            return { value: null, isOutlier: false };
         }
 
         // Determine pricing mode
         const pricingMode = mode || getPricingMode(context, side);
+
+        const resolveSide = (value) => {
+            if (typeof value !== 'number' || value < 0) {
+                return { value: null, isOutlier: false };
+            }
+
+            return marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, value);
+        };
 
         // Validate pricing mode
         const validModes = ['ask', 'bid', 'average'];
@@ -2489,39 +2513,33 @@
                 console.warn(`[Market Data] Unknown pricing mode: ${pricingMode}, defaulting to ask`);
                 loggedWarnings.add(warningKey);
             }
-            return priceData.ask || 0;
+            return marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.ask || 0);
         }
-
-        const resolvePrice = (value) => {
-            if (typeof value !== 'number') {
-                return null;
-            }
-
-            if (value < 0) {
-                return null;
-            }
-
-            return value;
-        };
 
         // Return price based on mode
         switch (pricingMode) {
             case 'ask':
-                return resolvePrice(priceData.ask);
+                return resolveSide(priceData.ask);
             case 'bid':
-                return resolvePrice(priceData.bid);
-            case 'average':
+                return resolveSide(priceData.bid);
+            case 'average': {
                 if (typeof priceData.ask !== 'number' || typeof priceData.bid !== 'number') {
-                    return null;
+                    return { value: null, isOutlier: false };
                 }
 
                 if (priceData.ask < 0 || priceData.bid < 0) {
-                    return null;
+                    return { value: null, isOutlier: false };
                 }
 
-                return (priceData.ask + priceData.bid) / 2;
+                const askResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.ask);
+                const bidResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.bid);
+                return {
+                    value: (askResult.value + bidResult.value) / 2,
+                    isOutlier: askResult.isOutlier || bidResult.isOutlier,
+                };
+            }
             default:
-                return resolvePrice(priceData.ask);
+                return resolveSide(priceData.ask);
         }
     }
 
@@ -2529,7 +2547,7 @@
      * Get all price variants for an item
      * @param {string} itemHrid - Item HRID
      * @param {number} [enhancementLevel=0] - Enhancement level
-     * @returns {Object|null} Object with {ask, bid, average} or null if no market data
+     * @returns {Object|null} Object with {ask, bid, average, askOutlier, bidOutlier} or null
      */
     function getItemPrices(itemHrid, enhancementLevel = 0) {
         const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
@@ -2538,10 +2556,15 @@
             return null;
         }
 
+        const askResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.ask);
+        const bidResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.bid);
+
         return {
-            ask: priceData.ask,
-            bid: priceData.bid,
-            average: (priceData.ask + priceData.bid) / 2,
+            ask: askResult.value,
+            bid: bidResult.value,
+            average: (askResult.value + bidResult.value) / 2,
+            askOutlier: askResult.isOutlier,
+            bidOutlier: bidResult.isOutlier,
         };
     }
 
@@ -2669,6 +2692,7 @@
 
     var marketData = {
         getItemPrice,
+        getItemPriceOutlierInfo,
         getItemPrices,
         formatPrice,
         getPricingMode,
@@ -2680,6 +2704,7 @@
         default: marketData,
         formatPrice: formatPrice,
         getItemPrice: getItemPrice,
+        getItemPriceOutlierInfo: getItemPriceOutlierInfo,
         getItemPrices: getItemPrices,
         getItemPricesBatch: getItemPricesBatch,
         getPricingMode: getPricingMode
@@ -3023,6 +3048,41 @@
     });
 
     /**
+     * Shared warning-icon helper
+     * Produces the inline ⚠ markup used throughout Toolasha to flag estimated/overridden values,
+     * matching the existing pattern (orange COLOR_WARNING span with a title tooltip).
+     */
+
+
+    /**
+     * Build a bare ⚠ warning icon span with a tooltip.
+     * @param {string} tooltipText
+     * @returns {string} HTML string, e.g. `<span style="color: #ffa500;" title="...">⚠</span>`
+     */
+    function buildWarningIcon(tooltipText) {
+        return `<span style="color: ${config.COLOR_WARNING};" title="${tooltipText}">⚠</span>`;
+    }
+
+    /**
+     * Build the icon (with a leading space, ready to append after a displayed value) flagging that
+     * a price was substituted by the market-data outlier guard, or an empty string when it wasn't.
+     * @param {boolean} isOutlier
+     * @returns {string}
+     */
+    function buildOutlierPriceWarningIcon(isOutlier) {
+        if (!isOutlier) {
+            return '';
+        }
+        return ' ' + buildWarningIcon(i18n.t('marketData.outlierPriceWarningTooltip'));
+    }
+
+    var warningIcon = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        buildOutlierPriceWarningIcon: buildOutlierPriceWarningIcon,
+        buildWarningIcon: buildWarningIcon
+    });
+
+    /**
      * Enhancement Tooltip Module
      *
      * Provides enhancement analysis for item tooltips.
@@ -3282,6 +3342,8 @@
      * @param {number} params.drinkConcentration - Drink Concentration stat as decimal
      * @param {Object} params.itemDetailMap - Item detail map for names
      * @param {Function} params.getItemPrice - Price resolver function
+     * @param {Function} [params.getItemPriceOutlierInfo] - Optional outlier-aware resolver
+     *   ((itemHrid, options) => {value, isOutlier}); when omitted, isOutlier is always false
      * @returns {Object} Tea costs breakdown
      */
     function calculateTeaCostsPerHour({
@@ -3289,12 +3351,14 @@
         drinkConcentration = 0,
         itemDetailMap = {},
         getItemPrice,
+        getItemPriceOutlierInfo,
     }) {
         if (!Array.isArray(drinkSlots) || drinkSlots.length === 0) {
             return {
                 costs: [],
                 totalCostPerHour: 0,
                 hasMissingPrices: false,
+                hasOutlierPrices: false,
                 drinksPerHour: calculateDrinksPerHour(drinkConcentration),
             };
         }
@@ -3315,6 +3379,10 @@
             const isPriceMissing = price === null;
             const resolvedPrice = isPriceMissing ? 0 : price;
             const totalCost = resolvedPrice * drinksPerHour;
+            const isOutlier =
+                !isPriceMissing && typeof getItemPriceOutlierInfo === 'function'
+                    ? getItemPriceOutlierInfo(drink.itemHrid, { context: 'profit', side: 'buy' }).isOutlier
+                    : false;
 
             entries.push({
                 itemHrid: drink.itemHrid,
@@ -3323,6 +3391,7 @@
                 drinksPerHour,
                 totalCost,
                 missingPrice: isPriceMissing,
+                isOutlier,
             });
 
             return entries;
@@ -3330,11 +3399,13 @@
 
         const totalCostPerHour = costs.reduce((sum, entry) => sum + entry.totalCost, 0);
         const hasMissingPrices = costs.some((entry) => entry.missingPrice);
+        const hasOutlierPrices = costs.some((entry) => entry.isOutlier);
 
         return {
             costs,
             totalCostPerHour,
             hasMissingPrices,
+            hasOutlierPrices,
             drinksPerHour,
         };
     }
@@ -3547,22 +3618,24 @@
         // 1. Custom override — absolute priority
         const customPrice = getCustomPrice(itemHrid, enhancementLevel, side);
         if (customPrice !== null) {
-            return { price: customPrice, custom: true, missing: false };
+            return { price: customPrice, custom: true, missing: false, isOutlier: false };
         }
 
-        // 2. Market price (via getItemPrice which handles pricing mode)
-        const marketPrice = getItemPrice(itemHrid, { enhancementLevel, mode, context, side });
+        // 2. Market price (via getItemPriceOutlierInfo, which handles pricing mode and reports
+        // whether the market-data outlier guard substituted the reference value for this price)
+        const marketResult = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, mode, context, side });
+        const marketPrice = marketResult.value;
 
         // 3. Shop price floor (buy-side only)
         if (side === 'buy') {
             const shopCost = getShopCoinCost(itemHrid);
             if (shopCost > 0 && (marketPrice === null || shopCost < marketPrice)) {
-                return { price: shopCost, custom: false, missing: false };
+                return { price: shopCost, custom: false, missing: false, isOutlier: false };
             }
         }
 
         if (marketPrice !== null) {
-            return { price: marketPrice, custom: false, missing: false };
+            return { price: marketPrice, custom: false, missing: false, isOutlier: marketResult.isOutlier };
         }
 
         // 4. Production cost fallback - getProductionCost has no notion of enhancement level, it
@@ -3573,12 +3646,12 @@
         if (enhancementLevel === 0) {
             const prodCost = getProductionCost(itemHrid, mode || 'ask');
             if (prodCost > 0) {
-                return { price: prodCost, custom: false, missing: false };
+                return { price: prodCost, custom: false, missing: false, isOutlier: false };
             }
         }
 
         // 5. No price found
-        return { price: 0, custom: false, missing: true };
+        return { price: 0, custom: false, missing: true, isOutlier: false };
     }
 
     var profitHelpers = {
@@ -4363,7 +4436,8 @@
      * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
      * @param {string} pricingModeSetting - Config setting key for pricing mode (default: 'profitCalc_pricingMode')
      * @param {string} respectModeSetting - Config setting key for respect pricing mode flag (default: 'expectedValue_respectPricingMode')
-     * @returns {number|null} Value per token, or null if no data
+     * @returns {{value: number, isOutlier: boolean}|null} Value per token (outlier-guard clamped) and whether the
+     *   winning shop item's/essence's price was substituted by the outlier guard, or null if no data
      */
     function calculateDungeonTokenValue(
         tokenHrid,
@@ -4381,29 +4455,25 @@
         if (shopItems.length === 0) return null;
 
         let bestValuePerToken = 0;
+        let bestIsOutlier = false;
 
         // For each shop item, calculate market price / token cost
         for (const shopItem of shopItems) {
             const itemHrid = shopItem.itemHrid;
             const tokenCost = shopItem.costs[0].count;
 
-            // Get market price for this item
-            const prices = marketAPI.getPrice(itemHrid, 0);
-            if (!prices) continue;
-
-            // Use pricing mode to determine which price to use
+            // Use pricing mode to determine which price side to use
             const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
             const respectPricingMode = config.getSettingValue(respectModeSetting, true);
 
-            let marketPrice = 0;
-            if (respectPricingMode) {
-                // Conservative/Patient Buy: Bid, Hybrid/Optimistic: Ask
-                marketPrice = pricingMode === 'conservative' || pricingMode === 'patientBuy' ? prices.bid : prices.ask;
-            } else {
-                // Always conservative
-                marketPrice = prices.bid;
-            }
-
+            // Conservative/Patient Buy: Bid, Hybrid/Optimistic: Ask
+            const mode = !respectPricingMode
+                ? 'bid'
+                : pricingMode === 'conservative' || pricingMode === 'patientBuy'
+                  ? 'bid'
+                  : 'ask';
+            const priceInfo = getItemPriceOutlierInfo(itemHrid, { mode });
+            const marketPrice = priceInfo.value || 0;
             if (marketPrice <= 0) continue;
 
             // Calculate value per token
@@ -4412,6 +4482,7 @@
             // Keep track of best value
             if (valuePerToken > bestValuePerToken) {
                 bestValuePerToken = valuePerToken;
+                bestIsOutlier = priceInfo.isOutlier;
             }
         }
 
@@ -4426,27 +4497,22 @@
 
             const essenceHrid = essenceMap[tokenHrid];
             if (essenceHrid) {
-                const essencePrice = marketAPI.getPrice(essenceHrid, 0);
-                if (essencePrice) {
-                    const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
-                    const respectPricingMode = config.getSettingValue(respectModeSetting, true);
+                const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
+                const respectPricingMode = config.getSettingValue(respectModeSetting, true);
 
-                    let marketPrice = 0;
-                    if (respectPricingMode) {
-                        marketPrice =
-                            pricingMode === 'conservative' || pricingMode === 'patientBuy'
-                                ? essencePrice.bid
-                                : essencePrice.ask;
-                    } else {
-                        marketPrice = essencePrice.bid;
-                    }
+                const mode = !respectPricingMode
+                    ? 'bid'
+                    : pricingMode === 'conservative' || pricingMode === 'patientBuy'
+                      ? 'bid'
+                      : 'ask';
+                const essencePriceInfo = getItemPriceOutlierInfo(essenceHrid, { mode });
+                const marketPrice = essencePriceInfo.value || 0;
 
-                    return marketPrice > 0 ? marketPrice : null;
-                }
+                return marketPrice > 0 ? { value: marketPrice, isOutlier: essencePriceInfo.isOutlier } : null;
             }
         }
 
-        return bestValuePerToken > 0 ? bestValuePerToken : null;
+        return bestValuePerToken > 0 ? { value: bestValuePerToken, isOutlier: bestIsOutlier } : null;
     }
 
     /**
@@ -5071,44 +5137,63 @@ self.onmessage = function (e) {
         resolveSellSideValue(itemHrid, enhancementLevel = 0) {
             // Special case: Coin (face value = 1, never taxed)
             if (itemHrid === this.COIN_HRID) {
-                return { value: 1, source: 'coin', needsTax: false };
+                return { value: 1, source: 'coin', needsTax: false, isOutlier: false };
             }
 
             // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
             if (itemHrid === this.COWBELL_HRID) {
                 if (!config.getSetting('expectedValue_includeCowbells')) {
-                    return { value: 0, source: 'cowbell', needsTax: false };
+                    return { value: 0, source: 'cowbell', needsTax: false, isOutlier: false };
                 }
                 // Get Cowbell Bag price using profit context (sell side - you're selling the bag)
-                const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' }) || 0;
+                const bagPriceInfo = getItemPriceOutlierInfo(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' });
+                const bagValue = bagPriceInfo.value || 0;
 
                 if (bagValue > 0) {
                     // Apply 18% market tax (Cowbell Bag only), then divide by 10
-                    return { value: calculatePriceAfterTax(bagValue, 0.18) / 10, source: 'cowbell', needsTax: false };
+                    return {
+                        value: calculatePriceAfterTax(bagValue, 0.18) / 10,
+                        source: 'cowbell',
+                        needsTax: false,
+                        isOutlier: bagPriceInfo.isOutlier,
+                    };
                 }
                 return null; // No bag price available
             }
 
             // Special case: Dungeon Tokens (calculate value from shop items)
             if (this.DUNGEON_TOKENS.includes(itemHrid)) {
-                const value = calculateDungeonTokenValue(
+                const token = calculateDungeonTokenValue(
                     itemHrid,
                     'profitCalc_pricingMode',
                     'expectedValue_respectPricingMode'
                 );
-                return value !== null ? { value, source: 'dungeonToken', needsTax: false } : null;
+                return token
+                    ? { value: token.value, source: 'dungeonToken', needsTax: false, isOutlier: token.isOutlier }
+                    : null;
             }
 
             // Check if this is a nested container (use cached EV, already tax-adjusted per-drop)
             if (this.containerCache.has(itemHrid)) {
-                return { value: this.containerCache.get(itemHrid), source: 'expectedValue', needsTax: false };
+                return {
+                    value: this.containerCache.get(itemHrid),
+                    source: 'expectedValue',
+                    needsTax: false,
+                    isOutlier: false,
+                };
             }
 
             // Regular market item - get price based on pricing mode (sell side - you're selling drops)
-            const dropPrice = getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
+            const dropPriceInfo = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
+            const dropPrice = dropPriceInfo.value;
             if (!(dropPrice > 0)) return null;
             const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;
-            return { value: dropPrice, source: hasOverride ? 'custom' : 'market', needsTax: true };
+            return {
+                value: dropPrice,
+                source: hasOverride ? 'custom' : 'market',
+                needsTax: true,
+                isOutlier: hasOverride ? false : dropPriceInfo.isOutlier,
+            };
         }
 
         /**
@@ -5122,32 +5207,38 @@ self.onmessage = function (e) {
          */
         resolveBuySideValue(itemHrid, enhancementLevel = 0) {
             if (itemHrid === this.COIN_HRID) {
-                return { value: 1, source: 'coin' };
+                return { value: 1, source: 'coin', isOutlier: false };
             }
 
             if (itemHrid === this.COWBELL_HRID) {
                 if (!config.getSetting('expectedValue_includeCowbells')) {
-                    return { value: 0, source: 'cowbell' };
+                    return { value: 0, source: 'cowbell', isOutlier: false };
                 }
-                const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'buy' }) || 0;
-                return bagValue > 0 ? { value: bagValue / 10, source: 'cowbell' } : null;
+                const bagPriceInfo = getItemPriceOutlierInfo(this.COWBELL_BAG_HRID, { context: 'profit', side: 'buy' });
+                const bagValue = bagPriceInfo.value || 0;
+                return bagValue > 0 ? { value: bagValue / 10, source: 'cowbell', isOutlier: bagPriceInfo.isOutlier } : null;
             }
 
             if (this.DUNGEON_TOKENS.includes(itemHrid)) {
-                const value = calculateDungeonTokenValue(
+                const token = calculateDungeonTokenValue(
                     itemHrid,
                     'profitCalc_pricingMode',
                     'expectedValue_respectPricingMode'
                 );
-                return value !== null ? { value, source: 'dungeonToken' } : null;
+                return token ? { value: token.value, source: 'dungeonToken', isOutlier: token.isOutlier } : null;
             }
 
             // Ordinary market item (including a consumed openable - valued as a purchase, not an
             // opening) - get price based on pricing mode (buy side - you're re-acquiring this)
-            const buyPrice = getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'buy' });
+            const buyPriceInfo = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, context: 'profit', side: 'buy' });
+            const buyPrice = buyPriceInfo.value;
             if (!(buyPrice > 0)) return null;
             const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'buy') !== null;
-            return { value: buyPrice, source: hasOverride ? 'custom' : 'market' };
+            return {
+                value: buyPrice,
+                source: hasOverride ? 'custom' : 'market',
+                isOutlier: hasOverride ? false : buyPriceInfo.isOutlier,
+            };
         }
 
         /**
@@ -5158,6 +5249,19 @@ self.onmessage = function (e) {
          */
         getDropPrice(itemHrid) {
             return this.resolveSellSideValue(itemHrid)?.value ?? null;
+        }
+
+        /**
+         * Get price and outlier-guard status for a drop item - the mirror of `getDropPrice()` for
+         * callers that want to show a warning icon when the price was substituted.
+         * @param {string} itemHrid - Item HRID
+         * @returns {{value: number|null, isOutlier: boolean}}
+         */
+        getDropPriceInfo(itemHrid) {
+            const resolved = this.resolveSellSideValue(itemHrid);
+            return resolved
+                ? { value: resolved.value, isOutlier: resolved.isOutlier || false }
+                : { value: null, isOutlier: false };
         }
 
         /**
@@ -5193,6 +5297,7 @@ self.onmessage = function (e) {
                 itemHrid,
                 expectedValue: expectedReturn,
                 drops,
+                hasOutlierPrices: drops.some((drop) => drop.isOutlier),
             };
         }
 
@@ -5243,7 +5348,8 @@ self.onmessage = function (e) {
                 const avgCount = (minCount + maxCount) / 2;
 
                 // Get price
-                const price = this.getDropPrice(itemHrid);
+                const priceInfo = this.getDropPriceInfo(itemHrid);
+                const price = priceInfo.value;
 
                 // Calculate expected value for this drop
                 const itemCanBeSold = itemDetails.isTradable !== false;
@@ -5266,6 +5372,7 @@ self.onmessage = function (e) {
                     dropRate,
                     avgCount,
                     priceEach: price || 0,
+                    isOutlier: priceInfo.isOutlier,
                     expectedValue: dropValue,
                     hasPriceData: price !== null,
                 });
@@ -5398,6 +5505,7 @@ self.onmessage = function (e) {
                 // Get price: Check if openable container (use EV), otherwise market price
                 let itemPrice = 0;
                 let isMissingPrice = false;
+                let isOutlier = false;
                 if (itemDetails.isOpenable) {
                     // Use expected value for openable containers (with on-demand fallback)
                     itemPrice =
@@ -5410,9 +5518,10 @@ self.onmessage = function (e) {
                     }
                 } else {
                     // Use market price for regular items
-                    const price = marketAPI.getPrice(drop.itemHrid, 0);
-                    itemPrice = price?.bid ?? 0; // Use bid price (instant sell)
-                    isMissingPrice = price?.bid === null || price?.bid === undefined;
+                    const priceInfo = getItemPriceOutlierInfo(drop.itemHrid, { mode: 'bid' });
+                    itemPrice = priceInfo.value ?? 0; // Use bid price (instant sell)
+                    isMissingPrice = priceInfo.value === null || priceInfo.value === undefined;
+                    isOutlier = isMissingPrice ? false : priceInfo.isOutlier;
                 }
 
                 // Revenue per hour from this drop
@@ -5431,6 +5540,7 @@ self.onmessage = function (e) {
                     revenuePerAction,
                     type: 'essence',
                     missingPrice: isMissingPrice,
+                    isOutlier,
                 });
 
                 totalBonusRevenue += revenuePerHour;
@@ -5458,6 +5568,7 @@ self.onmessage = function (e) {
                 // Get price: Check if openable container (use EV), otherwise market price
                 let itemPrice = 0;
                 let isMissingPrice = false;
+                let isOutlier = false;
                 if (itemDetails.isOpenable) {
                     // Use expected value for openable containers (with on-demand fallback)
                     itemPrice =
@@ -5470,9 +5581,10 @@ self.onmessage = function (e) {
                     }
                 } else {
                     // Use market price for regular items
-                    const price = marketAPI.getPrice(drop.itemHrid, 0);
-                    itemPrice = price?.bid ?? 0; // Use bid price (instant sell)
-                    isMissingPrice = price?.bid === null || price?.bid === undefined;
+                    const priceInfo = getItemPriceOutlierInfo(drop.itemHrid, { mode: 'bid' });
+                    itemPrice = priceInfo.value ?? 0; // Use bid price (instant sell)
+                    isMissingPrice = priceInfo.value === null || priceInfo.value === undefined;
+                    isOutlier = isMissingPrice ? false : priceInfo.isOutlier;
                 }
 
                 // Revenue per hour from this drop
@@ -5491,6 +5603,7 @@ self.onmessage = function (e) {
                     revenuePerAction,
                     type: 'rare_find',
                     missingPrice: isMissingPrice,
+                    isOutlier,
                 });
 
                 totalBonusRevenue += revenuePerHour;
@@ -6684,14 +6797,15 @@ self.onmessage = function (e) {
      * Calculate the cost to reach a specific ability level from level 0
      * @param {string} abilityHrid - Ability HRID (e.g., '/abilities/fireball')
      * @param {number} targetLevel - Target level to reach
-     * @returns {number} Total cost in coins
+     * @returns {{cost: number, isOutlier: boolean}} Total cost in coins, plus whether the book's
+     *   price was substituted by the market-data outlier guard
      */
     function calculateAbilityCost(abilityHrid, targetLevel) {
         const gameData = dataManager.getInitClientData();
-        if (!gameData) return 0;
+        if (!gameData) return { cost: 0, isOutlier: false };
 
         const levelXpTable = gameData.levelExperienceTable;
-        if (!levelXpTable) return 0;
+        if (!levelXpTable) return { cost: 0, isOutlier: false };
 
         // Get XP needed to reach target level from level 0
         const targetXp = levelXpTable[targetLevel] || 0;
@@ -6705,25 +6819,27 @@ self.onmessage = function (e) {
 
         // Get market price for ability book
         const itemHrid = abilityHrid.replace('/abilities/', '/items/');
-        const prices = marketAPI.getPrice(itemHrid, 0);
+        const prices = getItemPrices(itemHrid, 0);
 
-        if (!prices) return 0;
+        if (!prices) return { cost: 0, isOutlier: false };
 
         // Match MCS behavior: if one price is positive and other is negative, use positive for both
         let ask = prices.ask;
         let bid = prices.bid;
+        let isOutlier = prices.askOutlier;
 
         if (ask > 0 && bid < 0) {
             bid = ask;
         }
         if (bid > 0 && ask < 0) {
             ask = bid;
+            isOutlier = prices.bidOutlier;
         }
 
         // Use weighted average
         const weightedPrice = (ask + bid) / 2;
 
-        return booksNeeded * weightedPrice;
+        return { cost: booksNeeded * weightedPrice, isOutlier };
     }
 
     /**
@@ -6732,14 +6848,15 @@ self.onmessage = function (e) {
      * @param {number} currentLevel - Current ability level
      * @param {number} currentXp - Current ability XP
      * @param {number} targetLevel - Target ability level
-     * @returns {number} Cost in coins
+     * @returns {{cost: number, isOutlier: boolean}} Cost in coins, plus whether the book's price
+     *   was substituted by the market-data outlier guard
      */
     function calculateAbilityLevelUpCost(abilityHrid, currentLevel, currentXp, targetLevel) {
         const gameData = dataManager.getInitClientData();
-        if (!gameData) return 0;
+        if (!gameData) return { cost: 0, isOutlier: false };
 
         const levelXpTable = gameData.levelExperienceTable;
-        if (!levelXpTable) return 0;
+        if (!levelXpTable) return { cost: 0, isOutlier: false };
 
         // Calculate XP needed
         const targetXp = levelXpTable[targetLevel] || 0;
@@ -6758,25 +6875,27 @@ self.onmessage = function (e) {
 
         // Get market price
         const itemHrid = abilityHrid.replace('/abilities/', '/items/');
-        const prices = marketAPI.getPrice(itemHrid, 0);
+        const prices = getItemPrices(itemHrid, 0);
 
-        if (!prices) return 0;
+        if (!prices) return { cost: 0, isOutlier: false };
 
         // Match MCS behavior: if one price is positive and other is negative, use positive for both
         let ask = prices.ask;
         let bid = prices.bid;
+        let isOutlier = prices.askOutlier;
 
         if (ask > 0 && bid < 0) {
             bid = ask;
         }
         if (bid > 0 && ask < 0) {
             ask = bid;
+            isOutlier = prices.bidOutlier;
         }
 
         // Weighted average
         const weightedPrice = (ask + bid) / 2;
 
-        return booksNeeded * weightedPrice;
+        return { cost: booksNeeded * weightedPrice, isOutlier };
     }
 
     /**
@@ -6786,24 +6905,25 @@ self.onmessage = function (e) {
      * `experienceGain` or Ask price marks the result incomplete.
      * @param {string} abilityHrid - Ability HRID
      * @param {number} targetLevel - Target level to reach
-     * @returns {{cost: number|null, complete: boolean}}
+     * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
      */
     function calculateAbilityBookCostDataDriven(abilityHrid, targetLevel) {
         const gameData = dataManager.getInitClientData();
         const levelXpTable = gameData?.levelExperienceTable;
-        if (!levelXpTable) return { cost: null, complete: false };
+        if (!levelXpTable) return { cost: null, complete: false, isOutlier: false };
 
         const itemHrid = abilityHrid.replace('/abilities/', '/items/');
         const xpPerBook = gameData.itemDetailMap?.[itemHrid]?.abilityBookDetail?.experienceGain;
-        if (!(xpPerBook > 0)) return { cost: null, complete: false };
+        if (!(xpPerBook > 0)) return { cost: null, complete: false, isOutlier: false };
 
         const targetXp = levelXpTable[targetLevel] || 0;
         const booksNeeded = Math.ceil(targetXp / xpPerBook) + 1; // +1 = initial learn book
 
-        const ask = getItemPrice(itemHrid, { mode: 'ask' });
-        if (!(ask > 0)) return { cost: null, complete: false };
+        const askInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+        const ask = askInfo.value;
+        if (!(ask > 0)) return { cost: null, complete: false, isOutlier: false };
 
-        return { cost: booksNeeded * ask, complete: true };
+        return { cost: booksNeeded * ask, complete: true, isOutlier: askInfo.isOutlier };
     }
 
     var abilityCalc = /*#__PURE__*/Object.freeze({
@@ -7913,6 +8033,51 @@ self.onmessage = function (e) {
     });
 
     /**
+     * Shared outlier-guard helper for consumers that bypass market-data.js and batch-fetch prices
+     * directly via marketAPI.getPricesBatch() for performance (net worth, inventory badges - both
+     * price hundreds of items per render and can't afford a per-item market-data.js round trip).
+     * Runs every entry through the market-data outlier guard, mutating ask/bid in place when either
+     * side is substituted, and returns the set of flagged "itemHrid:enhancementLevel" keys so
+     * callers can show a warning icon on the affected rows/badges.
+     */
+
+
+    /**
+     * @param {Map<string, {ask: number, bid: number}>} priceCache - From marketAPI.getPricesBatch()
+     * @returns {Set<string>} The "itemHrid:enhancementLevel" keys that were flagged
+     */
+    function applyOutlierGuardToPriceCache(priceCache) {
+        const outlierKeys = new Set();
+
+        for (const [key, prices] of priceCache.entries()) {
+            if (!prices || typeof prices !== 'object') {
+                continue;
+            }
+
+            const colonIndex = key.lastIndexOf(':');
+            const itemHrid = key.slice(0, colonIndex);
+            const enhancementLevel = Number(key.slice(colonIndex + 1)) || 0;
+
+            const askResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, prices.ask);
+            const bidResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, prices.bid);
+
+            if (askResult.isOutlier || bidResult.isOutlier) {
+                outlierKeys.add(key);
+            }
+
+            prices.ask = askResult.value;
+            prices.bid = bidResult.value;
+        }
+
+        return outlierKeys;
+    }
+
+    var priceCacheOutlierGuard = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        applyOutlierGuardToPriceCache: applyOutlierGuardToPriceCache
+    });
+
+    /**
      * React Input Utility
      * Handles programmatic updates to React-controlled input elements
      *
@@ -8744,22 +8909,24 @@ self.onmessage = function (e) {
      * Calculate the total cost to build a house room to a specific level
      * @param {string} houseRoomHrid - House room HRID (e.g., '/house_rooms/dojo')
      * @param {number} currentLevel - Target level (1-8)
-     * @returns {number} Total build cost in coins
+     * @returns {{cost: number, isOutlier: boolean}} Total build cost in coins, and whether any
+     *   contributing material price was substituted by the market-data outlier guard
      */
     function calculateHouseBuildCost(houseRoomHrid, currentLevel) {
         const gameData = dataManager.getInitClientData();
-        if (!gameData) return 0;
+        if (!gameData) return { cost: 0, isOutlier: false };
 
         const houseRoomDetailMap = gameData.houseRoomDetailMap;
-        if (!houseRoomDetailMap) return 0;
+        if (!houseRoomDetailMap) return { cost: 0, isOutlier: false };
 
         const houseDetail = houseRoomDetailMap[houseRoomHrid];
-        if (!houseDetail) return 0;
+        if (!houseDetail) return { cost: 0, isOutlier: false };
 
         const upgradeCostsMap = houseDetail.upgradeCostsMap;
-        if (!upgradeCostsMap) return 0;
+        if (!upgradeCostsMap) return { cost: 0, isOutlier: false };
 
         let totalCost = 0;
+        let isOutlier = false;
 
         // Sum costs for all levels from 1 to current
         for (let level = 1; level <= currentLevel; level++) {
@@ -8775,12 +8942,12 @@ self.onmessage = function (e) {
                     continue;
                 }
 
-                const prices = marketAPI.getPrice(item.itemHrid, 0);
-                if (!prices) continue;
+                const rawPrices = marketAPI.getPrice(item.itemHrid, 0);
+                if (!rawPrices) continue;
 
                 // Match MCS behavior: if one price is positive and other is negative, use positive for both
-                let ask = prices.ask;
-                let bid = prices.bid;
+                let ask = rawPrices.ask;
+                let bid = rawPrices.bid;
 
                 if (ask > 0 && bid < 0) {
                     bid = ask;
@@ -8789,21 +8956,27 @@ self.onmessage = function (e) {
                     ask = bid;
                 }
 
+                const askResult = marketValuesAPI.checkOutlier(item.itemHrid, 0, ask);
+                const bidResult = marketValuesAPI.checkOutlier(item.itemHrid, 0, bid);
+                if (askResult.isOutlier || bidResult.isOutlier) {
+                    isOutlier = true;
+                }
+
                 // Use weighted average
-                const weightedPrice = (ask + bid) / 2;
+                const weightedPrice = (askResult.value + bidResult.value) / 2;
 
                 const itemCost = item.count * weightedPrice;
                 totalCost += itemCost;
             }
         }
 
-        return totalCost;
+        return { cost: totalCost, isOutlier };
     }
 
     /**
      * Calculate total cost for all battle houses
      * @param {Object} characterHouseRooms - Map of character house rooms from profile data
-     * @returns {Object} {totalCost, breakdown: [{name, level, cost}]}
+     * @returns {Object} {totalCost, breakdown: [{name, level, cost, isOutlier}]}
      */
     function calculateBattleHousesCost(characterHouseRooms) {
         const battleHouses = ['dining_room', 'library', 'dojo', 'gym', 'armory', 'archery_range', 'mystical_study'];
@@ -8826,7 +8999,7 @@ self.onmessage = function (e) {
             const level = houseData.level || 0;
             if (level === 0) continue;
 
-            const cost = calculateHouseBuildCost(houseRoomHrid, level);
+            const { cost, isOutlier } = calculateHouseBuildCost(houseRoomHrid, level);
             totalCost += cost;
 
             // Get human-readable name
@@ -8837,6 +9010,7 @@ self.onmessage = function (e) {
                 name: houseName,
                 level: level,
                 cost: cost,
+                isOutlier,
             });
         }
 
@@ -8867,15 +9041,16 @@ self.onmessage = function (e) {
      * whole room incomplete instead of silently contributing 0.
      * @param {string} houseRoomHrid - House room HRID
      * @param {number} currentLevel - Target level
-     * @returns {{cost: number, complete: boolean}}
+     * @returns {{cost: number, complete: boolean, isOutlier: boolean}}
      */
     function calculateHouseRoomCostAskOnly(houseRoomHrid, currentLevel) {
         const gameData = dataManager.getInitClientData();
         const upgradeCostsMap = gameData?.houseRoomDetailMap?.[houseRoomHrid]?.upgradeCostsMap;
-        if (!upgradeCostsMap) return { cost: 0, complete: false };
+        if (!upgradeCostsMap) return { cost: 0, complete: false, isOutlier: false };
 
         let cost = 0;
         let complete = true;
+        let isOutlier = false;
 
         for (let level = 1; level <= currentLevel; level++) {
             const levelUpgrades = upgradeCostsMap[level];
@@ -8890,23 +9065,24 @@ self.onmessage = function (e) {
                     continue;
                 }
 
-                const ask = getItemPrice(item.itemHrid, { mode: 'ask' });
-                if (!(ask > 0)) {
+                const askInfo = getItemPriceOutlierInfo(item.itemHrid, { mode: 'ask' });
+                if (!(askInfo.value > 0)) {
                     complete = false;
                     continue;
                 }
-                cost += item.count * ask;
+                if (askInfo.isOutlier) isOutlier = true;
+                cost += item.count * askInfo.value;
             }
         }
 
-        return { cost, complete };
+        return { cost, complete, isOutlier };
     }
 
     /**
      * Sum Ask-only build cost across every owned room in the given domain.
      * @param {Object} characterHouseRooms - Map of character house rooms from profile data
      * @param {'combat'|'skilling'} domain
-     * @returns {{totalCost: number, complete: boolean, breakdown: Array<{name: string, level: number, cost: number}>}}
+     * @returns {{totalCost: number, complete: boolean, breakdown: Array<{name: string, level: number, cost: number, isOutlier: boolean}>}}
      */
     function calculateHousesCostByDomain(characterHouseRooms, domain) {
         const gameData = dataManager.getInitClientData();
@@ -8921,12 +9097,12 @@ self.onmessage = function (e) {
             if (level === 0) continue;
             if (getHouseRoomDomain(houseRoomHrid) !== domain) continue;
 
-            const { cost, complete: roomComplete } = calculateHouseRoomCostAskOnly(houseRoomHrid, level);
+            const { cost, complete: roomComplete, isOutlier } = calculateHouseRoomCostAskOnly(houseRoomHrid, level);
             totalCost += cost;
             complete = complete && roomComplete;
 
             const houseName = houseRoomDetailMap[houseRoomHrid]?.name || houseRoomHrid.replace('/house_rooms/', '');
-            breakdown.push({ name: houseName, level, cost, complete: roomComplete });
+            breakdown.push({ name: houseName, level, cost, complete: roomComplete, isOutlier });
         }
 
         breakdown.sort((a, b) => b.cost - a.cost);
@@ -8982,6 +9158,8 @@ self.onmessage = function (e) {
         equipmentParser,
         uiComponents: uiComponents$1,
         enhancementConfig,
+        warningIcon,
+        priceCacheOutlierGuard,
         enhancementGearDetector,
         reactInput,
         materialCalculator,
@@ -8994,4 +9172,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Utils library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.loadoutState, Toolasha.Core.marketAPI, Toolasha.Core.storage, Toolasha.Core.domObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.loadoutState, Toolasha.Core.marketAPI, Toolasha.Core.marketValuesAPI, Toolasha.Core.storage, Toolasha.Core.domObserver);

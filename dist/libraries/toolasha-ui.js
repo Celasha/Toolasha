@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.5.0
+ * Version: 3.6.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, marketplaceSession_js, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
+(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, marketplaceSession_js, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
     'use strict';
 
     /**
@@ -5560,6 +5560,7 @@ ${starCSS}
         }
 
         const getCachedPrice = profitHelpers_js.createPriceCache(marketData_js.getItemPrice);
+        const getCachedPriceOutlierInfo = profitHelpers_js.createPriceCache(marketData_js.getItemPriceOutlierInfo);
 
         // Note: Market API is pre-loaded by caller (max-produceable.js)
         // No need to check or fetch here
@@ -5603,6 +5604,7 @@ ${starCSS}
             drinkConcentration,
             itemDetailMap: gameData.itemDetailMap,
             getItemPrice: getCachedPrice,
+            getItemPriceOutlierInfo: getCachedPriceOutlierInfo,
         });
         const drinkCostPerHour = teaCostData.totalCostPerHour;
         const drinkCosts = teaCostData.costs.map((tea) => ({
@@ -5611,6 +5613,7 @@ ${starCSS}
             drinksPerHour: tea.drinksPerHour,
             costPerHour: tea.totalCost,
             missingPrice: tea.missingPrice,
+            isOutlier: tea.isOutlier,
         }));
 
         const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actualTimePerActionSec);
@@ -5632,6 +5635,7 @@ ${starCSS}
             const rawPrice = getCachedPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
             const rawPriceMissing = rawPrice === null;
             const resolvedRawPrice = rawPriceMissing ? 0 : rawPrice;
+            const rawPriceOutlier = getCachedPriceOutlierInfo(drop.itemHrid, { context: 'profit', side: 'sell' }).isOutlier;
             // Apply gathering quantity bonus to drop amounts
             const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
             const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
@@ -5663,6 +5667,7 @@ ${starCSS}
                 revenuePerHour: baseRevenueLine,
                 revenuePerAction: baseRevenuePerAction,
                 missingPrice: rawPriceMissing,
+                isOutlier: rawPriceOutlier,
             });
 
             if (processedItemHrid && processingBonus > 0) {
@@ -5684,6 +5689,10 @@ ${starCSS}
                 const processedPrice = getCachedPrice(processedItemHrid, { context: 'profit', side: 'sell' });
                 const processedPriceMissing = processedPrice === null;
                 const resolvedProcessedPrice = processedPriceMissing ? 0 : processedPrice;
+                const processedPriceOutlier = getCachedPriceOutlierInfo(processedItemHrid, {
+                    context: 'profit',
+                    side: 'sell',
+                }).isOutlier;
 
                 const processedItemsPerHour = actionsPerHour * drop.dropRate * processedPerAction * efficiencyMultiplier;
                 const processedItemsPerAction = drop.dropRate * processedPerAction;
@@ -5713,6 +5722,7 @@ ${starCSS}
                     revenuePerHour: revenueFromConversion,
                     revenuePerAction: processedItemsPerAction * valueGainPerConversion,
                     missingPrice: rawPriceMissing || processedPriceMissing,
+                    isOutlier: rawPriceOutlier || processedPriceOutlier,
                 });
             } else {
                 // No processing - simple calculation
@@ -5731,6 +5741,10 @@ ${starCSS}
                     const processedPrice = getCachedPrice(processedItemHrid, { context: 'profit', side: 'sell' });
                     const processedPriceMissing = processedPrice === null;
                     const resolvedProcessedPrice = processedPriceMissing ? 0 : processedPrice;
+                    const processedPriceOutlier = getCachedPriceOutlierInfo(processedItemHrid, {
+                        context: 'profit',
+                        side: 'sell',
+                    }).isOutlier;
                     const weightedPrice =
                         (rawPerAction * resolvedRawPrice + processedPerAction * resolvedProcessedPrice) /
                         (rawPerAction + processedPerAction);
@@ -5746,6 +5760,7 @@ ${starCSS}
                         revenuePerHour: bonusRevenue,
                         revenuePerAction: bonusItemsPerAction * weightedPrice,
                         missingPrice: rawPriceMissing || processedPriceMissing,
+                        isOutlier: rawPriceOutlier || processedPriceOutlier,
                     });
                 } else {
                     const bonusRevenue = bonusItemsPerHour * resolvedRawPrice;
@@ -5760,6 +5775,7 @@ ${starCSS}
                         revenuePerHour: bonusRevenue,
                         revenuePerAction: bonusItemsPerAction * resolvedRawPrice,
                         missingPrice: rawPriceMissing,
+                        isOutlier: rawPriceOutlier,
                     });
                 }
             }
@@ -5780,6 +5796,12 @@ ${starCSS}
             gourmetBonuses.some((output) => output.missingPrice) ||
             processingConversions.some((conversion) => conversion.missingPrice) ||
             (bonusRevenue?.hasMissingPrices ?? false);
+
+        const hasOutlierPrices =
+            drinkCosts.some((drink) => drink.isOutlier) ||
+            baseOutputs.some((output) => output.isOutlier) ||
+            gourmetBonuses.some((output) => output.isOutlier) ||
+            processingConversions.some((conversion) => conversion.isOutlier);
 
         // Calculate market tax (percentage of gross revenue) - skipped when producing for personal
         // use (excludeSellTax), since the output is never actually sold.
@@ -5815,6 +5837,7 @@ ${starCSS}
             gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
             totalGathering, // Alias used by formatProfitDisplay
             hasMissingPrices,
+            hasOutlierPrices,
             // Top-level gathering breakdown for formatProfitDisplay
             gatheringTea,
             communityGathering,
@@ -7483,8 +7506,8 @@ ${starCSS}
      * Calculate dungeon key costs from a drop map.
      * Entry keys (1:1 with regular chests) + chest keys (1:1 with all chests).
      * @param {Map<string, number>} dropMap - itemHrid → expected count from calculateExpectedDrops
-     * @param {Function} getBuyPrice - Function to get buy price for an item (from UI)
-     * @returns {Array<{itemHrid: string, name: string, count: number, unitCost: number, totalCost: number}>}
+     * @param {Function} getBuyPrice - Function (itemHrid) => {value, isOutlier} to get the buy price for an item
+     * @returns {Array<{itemHrid: string, name: string, count: number, unitCost: number, totalCost: number, isOutlier: boolean}>}
      */
     function calculateDungeonKeyCosts(dropMap, getBuyPrice) {
         const costs = [];
@@ -7509,7 +7532,7 @@ ${starCSS}
         }
 
         for (const [keyHrid, count] of Object.entries(keyCounts)) {
-            const unitCost = getBuyPrice(keyHrid);
+            const { value: unitCost, isOutlier } = getBuyPrice(keyHrid);
             const keyDetails = dataManager.getItemDetails(keyHrid);
             costs.push({
                 itemHrid: keyHrid,
@@ -7517,6 +7540,7 @@ ${starCSS}
                 count,
                 unitCost,
                 totalCost: count * unitCost,
+                isOutlier,
             });
         }
 
@@ -7524,17 +7548,14 @@ ${starCSS}
     }
 
     /**
-     * Get the buy price for an item based on the global pricing mode.
-     * @param {Object|null} priceData - { bid, ask } from marketAPI.getPrice()
-     * @returns {number}
+     * Resolve the buy-side price for an item, outlier-guard aware (routes through
+     * expectedValueCalculator.resolveBuySideValue instead of a raw marketAPI.getPrice lookup).
+     * @param {string} itemHrid
+     * @returns {{value: number, isOutlier: boolean}}
      */
-    function getBuyPrice(priceData) {
-        if (!priceData) return 0;
-        const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-        if (mode === 'optimistic' || mode === 'patientBuy') {
-            return priceData.bid > 0 ? priceData.bid : 0;
-        }
-        return priceData.ask > 0 ? priceData.ask : 0;
+    function resolveBuyPrice(itemHrid) {
+        const resolved = expectedValueCalculator.resolveBuySideValue(itemHrid);
+        return resolved ? { value: resolved.value, isOutlier: resolved.isOutlier } : { value: 0, isOutlier: false };
     }
 
     /**
@@ -7569,7 +7590,13 @@ ${starCSS}
             revenuePerHour += perHour;
             if (unitValue > 0) {
                 const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
-                dropEntries.push({ name: itemName, countPerHour: total / hours, unitValue, totalValue: perHour });
+                dropEntries.push({
+                    name: itemName,
+                    countPerHour: total / hours,
+                    unitValue,
+                    totalValue: perHour,
+                    isOutlier: resolved.isOutlier,
+                });
             }
         }
         dropEntries.sort((a, b) => b.totalValue - a.totalValue);
@@ -7578,18 +7605,24 @@ ${starCSS}
         const consumableEntries = [];
         const consumablesUsed = simResult.consumablesUsed?.[playerHrid] || {};
         for (const [itemHrid, count] of Object.entries(consumablesUsed)) {
-            const unitCost = getBuyPrice(marketAPI.getPrice(itemHrid));
+            const { value: unitCost, isOutlier } = resolveBuyPrice(itemHrid);
             const perHour = (count / hours) * unitCost;
             costPerHour += perHour;
             if (unitCost > 0) {
                 const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
-                consumableEntries.push({ name: itemName, countPerHour: count / hours, unitCost, totalCost: perHour });
+                consumableEntries.push({
+                    name: itemName,
+                    countPerHour: count / hours,
+                    unitCost,
+                    totalCost: perHour,
+                    isOutlier,
+                });
             }
         }
 
         let keyCostPerHour = 0;
         if (simResult.isDungeon) {
-            const keyCosts = calculateDungeonKeyCosts(dropMap, (keyHrid) => getBuyPrice(marketAPI.getPrice(keyHrid)));
+            const keyCosts = calculateDungeonKeyCosts(dropMap, resolveBuyPrice);
             for (const key of keyCosts) {
                 keyCostPerHour += key.totalCost / hours;
             }
@@ -8788,8 +8821,8 @@ ${starCSS}
          * @param {number|null} completionSeconds - Seconds to completion (for task sorter)
          * @param {string} loadoutName - Loadout name used (empty = current gear)
          * @param {number} netGoldPerHour - Net gold/hr (drops - consumable costs)
-         * @param {Array} dropEntries - Array of {name, count, unitValue, totalValue} per drop
-         * @param {Array} consumableEntries - Array of {name, count, unitCost, totalCost} per consumable
+         * @param {Array} dropEntries - Array of {name, count, unitValue, totalValue, isOutlier} per drop
+         * @param {Array} consumableEntries - Array of {name, count, unitCost, totalCost, isOutlier} per consumable
          * @private
          */
         _renderCombatEstimateResult(
@@ -8895,7 +8928,7 @@ ${starCSS}
                     const taskCount = d.countPerHour * completionHours;
                     const taskTotal = d.totalValue * completionHours;
                     lines.push(
-                        `<div style="margin-left: 10px;">${d.name}: ${taskCount.toFixed(1)} @ ${formatters_js.formatKMB(Math.round(d.unitValue))} = ${formatters_js.formatKMB(Math.round(taskTotal))}</div>`
+                        `<div style="margin-left: 10px;">${d.name}: ${taskCount.toFixed(1)} @ ${formatters_js.formatKMB(Math.round(d.unitValue))}${warningIcon_js.buildOutlierPriceWarningIcon(d.isOutlier)} = ${formatters_js.formatKMB(Math.round(taskTotal))}</div>`
                     );
                 }
             }
@@ -8909,7 +8942,7 @@ ${starCSS}
                     const taskCount = c.countPerHour * completionHours;
                     const taskTotal = c.totalCost * completionHours;
                     lines.push(
-                        `<div style="margin-left: 10px;">${c.name}: ${taskCount.toFixed(1)} @ ${formatters_js.formatKMB(Math.round(c.unitCost))} = -${formatters_js.formatKMB(Math.round(taskTotal))}</div>`
+                        `<div style="margin-left: 10px;">${c.name}: ${taskCount.toFixed(1)} @ ${formatters_js.formatKMB(Math.round(c.unitCost))}${warningIcon_js.buildOutlierPriceWarningIcon(c.isOutlier)} = -${formatters_js.formatKMB(Math.round(taskTotal))}</div>`
                     );
                 }
             }
@@ -24925,4 +24958,4 @@ ${starCSS}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);

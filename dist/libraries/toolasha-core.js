@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.5.0
+ * Version: 3.6.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1258,6 +1258,13 @@
                     default: false,
                     help: 'Shows what you actually receive after the 4% marketplace tax next to ask/bid prices in item tooltips',
                 },
+                itemTooltip_decomposeValue: {
+                    id: 'itemTooltip_decomposeValue',
+                    label: 'Show decompose value',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Shows the market value of what you would get from decomposing this item (ask/bid), below the Price line. This is a raw value of the components only - not netted against catalyst/coin costs or the 60% success rate - so you can compare it directly against selling the item outright.',
+                },
                 itemTooltip_enhancingHourlyRate: {
                     id: 'itemTooltip_enhancingHourlyRate',
                     label: 'Target hourly rate for enhancing (e.g. 50m)',
@@ -1971,6 +1978,23 @@
             title: 'Pricing & Profit',
             icon: '💹',
             settings: {
+                marketData_outlierGuardEnabled: {
+                    id: 'marketData_outlierGuardEnabled',
+                    label: 'Guard against absurd marketplace listings',
+                    type: 'checkbox',
+                    default: true,
+                    help: "Applies everywhere Toolasha reads a market price (profit calculators, net worth, upgrade advisor, etc.). When a live ask/bid is wildly outside the band around the game's own reference market value, Toolasha substitutes the reference value instead and marks the affected number with a ⚠ so you can see where this happened.",
+                },
+                marketData_outlierBandMultiplier: {
+                    id: 'marketData_outlierBandMultiplier',
+                    label: 'Outlier band multiplier',
+                    type: 'number',
+                    default: 3,
+                    min: 1.5,
+                    max: 20,
+                    step: 0.5,
+                    help: 'A live price counts as an outlier when it is more than this many times above or below the reference value (e.g. 3 = outside 1/3x-3x the reference). Only applies to items the reference dataset actually covers.',
+                },
                 profitCalc_pricingMode: {
                     id: 'profitCalc_pricingMode',
                     label: 'Profit calculation pricing mode',
@@ -6531,6 +6555,11 @@
             unpricedItemsNote: '* some items have no market price data',
             missingMatsButtonLabel: 'Missing Mats Marketplace',
         },
+        marketData: {
+            outlierPriceWarningTooltip:
+                "This price was outside the normal range vs. the game's own reference market value, so Toolasha substituted the reference value instead. Adjust or disable this in Settings → Pricing & Profit.",
+        },
+
         marketHistory: {
             modalTitle: 'Market History',
             searchItemsPlaceholder: 'Search items...',
@@ -8448,6 +8477,7 @@
             costPerItemLine: (p) => `Cost: ${p.cost}/item`,
             countHeader: 'Count',
             craftItemName: (p) => `Craft ${p.itemName}`,
+            decomposeValueLine: (p) => `Decompose Value: ${p.ask} / ${p.bid}`,
             dropNoPriceLine: (p) => `• ${p.itemName} (${p.dropRate}): ${p.avgCount} avg → No price data`,
             dropWithPriceLine: (p) => `• ${p.itemName} (${p.dropRate}%): ${p.avgCount} avg → ${p.value}`,
             effLine: (p) => `Eff: ${p.ask} / ${p.bid}`,
@@ -9101,6 +9131,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Show effective (after-tax) prices',
                     help: 'Shows what you actually receive after the 4% marketplace tax next to ask/bid prices in item tooltips',
                 },
+                itemTooltip_decomposeValue: {
+                    label: 'Show decompose value',
+                    help: 'Shows the market value of what you would get from decomposing this item (ask/bid), below the Price line. This is a raw value of the components only - not netted against catalyst/coin costs or the 60% success rate - so you can compare it directly against selling the item outright.',
+                },
                 itemTooltip_enhancingHourlyRate: {
                     label: 'Target hourly rate for enhancing (e.g. 50m)',
                     help: 'Adds a minimum sell price to the enhancement tooltip that covers total cost plus this rate for time spent. Leave blank to disable.',
@@ -9365,6 +9399,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 market_depthCapEnabled: {
                     label: 'Market: Show sell depth cap (Risk of Ruin)',
                     help: "Shows how many actions worth of the currently-viewed item the order book can profitably absorb, based on the last Risk of Ruin calculation. Ignores the marketplace's tradable range floor, which isn't exposed in game data.",
+                },
+                marketData_outlierGuardEnabled: {
+                    label: 'Guard against absurd marketplace listings',
+                    help: "Applies everywhere Toolasha reads a market price (profit calculators, net worth, upgrade advisor, etc.). When a live ask/bid is wildly outside the band around the game's own reference market value, Toolasha substitutes the reference value instead and marks the affected number with a ⚠ so you can see where this happened.",
+                },
+                marketData_outlierBandMultiplier: {
+                    label: 'Outlier band multiplier',
+                    help: 'A live price counts as an outlier when it is more than this many times above or below the reference value (e.g. 3 = outside 1/3x-3x the reference). Only applies to items the reference dataset actually covers.',
                 },
                 profitCalc_pricingMode: { label: 'Profit calculation pricing mode' },
                 profitCalc_pricingNaming: {
@@ -10222,6 +10264,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             unpricedItemsNote: '* 部分物品没有市场价格数据',
             missingMatsButtonLabel: '缺失材料市场',
         },
+        marketData: {
+            outlierPriceWarningTooltip:
+                '该价格远超出与游戏官方参考市场价值相比的正常区间，因此 Toolasha 已改用参考价值。可在 设置 → 定价与利润 中调整或关闭此功能。',
+        },
+
         marketHistory: {
             modalTitle: '市场历史',
             searchItemsPlaceholder: '搜索物品...',
@@ -12114,6 +12161,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             costPerItemLine: (p) => `成本: ${p.cost}/件`,
             countHeader: '数量',
             craftItemName: (p) => `制作 ${p.itemName}`,
+            decomposeValueLine: (p) => `分解价值: ${p.ask} / ${p.bid}`,
             dropNoPriceLine: (p) => `• ${p.itemName} (${p.dropRate}): 平均 ${p.avgCount} → 无价格数据`,
             dropWithPriceLine: (p) => `• ${p.itemName} (${p.dropRate}%): 平均 ${p.avgCount} → ${p.value}`,
             effLine: (p) => `有效: ${p.ask} / ${p.bid}`,
@@ -12752,6 +12800,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '显示实际（税后）价格',
                     help: '在物品提示框的卖价/买价旁，显示扣除 4% 市场税后你实际获得的金额',
                 },
+                itemTooltip_decomposeValue: {
+                    label: '显示分解价值',
+                    help: '在价格行下方显示分解此物品可获得的市场价值（卖价/买价）。这只是组件的原始价值——未扣除催化剂/金币成本或 60% 的成功率——因此你可以直接将其与直接卖出该物品进行比较。',
+                },
                 itemTooltip_enhancingHourlyRate: {
                     label: '强化的目标每小时收益（例如 50m）',
                     help: '在强化提示框中添加一个最低卖出价格，该价格可覆盖总成本并为所花时间提供此收益率。留空以禁用。',
@@ -12995,6 +13047,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 market_depthCapEnabled: {
                     label: '市场：显示卖出深度上限（破产风险）',
                     help: '根据上一次破产风险计算结果，显示订单簿能够有利润地吸纳当前查看物品的操作次数；此计算忽略市场可交易区间下限，因为该数据未在游戏数据中公开。',
+                },
+                marketData_outlierGuardEnabled: {
+                    label: '对异常市场挂单进行防护',
+                    help: '适用于 Toolasha 读取市场价格的所有地方（利润计算器、净资产、升级顾问等）。当实时买价/卖价远超出游戏官方参考市场价值周围的区间时，Toolasha 会改用参考价值，并在受影响的数值旁标注 ⚠ 以提示发生了替换。',
+                },
+                marketData_outlierBandMultiplier: {
+                    label: '异常值区间倍数',
+                    help: '当实时价格超过参考价值的这个倍数（高于或低于）时，视为异常值（例如 3 表示超出参考价值的 1/3 倍至 3 倍区间）。仅适用于参考数据集中实际收录的物品。',
                 },
                 profitCalc_pricingMode: { label: '利润计算定价模式' },
                 profitCalc_pricingNaming: {
@@ -17131,6 +17191,209 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
     const marketAPI = new MarketAPI();
 
     /**
+     * Market Values API Module
+     * Fetches and caches the game's own reference "market value" estimates
+     * (https://www.milkywayidle.com/game_data/market_values.json) - the same endpoint the game
+     * client itself fetches and caches. Each item maps to an array of one blended price estimate
+     * per enhancement level (or a single entry for non-enhanceable items), distinct from the live
+     * ask/bid order-book data in marketplace.js. Used as a last-resort fallback price source for
+     * items with no live order-book data and no computable crafting/shop cost.
+     */
+
+
+    /**
+     * MarketValuesAPI class handles fetching and caching the game's reference market values
+     */
+    class MarketValuesAPI {
+        constructor() {
+            this.API_URL = 'https://www.milkywayidle.com/game_data/market_values.json';
+
+            // Cache settings - this is a slow-moving reference value, not live order-book data
+            this.CACHE_DURATION = 60 * 60 * 1000; // 1 hour
+            this.CACHE_KEY_DATA = 'Toolasha_marketValuesAPI_json';
+            this.CACHE_KEY_TIMESTAMP = 'Toolasha_marketValuesAPI_timestamp';
+
+            // { "<bare_item_name>": [priceAtLvl0, priceAtLvl1, ...] | [price] }
+            this.marketItemValues = null;
+            this.marketValuesVersion = 0;
+
+            this.timerRegistry = createTimerRegistry();
+            this.autoRefreshStarted = false;
+        }
+
+        /**
+         * Fetch market values from API or cache
+         * @param {boolean} forceFetch - Force a fresh fetch even if cache is valid
+         * @returns {Promise<Object|null>} marketItemValues object or null if unavailable
+         */
+        async fetch(forceFetch = false) {
+            if (!forceFetch) {
+                const cached = await this.getCachedData();
+                if (cached) {
+                    this.marketItemValues = cached.marketItemValues;
+                    this.marketValuesVersion = cached.marketValuesVersion || 0;
+                    return this.marketItemValues;
+                }
+            }
+
+            try {
+                const data = await this.fetchFromAPI();
+                if (data) {
+                    this.marketItemValues = data.marketItemValues;
+                    this.marketValuesVersion = data.marketValuesVersion || 0;
+                    this.cacheData(data);
+                    return this.marketItemValues;
+                }
+            } catch (error) {
+                console.error('[MarketValuesAPI] Fetch failed:', error);
+            }
+
+            // Fallback: expired cache is still better than nothing for a slow-moving reference value
+            const expired = await storage.getJSON(this.CACHE_KEY_DATA, 'settings', null);
+            if (expired) {
+                console.warn('[MarketValuesAPI] Using expired cache as fallback');
+                this.marketItemValues = expired.marketItemValues;
+                this.marketValuesVersion = expired.marketValuesVersion || 0;
+                return this.marketItemValues;
+            }
+
+            return null;
+        }
+
+        /**
+         * Start periodically re-checking the reference snapshot so a long-lived tab doesn't keep
+         * serving values from whenever the page happened to load. Safe to call multiple times;
+         * only the first call starts the interval.
+         */
+        startAutoRefresh() {
+            if (this.autoRefreshStarted) {
+                return;
+            }
+            this.autoRefreshStarted = true;
+
+            const intervalId = setInterval(() => {
+                this.fetch().catch((error) => {
+                    console.error('[MarketValuesAPI] Auto-refresh fetch failed:', error);
+                });
+            }, this.CACHE_DURATION);
+
+            this.timerRegistry.registerInterval(intervalId);
+        }
+
+        /**
+         * Stop the periodic re-fetch started by startAutoRefresh().
+         */
+        stopAutoRefresh() {
+            this.timerRegistry.clearAll();
+            this.autoRefreshStarted = false;
+        }
+
+        /**
+         * Fetch from the API endpoint
+         * @returns {Promise<Object|null>} { marketValuesVersion, marketItemValues } or null
+         */
+        async fetchFromAPI() {
+            const response = await fetch(this.API_URL);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.marketItemValues || typeof data.marketItemValues !== 'object') {
+                throw new Error('Invalid API response structure');
+            }
+
+            return data;
+        }
+
+        /**
+         * Get cached data if still within CACHE_DURATION
+         * @returns {Promise<Object|null>} { marketValuesVersion, marketItemValues } or null
+         */
+        async getCachedData() {
+            const cachedTimestamp = await storage.get(this.CACHE_KEY_TIMESTAMP, 'settings', null);
+            const cachedData = await storage.getJSON(this.CACHE_KEY_DATA, 'settings', null);
+
+            if (!cachedTimestamp || !cachedData) {
+                return null;
+            }
+
+            if (Date.now() - cachedTimestamp > this.CACHE_DURATION) {
+                return null;
+            }
+
+            return cachedData;
+        }
+
+        /**
+         * Cache the fetched data
+         * @param {Object} data - { marketValuesVersion, marketItemValues }
+         */
+        cacheData(data) {
+            storage.setJSON(this.CACHE_KEY_DATA, data, 'settings');
+            storage.set(this.CACHE_KEY_TIMESTAMP, Date.now(), 'settings');
+        }
+
+        /**
+         * Get the game's reference market value for an item at a given enhancement level.
+         * Not ask/bid - a single blended estimate, intended as a last-resort fallback.
+         * @param {string} itemHrid - e.g. "/items/sinister_cape"
+         * @param {number} enhancementLevel - 0-20 (default 0)
+         * @returns {number|null} Reference price, or null if unavailable
+         */
+        getValue(itemHrid, enhancementLevel = 0) {
+            if (!this.marketItemValues || !itemHrid) {
+                return null;
+            }
+
+            const bareName = itemHrid.replace('/items/', '');
+            const levels = this.marketItemValues[bareName];
+            if (!Array.isArray(levels)) {
+                return null;
+            }
+
+            const value = levels[enhancementLevel];
+            return typeof value === 'number' && value > 0 ? value : null;
+        }
+
+        /**
+         * Check whether a live price is an "outlier" relative to the reference value, and return
+         * the value to use instead. Never flags anything when the guard is disabled, or when there's
+         * no reference value for this item/level at all (the 872-item dataset doesn't cover
+         * everything, so there's nothing to compare against - the raw price always passes through).
+         * @param {string} itemHrid
+         * @param {number} enhancementLevel
+         * @param {number} rawValue - The live ask/bid value to check
+         * @returns {{value: number, isOutlier: boolean}}
+         */
+        checkOutlier(itemHrid, enhancementLevel, rawValue) {
+            if (typeof rawValue !== 'number' || rawValue <= 0) {
+                return { value: rawValue, isOutlier: false };
+            }
+
+            if (!config.getSetting('marketData_outlierGuardEnabled')) {
+                return { value: rawValue, isOutlier: false };
+            }
+
+            const reference = this.getValue(itemHrid, enhancementLevel);
+            if (!reference) {
+                return { value: rawValue, isOutlier: false };
+            }
+
+            const multiplier = Number(config.getSettingValue('marketData_outlierBandMultiplier', 3)) || 3;
+            if (rawValue > reference * multiplier || rawValue < reference / multiplier) {
+                return { value: reference, isOutlier: true };
+            }
+
+            return { value: rawValue, isOutlier: false };
+        }
+    }
+
+    const marketValuesAPI = new MarketValuesAPI();
+
+    /**
      * Foundation Core Library
      * Core infrastructure and API clients only (no utilities)
      *
@@ -17164,6 +17427,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             clearCurrentProfile,
         },
         marketAPI,
+        marketValuesAPI,
         performanceMonitor,
         marketplaceSession,
         MARKETPLACE_OWNER,

@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.5.0
+ * Version: 3.6.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, marketplaceSession_js, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
+(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, warningIcon_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, marketplaceSession_js, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -514,6 +514,8 @@
                 const materialDetail = gameData.itemDetailMap[material.itemHrid];
                 let price;
                 let bidPrice = 0;
+                let askOutlier = false;
+                let bidOutlier = false;
 
                 // Special case: Trainee charms have fixed 250k price (untradeable)
                 if (material.itemHrid.startsWith('/items/trainee_')) {
@@ -539,6 +541,8 @@
                         // MCS uses just ask for material prices
                         price = ask;
                         bidPrice = bid;
+                        askOutlier = marketPrice.askOutlier;
+                        bidOutlier = marketPrice.bidOutlier;
                     } else {
                         // Fallback: production cost, then NPC sell price
                         price = getProductionCost(material.itemHrid, 'ask') || materialDetail?.sellPrice || 0;
@@ -556,6 +560,8 @@
                     unitPrice: price,
                     bidPrice,
                     totalCost: price * totalQuantity,
+                    askOutlier,
+                    bidOutlier,
                 });
             }
         }
@@ -569,6 +575,7 @@
         let protectionCount = 0;
         let protectionAskPrice = 0;
         let protectionBidPrice = 0;
+        let protectionBidOutlier = false;
         if (protectFrom > 0 && pathResult.protectionCount > 0) {
             const protectionInfo = getCheapestProtectionPrice(itemHrid);
             if (protectionInfo.price > 0) {
@@ -578,6 +585,7 @@
                 protectionAskPrice = protectionInfo.price;
                 const protPrices = marketData_js.getItemPrices(protectionInfo.itemHrid, 0);
                 protectionBidPrice = protPrices?.bid > 0 ? protPrices.bid : protectionInfo.price;
+                protectionBidOutlier = protPrices?.bid > 0 ? protPrices.bidOutlier : false;
             }
         }
 
@@ -597,6 +605,10 @@
         const baseCost = baseAskPrice;
         const baseAskIsCrafted = askIsCrafted;
         const baseBidIsCrafted = askIsCrafted;
+        // Outlier flags only apply when the live market value is the one actually displayed -
+        // not when a crafted/fallback cost took its place instead.
+        const baseAskOutlier = !askIsCrafted && marketAsk > 0 && baseItemPrices?.askOutlier;
+        const baseBidOutlier = !askIsCrafted && marketBid > 0 && baseItemPrices?.bidOutlier;
 
         return {
             baseCost,
@@ -604,6 +616,8 @@
             baseBidPrice,
             baseAskIsCrafted,
             baseBidIsCrafted,
+            baseAskOutlier,
+            baseBidOutlier,
             materialCost,
             materialBreakdown,
             protectionCost,
@@ -611,6 +625,7 @@
             protectionCount,
             protectionAskPrice,
             protectionBidPrice,
+            protectionBidOutlier,
             totalCost: baseCost + materialCost + protectionCost,
         };
     }
@@ -653,8 +668,12 @@
             return Math.max(bid, productionCost);
         }
 
-        // No market data - use production cost as fallback
-        return productionCost;
+        // No market data - use production cost as fallback, then the game's own reference market
+        // value for items with neither a market nor a computable recipe (e.g. loot-only equipment).
+        if (productionCost > 0) {
+            return productionCost;
+        }
+        return marketValuesAPI.getValue(itemHrid, 0) || 0;
     }
 
     /**
@@ -821,19 +840,20 @@
 
     /**
      * Calculate the gold cost of a single enhancement attempt's consumed materials (ask-side
-     * market price), including any direct coin line item in enhancementCosts. Materials are
-     * consumed on every attempt regardless of success/failure, and this cost is the same at every
-     * enhancement level (enhancementCosts is not level-indexed).
+     * market price, through the outlier guard), including any direct coin line item in
+     * enhancementCosts. Materials are consumed on every attempt regardless of success/failure, and
+     * this cost is the same at every enhancement level (enhancementCosts is not level-indexed).
      * @param {Object} itemDetails - Item details containing enhancementCosts.
-     * @returns {{cost: number, hasCost: boolean, costPartial: boolean}}
+     * @returns {{cost: number, hasCost: boolean, costPartial: boolean, isOutlier: boolean}}
      */
     function calculatePerAttemptMaterialCost(itemDetails) {
         let cost = 0;
         let hasCost = false;
         let costPartial = false;
+        let isOutlier = false;
 
         if (!itemDetails.enhancementCosts?.length) {
-            return { cost: 0, hasCost: false, costPartial: false };
+            return { cost: 0, hasCost: false, costPartial: false, isOutlier: false };
         }
 
         for (const material of itemDetails.enhancementCosts) {
@@ -842,16 +862,17 @@
                 hasCost = true;
                 continue;
             }
-            const price = marketAPI.getPrice(material.itemHrid);
-            if (price?.ask > 0) {
-                cost += material.count * price.ask;
+            const priceInfo = marketData_js.getItemPriceOutlierInfo(material.itemHrid, { mode: 'ask' });
+            if (priceInfo.value > 0) {
+                cost += material.count * priceInfo.value;
                 hasCost = true;
+                if (priceInfo.isOutlier) isOutlier = true;
             } else {
                 costPartial = true;
             }
         }
 
-        return { cost, hasCost, costPartial };
+        return { cost, hasCost, costPartial, isOutlier };
     }
 
     /**
@@ -985,7 +1006,16 @@
                 const bidPrice = prices?.bid > 0 ? prices.bid : item.costEach;
                 totalAsk += askPrice * item.quantity;
                 totalBid += bidPrice * item.quantity;
-                return { name: baseItemName + ' +' + item.level, count: item.quantity, askPrice, bidPrice };
+                const askOutlier = prices?.ask > 0 ? prices.askOutlier : false;
+                const bidOutlier = prices?.bid > 0 ? prices.bidOutlier : false;
+                return {
+                    name: baseItemName + ' +' + item.level,
+                    count: item.quantity,
+                    askPrice,
+                    bidPrice,
+                    askOutlier,
+                    bidOutlier,
+                };
             });
 
             // Philosopher's Mirror row
@@ -1000,6 +1030,8 @@
                     count: optimalStrategy.mirrorCount,
                     askPrice: mirrorAsk,
                     bidPrice: mirrorBid,
+                    askOutlier: mirrorAsk > 0 ? mirrorPrices.askOutlier : false,
+                    bidOutlier: mirrorBid > 0 ? mirrorPrices.bidOutlier : false,
                 });
             }
 
@@ -1017,13 +1049,15 @@
                         ? config.COLOR_TOOLTIP_PROFIT
                         : config.COLOR_TOOLTIP_LOSS
                     : '';
+            const anyRowAskOutlier = consumedRows.some((row) => row.askOutlier);
+            const anyRowBidOutlier = consumedRows.some((row) => row.bidOutlier);
 
             // Total row
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
             html += `<td style="padding: 2px 4px; font-weight: bold;">${i18n_js.t('tooltipEnhancement.totalLabel')}</td>`;
             html += '<td style="padding: 2px 4px; text-align: center;"></td>';
-            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
             html += '</tr>';
 
             // Item rows
@@ -1031,8 +1065,8 @@
                 html += '<tr>';
                 html += `<td style="padding: 2px 4px;">${row.name}</td>`;
                 html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(row.count)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.askPrice)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.bidPrice)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.askPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.bidPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
                 html += '</tr>';
             }
         } else {
@@ -1055,6 +1089,8 @@
                 count: 1,
                 askPrice: optimalStrategy.baseAskPrice || optimalStrategy.baseCost,
                 bidPrice: optimalStrategy.baseBidPrice || optimalStrategy.baseCost,
+                askOutlier: optimalStrategy.baseAskOutlier,
+                bidOutlier: optimalStrategy.baseBidOutlier,
             });
 
             // Material rows
@@ -1066,7 +1102,15 @@
                     totalCount += count;
                     totalAsk += askPrice * count;
                     totalBid += bidPrice * count;
-                    rows.push({ name: mat.name, count, askPrice, bidPrice, isCoin: mat.itemHrid === '/items/coin' });
+                    rows.push({
+                        name: mat.name,
+                        count,
+                        askPrice,
+                        bidPrice,
+                        isCoin: mat.itemHrid === '/items/coin',
+                        askOutlier: mat.askOutlier,
+                        bidOutlier: mat.bidOutlier,
+                    });
                 }
             }
 
@@ -1087,7 +1131,7 @@
                         protName = protDetails.name;
                     }
                 }
-                rows.push({ name: protName, count, askPrice, bidPrice });
+                rows.push({ name: protName, count, askPrice, bidPrice, bidOutlier: optimalStrategy.protectionBidOutlier });
             }
 
             // Color total ask/bid by comparison to market price of enhanced item
@@ -1104,13 +1148,15 @@
                         ? config.COLOR_TOOLTIP_PROFIT
                         : config.COLOR_TOOLTIP_LOSS
                     : '';
+            const anyRowAskOutlier = rows.some((row) => row.askOutlier);
+            const anyRowBidOutlier = rows.some((row) => row.bidOutlier);
 
             // Total row
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
             html += `<td style="padding: 2px 4px; font-weight: bold;">${i18n_js.t('tooltipEnhancement.totalLabel')}</td>`;
             html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(totalCount)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
             html += '</tr>';
 
             // Item rows
@@ -1123,8 +1169,8 @@
                     html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.count)}</td>`;
                 } else {
                     html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(row.count)}</td>`;
-                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.askPrice)}</td>`;
-                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.bidPrice)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.askPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.bidPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
                 }
                 html += '</tr>';
             }
@@ -1228,8 +1274,8 @@
             let bid = '—';
             if (showPrices) {
                 const prices = marketData_js.getItemPrices(itemHrid, level);
-                ask = fmt(prices?.ask);
-                bid = fmt(prices?.bid);
+                ask = fmt(prices?.ask) + warningIcon_js.buildOutlierPriceWarningIcon(prices?.ask > 0 && prices.askOutlier);
+                bid = fmt(prices?.bid) + warningIcon_js.buildOutlierPriceWarningIcon(prices?.bid > 0 && prices.bidOutlier);
             }
 
             rows.push({ level, cost, xp, ask, bid });
@@ -1358,6 +1404,7 @@
 
             // Initialize price cache for this calculation
             const getCachedPrice = profitHelpers_js.createPriceCache(marketData_js.getItemPrice);
+            const getCachedPriceOutlierInfo = profitHelpers_js.createPriceCache(marketData_js.getItemPriceOutlierInfo);
 
             // Calculate base action time
             // Game uses NANOSECONDS (1e9 = 1 second)
@@ -1446,7 +1493,7 @@
 
             // Get market price for the item
             // Use fallback {ask: 0, bid: 0} if no market data exists (e.g., refined items)
-            const itemPrice = marketAPI.getPrice(itemHrid, 0) || { ask: 0, bid: 0 };
+            const itemPrice = marketData_js.getItemPrices(itemHrid, 0) || { ask: 0, bid: 0 };
 
             // Get output price based on pricing mode setting
             // Uses 'profit' context with 'sell' side to get correct sell price
@@ -1455,6 +1502,8 @@
             const craftingFallback = outputPriceMissing ? this.calculateCraftingCostFallback(itemHrid, getCachedPrice) : 0;
             const outputPriceEstimated = outputPriceMissing && craftingFallback > 0;
             const outputPrice = outputPriceMissing ? craftingFallback : rawOutputPrice;
+            const outputPriceOutlier =
+                !outputPriceMissing && getCachedPriceOutlierInfo(itemHrid, { context: 'profit', side: 'sell' }).isOutlier;
 
             // Apply market tax on sales
             const priceAfterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
@@ -1475,6 +1524,7 @@
                 drinkConcentration,
                 itemDetailMap,
                 getItemPrice: getCachedPrice,
+                getItemPriceOutlierInfo: getCachedPriceOutlierInfo,
             });
             const teaCosts = teaCostData.costs;
             const totalTeaCostPerHour = teaCostData.totalCostPerHour;
@@ -1487,6 +1537,9 @@
                 materialCosts.some((material) => material.missingPrice) ||
                 teaCostData.hasMissingPrices ||
                 (bonusRevenue?.hasMissingPrices ?? false);
+
+            const hasOutlierPrices =
+                outputPriceOutlier || materialCosts.some((material) => material.isOutlier) || teaCostData.hasOutlierPrices;
 
             // Apply efficiency multiplier to bonus revenue (efficiency repeats the action, including bonus rolls)
             const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
@@ -1531,6 +1584,7 @@
                 outputPrice, // Output price before tax (bid or ask based on mode)
                 outputPriceMissing,
                 outputPriceEstimated, // True when outputPriceMissing but crafting cost fallback resolved a price
+                outputPriceOutlier, // True when the market-data outlier guard substituted this price
                 priceAfterTax, // Output price after market tax (bid or ask based on mode)
                 revenuePerHour,
                 marketTax,
@@ -1541,6 +1595,7 @@
                 profitPerDay: profitHelpers_js.calculateProfitPerDay(profitPerHour), // Profit per day
                 bonusRevenue, // Bonus revenue from essences and rare finds
                 hasMissingPrices,
+                hasOutlierPrices,
                 totalEfficiency, // Total efficiency percentage
                 levelEfficiency, // Level advantage efficiency
                 houseEfficiency, // House room efficiency
@@ -1663,6 +1718,7 @@
                         customPrice: resolved.custom,
                         isUpgradeItem: true,
                         isCrafted,
+                        isOutlier: resolved.isOutlier || false,
                     });
                 }
             }
@@ -1698,6 +1754,7 @@
                         totalCost: resolved.price * reducedAmount,
                         missingPrice: resolved.missing,
                         customPrice: resolved.custom,
+                        isOutlier: resolved.isOutlier || false,
                     });
                 }
             }
@@ -2454,44 +2511,63 @@ self.onmessage = function (e) {
         resolveSellSideValue(itemHrid, enhancementLevel = 0) {
             // Special case: Coin (face value = 1, never taxed)
             if (itemHrid === this.COIN_HRID) {
-                return { value: 1, source: 'coin', needsTax: false };
+                return { value: 1, source: 'coin', needsTax: false, isOutlier: false };
             }
 
             // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
             if (itemHrid === this.COWBELL_HRID) {
                 if (!config.getSetting('expectedValue_includeCowbells')) {
-                    return { value: 0, source: 'cowbell', needsTax: false };
+                    return { value: 0, source: 'cowbell', needsTax: false, isOutlier: false };
                 }
                 // Get Cowbell Bag price using profit context (sell side - you're selling the bag)
-                const bagValue = marketData_js.getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' }) || 0;
+                const bagPriceInfo = marketData_js.getItemPriceOutlierInfo(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' });
+                const bagValue = bagPriceInfo.value || 0;
 
                 if (bagValue > 0) {
                     // Apply 18% market tax (Cowbell Bag only), then divide by 10
-                    return { value: profitHelpers_js.calculatePriceAfterTax(bagValue, 0.18) / 10, source: 'cowbell', needsTax: false };
+                    return {
+                        value: profitHelpers_js.calculatePriceAfterTax(bagValue, 0.18) / 10,
+                        source: 'cowbell',
+                        needsTax: false,
+                        isOutlier: bagPriceInfo.isOutlier,
+                    };
                 }
                 return null; // No bag price available
             }
 
             // Special case: Dungeon Tokens (calculate value from shop items)
             if (this.DUNGEON_TOKENS.includes(itemHrid)) {
-                const value = tokenValuation_js.calculateDungeonTokenValue(
+                const token = tokenValuation_js.calculateDungeonTokenValue(
                     itemHrid,
                     'profitCalc_pricingMode',
                     'expectedValue_respectPricingMode'
                 );
-                return value !== null ? { value, source: 'dungeonToken', needsTax: false } : null;
+                return token
+                    ? { value: token.value, source: 'dungeonToken', needsTax: false, isOutlier: token.isOutlier }
+                    : null;
             }
 
             // Check if this is a nested container (use cached EV, already tax-adjusted per-drop)
             if (this.containerCache.has(itemHrid)) {
-                return { value: this.containerCache.get(itemHrid), source: 'expectedValue', needsTax: false };
+                return {
+                    value: this.containerCache.get(itemHrid),
+                    source: 'expectedValue',
+                    needsTax: false,
+                    isOutlier: false,
+                };
             }
 
             // Regular market item - get price based on pricing mode (sell side - you're selling drops)
-            const dropPrice = marketData_js.getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
+            const dropPriceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
+            const dropPrice = dropPriceInfo.value;
             if (!(dropPrice > 0)) return null;
             const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;
-            return { value: dropPrice, source: hasOverride ? 'custom' : 'market', needsTax: true };
+            return {
+                value: dropPrice,
+                source: hasOverride ? 'custom' : 'market',
+                needsTax: true,
+                isOutlier: hasOverride ? false : dropPriceInfo.isOutlier,
+            };
         }
 
         /**
@@ -2505,32 +2581,38 @@ self.onmessage = function (e) {
          */
         resolveBuySideValue(itemHrid, enhancementLevel = 0) {
             if (itemHrid === this.COIN_HRID) {
-                return { value: 1, source: 'coin' };
+                return { value: 1, source: 'coin', isOutlier: false };
             }
 
             if (itemHrid === this.COWBELL_HRID) {
                 if (!config.getSetting('expectedValue_includeCowbells')) {
-                    return { value: 0, source: 'cowbell' };
+                    return { value: 0, source: 'cowbell', isOutlier: false };
                 }
-                const bagValue = marketData_js.getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'buy' }) || 0;
-                return bagValue > 0 ? { value: bagValue / 10, source: 'cowbell' } : null;
+                const bagPriceInfo = marketData_js.getItemPriceOutlierInfo(this.COWBELL_BAG_HRID, { context: 'profit', side: 'buy' });
+                const bagValue = bagPriceInfo.value || 0;
+                return bagValue > 0 ? { value: bagValue / 10, source: 'cowbell', isOutlier: bagPriceInfo.isOutlier } : null;
             }
 
             if (this.DUNGEON_TOKENS.includes(itemHrid)) {
-                const value = tokenValuation_js.calculateDungeonTokenValue(
+                const token = tokenValuation_js.calculateDungeonTokenValue(
                     itemHrid,
                     'profitCalc_pricingMode',
                     'expectedValue_respectPricingMode'
                 );
-                return value !== null ? { value, source: 'dungeonToken' } : null;
+                return token ? { value: token.value, source: 'dungeonToken', isOutlier: token.isOutlier } : null;
             }
 
             // Ordinary market item (including a consumed openable - valued as a purchase, not an
             // opening) - get price based on pricing mode (buy side - you're re-acquiring this)
-            const buyPrice = marketData_js.getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'buy' });
+            const buyPriceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { enhancementLevel, context: 'profit', side: 'buy' });
+            const buyPrice = buyPriceInfo.value;
             if (!(buyPrice > 0)) return null;
             const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'buy') !== null;
-            return { value: buyPrice, source: hasOverride ? 'custom' : 'market' };
+            return {
+                value: buyPrice,
+                source: hasOverride ? 'custom' : 'market',
+                isOutlier: hasOverride ? false : buyPriceInfo.isOutlier,
+            };
         }
 
         /**
@@ -2541,6 +2623,19 @@ self.onmessage = function (e) {
          */
         getDropPrice(itemHrid) {
             return this.resolveSellSideValue(itemHrid)?.value ?? null;
+        }
+
+        /**
+         * Get price and outlier-guard status for a drop item - the mirror of `getDropPrice()` for
+         * callers that want to show a warning icon when the price was substituted.
+         * @param {string} itemHrid - Item HRID
+         * @returns {{value: number|null, isOutlier: boolean}}
+         */
+        getDropPriceInfo(itemHrid) {
+            const resolved = this.resolveSellSideValue(itemHrid);
+            return resolved
+                ? { value: resolved.value, isOutlier: resolved.isOutlier || false }
+                : { value: null, isOutlier: false };
         }
 
         /**
@@ -2576,6 +2671,7 @@ self.onmessage = function (e) {
                 itemHrid,
                 expectedValue: expectedReturn,
                 drops,
+                hasOutlierPrices: drops.some((drop) => drop.isOutlier),
             };
         }
 
@@ -2626,7 +2722,8 @@ self.onmessage = function (e) {
                 const avgCount = (minCount + maxCount) / 2;
 
                 // Get price
-                const price = this.getDropPrice(itemHrid);
+                const priceInfo = this.getDropPriceInfo(itemHrid);
+                const price = priceInfo.value;
 
                 // Calculate expected value for this drop
                 const itemCanBeSold = itemDetails.isTradable !== false;
@@ -2649,6 +2746,7 @@ self.onmessage = function (e) {
                     dropRate,
                     avgCount,
                     priceEach: price || 0,
+                    isOutlier: priceInfo.isOutlier,
                     expectedValue: dropValue,
                     hasPriceData: price !== null,
                 });
@@ -2805,12 +2903,14 @@ self.onmessage = function (e) {
         const essenceDropsPerHour = actionsPerHour * finalEssenceRate;
 
         let essencePrice = 0;
+        let essencePriceOutlier = false;
         const essenceItemDetails = itemDetailMap['/items/alchemy_essence'];
         if (essenceItemDetails?.isOpenable) {
             essencePrice = expectedValueCalculator.getCachedValue('/items/alchemy_essence') || 0;
         } else {
-            const price = marketAPI.getPrice('/items/alchemy_essence', 0);
-            essencePrice = price?.bid ?? 0;
+            const priceInfo = marketData_js.getItemPriceOutlierInfo('/items/alchemy_essence', { context: 'profit', side: 'sell' });
+            essencePrice = priceInfo.value ?? 0;
+            essencePriceOutlier = priceInfo.isOutlier;
         }
 
         const essenceRevenuePerHour = essenceDropsPerHour * essencePrice;
@@ -2820,6 +2920,7 @@ self.onmessage = function (e) {
             dropRate: finalEssenceRate,
             effectiveDropRate: finalEssenceRate,
             price: essencePrice,
+            isOutlier: essencePriceOutlier,
             isEssence: true,
             isRare: false,
             revenuePerAttempt: finalEssenceRate * essencePrice,
@@ -2846,6 +2947,7 @@ self.onmessage = function (e) {
         const rareDropsPerHour = actionsPerHour * finalRareRate;
 
         let cratePrice = 0;
+        let cratePriceOutlier = false;
         const crateItemDetails = itemDetailMap[crateHrid];
         if (crateItemDetails?.isOpenable) {
             // Try cached EV first, then compute on-demand if cache is empty
@@ -2854,8 +2956,9 @@ self.onmessage = function (e) {
                 expectedValueCalculator.calculateSingleContainer(crateHrid) ||
                 0;
         } else {
-            const price = marketAPI.getPrice(crateHrid, 0);
-            cratePrice = price?.bid ?? 0;
+            const priceInfo = marketData_js.getItemPriceOutlierInfo(crateHrid, { context: 'profit', side: 'sell' });
+            cratePrice = priceInfo.value ?? 0;
+            cratePriceOutlier = priceInfo.isOutlier;
         }
 
         const rareRevenuePerHour = rareDropsPerHour * cratePrice;
@@ -2865,6 +2968,7 @@ self.onmessage = function (e) {
             dropRate: finalRareRate,
             effectiveDropRate: finalRareRate,
             price: cratePrice,
+            isOutlier: cratePriceOutlier,
             isEssence: false,
             isRare: true,
             revenuePerAttempt: finalRareRate * cratePrice,
@@ -2979,34 +3083,46 @@ self.onmessage = function (e) {
             const liveTeaBonus = teaBonusOverride !== null ? teaBonusOverride : buffParser_js.getAlchemySuccessBonus();
             const typeSpecificHrid = CATALYST_HRIDS[actionType];
             const primeCatalystHrid = CATALYST_HRIDS.prime;
-            const typeSpecificPrice = marketData_js.getItemPrice(typeSpecificHrid, { context: 'profit', side: 'buy' }) ?? 0;
-            const primeCatalystPrice = marketData_js.getItemPrice(primeCatalystHrid, { context: 'profit', side: 'buy' }) ?? 0;
+            const typeSpecificPriceInfo = marketData_js.getItemPriceOutlierInfo(typeSpecificHrid, { context: 'profit', side: 'buy' });
+            const primeCatalystPriceInfo = marketData_js.getItemPriceOutlierInfo(primeCatalystHrid, { context: 'profit', side: 'buy' });
+            const typeSpecificPrice = typeSpecificPriceInfo.value ?? 0;
+            const primeCatalystPrice = primeCatalystPriceInfo.value ?? 0;
 
             const combinations = [
-                { catalystBonus: 0, catalystHrid: null, catalystPrice: 0, teaBonus: liveTeaBonus },
-                { catalystBonus: 0, catalystHrid: null, catalystPrice: 0, teaBonus: 0 },
+                {
+                    catalystBonus: 0,
+                    catalystHrid: null,
+                    catalystPrice: 0,
+                    catalystPriceOutlier: false,
+                    teaBonus: liveTeaBonus,
+                },
+                { catalystBonus: 0, catalystHrid: null, catalystPrice: 0, catalystPriceOutlier: false, teaBonus: 0 },
                 {
                     catalystBonus: CATALYST_BONUSES.typeSpecific,
                     catalystHrid: typeSpecificHrid,
                     catalystPrice: typeSpecificPrice,
+                    catalystPriceOutlier: typeSpecificPriceInfo.isOutlier,
                     teaBonus: liveTeaBonus,
                 },
                 {
                     catalystBonus: CATALYST_BONUSES.typeSpecific,
                     catalystHrid: typeSpecificHrid,
                     catalystPrice: typeSpecificPrice,
+                    catalystPriceOutlier: typeSpecificPriceInfo.isOutlier,
                     teaBonus: 0,
                 },
                 {
                     catalystBonus: CATALYST_BONUSES.prime,
                     catalystHrid: primeCatalystHrid,
                     catalystPrice: primeCatalystPrice,
+                    catalystPriceOutlier: primeCatalystPriceInfo.isOutlier,
                     teaBonus: liveTeaBonus,
                 },
                 {
                     catalystBonus: CATALYST_BONUSES.prime,
                     catalystHrid: primeCatalystHrid,
                     catalystPrice: primeCatalystPrice,
+                    catalystPriceOutlier: primeCatalystPriceInfo.isOutlier,
                     teaBonus: 0,
                 },
             ];
@@ -3194,6 +3310,7 @@ self.onmessage = function (e) {
             let catalystBonus = 0;
             let catalystHrid = null;
             let catalystPrice = 0;
+            let catalystPriceOutlier = false;
 
             if (liveCatalystHrid === CATALYST_HRIDS.prime) {
                 catalystBonus = CATALYST_BONUSES.prime;
@@ -3203,7 +3320,9 @@ self.onmessage = function (e) {
                 catalystHrid = liveCatalystHrid;
             }
             if (catalystHrid) {
-                catalystPrice = marketData_js.getItemPrice(catalystHrid, { context: 'profit', side: 'buy' }) ?? 0;
+                const priceInfo = marketData_js.getItemPriceOutlierInfo(catalystHrid, { context: 'profit', side: 'buy' });
+                catalystPrice = priceInfo.value ?? 0;
+                catalystPriceOutlier = priceInfo.isOutlier;
             }
 
             const successRateBreakdown = this.calculateSuccessRateBreakdown(
@@ -3223,6 +3342,7 @@ self.onmessage = function (e) {
                 catalystBonus,
                 catalystHrid,
                 catalystPrice,
+                catalystPriceOutlier,
                 teaBonus: liveTeaBonus,
                 successRateBreakdown,
                 successRate,
@@ -3261,6 +3381,7 @@ self.onmessage = function (e) {
             let catalystBonus = 0;
             let catalystHrid = null;
             let catalystPrice = 0;
+            let catalystPriceOutlier = false;
 
             if (catalystChoice === 'typeSpecific') {
                 catalystBonus = CATALYST_BONUSES.typeSpecific;
@@ -3270,7 +3391,9 @@ self.onmessage = function (e) {
                 catalystHrid = CATALYST_HRIDS.prime;
             }
             if (catalystHrid) {
-                catalystPrice = marketData_js.getItemPrice(catalystHrid, { context: 'profit', side: 'buy' }) ?? 0;
+                const priceInfo = marketData_js.getItemPriceOutlierInfo(catalystHrid, { context: 'profit', side: 'buy' });
+                catalystPrice = priceInfo.value ?? 0;
+                catalystPriceOutlier = priceInfo.isOutlier;
             }
 
             const successRateBreakdown = this.calculateSuccessRateBreakdown(
@@ -3291,6 +3414,7 @@ self.onmessage = function (e) {
                 catalystBonus,
                 catalystHrid,
                 catalystPrice,
+                catalystPriceOutlier,
                 teaBonus: liveTeaBonus,
                 successRateBreakdown,
                 successRate,
@@ -3390,7 +3514,12 @@ self.onmessage = function (e) {
 
                 // Calculate input cost (material cost)
                 const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-                const pricePerItem = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+                const pricePerItemInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, {
+                    context: 'profit',
+                    side: 'buy',
+                    enhancementLevel,
+                });
+                const pricePerItem = pricePerItemInfo.value;
                 if (pricePerItem === null) {
                     return null; // No market data
                 }
@@ -3424,6 +3553,7 @@ self.onmessage = function (e) {
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
+                    getItemPriceOutlierInfo: (hrid) => marketData_js.getItemPriceOutlierInfo(hrid, { context: 'profit', side: 'buy' }),
                 });
 
                 // Find the best catalyst+tea combination (tooltip) or use live setup (action page)
@@ -3467,6 +3597,7 @@ self.onmessage = function (e) {
                         itemHrid,
                         count: bulkMultiplier,
                         price: pricePerItem,
+                        isOutlier: pricePerItemInfo.isOutlier,
                         costPerAction: materialCost,
                         costPerHour: materialCost * actionsPerHourWithEfficiency,
                         enhancementLevel: enhancementLevel || 0,
@@ -3485,6 +3616,7 @@ self.onmessage = function (e) {
                         dropRate: 1.0, // Coins always drop
                         effectiveDropRate: 1.0,
                         price: 1, // Coins are 1:1
+                        isOutlier: false,
                         isEssence: false,
                         isRare: false,
                         revenuePerAttempt,
@@ -3501,6 +3633,7 @@ self.onmessage = function (e) {
                 const catalystCost = {
                     itemHrid: combo.catalystHrid,
                     price: combo.catalystPrice,
+                    isOutlier: combo.catalystPriceOutlier || false,
                     costPerSuccess: combo.catalystPrice,
                     costPerAttempt: catalystCostPerAttempt,
                     costPerHour: catalystCostPerHour,
@@ -3509,9 +3642,16 @@ self.onmessage = function (e) {
                 const consumableCosts = teaCostData.costs.map((cost) => ({
                     itemHrid: cost.itemHrid,
                     price: cost.pricePerDrink,
+                    isOutlier: cost.isOutlier || false,
                     drinksPerHour: cost.drinksPerHour,
                     costPerHour: cost.totalCost,
                 }));
+
+                const hasOutlierPrices =
+                    requirementCosts.some((r) => r.isOutlier) ||
+                    dropRevenues.some((d) => d.isOutlier) ||
+                    catalystCost.isOutlier ||
+                    consumableCosts.some((c) => c.isOutlier);
 
                 // Return comprehensive data matching what action panel needs
                 return {
@@ -3547,6 +3687,7 @@ self.onmessage = function (e) {
                     dropRevenues,
                     catalystCost,
                     consumableCosts,
+                    hasOutlierPrices,
 
                     // Core stats
                     successRate,
@@ -3661,7 +3802,12 @@ self.onmessage = function (e) {
                 // Some items (e.g. Holy Milk) consume multiple copies per action - bulkMultiplier
                 // scales both the input consumed and the base decompose outputs received.
                 const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-                const pricePerItem = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+                const pricePerItemInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, {
+                    context: 'profit',
+                    side: 'buy',
+                    enhancementLevel,
+                });
+                const pricePerItem = pricePerItemInfo.value;
                 if (pricePerItem === null) {
                     return null; // No market data
                 }
@@ -3673,7 +3819,8 @@ self.onmessage = function (e) {
 
                 // 1. Base decompose items (always received on success)
                 for (const output of itemDetails.alchemyDetail.decomposeItems) {
-                    const outputPrice = marketData_js.getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPriceInfo = marketData_js.getItemPriceOutlierInfo(output.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPrice = outputPriceInfo.value;
                     if (outputPrice !== null) {
                         const afterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
                         const outputCount = output.count * bulkMultiplier;
@@ -3684,6 +3831,7 @@ self.onmessage = function (e) {
                             itemHrid: output.itemHrid,
                             count: outputCount,
                             price: outputPrice,
+                            isOutlier: outputPriceInfo.isOutlier,
                             afterTax,
                             isEssence: false,
                             expectedValue: dropValue,
@@ -3697,7 +3845,11 @@ self.onmessage = function (e) {
                     const itemLevel = itemDetails.itemLevel || 1;
                     essenceAmount = Math.round(2 * (0.5 + 0.1 * Math.pow(1.05, itemLevel)) * Math.pow(2, enhancementLevel));
 
-                    const essencePrice = marketData_js.getItemPrice('/items/enhancing_essence', { context: 'profit', side: 'sell' });
+                    const essencePriceInfo = marketData_js.getItemPriceOutlierInfo('/items/enhancing_essence', {
+                        context: 'profit',
+                        side: 'sell',
+                    });
+                    const essencePrice = essencePriceInfo.value;
                     if (essencePrice !== null) {
                         const afterTax = profitHelpers_js.calculatePriceAfterTax(essencePrice);
                         const dropValue = afterTax * essenceAmount;
@@ -3707,6 +3859,7 @@ self.onmessage = function (e) {
                             itemHrid: '/items/enhancing_essence',
                             count: essenceAmount,
                             price: essencePrice,
+                            isOutlier: essencePriceInfo.isOutlier,
                             afterTax,
                             isEssence: true,
                             expectedValue: dropValue,
@@ -3736,6 +3889,7 @@ self.onmessage = function (e) {
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
+                    getItemPriceOutlierInfo: (hrid) => marketData_js.getItemPriceOutlierInfo(hrid, { context: 'profit', side: 'buy' }),
                 });
 
                 // Find the best catalyst+tea combination (tooltip) or use live setup (action page)
@@ -3779,6 +3933,7 @@ self.onmessage = function (e) {
                         itemHrid,
                         count: bulkMultiplier,
                         price: pricePerItem,
+                        isOutlier: pricePerItemInfo.isOutlier,
                         costPerAction: inputPrice,
                         costPerHour: inputPrice * actionsPerHourWithEfficiency,
                         enhancementLevel: enhancementLevel || 0,
@@ -3791,6 +3946,7 @@ self.onmessage = function (e) {
                         itemHrid: '/items/coin',
                         count: coinCost,
                         price: 1,
+                        isOutlier: false,
                         costPerAction: coinCost,
                         costPerHour: coinCost * actionsPerHourWithEfficiency,
                         enhancementLevel: 0,
@@ -3803,6 +3959,7 @@ self.onmessage = function (e) {
                     dropRate: 1.0, // Decompose drops are guaranteed on success
                     effectiveDropRate: 1.0,
                     price: drop.price,
+                    isOutlier: drop.isOutlier || false,
                     isEssence: drop.isEssence,
                     isRare: false,
                     revenuePerAttempt: drop.expectedValue * successRate,
@@ -3818,6 +3975,7 @@ self.onmessage = function (e) {
                 const catalystCost = {
                     itemHrid: combo.catalystHrid,
                     price: combo.catalystPrice,
+                    isOutlier: combo.catalystPriceOutlier || false,
                     costPerSuccess: combo.catalystPrice,
                     costPerAttempt: catalystCostPerAttempt,
                     costPerHour: catalystCostPerHour,
@@ -3826,9 +3984,16 @@ self.onmessage = function (e) {
                 const consumableCosts = teaCostData.costs.map((cost) => ({
                     itemHrid: cost.itemHrid,
                     price: cost.pricePerDrink,
+                    isOutlier: cost.isOutlier || false,
                     drinksPerHour: cost.drinksPerHour,
                     costPerHour: cost.totalCost,
                 }));
+
+                const hasOutlierPrices =
+                    requirementCosts.some((r) => r.isOutlier) ||
+                    dropRevenues.some((d) => d.isOutlier) ||
+                    catalystCost.isOutlier ||
+                    consumableCosts.some((c) => c.isOutlier);
 
                 // Return comprehensive data matching what action panel needs
                 return {
@@ -3864,6 +4029,7 @@ self.onmessage = function (e) {
                     dropRevenues,
                     catalystCost,
                     consumableCosts,
+                    hasOutlierPrices,
 
                     // Core stats
                     successRate,
@@ -3885,6 +4051,70 @@ self.onmessage = function (e) {
                 };
             } catch (error) {
                 console.error('[AlchemyProfitCalculator] Failed to calculate decompose profit:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Calculate the raw gross value of an item's decompose outputs - what the components are
+         * worth on the market right now, independent of the cost to acquire the item being
+         * decomposed, catalyst/coin costs, or the 60% decompose success rate. This answers "sell
+         * this outright, or decompose it?" for an item already owned, which calculateDecomposeProfit
+         * cannot answer because it always nets out an acquisition cost that's sunk once you own the
+         * item. Shows both ask and bid (like the item tooltip's own Price line), not a single
+         * pricing-mode-resolved number.
+         * @param {string} itemHrid - Item HRID
+         * @param {number} enhancementLevel - Enhancement level (default 0); only affects whether the
+         *   Enhancing Essence bonus output is included
+         * @returns {{ask: number, bid: number, askOutlier: boolean, bidOutlier: boolean}|null}
+         *   null if the item has no decompose recipe
+         */
+        calculateDecomposeValue(itemHrid, enhancementLevel = 0) {
+            try {
+                const itemDetails = dataManager.getItemDetails(itemHrid);
+                if (!itemDetails?.alchemyDetail?.decomposeItems) {
+                    return null;
+                }
+
+                const bulkMultiplier = itemDetails.alchemyDetail.bulkMultiplier || 1;
+                const excludeSellTax = config.getSetting('profitCalc_excludeSellTax');
+
+                let totalAsk = 0;
+                let totalBid = 0;
+                let askOutlier = false;
+                let bidOutlier = false;
+
+                const addOutput = (outputHrid, count) => {
+                    const prices = marketData_js.getItemPrices(outputHrid, 0);
+                    if (!prices) {
+                        return;
+                    }
+                    const taxRate = excludeSellTax ? 0 : outputHrid === profitConstants_js.COWBELL_BAG_HRID ? profitConstants_js.COWBELL_BAG_TAX : profitConstants_js.MARKET_TAX;
+                    if (prices.ask !== null && prices.ask > 0) {
+                        totalAsk += profitHelpers_js.calculatePriceAfterTax(prices.ask, taxRate) * count;
+                        askOutlier = askOutlier || prices.askOutlier;
+                    }
+                    if (prices.bid !== null && prices.bid > 0) {
+                        totalBid += profitHelpers_js.calculatePriceAfterTax(prices.bid, taxRate) * count;
+                        bidOutlier = bidOutlier || prices.bidOutlier;
+                    }
+                };
+
+                for (const output of itemDetails.alchemyDetail.decomposeItems) {
+                    addOutput(output.itemHrid, output.count * bulkMultiplier);
+                }
+
+                if (enhancementLevel > 0) {
+                    const itemLevel = itemDetails.itemLevel || 1;
+                    const essenceAmount = Math.round(
+                        2 * (0.5 + 0.1 * Math.pow(1.05, itemLevel)) * Math.pow(2, enhancementLevel)
+                    );
+                    addOutput('/items/enhancing_essence', essenceAmount);
+                }
+
+                return { ask: totalAsk, bid: totalBid, askOutlier, bidOutlier };
+            } catch (error) {
+                console.error('[AlchemyProfitCalculator] Failed to calculate decompose value:', error);
                 return null;
             }
         }
@@ -3986,7 +4216,12 @@ self.onmessage = function (e) {
 
                 // Get input cost (market price of the refined item being unrefined, at its own level)
                 const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-                const pricePerItem = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+                const pricePerItemInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, {
+                    context: 'profit',
+                    side: 'buy',
+                    enhancementLevel,
+                });
+                const pricePerItem = pricePerItemInfo.value;
                 if (pricePerItem === null) {
                     return null; // No market data
                 }
@@ -3996,11 +4231,12 @@ self.onmessage = function (e) {
                 // (enhancement level is preserved, per the native client's Unrefine drop table), plus
                 // refinement shards. Neither output scales with bulkMultiplier there - equipment is
                 // never bulk-processed the way stackable materials are.
-                const outputPrice = marketData_js.getItemPrice(unrefineDetail.baseItemHrid, {
+                const outputPriceInfo = marketData_js.getItemPriceOutlierInfo(unrefineDetail.baseItemHrid, {
                     context: 'profit',
                     side: 'sell',
                     enhancementLevel,
                 });
+                const outputPrice = outputPriceInfo.value;
                 if (outputPrice === null) {
                     return null; // No market data
                 }
@@ -4011,6 +4247,7 @@ self.onmessage = function (e) {
                         itemHrid: unrefineDetail.baseItemHrid,
                         count: 1,
                         price: outputPrice,
+                        isOutlier: outputPriceInfo.isOutlier,
                         afterTax: baseItemAfterTax,
                         isEssence: false,
                         expectedValue: baseItemAfterTax,
@@ -4021,7 +4258,11 @@ self.onmessage = function (e) {
 
                 const shardReturn = unrefineDetail.shardReturn;
                 if (shardReturn?.itemHrid && shardReturn.count > 0) {
-                    const shardPrice = marketData_js.getItemPrice(shardReturn.itemHrid, { context: 'profit', side: 'sell' });
+                    const shardPriceInfo = marketData_js.getItemPriceOutlierInfo(shardReturn.itemHrid, {
+                        context: 'profit',
+                        side: 'sell',
+                    });
+                    const shardPrice = shardPriceInfo.value;
                     if (shardPrice !== null) {
                         const shardAfterTax = profitHelpers_js.calculatePriceAfterTax(shardPrice);
                         const shardValue = shardAfterTax * shardReturn.count;
@@ -4030,6 +4271,7 @@ self.onmessage = function (e) {
                             itemHrid: shardReturn.itemHrid,
                             count: shardReturn.count,
                             price: shardPrice,
+                            isOutlier: shardPriceInfo.isOutlier,
                             afterTax: shardAfterTax,
                             isEssence: false,
                             expectedValue: shardValue,
@@ -4061,6 +4303,7 @@ self.onmessage = function (e) {
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
+                    getItemPriceOutlierInfo: (hrid) => marketData_js.getItemPriceOutlierInfo(hrid, { context: 'profit', side: 'buy' }),
                 });
 
                 // Fixed 100% base success rate, clamped there regardless of tea/catalyst - no combo
@@ -4090,6 +4333,7 @@ self.onmessage = function (e) {
                         itemHrid,
                         count: bulkMultiplier,
                         price: pricePerItem,
+                        isOutlier: pricePerItemInfo.isOutlier,
                         costPerAction: inputPrice,
                         costPerHour: inputPrice * actionsPerHourWithEfficiency,
                         enhancementLevel: enhancementLevel || 0,
@@ -4101,6 +4345,7 @@ self.onmessage = function (e) {
                         itemHrid: '/items/coin',
                         count: coinCost,
                         price: 1,
+                        isOutlier: false,
                         costPerAction: coinCost,
                         costPerHour: coinCost * actionsPerHourWithEfficiency,
                         enhancementLevel: 0,
@@ -4113,6 +4358,7 @@ self.onmessage = function (e) {
                     dropRate: 1.0, // Unrefine's own outputs are guaranteed on success
                     effectiveDropRate: 1.0,
                     price: drop.price,
+                    isOutlier: drop.isOutlier || false,
                     isEssence: drop.isEssence,
                     isRare: false,
                     revenuePerAttempt: drop.expectedValue * successRate,
@@ -4129,6 +4375,7 @@ self.onmessage = function (e) {
                 const catalystCost = {
                     itemHrid: null,
                     price: 0,
+                    isOutlier: false,
                     costPerSuccess: 0,
                     costPerAttempt: 0,
                     costPerHour: 0,
@@ -4137,9 +4384,15 @@ self.onmessage = function (e) {
                 const consumableCosts = teaCostData.costs.map((cost) => ({
                     itemHrid: cost.itemHrid,
                     price: cost.pricePerDrink,
+                    isOutlier: cost.isOutlier || false,
                     drinksPerHour: cost.drinksPerHour,
                     costPerHour: cost.totalCost,
                 }));
+
+                const hasOutlierPrices =
+                    requirementCosts.some((r) => r.isOutlier) ||
+                    dropRevenues.some((d) => d.isOutlier) ||
+                    consumableCosts.some((c) => c.isOutlier);
 
                 return {
                     // Basic info
@@ -4174,6 +4427,7 @@ self.onmessage = function (e) {
                     dropRevenues,
                     catalystCost,
                     consumableCosts,
+                    hasOutlierPrices,
 
                     // Core stats
                     successRate,
@@ -4302,7 +4556,8 @@ self.onmessage = function (e) {
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
 
                 // Get input cost (market price of the item being transmuted)
-                const inputPrice = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'buy' });
+                const inputPriceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'buy' });
+                const inputPrice = inputPriceInfo.value;
                 if (inputPrice === null) {
                     return null; // No market data
                 }
@@ -4327,7 +4582,8 @@ self.onmessage = function (e) {
                         selfReturnCount = averageCount * bulkMultiplier;
                     }
 
-                    const outputPrice = marketData_js.getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPriceInfo = marketData_js.getItemPriceOutlierInfo(drop.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPrice = outputPriceInfo.value;
                     if (outputPrice !== null) {
                         const afterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
                         // Expected value: price × dropRate × averageCount × bulkMultiplier
@@ -4345,6 +4601,7 @@ self.onmessage = function (e) {
                             maxCount: drop.maxCount,
                             averageCount,
                             price: outputPrice,
+                            isOutlier: outputPriceInfo.isOutlier,
                             expectedValue: isSelfReturn ? 0 : dropValue, // Self-return has 0 effective value
                             isSelfReturn,
                         });
@@ -4375,6 +4632,7 @@ self.onmessage = function (e) {
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
+                    getItemPriceOutlierInfo: (hrid) => marketData_js.getItemPriceOutlierInfo(hrid, { context: 'profit', side: 'buy' }),
                 });
 
                 // Force a specific catalyst if the caller asked for one; otherwise find the best
@@ -4434,6 +4692,7 @@ self.onmessage = function (e) {
                         itemHrid,
                         count: bulkMultiplier,
                         price: inputPrice,
+                        isOutlier: inputPriceInfo.isOutlier,
                         costPerAction: netMaterialCost, // Net cost after self-return
                         costPerHour: netMaterialCost * actionsPerHourWithEfficiency,
                         enhancementLevel: 0,
@@ -4448,6 +4707,7 @@ self.onmessage = function (e) {
                         itemHrid: '/items/coin',
                         count: coinCost,
                         price: 1,
+                        isOutlier: false,
                         costPerAction: coinCost,
                         costPerHour: coinCost * actionsPerHourWithEfficiency,
                         enhancementLevel: 0,
@@ -4460,6 +4720,7 @@ self.onmessage = function (e) {
                     dropRate: drop.dropRate,
                     effectiveDropRate: drop.dropRate,
                     price: drop.price,
+                    isOutlier: drop.isOutlier || false,
                     isEssence: false,
                     isRare: false,
                     isSelfReturn: drop.isSelfReturn || false,
@@ -4477,6 +4738,7 @@ self.onmessage = function (e) {
                 const catalystCost = {
                     itemHrid: combo.catalystHrid,
                     price: combo.catalystPrice,
+                    isOutlier: combo.catalystPriceOutlier || false,
                     costPerSuccess: combo.catalystPrice,
                     costPerAttempt: catalystCostPerAttempt,
                     costPerHour: catalystCostPerHour,
@@ -4485,9 +4747,16 @@ self.onmessage = function (e) {
                 const consumableCosts = teaCostData.costs.map((cost) => ({
                     itemHrid: cost.itemHrid,
                     price: cost.pricePerDrink,
+                    isOutlier: cost.isOutlier || false,
                     drinksPerHour: cost.drinksPerHour,
                     costPerHour: cost.totalCost,
                 }));
+
+                const hasOutlierPrices =
+                    requirementCosts.some((r) => r.isOutlier) ||
+                    dropRevenues.some((d) => d.isOutlier) ||
+                    catalystCost.isOutlier ||
+                    consumableCosts.some((c) => c.isOutlier);
 
                 // Return comprehensive data matching what action panel needs
                 return {
@@ -4525,6 +4794,7 @@ self.onmessage = function (e) {
                     dropRevenues,
                     catalystCost,
                     consumableCosts,
+                    hasOutlierPrices,
 
                     // Core stats
                     successRate,
@@ -4677,6 +4947,7 @@ self.onmessage = function (e) {
         }
 
         const getCachedPrice = profitHelpers_js.createPriceCache(marketData_js.getItemPrice);
+        const getCachedPriceOutlierInfo = profitHelpers_js.createPriceCache(marketData_js.getItemPriceOutlierInfo);
 
         // Note: Market API is pre-loaded by caller (max-produceable.js)
         // No need to check or fetch here
@@ -4720,6 +4991,7 @@ self.onmessage = function (e) {
             drinkConcentration,
             itemDetailMap: gameData.itemDetailMap,
             getItemPrice: getCachedPrice,
+            getItemPriceOutlierInfo: getCachedPriceOutlierInfo,
         });
         const drinkCostPerHour = teaCostData.totalCostPerHour;
         const drinkCosts = teaCostData.costs.map((tea) => ({
@@ -4728,6 +5000,7 @@ self.onmessage = function (e) {
             drinksPerHour: tea.drinksPerHour,
             costPerHour: tea.totalCost,
             missingPrice: tea.missingPrice,
+            isOutlier: tea.isOutlier,
         }));
 
         const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actualTimePerActionSec);
@@ -4749,6 +5022,7 @@ self.onmessage = function (e) {
             const rawPrice = getCachedPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
             const rawPriceMissing = rawPrice === null;
             const resolvedRawPrice = rawPriceMissing ? 0 : rawPrice;
+            const rawPriceOutlier = getCachedPriceOutlierInfo(drop.itemHrid, { context: 'profit', side: 'sell' }).isOutlier;
             // Apply gathering quantity bonus to drop amounts
             const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
             const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
@@ -4780,6 +5054,7 @@ self.onmessage = function (e) {
                 revenuePerHour: baseRevenueLine,
                 revenuePerAction: baseRevenuePerAction,
                 missingPrice: rawPriceMissing,
+                isOutlier: rawPriceOutlier,
             });
 
             if (processedItemHrid && processingBonus > 0) {
@@ -4801,6 +5076,10 @@ self.onmessage = function (e) {
                 const processedPrice = getCachedPrice(processedItemHrid, { context: 'profit', side: 'sell' });
                 const processedPriceMissing = processedPrice === null;
                 const resolvedProcessedPrice = processedPriceMissing ? 0 : processedPrice;
+                const processedPriceOutlier = getCachedPriceOutlierInfo(processedItemHrid, {
+                    context: 'profit',
+                    side: 'sell',
+                }).isOutlier;
 
                 const processedItemsPerHour = actionsPerHour * drop.dropRate * processedPerAction * efficiencyMultiplier;
                 const processedItemsPerAction = drop.dropRate * processedPerAction;
@@ -4830,6 +5109,7 @@ self.onmessage = function (e) {
                     revenuePerHour: revenueFromConversion,
                     revenuePerAction: processedItemsPerAction * valueGainPerConversion,
                     missingPrice: rawPriceMissing || processedPriceMissing,
+                    isOutlier: rawPriceOutlier || processedPriceOutlier,
                 });
             } else {
                 // No processing - simple calculation
@@ -4848,6 +5128,10 @@ self.onmessage = function (e) {
                     const processedPrice = getCachedPrice(processedItemHrid, { context: 'profit', side: 'sell' });
                     const processedPriceMissing = processedPrice === null;
                     const resolvedProcessedPrice = processedPriceMissing ? 0 : processedPrice;
+                    const processedPriceOutlier = getCachedPriceOutlierInfo(processedItemHrid, {
+                        context: 'profit',
+                        side: 'sell',
+                    }).isOutlier;
                     const weightedPrice =
                         (rawPerAction * resolvedRawPrice + processedPerAction * resolvedProcessedPrice) /
                         (rawPerAction + processedPerAction);
@@ -4863,6 +5147,7 @@ self.onmessage = function (e) {
                         revenuePerHour: bonusRevenue,
                         revenuePerAction: bonusItemsPerAction * weightedPrice,
                         missingPrice: rawPriceMissing || processedPriceMissing,
+                        isOutlier: rawPriceOutlier || processedPriceOutlier,
                     });
                 } else {
                     const bonusRevenue = bonusItemsPerHour * resolvedRawPrice;
@@ -4877,6 +5162,7 @@ self.onmessage = function (e) {
                         revenuePerHour: bonusRevenue,
                         revenuePerAction: bonusItemsPerAction * resolvedRawPrice,
                         missingPrice: rawPriceMissing,
+                        isOutlier: rawPriceOutlier,
                     });
                 }
             }
@@ -4897,6 +5183,12 @@ self.onmessage = function (e) {
             gourmetBonuses.some((output) => output.missingPrice) ||
             processingConversions.some((conversion) => conversion.missingPrice) ||
             (bonusRevenue?.hasMissingPrices ?? false);
+
+        const hasOutlierPrices =
+            drinkCosts.some((drink) => drink.isOutlier) ||
+            baseOutputs.some((output) => output.isOutlier) ||
+            gourmetBonuses.some((output) => output.isOutlier) ||
+            processingConversions.some((conversion) => conversion.isOutlier);
 
         // Calculate market tax (percentage of gross revenue) - skipped when producing for personal
         // use (excludeSellTax), since the output is never actually sold.
@@ -4932,6 +5224,7 @@ self.onmessage = function (e) {
             gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
             totalGathering, // Alias used by formatProfitDisplay
             hasMissingPrices,
+            hasOutlierPrices,
             // Top-level gathering breakdown for formatProfitDisplay
             gatheringTea,
             communityGathering,
@@ -5289,15 +5582,18 @@ self.onmessage = function (e) {
 
         // Get market buy price (min of market ask and shop cost)
         let buyPrice = null;
+        let buyPriceOutlier = false;
         if (isTradable) {
-            const marketPrice = marketData_js.getItemPrice(itemHrid, { mode, context: 'profit', side: 'buy' });
-            if (marketPrice !== null && marketPrice > 0) {
-                buyPrice = marketPrice;
+            const marketPriceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode, context: 'profit', side: 'buy' });
+            if (marketPriceInfo.value !== null && marketPriceInfo.value > 0) {
+                buyPrice = marketPriceInfo.value;
+                buyPriceOutlier = marketPriceInfo.isOutlier;
             }
         }
         const shopCost = getShopCoinCost(itemHrid);
         if (shopCost > 0 && (buyPrice === null || shopCost < buyPrice)) {
             buyPrice = shopCost;
+            buyPriceOutlier = false; // Shop cost is a fixed vendor price, never a market outlier
         }
 
         // Coins always cost 1 each
@@ -5310,6 +5606,7 @@ self.onmessage = function (e) {
                 unitCost: 1,
                 totalCost: quantity,
                 buyPrice: 1,
+                isOutlier: false,
                 craftCost: null,
                 actionHrid: null,
                 actionsNeeded: 0,
@@ -5330,6 +5627,7 @@ self.onmessage = function (e) {
                 unitCost: cachedUnitCost.unitCost,
                 totalCost: cachedUnitCost.unitCost * quantity,
                 buyPrice,
+                isOutlier: buyPriceOutlier,
                 craftCost: cachedUnitCost.craftCost,
                 actionHrid: cachedUnitCost.actionHrid,
                 actionsNeeded,
@@ -5371,6 +5669,7 @@ self.onmessage = function (e) {
                 unitCost: buyPrice ?? Infinity,
                 totalCost: (buyPrice ?? Infinity) * quantity,
                 buyPrice,
+                isOutlier: buyPriceOutlier,
                 craftCost: null,
                 actionHrid: null,
                 actionsNeeded: 0,
@@ -5399,6 +5698,7 @@ self.onmessage = function (e) {
                 unitCost,
                 totalCost: unitCost * quantity,
                 buyPrice,
+                isOutlier: buyPriceOutlier,
                 craftCost: null,
                 actionHrid: null,
                 actionsNeeded: 0,
@@ -5429,6 +5729,7 @@ self.onmessage = function (e) {
                 unitCost,
                 totalCost: unitCost * quantity,
                 buyPrice,
+                isOutlier: buyPriceOutlier,
                 craftCost: null,
                 actionHrid: null,
                 actionsNeeded: 0,
@@ -5582,6 +5883,7 @@ self.onmessage = function (e) {
             unitCost,
             totalCost: unitCost * quantity,
             buyPrice,
+            isOutlier: buyPriceOutlier,
             craftCost: craftCostPerUnit,
             actionHrid: strategy === 'craft' ? actionHrid : null,
             actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,
@@ -5614,8 +5916,10 @@ self.onmessage = function (e) {
      * ask/bid the player already uses for buy-side profit math), not hardcoded.
      * @param {string} keyHrid
      * @param {number} [quantity=1]
-     * @returns {{strategy: 'buy'|'craft', unitCost: number, plan: Object|null}} `plan` is the full
-     *   Best Crafting Plan tree when crafting wins (for a materials/craft-steps breakdown), else null.
+     * @returns {{strategy: 'buy'|'craft', unitCost: number, isOutlier: boolean, plan: Object|null}}
+     *   `plan` is the full Best Crafting Plan tree when crafting wins (for a materials/craft-steps
+     *   breakdown), else null. `isOutlier` reflects whether the root item's own market price (shown
+     *   regardless of which strategy won) was substituted by the market-data outlier guard.
      */
     function getCheapestKeyCost(keyHrid, quantity = 1) {
         const buyMode = marketData_js.getPricingMode('profit', 'buy');
@@ -5623,6 +5927,7 @@ self.onmessage = function (e) {
         return {
             strategy: plan.strategy,
             unitCost: plan.unitCost,
+            isOutlier: plan.isOutlier || false,
             plan: plan.strategy === 'craft' ? plan : null,
         };
     }
@@ -5633,16 +5938,27 @@ self.onmessage = function (e) {
      * @returns {number|null} Gold cost, or null if unresolvable (no market data and no recipe).
      */
     function getKeyPrice(keyHrid) {
+        return getKeyPriceInfo(keyHrid).price;
+    }
+
+    /**
+     * Price a dungeon key under the player's selected key-pricing mode, along with whether that
+     * price was substituted by the market-data outlier guard - the mirror of `getKeyPrice()` for
+     * callers that want to show a warning icon.
+     * @param {string} keyHrid
+     * @returns {{price: number|null, isOutlier: boolean}}
+     */
+    function getKeyPriceInfo(keyHrid) {
         const mode = getKeyPricingModeSetting();
 
         if (mode === KEY_PRICING_MODE_CHEAPEST) {
-            const { unitCost } = getCheapestKeyCost(keyHrid);
-            return Number.isFinite(unitCost) ? unitCost : null;
+            const { unitCost, isOutlier } = getCheapestKeyCost(keyHrid);
+            return { price: Number.isFinite(unitCost) ? unitCost : null, isOutlier };
         }
 
-        const priceData = marketAPI.getPrice(keyHrid);
-        if (!priceData) return null;
-        return priceData[mode] ?? priceData.ask ?? 0;
+        const priceInfo = marketData_js.getItemPriceOutlierInfo(keyHrid, { mode });
+        if (priceInfo.value === null) return { price: null, isOutlier: false };
+        return { price: priceInfo.value, isOutlier: priceInfo.isOutlier };
     }
 
     /**
@@ -5916,16 +6232,20 @@ self.onmessage = function (e) {
                 if (evData) {
                     // Compute chest key deduction for dungeon chests
                     let keyPrice = 0;
+                    let keyPriceOutlier = false;
                     const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
                     if (chestKeyHrid) {
                         const keyDetails = dataManager.getItemDetails(chestKeyHrid);
-                        keyPrice = getKeyPrice(chestKeyHrid) ?? 0;
+                        const keyPriceInfo = getKeyPriceInfo(chestKeyHrid);
+                        keyPrice = keyPriceInfo.price ?? 0;
+                        keyPriceOutlier = keyPriceInfo.isOutlier;
                         this.injectExpectedValueDisplay(
                             tooltipElement,
                             evData,
                             isCollectionTooltip,
                             keyPrice,
-                            keyDetails?.name
+                            keyDetails?.name,
+                            keyPriceOutlier
                         );
                     } else {
                         this.injectExpectedValueDisplay(tooltipElement, evData, isCollectionTooltip);
@@ -5950,7 +6270,15 @@ self.onmessage = function (e) {
                 // Get item amount from tooltip (for stacks)
                 const amount = this.extractItemAmount(tooltipElement);
                 const artisanAmount = this._getArtisanAdjustedAmount(tooltipElement, amount);
-                this.injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip, artisanAmount, itemHrid);
+                this.injectPriceDisplay(
+                    tooltipElement,
+                    price,
+                    amount,
+                    isCollectionTooltip,
+                    artisanAmount,
+                    itemHrid,
+                    enhancementLevel
+                );
             }
 
             // Always show detailed craft profit if enabled
@@ -6204,7 +6532,8 @@ self.onmessage = function (e) {
          * @param {number} amount - Item amount (base recipe amount)
          * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
          * @param {number|null} artisanAmount - Artisan-adjusted amount, or null if not applicable
-         * @param {string|null} itemHrid - Item HRID for tax rate lookup
+         * @param {string|null} itemHrid - Item HRID for tax rate lookup and decompose value lookup
+         * @param {number} enhancementLevel - Enhancement level, for the decompose value's essence bonus
          */
         injectPriceDisplay(
             tooltipElement,
@@ -6212,7 +6541,8 @@ self.onmessage = function (e) {
             amount,
             isCollectionTooltip = false,
             artisanAmount = null,
-            itemHrid = null
+            itemHrid = null,
+            enhancementLevel = 0
         ) {
             const tooltipText = isCollectionTooltip
                 ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
@@ -6239,8 +6569,10 @@ self.onmessage = function (e) {
             }
 
             // Format prices, using "-" for missing values
-            const askDisplay = price.ask > 0 ? formatTooltipPrice(price.ask) : '-';
-            const bidDisplay = price.bid > 0 ? formatTooltipPrice(price.bid) : '-';
+            const askDisplay =
+                price.ask > 0 ? formatTooltipPrice(price.ask) + warningIcon_js.buildOutlierPriceWarningIcon(price.askOutlier) : '-';
+            const bidDisplay =
+                price.bid > 0 ? formatTooltipPrice(price.bid) + warningIcon_js.buildOutlierPriceWarningIcon(price.bidOutlier) : '-';
 
             // Calculate totals when at least ask exists and amount > 1
             const effectiveAmount = artisanAmount || amount;
@@ -6264,6 +6596,23 @@ self.onmessage = function (e) {
                 const effAsk = price.ask > 0 ? formatTooltipPrice(profitHelpers_js.calculatePriceAfterTax(price.ask, taxRate)) : '-';
                 const effBid = price.bid > 0 ? formatTooltipPrice(profitHelpers_js.calculatePriceAfterTax(price.bid, taxRate)) : '-';
                 priceDiv.innerHTML += `<br><span style="color: ${config.COLOR_TEXT_SECONDARY};">${i18n_js.t('tooltipPrices.effLine', { ask: effAsk, bid: effBid })}</span>`;
+            }
+
+            if (config.getSetting('itemTooltip_decomposeValue') && itemHrid) {
+                const decomposeValue = alchemyProfitCalculator.calculateDecomposeValue(itemHrid, enhancementLevel);
+                if (decomposeValue && (decomposeValue.ask > 0 || decomposeValue.bid > 0)) {
+                    const dvAsk =
+                        decomposeValue.ask > 0
+                            ? formatTooltipPrice(decomposeValue.ask) +
+                              warningIcon_js.buildOutlierPriceWarningIcon(decomposeValue.askOutlier)
+                            : '-';
+                    const dvBid =
+                        decomposeValue.bid > 0
+                            ? formatTooltipPrice(decomposeValue.bid) +
+                              warningIcon_js.buildOutlierPriceWarningIcon(decomposeValue.bidOutlier)
+                            : '-';
+                    priceDiv.innerHTML += `<br>${i18n_js.t('tooltipPrices.decomposeValueLine', { ask: dvAsk, bid: dvBid })}`;
+                }
             }
 
             tooltipText.appendChild(priceDiv);
@@ -6526,7 +6875,14 @@ self.onmessage = function (e) {
          * @param {Object} evData - Expected value calculation data
          * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
          */
-        injectExpectedValueDisplay(tooltipElement, evData, isCollectionTooltip = false, keyPrice = 0, keyName = null) {
+        injectExpectedValueDisplay(
+            tooltipElement,
+            evData,
+            isCollectionTooltip = false,
+            keyPrice = 0,
+            keyName = null,
+            keyPriceOutlier = false
+        ) {
             const tooltipText = isCollectionTooltip
                 ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
                 : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -6554,12 +6910,12 @@ self.onmessage = function (e) {
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             // Expected value (simple display)
-            html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${i18n_js.t('tooltipPrices.expectedReturnLine', { value: formatTooltipPrice(evData.expectedValue) })}</div>`;
+            html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${i18n_js.t('tooltipPrices.expectedReturnLine', { value: formatTooltipPrice(evData.expectedValue) })}${warningIcon_js.buildOutlierPriceWarningIcon(evData.hasOutlierPrices)}</div>`;
             if (keyPrice > 0) {
                 const keyLine = keyName
                     ? i18n_js.t('tooltipPrices.keyCostNamedLine', { name: keyName, value: formatTooltipPrice(keyPrice) })
                     : i18n_js.t('tooltipPrices.keyCostLine', { value: formatTooltipPrice(keyPrice) });
-                html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS};">${keyLine}</div>`;
+                html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS};">${keyLine}${warningIcon_js.buildOutlierPriceWarningIcon(keyPriceOutlier)}</div>`;
                 html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${i18n_js.t('tooltipPrices.netValueLine', { value: formatTooltipPrice(evData.expectedValue - keyPrice) })}</div>`;
             }
 
@@ -6596,7 +6952,7 @@ self.onmessage = function (e) {
                         const dropRatePercent = formatters_js.formatPercentage(drop.dropRate, 2);
 
                         // Show full drop breakdown
-                        html += `<div>${i18n_js.t('tooltipPrices.dropWithPriceLine', { itemName: drop.itemName, dropRate: dropRatePercent, avgCount: drop.avgCount.toFixed(2), value: formatTooltipPrice(drop.expectedValue) })}</div>`;
+                        html += `<div>${i18n_js.t('tooltipPrices.dropWithPriceLine', { itemName: drop.itemName, dropRate: dropRatePercent, avgCount: drop.avgCount.toFixed(2), value: formatTooltipPrice(drop.expectedValue) })}${warningIcon_js.buildOutlierPriceWarningIcon(drop.isOutlier)}</div>`;
                     }
                 }
 
@@ -7290,8 +7646,9 @@ self.onmessage = function (e) {
             const restorePerSecond = recoveryDuration > 0 ? restoreAmount / recoveryDuration : 0;
 
             // Get market price for cost calculations
-            const price = marketAPI.getPrice(itemHrid, 0);
-            const askPrice = price?.ask || 0;
+            const priceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+            const askPrice = priceInfo.value || 0;
+            const isOutlier = askPrice > 0 ? priceInfo.isOutlier : false;
 
             // Cost per HP or MP
             const costPerPoint = askPrice > 0 ? askPrice / restoreAmount : 0;
@@ -7308,6 +7665,7 @@ self.onmessage = function (e) {
                 cooldownDuration, // How often you can use it
                 askPrice,
                 costPerPoint,
+                isOutlier,
                 dailyMax,
                 usesPerDay,
             };
@@ -7352,7 +7710,7 @@ self.onmessage = function (e) {
 
             // Cost efficiency line
             if (stats.costPerPoint > 0) {
-                html += `<div>${i18n_js.t('tooltipConsumables.costPerPointLine', { cost: formatters_js.numberFormatter(stats.costPerPoint, 1), type: stats.restoreType })}</div>`;
+                html += `<div>${i18n_js.t('tooltipConsumables.costPerPointLine', { cost: formatters_js.numberFormatter(stats.costPerPoint, 1), type: stats.restoreType })}${warningIcon_js.buildOutlierPriceWarningIcon(stats.isOutlier)}</div>`;
             } else if (stats.askPrice === 0) {
                 html += `<div style="color: gray; font-style: italic;">${i18n_js.t('tooltipConsumables.costNoDataLabel')}</div>`;
             }
@@ -10097,6 +10455,7 @@ self.onmessage = function (e) {
                 enhancementLevel: listing.enhancementLevel,
             }));
             const priceCache = marketAPI.getPricesBatch(itemsToPrice);
+            const outlierKeys = priceCacheOutlierGuard_js.applyOutlierGuardToPriceCache(priceCache);
 
             // Build set of user's own listing IDs so we can exclude them when
             // looking up the "top competing order" in the shared order book.
@@ -10110,7 +10469,7 @@ self.onmessage = function (e) {
             this.addDataToRows(tbody);
 
             // Add price displays to each row
-            this.addPriceDisplays(tbody, priceCache, ownListingIds);
+            this.addPriceDisplays(tbody, priceCache, ownListingIds, outlierKeys);
 
             // Check if we should mark as fully processed
             let fullyProcessed = true;
@@ -10610,8 +10969,9 @@ self.onmessage = function (e) {
          * @param {HTMLElement} tbody - Table body element
          * @param {Map} priceCache - Pre-fetched price cache
          * @param {Set<number>} ownListingIds - User's own listing IDs (excluded from "top competing order")
+         * @param {Set<string>} outlierKeys - "itemHrid:enhancementLevel" keys flagged by the outlier guard
          */
-        addPriceDisplays(tbody, priceCache, ownListingIds = new Set()) {
+        addPriceDisplays(tbody, priceCache, ownListingIds = new Set(), outlierKeys = new Set()) {
             for (const row of tbody.querySelectorAll('tr')) {
                 // Skip if displays already added
                 if (row.querySelector('.mwi-listing-price-cell')) {
@@ -10643,7 +11003,8 @@ self.onmessage = function (e) {
                         isSell,
                         price,
                         priceCache,
-                        ownListingIds
+                        ownListingIds,
+                        outlierKeys
                     );
                     row.insertBefore(topOrderCell, insertBeforeCell);
 
@@ -10695,8 +11056,9 @@ self.onmessage = function (e) {
                         enhancementLevel,
                         isSell,
                         priceCache,
-                        ownListingIds
-                    );
+                        ownListingIds,
+                        outlierKeys
+                    ).price;
                     row.dataset.mwiTopOrderPrice =
                         topOrderPriceVal !== null && topOrderPriceVal >= 0 ? String(topOrderPriceVal) : '';
                     if (config.getSetting('market_showTopOrderAge')) {
@@ -10738,10 +11100,12 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Get the top competing order price for a listing (shared by cell display and sort)
-         * @returns {number|null} Price or null if unavailable
+         * Get the top competing order price for a listing (shared by cell display and sort). When no
+         * live order book snapshot is available, falls back to the batch market price cache, which is
+         * only outlier-safe because callers run it through `applyOutlierGuardToPriceCache` first.
+         * @returns {{price: number|null, isOutlier: boolean}}
          */
-        _getTopOrderPrice(itemHrid, enhancementLevel, isSell, priceCache, ownListingIds) {
+        _getTopOrderPrice(itemHrid, enhancementLevel, isSell, priceCache, ownListingIds, outlierKeys = new Set()) {
             const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
             if (cacheEntry) {
                 const orderBookData = cacheEntry.data || cacheEntry;
@@ -10750,13 +11114,14 @@ self.onmessage = function (e) {
                     if (orderBook) {
                         const topOrders = isSell ? orderBook.asks : orderBook.bids;
                         const topCompeting = topOrders?.find((o) => !ownListingIds.has(o.listingId));
-                        if (topCompeting) return topCompeting.price;
+                        if (topCompeting) return { price: topCompeting.price, isOutlier: false };
                     }
                 }
             }
             const key = `${itemHrid}:${enhancementLevel}`;
             const marketPrice = priceCache.get(key);
-            return marketPrice ? (isSell ? marketPrice.ask : marketPrice.bid) : null;
+            if (!marketPrice) return { price: null, isOutlier: false };
+            return { price: isSell ? marketPrice.ask : marketPrice.bid, isOutlier: outlierKeys.has(key) };
         }
 
         /**
@@ -10791,10 +11156,26 @@ self.onmessage = function (e) {
          * @param {number} price - Listing price
          * @param {Map} priceCache - Pre-fetched price cache (fallback)
          * @param {Set<number>} ownListingIds - User's own listing IDs to exclude
+         * @param {Set<string>} outlierKeys - "itemHrid:enhancementLevel" keys flagged by the outlier guard
          * @returns {HTMLElement} Table cell element
          */
-        createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache, ownListingIds = new Set()) {
-            const topOrderPrice = this._getTopOrderPrice(itemHrid, enhancementLevel, isSell, priceCache, ownListingIds);
+        createTopOrderPriceCell(
+            itemHrid,
+            enhancementLevel,
+            isSell,
+            price,
+            priceCache,
+            ownListingIds = new Set(),
+            outlierKeys = new Set()
+        ) {
+            const { price: topOrderPrice, isOutlier } = this._getTopOrderPrice(
+                itemHrid,
+                enhancementLevel,
+                isSell,
+                priceCache,
+                ownListingIds,
+                outlierKeys
+            );
             const lastUpdated = estimatedListingAge.orderBooksCache[itemHrid]?.lastUpdated ?? null;
 
             if (topOrderPrice === null || topOrderPrice === -1) {
@@ -10810,7 +11191,7 @@ self.onmessage = function (e) {
                   : '#00FF00';
             const title = lastUpdated ? estimatedListingAge.getStalenessTooltip(lastUpdated) : undefined;
 
-            return createStyledCell(formatters_js.formatKMB(topOrderPrice, 1), color, { title });
+            return createStyledCell(formatters_js.formatKMB(topOrderPrice, 1) + (isOutlier ? ' ⚠' : ''), color, { title });
         }
 
         /**
@@ -11955,8 +12336,8 @@ self.onmessage = function (e) {
      * cost-transparency UI.
      * @param {string} containerHrid
      * @returns {{
-     *   entryKey: {hrid: string, name: string, price: number}|null,
-     *   chestKey: {hrid: string, name: string, price: number}|null,
+     *   entryKey: {hrid: string, name: string, price: number, isOutlier: boolean}|null,
+     *   chestKey: {hrid: string, name: string, price: number, isOutlier: boolean}|null,
      *   total: number,
      * }}
      */
@@ -11964,20 +12345,27 @@ self.onmessage = function (e) {
         const entryKeyHrid = DUNGEON_ENTRY_KEYS[containerHrid];
         const chestKeyHrid = DUNGEON_CHEST_KEYS[containerHrid];
 
-        const entryKey = entryKeyHrid
-            ? {
-                  hrid: entryKeyHrid,
-                  name: dataManager.getItemDetails(entryKeyHrid)?.name || entryKeyHrid,
-                  price: getKeyPrice(entryKeyHrid) ?? 0,
-              }
-            : null;
-        const chestKey = chestKeyHrid
-            ? {
-                  hrid: chestKeyHrid,
-                  name: dataManager.getItemDetails(chestKeyHrid)?.name || chestKeyHrid,
-                  price: getKeyPrice(chestKeyHrid) ?? 0,
-              }
-            : null;
+        let entryKey = null;
+        if (entryKeyHrid) {
+            const { price, isOutlier } = getKeyPriceInfo(entryKeyHrid);
+            entryKey = {
+                hrid: entryKeyHrid,
+                name: dataManager.getItemDetails(entryKeyHrid)?.name || entryKeyHrid,
+                price: price ?? 0,
+                isOutlier,
+            };
+        }
+
+        let chestKey = null;
+        if (chestKeyHrid) {
+            const { price, isOutlier } = getKeyPriceInfo(chestKeyHrid);
+            chestKey = {
+                hrid: chestKeyHrid,
+                name: dataManager.getItemDetails(chestKeyHrid)?.name || chestKeyHrid,
+                price: price ?? 0,
+                isOutlier,
+            };
+        }
 
         return {
             entryKey,
@@ -12220,12 +12608,15 @@ self.onmessage = function (e) {
      *   breakdown: {
      *     successRate: number,
      *     materialCost: number,
+     *     materialIsOutlier: boolean,
      *     coinCost: number,
      *     catalystHrid: string|null,
      *     catalystCostOnSuccess: number,
+     *     catalystIsOutlier: boolean,
      *     netOnFail: number,
-     *     mainBranches: Array<{itemHrid: string, dropRate: number, count: number, payout: number, isSelfReturn: boolean}>,
-     *     bonusDrops: Array<{itemHrid: string, dropRate: number, count: number, payout: number}>,
+     *     mainBranches: Array<{itemHrid: string, dropRate: number, count: number, payout: number, isSelfReturn: boolean, isOutlier: boolean}>,
+     *     bonusDrops: Array<{itemHrid: string, dropRate: number, count: number, payout: number, isOutlier: boolean}>,
+     *     hasOutlierPrices: boolean,
      *   },
      * }|null} null if the item isn't transmutable or has no usable market/success-rate data.
      */
@@ -12233,6 +12624,7 @@ self.onmessage = function (e) {
         const profit = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, useLiveSetup, null, catalystChoice);
         if (!profit || !(profit.successRate > 0)) return null;
 
+        const materialRequirement = profit.requirementCosts.find((r) => r.itemHrid !== '/items/coin');
         const coinCost = profit.requirementCosts.find((r) => r.itemHrid === '/items/coin')?.costPerAction ?? 0;
         const attemptCost = profit.grossMaterialCost + coinCost;
         const catalystCostOnSuccess = profit.catalystPrice || 0;
@@ -12250,6 +12642,7 @@ self.onmessage = function (e) {
                 count: d.count,
                 payout: mainBranchPayout(d, profit),
                 isSelfReturn: d.isSelfReturn || false,
+                isOutlier: d.isOutlier || false,
             }));
         const bonusDrops = dropRevenues
             .filter((d) => (d.isEssence || d.isRare) && d.dropRate > 0)
@@ -12258,6 +12651,7 @@ self.onmessage = function (e) {
                 dropRate: d.dropRate,
                 count: d.count,
                 payout: d.revenuePerAttempt / d.dropRate,
+                isOutlier: d.isOutlier || false,
             }));
 
         return {
@@ -12268,12 +12662,15 @@ self.onmessage = function (e) {
             breakdown: {
                 successRate: profit.successRate,
                 materialCost: profit.grossMaterialCost,
+                materialIsOutlier: materialRequirement?.isOutlier || false,
                 coinCost,
                 catalystHrid: profit.catalystPrice ? profit.catalystCost?.itemHrid || null : null,
                 catalystCostOnSuccess,
+                catalystIsOutlier: profit.catalystCost?.isOutlier || false,
                 netOnFail,
                 mainBranches,
                 bonusDrops,
+                hasOutlierPrices: profit.hasOutlierPrices || false,
             },
         };
     }
@@ -12354,11 +12751,13 @@ self.onmessage = function (e) {
      *   stepFn: function(state: Object, rng: function(): number): Object,
      *   isTargetReached: function(state: Object): boolean,
      *   initialState: {level: number},
+     *   isOutlier: boolean,
      * }|null} null if the item/params are invalid or have no usable cost data. expectedTotalCost is
      *   the closed-form expected gold spend from startLevel to targetLevel (attempts * costPerAttempt
      *   + protectionCount * protectionCostOnFailure) — the natural costPerAction for a depth-cap
      *   check against the resulting item, since exactly one item at targetLevel is produced per
-     *   completed run.
+     *   completed run. isOutlier only reflects the per-attempt material cost - getCheapestProtectionPrice()
+     *   has no outlier visibility of its own (same pre-existing gap documented in equipment-resolver.js).
      */
     function buildEnhancementModel(itemHrid, params) {
         const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -12411,6 +12810,7 @@ self.onmessage = function (e) {
             },
             isTargetReached: (state) => state.level >= targetLevel,
             initialState: { level: startLevel },
+            isOutlier: perAttemptMaterial.isOutlier || false,
         };
     }
 
@@ -12905,6 +13305,7 @@ self.onmessage = function (e) {
                     protectionCostOnFailure: enhancementModel.protectionCostOnFailure,
                     startLevel,
                     targetLevel,
+                    isOutlier: enhancementModel.isOutlier,
                 };
                 if (itemDetails.isTradable !== false) {
                     this.lastDepthCapContext = {
@@ -13128,7 +13529,9 @@ self.onmessage = function (e) {
                 rows.push(
                     `<div>${i18n_js.t('riskOfRuinUi.entryKeyLine', {
                     name: costBreakdown.entryKey.name,
-                    price: fmtGold(costBreakdown.entryKey.price),
+                    price:
+                        fmtGold(costBreakdown.entryKey.price) +
+                        warningIcon_js.buildOutlierPriceWarningIcon(costBreakdown.entryKey.isOutlier),
                 })}</div>`
                 );
             }
@@ -13136,7 +13539,9 @@ self.onmessage = function (e) {
                 rows.push(
                     `<div>${i18n_js.t('riskOfRuinUi.chestKeyLine', {
                     name: costBreakdown.chestKey.name,
-                    price: fmtGold(costBreakdown.chestKey.price),
+                    price:
+                        fmtGold(costBreakdown.chestKey.price) +
+                        warningIcon_js.buildOutlierPriceWarningIcon(costBreakdown.chestKey.isOutlier),
                 })}</div>`
                 );
             }
@@ -13196,7 +13601,7 @@ self.onmessage = function (e) {
 
             const rows = [
                 `<div>${i18n_js.t('riskOfRuinUi.successRateLine', { rate: formatters_js.formatPercentage(breakdown.successRate, 2) })}</div>`,
-                `<div>${i18n_js.t('riskOfRuinUi.materialCostLine', { cost: fmtGold(breakdown.materialCost) })}</div>`,
+                `<div>${i18n_js.t('riskOfRuinUi.materialCostLine', { cost: fmtGold(breakdown.materialCost) + warningIcon_js.buildOutlierPriceWarningIcon(breakdown.materialIsOutlier) })}</div>`,
             ];
             if (breakdown.coinCost > 0) {
                 rows.push(`<div>${i18n_js.t('riskOfRuinUi.coinCostLine', { cost: fmtGold(breakdown.coinCost) })}</div>`);
@@ -13205,7 +13610,9 @@ self.onmessage = function (e) {
                 catalystName
                     ? `<div>${i18n_js.t('riskOfRuinUi.catalystCostLine', {
                       name: catalystName,
-                      cost: fmtGold(breakdown.catalystCostOnSuccess),
+                      cost:
+                          fmtGold(breakdown.catalystCostOnSuccess) +
+                          warningIcon_js.buildOutlierPriceWarningIcon(breakdown.catalystIsOutlier),
                   })}</div>`
                     : `<div>${i18n_js.t('riskOfRuinUi.noCatalystUsed')}</div>`
             );
@@ -13222,7 +13629,7 @@ self.onmessage = function (e) {
                             branch.isSelfReturn ? i18n_js.t('riskOfRuinUi.selfReturnLabel', { itemName }) : itemName
                         }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(breakdown.successRate * branch.dropRate, 2)}</td>
-                        <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}${warningIcon_js.buildOutlierPriceWarningIcon(branch.isOutlier)}</td>
                     </tr>`;
                 })
                 .join('');
@@ -13243,7 +13650,7 @@ self.onmessage = function (e) {
                         `<tr>
                         <td style="padding:2px 6px;">${dataManager.getItemDetails(bonus.itemHrid)?.name || bonus.itemHrid}</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(bonus.dropRate, 2)}</td>
-                        <td style="padding:2px 6px; text-align:right;">${fmtGold(bonus.payout)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(bonus.payout)}${warningIcon_js.buildOutlierPriceWarningIcon(bonus.isOutlier)}</td>
                     </tr>`
                 )
                 .join('');
@@ -13276,7 +13683,7 @@ self.onmessage = function (e) {
         }
 
         _enhancementDetailsHTML(
-            { perLevelOutcomeDistributions, costPerAttempt, protectionCostOnFailure, startLevel, targetLevel },
+            { perLevelOutcomeDistributions, costPerAttempt, protectionCostOnFailure, startLevel, targetLevel, isOutlier },
             startingBalance,
             maxSinglePossibleLoss,
             minActions
@@ -13296,7 +13703,9 @@ self.onmessage = function (e) {
                 })
                 .join('');
 
-            const rows2 = [`<div>${i18n_js.t('riskOfRuinUi.costPerAttemptLine', { value: fmtGold(costPerAttempt) })}</div>`];
+            const rows2 = [
+                `<div>${i18n_js.t('riskOfRuinUi.costPerAttemptLine', { value: fmtGold(costPerAttempt) + warningIcon_js.buildOutlierPriceWarningIcon(isOutlier) })}</div>`,
+            ];
             if (protectionCostOnFailure > 0) {
                 rows2.push(
                     `<div>${i18n_js.t('riskOfRuinUi.protectionCostLine', { value: fmtGold(protectionCostOnFailure) })}</div>`
@@ -17601,11 +18010,13 @@ self.onmessage = function (e) {
          * Load default prices from market data
          */
         loadDefaultPrices() {
-            const philoPriceData = marketAPI.getPrice(PHILO_HRID, 0);
-            this.philoPrice = philoPriceData?.bid || 0;
+            const philoPriceInfo = marketData_js.getItemPriceOutlierInfo(PHILO_HRID, { mode: 'bid' });
+            this.philoPrice = philoPriceInfo.value || 0;
+            this.philoPriceIsOutlier = philoPriceInfo.value ? philoPriceInfo.isOutlier : false;
 
-            const catalystPriceData = marketAPI.getPrice(PRIME_CATALYST_HRID, 0);
-            this.catalystPrice = catalystPriceData?.ask || 0;
+            const catalystPriceInfo = marketData_js.getItemPriceOutlierInfo(PRIME_CATALYST_HRID, { mode: 'ask' });
+            this.catalystPrice = catalystPriceInfo.value || 0;
+            this.catalystPriceIsOutlier = catalystPriceInfo.value ? catalystPriceInfo.isOutlier : false;
         }
 
         /**
@@ -17769,9 +18180,10 @@ self.onmessage = function (e) {
             const philoChance = successRate * philoDropRate;
 
             // Get item cost (market ask price)
-            const priceData = marketAPI.getPrice(itemHrid, 0);
-            const itemCost = priceData?.ask;
+            const priceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+            const itemCost = priceInfo.value;
             if (itemCost === null || itemCost === undefined) return null;
+            const itemCostIsOutlier = priceInfo.isOutlier;
 
             // Catalyst cost per action (consumed only on success)
             const catalystCostPerAction = this.useCatalyst ? successRate * this.catalystPrice : 0;
@@ -17785,19 +18197,24 @@ self.onmessage = function (e) {
 
             // Calculate EV of all drops (including philo)
             let evPerAction = 0;
+            let dropsHaveOutlier = false;
             for (const drop of alchemy.transmuteDropTable) {
                 let dropValue;
                 if (drop.itemHrid === PHILO_HRID) {
                     dropValue = this.philoPrice;
+                    if (this.philoPriceIsOutlier) dropsHaveOutlier = true;
                 } else {
-                    const dropPrice = marketAPI.getPrice(drop.itemHrid, 0);
-                    dropValue = dropPrice?.bid;
+                    const dropPriceInfo = marketData_js.getItemPriceOutlierInfo(drop.itemHrid, { mode: 'bid' });
+                    dropValue = dropPriceInfo.value;
                     if (dropValue === null || dropValue === undefined) continue;
+                    if (dropPriceInfo.isOutlier) dropsHaveOutlier = true;
                 }
 
                 const avgCount = (drop.minCount + drop.maxCount) / 2;
                 evPerAction += successRate * drop.dropRate * avgCount * dropValue;
             }
+
+            const isOutlier = itemCostIsOutlier || dropsHaveOutlier || (this.useCatalyst && this.catalystPriceIsOutlier);
 
             // Profit per action (EV now includes philo value)
             const profitPerAction = evPerAction - totalCostPerAction;
@@ -17851,6 +18268,7 @@ self.onmessage = function (e) {
                 profitPerHour,
                 revenuePerHour,
                 costPerHour,
+                isOutlier,
             };
         }
 
@@ -18377,7 +18795,7 @@ self.onmessage = function (e) {
                             break;
                         case 'profitPerPhilo':
                         case 'profitPerHour':
-                            td.textContent = formatters_js.formatLargeNumber(Math.round(value));
+                            td.textContent = formatters_js.formatLargeNumber(Math.round(value)) + (row.isOutlier ? ' ⚠' : '');
                             td.style.color = value >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                             break;
                         case 'revenuePerHour':
@@ -21444,28 +21862,40 @@ self.onmessage = function (e) {
      * @param {string[]} [excludeHrids=[]] - Source item hrids to skip (e.g. Guild Token itself, which
      *   carries its own guildCreditConversions and would otherwise create a circular credit value —
      *   TLA-041).
-     * @returns {{ sell: Object, buy: Object }} Map of creditItemHrid -> cheapest gold cost per credit
+     * @returns {{ sell: Object, buy: Object, sellOutlier: Object, buyOutlier: Object }} Map of
+     *   creditItemHrid -> cheapest gold cost per credit, plus parallel maps of whether that winning
+     *   source item's price was substituted by the market-data outlier guard.
      */
     function buildCheapestPerCredit(itemDetailMap, excludeHrids = []) {
         const sell = {};
         const buy = {};
+        const sellOutlier = {};
+        const buyOutlier = {};
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
             if (excludeHrids.includes(hrid)) continue;
             for (const conv of item.guildCreditConversions || []) {
                 const creditHrid = conv.creditItemHrid;
-                const sellPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
-                const buyPrice = marketData_js.getItemPrice(hrid, { mode: 'bid' });
+                const sellInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'ask' });
+                const buyInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'bid' });
+                const sellPrice = sellInfo.value;
+                const buyPrice = buyInfo.value;
                 if (sellPrice > 0) {
                     const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
-                    if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
+                    if (!sell[creditHrid] || gpc < sell[creditHrid]) {
+                        sell[creditHrid] = gpc;
+                        sellOutlier[creditHrid] = sellInfo.isOutlier;
+                    }
                 }
                 if (buyPrice > 0) {
                     const gpc = (buyPrice * conv.itemCount) / conv.creditCount;
-                    if (!buy[creditHrid] || gpc < buy[creditHrid]) buy[creditHrid] = gpc;
+                    if (!buy[creditHrid] || gpc < buy[creditHrid]) {
+                        buy[creditHrid] = gpc;
+                        buyOutlier[creditHrid] = buyInfo.isOutlier;
+                    }
                 }
             }
         }
-        return { sell, buy };
+        return { sell, buy, sellOutlier, buyOutlier };
     }
 
     /**
@@ -21475,9 +21905,11 @@ self.onmessage = function (e) {
      * can just take index 0.
      * @param {Object} itemDetailMap
      * @param {Object} creditValueTable - creditItemHrid -> coin value per credit
-     * @returns {Array<{creditItemHrid: string, itemCount: number, creditCount: number, goldPerToken: number}>}
+     * @param {Object} [creditOutlierTable={}] - creditItemHrid -> whether that value was substituted
+     *   by the market-data outlier guard (from buildCheapestPerCredit's sellOutlier/buyOutlier)
+     * @returns {Array<{creditItemHrid: string, itemCount: number, creditCount: number, goldPerToken: number, isOutlier: boolean}>}
      */
-    function buildGuildTokenValueByCredit(itemDetailMap, creditValueTable) {
+    function buildGuildTokenValueByCredit(itemDetailMap, creditValueTable, creditOutlierTable = {}) {
         const tokenItem = itemDetailMap[GUILD_TOKEN_HRID];
         const rows = [];
         for (const conv of tokenItem?.guildCreditConversions || []) {
@@ -21488,6 +21920,7 @@ self.onmessage = function (e) {
                 itemCount: conv.itemCount,
                 creditCount: conv.creditCount,
                 goldPerToken: (conv.creditCount / conv.itemCount) * creditValue,
+                isOutlier: creditOutlierTable[conv.creditItemHrid] || false,
             });
         }
         return rows.sort((a, b) => b.goldPerToken - a.goldPerToken);
@@ -21643,7 +22076,7 @@ self.onmessage = function (e) {
                     // Deduct chest key cost for dungeon chests
                     const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
                     if (chestKeyHrid) {
-                        netValue -= getKeyPrice(chestKeyHrid) ?? 0;
+                        netValue -= getKeyPriceInfo(chestKeyHrid).price ?? 0;
                     }
 
                     return netValue;
@@ -21660,6 +22093,15 @@ self.onmessage = function (e) {
             const shopCost = getShopCoinCost(itemHrid);
             if (shopCost > 0) {
                 return shopCost;
+            }
+
+            // Still nothing - fall back to the game's own reference market value. Enhanced items
+            // deliberately do NOT reach this: calculateItemValue() already recomputes their value via
+            // the enhancement path (replacement cost) whenever this returns 0, which is a more
+            // accurate estimate than this generic reference value would be.
+            const referenceValue = marketValuesAPI.getValue(itemHrid, 0);
+            if (referenceValue && referenceValue > 0) {
+                return referenceValue;
             }
         }
 
@@ -21712,17 +22154,21 @@ self.onmessage = function (e) {
         // Dungeon tokens: Best market value per token approach
         // Calculate based on best shop item value (similar to task tokens)
         // Uses profitCalc_pricingMode which defaults to 'hybrid' (ask price)
+        // Note: uses the outlier-guard clamped value for correctness, but doesn't thread isOutlier
+        // into the per-item breakdown here - that breakdown's outlier flags come from a separate
+        // batch ask/bid priceCache check (applyOutlierGuardToPriceCache) that dungeon tokens never
+        // populate, since they have no direct market price of their own.
         if (itemHrid === '/items/chimerical_token') {
-            return tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
+            return tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null)?.value || 0;
         }
         if (itemHrid === '/items/sinister_token') {
-            return tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
+            return tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null)?.value || 0;
         }
         if (itemHrid === '/items/enchanted_token') {
-            return tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
+            return tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null)?.value || 0;
         }
         if (itemHrid === '/items/pirate_token') {
-            return tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
+            return tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null)?.value || 0;
         }
 
         return null; // Not a currency
@@ -21795,7 +22241,7 @@ self.onmessage = function (e) {
             const level = houseData.level || 0;
             if (level === 0) continue;
 
-            const cost = houseCostCalculator_js.calculateHouseBuildCost(houseRoomHrid, level);
+            const { cost, isOutlier } = houseCostCalculator_js.calculateHouseBuildCost(houseRoomHrid, level);
             totalCost += cost;
 
             // Get human-readable name
@@ -21807,6 +22253,7 @@ self.onmessage = function (e) {
                 name: houseName,
                 level: level,
                 cost: cost,
+                isOutlier,
             });
         }
 
@@ -21847,7 +22294,7 @@ self.onmessage = function (e) {
         for (const ability of characterAbilities) {
             if (!ability.abilityHrid || ability.level === 0) continue;
 
-            const cost = abilityCostCalculator_js.calculateAbilityCost(ability.abilityHrid, ability.level);
+            const { cost, isOutlier } = abilityCostCalculator_js.calculateAbilityCost(ability.abilityHrid, ability.level);
             totalCost += cost;
 
             // Use the already-localized ability name (mirrors the lookup pattern in
@@ -21858,6 +22305,7 @@ self.onmessage = function (e) {
                 hrid: ability.abilityHrid,
                 name: `${abilityName} ${ability.level}`,
                 cost: cost,
+                isOutlier,
             };
 
             breakdown.push(abilityData);
@@ -22147,6 +22595,7 @@ self.onmessage = function (e) {
 
         // Batch fetch all prices at once (eliminates ~400 redundant lookups)
         const priceCache = marketAPI.getPricesBatch(itemsToPrice);
+        const outlierKeys = priceCacheOutlierGuard_js.applyOutlierGuardToPriceCache(priceCache);
 
         // Precompute loadout-excluded item hrids: Map<itemHrid → loadoutName>
         const loadoutExcludedHridToName = new Map();
@@ -22221,6 +22670,7 @@ self.onmessage = function (e) {
                 value,
                 itemHrid: item.itemHrid,
                 enhancementLevel: item.enhancementLevel || 0,
+                isOutlier: outlierKeys.has(`${item.itemHrid}:${item.enhancementLevel || 0}`),
             });
         }
 
@@ -22260,6 +22710,7 @@ self.onmessage = function (e) {
                 itemHrid: item.itemHrid,
                 enhancementLevel: item.enhancementLevel || 0,
                 isOpenable: itemDetails?.isOpenable === true,
+                isOutlier: outlierKeys.has(`${item.itemHrid}:${item.enhancementLevel || 0}`),
             };
 
             // Check if this is an ability book
@@ -22364,6 +22815,7 @@ self.onmessage = function (e) {
                     name: itemName,
                     isSell: true,
                     value: listingValue,
+                    isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
                 });
             } else {
                 // Buying: value is locked coins + unclaimed items
@@ -22380,6 +22832,7 @@ self.onmessage = function (e) {
                     name: itemName,
                     isSell: false,
                     value: listingValue,
+                    isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
                 });
             }
         }
@@ -24702,15 +25155,18 @@ self.onmessage = function (e) {
             for (const snapshot of loadoutState.getAllSnapshots()) {
                 if (!snapshot.name || isExcluded('loadout', snapshot.name)) continue;
                 const loadoutItems = [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])];
+                let isOutlier = false;
                 const amount = loadoutItems.reduce((sum, eq) => {
-                    const price = marketAPI.getPrice(eq.itemHrid);
-                    return sum + (price?.ask ?? 0);
+                    const priceInfo = marketData_js.getItemPriceOutlierInfo(eq.itemHrid, { mode: 'ask' });
+                    if (priceInfo.isOutlier) isOutlier = true;
+                    return sum + (priceInfo.value ?? 0);
                 }, 0);
                 add({
                     type: 'loadout',
                     value: snapshot.name,
                     name: i18n_js.t('networthExclusionPopup.loadoutNameLabel', { name: snapshot.name }),
                     amount,
+                    isOutlier,
                 });
             }
 
@@ -24987,8 +25443,8 @@ self.onmessage = function (e) {
                     return loadoutItems.map((eq) => {
                         const details = dataManager.getItemDetails(eq.itemHrid);
                         const name = details?.name || eq.itemHrid.replace('/items/', '');
-                        const price = marketAPI.getPrice(eq.itemHrid);
-                        return { name, value: price?.ask ?? 0 };
+                        const priceInfo = marketData_js.getItemPriceOutlierInfo(eq.itemHrid, { mode: 'ask' });
+                        return { name, value: priceInfo.value ?? 0, isOutlier: priceInfo.isOutlier };
                     });
                 }
             }
@@ -25062,7 +25518,8 @@ self.onmessage = function (e) {
 
                 const amountSpan = document.createElement('span');
                 amountSpan.style.cssText = `color: rgba(255,255,255,0.5); white-space: nowrap; font-size: 0.78rem;`;
-                amountSpan.textContent = entry.amount > 0 ? formatters_js.networthFormatter(Math.round(entry.amount)) : '';
+                amountSpan.textContent =
+                    entry.amount > 0 ? formatters_js.networthFormatter(Math.round(entry.amount)) + (entry.isOutlier ? ' ⚠' : '') : '';
 
                 const actionBtn = document.createElement('button');
                 actionBtn.style.cssText = `
@@ -25121,7 +25578,8 @@ self.onmessage = function (e) {
 
                         const subVal = document.createElement('span');
                         subVal.style.cssText = `white-space: nowrap; color: rgba(255,255,255,0.4);`;
-                        subVal.textContent = sub.value > 0 ? formatters_js.networthFormatter(Math.round(sub.value)) : '';
+                        subVal.textContent =
+                            sub.value > 0 ? formatters_js.networthFormatter(Math.round(sub.value)) + (sub.isOutlier ? ' ⚠' : '') : '';
 
                         subRow.appendChild(subName);
                         subRow.appendChild(subVal);
@@ -25875,7 +26333,7 @@ self.onmessage = function (e) {
 
             return breakdown
                 .map((house) => {
-                    return `${house.name} ${house.level}: ${formatters_js.networthFormatter(Math.round(house.cost))}`;
+                    return `${house.name} ${house.level}: ${formatters_js.networthFormatter(Math.round(house.cost))}${warningIcon_js.buildOutlierPriceWarningIcon(house.isOutlier)}`;
                 })
                 .join('\n');
         }
@@ -25892,7 +26350,7 @@ self.onmessage = function (e) {
 
             return breakdown
                 .map((ability) => {
-                    return `${ability.name}: ${formatters_js.networthFormatter(Math.round(ability.cost))}`;
+                    return `${ability.name}: ${formatters_js.networthFormatter(Math.round(ability.cost))}${warningIcon_js.buildOutlierPriceWarningIcon(ability.isOutlier)}`;
                 })
                 .join('\n');
         }
@@ -25943,7 +26401,7 @@ self.onmessage = function (e) {
 
             return breakdown
                 .map((item) => {
-                    return `${item.name}: ${formatters_js.networthFormatter(Math.round(item.value))}`;
+                    return `${item.name}: ${formatters_js.networthFormatter(Math.round(item.value))}${warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier)}`;
                 })
                 .join('\n');
         }
@@ -25961,7 +26419,7 @@ self.onmessage = function (e) {
             return breakdown
                 .map((listing) => {
                     const typeLabel = listing.isSell ? i18n_js.t('marketHistory.sellLabel') : i18n_js.t('marketHistory.buyLabel');
-                    return `${listing.name} (${typeLabel}): ${formatters_js.networthFormatter(Math.round(listing.value))}`;
+                    return `${listing.name} (${typeLabel}): ${formatters_js.networthFormatter(Math.round(listing.value))}${warningIcon_js.buildOutlierPriceWarningIcon(listing.isOutlier)}`;
                 })
                 .join('\n');
         }
@@ -25991,7 +26449,7 @@ self.onmessage = function (e) {
                         if (item.isOpenable && item.itemHrid) {
                             return this.renderOpenableItemRow(item);
                         }
-                        return `<div>${item.name} x${formatters_js.formatKMB(item.count)}: ${formatters_js.networthFormatter(Math.round(item.value))}</div>`;
+                        return `<div>${item.name} x${formatters_js.formatKMB(item.count)}: ${formatters_js.networthFormatter(Math.round(item.value))}${warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier)}</div>`;
                     })
                     .join('');
 
@@ -26250,16 +26708,19 @@ self.onmessage = function (e) {
                 const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[item.itemHrid];
                 let keyPrice = 0;
                 let keyName = null;
+                let keyPriceOutlier = false;
                 if (chestKeyHrid) {
-                    keyPrice = getKeyPrice(chestKeyHrid) ?? 0;
+                    const keyPriceInfo = getKeyPriceInfo(chestKeyHrid);
+                    keyPrice = keyPriceInfo.price ?? 0;
+                    keyPriceOutlier = keyPriceInfo.isOutlier;
                     keyName = dataManager.getItemDetails(chestKeyHrid)?.name;
                 }
-                detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName);
+                detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName, keyPriceOutlier);
             }
 
             return `
             <div id="${toggleId}" style="cursor: pointer; padding: 1px 0;">
-                + ${item.name} x${formatters_js.formatKMB(item.count)}: ${formatters_js.networthFormatter(Math.round(item.value))}
+                + ${item.name} x${formatters_js.formatKMB(item.count)}: ${formatters_js.networthFormatter(Math.round(item.value))}${warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier)}
             </div>
             <div id="${detailId}" style="display: none; margin-left: 16px; color: #bbb; margin-bottom: 2px;">
                 ${detailsHTML}
@@ -26271,15 +26732,17 @@ self.onmessage = function (e) {
          * @param {Object} evData - Expected value data from expectedValueCalculator
          * @param {number} keyPrice - Chest key market price (0 for non-dungeon chests)
          * @param {string|null} keyName - Chest key item name
+         * @param {boolean} [keyPriceOutlier=false] - Whether the key price was substituted by the
+         *   market-data outlier guard
          * @returns {string} HTML string
          */
-        buildChestDropsHTML(evData, keyPrice, keyName) {
-            let html = `<div>${i18n_js.t('networthDisplay.evPerChestLabel', { value: formatters_js.networthFormatter(Math.round(evData.expectedValue)) })}</div>`;
+        buildChestDropsHTML(evData, keyPrice, keyName, keyPriceOutlier = false) {
+            let html = `<div>${i18n_js.t('networthDisplay.evPerChestLabel', { value: formatters_js.networthFormatter(Math.round(evData.expectedValue)) })}${warningIcon_js.buildOutlierPriceWarningIcon(evData.hasOutlierPrices)}</div>`;
             if (keyPrice > 0) {
                 const label = keyName
                     ? i18n_js.t('networthDisplay.keyLabelWithName', { name: keyName })
                     : i18n_js.t('networthDisplay.keyCostLabel');
-                html += `<div>\u2212 ${label}: ${formatters_js.networthFormatter(Math.round(keyPrice))}</div>`;
+                html += `<div>\u2212 ${label}: ${formatters_js.networthFormatter(Math.round(keyPrice))}${warningIcon_js.buildOutlierPriceWarningIcon(keyPriceOutlier)}</div>`;
                 html += `<div>${i18n_js.t('networthDisplay.netPerChestLabel', { value: formatters_js.networthFormatter(Math.round(evData.expectedValue - keyPrice)) })}</div>`;
             }
             const pricedDrops = evData.drops.filter((d) => d.hasPriceData);
@@ -26287,7 +26750,7 @@ self.onmessage = function (e) {
                 html += '<div style="margin-top: 3px;">';
                 for (const drop of pricedDrops) {
                     const pct = (drop.dropRate * 100).toFixed(1);
-                    html += `<div>\u2022 ${drop.itemName} (${pct}%): ${formatters_js.networthFormatter(Math.round(drop.expectedValue))}</div>`;
+                    html += `<div>\u2022 ${drop.itemName} (${pct}%): ${formatters_js.networthFormatter(Math.round(drop.expectedValue))}${warningIcon_js.buildOutlierPriceWarningIcon(drop.isOutlier)}</div>`;
                 }
                 html += '</div>';
             }
@@ -26719,13 +27182,13 @@ self.onmessage = function (e) {
      * @param {number} enhancementLevel - Enhancement level
      * @param {'sell'|'buy'} side - 'sell' for a gained item, 'buy' for a consumed item
      * @param {Object|null} itemDetails - dataManager.getItemDetails(itemHrid) result
-     * @returns {{value: number, source: string}|null} Resolved unit value or null if unavailable
+     * @returns {{value: number, source: string, isOutlier: boolean}|null} Resolved unit value or null if unavailable
      */
     function resolveUnitValue(itemHrid, enhancementLevel, side, itemDetails) {
         if (itemHrid === TASK_TOKEN_HRID) {
             const tokenData = calculateTaskTokenValue();
             if (tokenData.error || !(tokenData.tokenValue > 0)) return null;
-            return { value: tokenData.tokenValue, source: 'taskToken' };
+            return { value: tokenData.tokenValue, source: 'taskToken', isOutlier: false };
         }
 
         if (side === 'sell') {
@@ -26735,11 +27198,11 @@ self.onmessage = function (e) {
                 resolved.needsTax && itemDetails?.isTradable !== false
                     ? profitHelpers_js.calculatePriceAfterTax(resolved.value, profitConstants_js.MARKET_TAX)
                     : resolved.value;
-            return { value, source: resolved.source };
+            return { value, source: resolved.source, isOutlier: resolved.isOutlier || false };
         }
 
         const resolved = expectedValueCalculator.resolveBuySideValue(itemHrid, enhancementLevel);
-        return resolved ? { value: resolved.value, source: resolved.source } : null;
+        return resolved ? { value: resolved.value, source: resolved.source, isOutlier: resolved.isOutlier || false } : null;
     }
 
     /**
@@ -26750,12 +27213,13 @@ self.onmessage = function (e) {
      * @param {string} params.currentTimestamp - ISO timestamp from the init_character_data payload
      * @param {string} params.lastOfflineTime - ISO timestamp the character went offline (character.lastOfflineTime)
      * @returns {Object} { revenue, cost, profit, revenuePerDay, costPerDay, profitPerDay,
-     *   durationSeconds, isPartial, unvaluedItems, lines }
+     *   durationSeconds, isPartial, hasOutlierPrices, unvaluedItems, lines }
      */
     function calculateOfflineEconomics({ offlineItems, currentTimestamp, lastOfflineTime }) {
         let revenue = 0;
         let cost = 0;
         let isPartial = false;
+        let hasOutlierPrices = false;
         const unvaluedItems = [];
         const lines = [];
 
@@ -26781,6 +27245,7 @@ self.onmessage = function (e) {
             } else {
                 cost += totalValue;
             }
+            if (resolved.isOutlier) hasOutlierPrices = true;
 
             lines.push({
                 itemHrid,
@@ -26790,6 +27255,7 @@ self.onmessage = function (e) {
                 unitValue: resolved.value,
                 totalValue,
                 source: resolved.source,
+                isOutlier: resolved.isOutlier,
             });
         }
 
@@ -26808,6 +27274,7 @@ self.onmessage = function (e) {
             profitPerDay: perDay(profit),
             durationSeconds,
             isPartial,
+            hasOutlierPrices,
             unvaluedItems,
             lines,
         };
@@ -27124,7 +27591,9 @@ self.onmessage = function (e) {
                     .sort((a, b) => a.offlineCount - b.offlineCount)
             )
         );
-        container.appendChild(renderRow('Profit', economics.profit, economics.profitPerDay, null, null, null));
+        container.appendChild(
+            renderRow('Profit', economics.profit, economics.profitPerDay, null, null, null, economics.hasOutlierPrices)
+        );
 
         return container;
     }
@@ -27162,8 +27631,11 @@ self.onmessage = function (e) {
         label.title = getSourceLabel(line.source);
 
         const value = document.createElement('span');
-        value.textContent = marketData_js.formatPrice(line.totalValue, { decimals: 1 });
+        value.textContent = marketData_js.formatPrice(line.totalValue, { decimals: 1 }) + (line.isOutlier ? ' ⚠' : '');
         value.style.fontVariantNumeric = 'tabular-nums';
+        if (line.isOutlier) {
+            value.title = i18n_js.t('marketData.outlierPriceWarningTooltip');
+        }
 
         row.appendChild(label);
         row.appendChild(value);
@@ -27206,13 +27678,16 @@ self.onmessage = function (e) {
      * @param {'sell'|'buy'|null} side - Which side this row values, for the per-side pricing tooltip
      * @param {Array|null} lines - Valued line items for this side, or null for a non-expandable row
      * @param {Array|null} unvaluedItems - Unvalued items for this side, or null for a non-expandable row
+     * @param {boolean} [forceOutlier=false] - Used for the non-expandable Profit row, which has no
+     *   `lines` of its own to derive this from - true when either Revenue or Cost had an outlier.
      * @returns {Element} Row wrapper element
      */
-    function renderRow(labelKey, value, perDay, side, lines, unvaluedItems) {
+    function renderRow(labelKey, value, perDay, side, lines, unvaluedItems, forceOutlier = false) {
         const label = i18n_js.t(`offlineProgressEconomics.rowLabel${labelKey}`);
         const wrapper = document.createElement('div');
 
         const hasDetails = (lines && lines.length > 0) || (unvaluedItems && unvaluedItems.length > 0);
+        const hasOutlier = forceOutlier || (lines || []).some((line) => line.isOutlier);
 
         const row = document.createElement('div');
         row.style.cssText = `
@@ -27239,7 +27714,8 @@ self.onmessage = function (e) {
         const valueEl = document.createElement('span');
         const sign = value > 0 && labelKey === 'Profit' ? '+' : '';
         const perDayText = perDay !== null ? ` (${sign}${marketData_js.formatPrice(perDay, { decimals: 1 })}/day)` : '';
-        valueEl.textContent = `${sign}${marketData_js.formatPrice(value, { decimals: 1 })}${perDayText}`;
+        valueEl.textContent =
+            `${sign}${marketData_js.formatPrice(value, { decimals: 1 })}${perDayText}` + warningIcon_js.buildOutlierPriceWarningIcon(hasOutlier);
         valueEl.style.color = '#e2e8f0';
         valueEl.style.fontVariantNumeric = 'tabular-nums';
 
@@ -27546,6 +28022,7 @@ self.onmessage = function (e) {
                 }
             }
             const priceCache = marketAPI.getPricesBatch(itemsToPrice);
+            const outlierKeys = priceCacheOutlierGuard_js.applyOutlierGuardToPriceCache(priceCache);
 
             // Get settings for high enhancement cost mode. The expensive
             // calculateEnhancementPath path only runs when the Net Worth feature
@@ -27624,16 +28101,20 @@ self.onmessage = function (e) {
                     const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
                     if (evData && evData.expectedValue > 0) {
                         let netValue = evData.expectedValue;
+                        let isOutlier = evData.hasOutlierPrices || false;
 
                         const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
                         if (chestKeyHrid) {
-                            netValue -= getKeyPrice(chestKeyHrid) ?? 0;
+                            const keyPriceInfo = getKeyPriceInfo(chestKeyHrid);
+                            netValue -= keyPriceInfo.price ?? 0;
+                            isOutlier = isOutlier || keyPriceInfo.isOutlier;
                         }
 
                         itemElem.dataset.askPrice = netValue;
                         itemElem.dataset.bidPrice = netValue;
                         itemElem.dataset.askValue = netValue * itemCount;
                         itemElem.dataset.bidValue = netValue * itemCount;
+                        itemElem.dataset.priceOutlier = isOutlier ? '1' : '0';
                         continue;
                     }
                 }
@@ -27756,6 +28237,7 @@ self.onmessage = function (e) {
                 // Store per-item prices (for badge display)
                 itemElem.dataset.askPrice = askPrice;
                 itemElem.dataset.bidPrice = bidPrice;
+                itemElem.dataset.priceOutlier = outlierKeys.has(`${itemHrid}:${enhancementLevel}`) ? '1' : '0';
 
                 // Store stack totals (for sorting and stack value badges)
                 itemElem.dataset.askValue = askPrice * itemCount;
@@ -28292,10 +28774,17 @@ self.onmessage = function (e) {
                 const existingBadge = itemElem.querySelector('.mwi-stack-price');
 
                 if (stackValue > 0) {
+                    const isOutlier = itemElem.dataset.priceOutlier === '1';
+                    const outlierSuffix = isOutlier ? ' ⚠' : '';
+                    const outlierTitle = isOutlier ? i18n_js.t('marketData.outlierPriceWarningTooltip') : '';
                     if (existingBadge) {
-                        existingBadge.textContent = formatters_js.formatKMB(stackValue, 0);
+                        // Preserves this update path's existing precision (0), distinct from the
+                        // newly-created badge's precision (2) below - a pre-existing inconsistency,
+                        // not something to unify here.
+                        existingBadge.textContent = formatters_js.formatKMB(stackValue, 0) + outlierSuffix;
+                        existingBadge.title = outlierTitle;
                     } else {
-                        this.renderPriceBadge(itemElem, stackValue);
+                        this.renderPriceBadge(itemElem, stackValue, outlierSuffix, outlierTitle);
                     }
                 } else if (existingBadge) {
                     existingBadge.remove();
@@ -28314,8 +28803,10 @@ self.onmessage = function (e) {
          * Render price badge on item
          * @param {Element} itemElem - Item container element
          * @param {number} stackValue - Total stack value
+         * @param {string} [outlierSuffix] - Appended to the badge text when flagged (e.g. ' ⚠')
+         * @param {string} [outlierTitle] - Tooltip text when flagged, empty string otherwise
          */
-        renderPriceBadge(itemElem, stackValue) {
+        renderPriceBadge(itemElem, stackValue, outlierSuffix = '', outlierTitle = '') {
             // Ensure item has relative positioning
             itemElem.style.position = 'relative';
 
@@ -28334,7 +28825,8 @@ self.onmessage = function (e) {
             pointer-events: none;
             text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
         `;
-            badge.textContent = formatters_js.formatKMB(stackValue, 2);
+            badge.textContent = formatters_js.formatKMB(stackValue, 2) + outlierSuffix;
+            badge.title = outlierTitle;
 
             // Insert into item
             const itemInner = itemElem.querySelector('[class*="Item_item"]');
@@ -28560,14 +29052,15 @@ self.onmessage = function (e) {
             // Get per-item prices from dataset
             const bidPrice = parseFloat(itemElem.dataset.bidPrice) || 0;
             const askPrice = parseFloat(itemElem.dataset.askPrice) || 0;
+            const isOutlier = itemElem.dataset.priceOutlier === '1';
 
             // Create or update bid badge
             const existingBid = itemElem.querySelector('.mwi-badge-price-bid');
             if (bidPrice > 0) {
                 if (existingBid) {
-                    existingBid.textContent = formatters_js.formatKMB(Math.round(bidPrice), 0);
+                    this.updatePriceBadgeText(existingBid, bidPrice, isOutlier);
                 } else {
-                    this.renderPriceBadge(itemElem, bidPrice, 'bid');
+                    this.renderPriceBadge(itemElem, bidPrice, 'bid', isOutlier);
                 }
             } else if (existingBid) {
                 existingBid.remove();
@@ -28577,13 +29070,24 @@ self.onmessage = function (e) {
             const existingAsk = itemElem.querySelector('.mwi-badge-price-ask');
             if (askPrice > 0) {
                 if (existingAsk) {
-                    existingAsk.textContent = formatters_js.formatKMB(Math.round(askPrice), 0);
+                    this.updatePriceBadgeText(existingAsk, askPrice, isOutlier);
                 } else {
-                    this.renderPriceBadge(itemElem, askPrice, 'ask');
+                    this.renderPriceBadge(itemElem, askPrice, 'ask', isOutlier);
                 }
             } else if (existingAsk) {
                 existingAsk.remove();
             }
+        }
+
+        /**
+         * Update an existing price badge's text/tooltip in place.
+         * @param {Element} badge - Existing badge element
+         * @param {number} price - Per-item price
+         * @param {boolean} isOutlier - Whether the market-data outlier guard substituted this price
+         */
+        updatePriceBadgeText(badge, price, isOutlier) {
+            badge.textContent = formatters_js.formatKMB(Math.round(price), 0) + (isOutlier ? ' ⚠' : '');
+            badge.title = isOutlier ? i18n_js.t('marketData.outlierPriceWarningTooltip') : '';
         }
 
         /**
@@ -28598,8 +29102,9 @@ self.onmessage = function (e) {
          * @param {Element} itemElem - Item container element
          * @param {number} price - Per-item price
          * @param {string} type - 'bid' or 'ask'
+         * @param {boolean} isOutlier - Whether the market-data outlier guard substituted this price
          */
-        renderPriceBadge(itemElem, price, type) {
+        renderPriceBadge(itemElem, price, type, isOutlier = false) {
             itemElem.style.position = 'relative';
 
             const badge = document.createElement('div');
@@ -28622,7 +29127,7 @@ self.onmessage = function (e) {
             pointer-events: none;
             text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
         `;
-            badge.textContent = formatters_js.formatKMB(Math.round(price), 0);
+            this.updatePriceBadgeText(badge, price, isOutlier);
 
             const itemInner = itemElem.querySelector('[class*="Item_item"]');
             if (itemInner) {
@@ -28919,12 +29424,14 @@ self.onmessage = function (e) {
             const bagPrice = prices?.ask > 0 ? prices.ask : prices?.bid > 0 ? prices.bid : 0;
             if (bagPrice <= 0) return;
 
+            const bagIsOutlier = prices.ask > 0 ? prices.askOutlier : prices.bidOutlier;
             const cowbellValue = Math.floor(bagPrice / 10);
 
             this._injectSimpleValue(
                 tooltipElement,
                 i18n_js.t('dungeonTokenTooltips.valueGoldTemplate', { value: formatters_js.formatKMB(cowbellValue) }),
-                i18n_js.t('dungeonTokenTooltips.cowbellValueDetail', { bagPrice: formatters_js.formatKMB(bagPrice) }),
+                i18n_js.t('dungeonTokenTooltips.cowbellValueDetail', { bagPrice: formatters_js.formatKMB(bagPrice) }) +
+                    warningIcon_js.buildOutlierPriceWarningIcon(bagIsOutlier),
                 isCollectionTooltip
             );
             dom.fixTooltipOverflow(tooltipElement);
@@ -28983,6 +29490,7 @@ self.onmessage = function (e) {
                         cost: tokenCost,
                         askPrice,
                         goldPerToken: askPrice / tokenCost,
+                        isOutlier: prices.askOutlier,
                     };
                 })
                 .filter(Boolean)
@@ -29006,12 +29514,14 @@ self.onmessage = function (e) {
 
                     let itemValue = 0;
                     let valueSource = '';
+                    let isOutlier = false;
 
                     // Try market price first (tradeable items like Task Crystal)
                     const prices = marketData_js.getItemPrices(shopItem.itemHrid, 0);
                     if (prices?.ask > 0) {
                         itemValue = prices.ask;
                         valueSource = 'ask';
+                        isOutlier = prices.askOutlier;
                     }
 
                     // For openable items, use expected value if higher
@@ -29021,6 +29531,7 @@ self.onmessage = function (e) {
                             if (evData.expectedValue > itemValue) {
                                 itemValue = evData.expectedValue;
                                 valueSource = 'EV';
+                                isOutlier = false;
                             }
                         }
                     }
@@ -29033,6 +29544,7 @@ self.onmessage = function (e) {
                         askPrice: itemValue,
                         goldPerToken: itemValue / tokenCost,
                         valueSource,
+                        isOutlier,
                     };
                 })
                 .filter(Boolean)
@@ -29069,6 +29581,7 @@ self.onmessage = function (e) {
                         cost: tokenCost,
                         askPrice: totalValue,
                         goldPerToken: totalValue / tokenCost,
+                        isOutlier: prices.askOutlier,
                         outputCount,
                     };
                 })
@@ -29086,14 +29599,15 @@ self.onmessage = function (e) {
             const gameData = dataManager.getInitClientData();
             if (!gameData?.itemDetailMap) return [];
 
-            const { sell } = buildCheapestPerCredit(gameData.itemDetailMap);
-            const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell);
+            const { sell, sellOutlier } = buildCheapestPerCredit(gameData.itemDetailMap);
+            const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell, sellOutlier);
 
             return creditRows.map((row) => ({
                 name: gameData.itemDetailMap[row.creditItemHrid]?.name || row.creditItemHrid.split('/').pop(),
                 cost: row.itemCount,
                 askPrice: row.creditCount * sell[row.creditItemHrid],
                 goldPerToken: row.goldPerToken,
+                isOutlier: row.isOutlier,
             }));
         }
 
@@ -29136,13 +29650,13 @@ self.onmessage = function (e) {
                 const valueDisplay =
                     item.valueSource === 'EV'
                         ? `${formatters_js.formatKMB(item.askPrice)} <span style="color:#888; font-size:10px;">EV</span>`
-                        : formatters_js.formatKMB(item.askPrice);
+                        : formatters_js.formatKMB(item.askPrice) + warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier);
 
                 html += `<tr style="${rowStyle}">`;
                 html += `<td style="padding: 2px 4px;">${nameDisplay}</td>`;
                 html += `<td style="text-align: right; padding: 2px 4px;">${formatters_js.formatKMB(item.cost)}</td>`;
                 html += `<td style="text-align: right; padding: 2px 4px;">${valueDisplay}</td>`;
-                html += `<td style="text-align: right; padding: 2px 4px; font-weight: ${fontWeight};">${formatters_js.formatKMB(Math.floor(item.goldPerToken))}</td>`;
+                html += `<td style="text-align: right; padding: 2px 4px; font-weight: ${fontWeight};">${formatters_js.formatKMB(Math.floor(item.goldPerToken))}${warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier)}</td>`;
                 html += '</tr>';
             }
 
@@ -36775,8 +37289,9 @@ self.onmessage = function (e) {
                 const priceNote = drop.hasPriceData
                     ? ''
                     : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${i18n_js.t('openableAnalytics.noPriceYetNote')}</span>`;
+                const outlierNote = warningIcon_js.buildOutlierPriceWarningIcon(drop.isOutlier);
                 const icon = buildItemIconHtml(spriteUrl, drop.itemHrid);
-                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${drop.itemName}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(total)}</span></div>`;
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${drop.itemName}${priceNote}${outlierNote}</span><span style="flex-shrink:0;">${formatMoney(total)}</span></div>`;
             })
             .join('');
     }
@@ -36795,6 +37310,7 @@ self.onmessage = function (e) {
             const existing = byItemHrid.get(drop.itemHrid);
             if (existing) {
                 existing.expectedValue += drop.expectedValue;
+                existing.isOutlier = existing.isOutlier || drop.isOutlier;
             } else {
                 byItemHrid.set(drop.itemHrid, { ...drop });
             }
@@ -37286,4 +37802,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
