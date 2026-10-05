@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.6.0](https://github.com/Celasha/Toolasha/compare/v3.5.0...v3.6.0) (2026-10-05)
+
+
+### Features
+
+* show decompose value alongside price in item tooltips ([b27e70b](https://github.com/Celasha/Toolasha/commit/b27e70ba0428b964dbb332c5934660487f929b18))
+
+
+### Bug Fixes
+
+* guard every displayed market price against outlier listings ([802dfd0](https://github.com/Celasha/Toolasha/commit/802dfd08b44c13f16a4f59be7b3a52731800ca64))
+
 ## [3.5.0](https://github.com/Celasha/Toolasha/compare/v3.4.2...v3.5.0) (2026-10-03)
 
 ### Features
