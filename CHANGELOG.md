@@ -2,10 +2,9 @@
 
 ## [3.6.1](https://github.com/Celasha/Toolasha/compare/v3.6.0...v3.6.1) (2026-10-05)
 
-
 ### Bug Fixes
 
-* resolve the correct skill when injecting time-till-level into skill tooltips ([1911ac8](https://github.com/Celasha/Toolasha/commit/1911ac875b99e3110a8f28b38d51f07f2319bddf))
+- resolve the correct skill when injecting time-till-level into skill tooltips ([1911ac8](https://github.com/Celasha/Toolasha/commit/1911ac875b99e3110a8f28b38d51f07f2319bddf))
 
 ## [3.6.0](https://github.com/Celasha/Toolasha/compare/v3.5.0...v3.6.0) (2026-10-05)
 
