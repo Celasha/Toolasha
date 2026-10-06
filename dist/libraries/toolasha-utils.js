@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.6.1
+ * Version: 3.6.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4431,6 +4431,19 @@
 
 
     /**
+     * The four dungeon currency tokens (Pirate Cove, Chimerical Dungeon, Sinister Dungeon,
+     * Enchanted Dungeon) - none trade directly on the market, but each is spendable in its own
+     * Token Shop for an item that does, so calculateDungeonTokenValue can derive a gold-per-token
+     * rate for all four.
+     */
+    const DUNGEON_TOKEN_HRIDS = new Set([
+        '/items/chimerical_token',
+        '/items/sinister_token',
+        '/items/enchanted_token',
+        '/items/pirate_token',
+    ]);
+
+    /**
      * Calculate dungeon token value based on best shop item value
      * Uses "best market value per token" approach: finds the shop item with highest (market price / token cost)
      * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
@@ -4546,6 +4559,7 @@
 
     var tokenValuation = /*#__PURE__*/Object.freeze({
         __proto__: null,
+        DUNGEON_TOKEN_HRIDS: DUNGEON_TOKEN_HRIDS,
         calculateDungeonTokenValue: calculateDungeonTokenValue,
         calculateTaskTokenValue: calculateTaskTokenValue
     });

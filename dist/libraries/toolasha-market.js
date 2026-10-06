@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.6.1
+ * Version: 3.6.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -28033,16 +28033,9 @@ self.onmessage = function (e) {
                 config.getSetting('networth_highEnhancementUseCost') && config.isFeatureEnabled('networth');
             const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
 
-            // Currency items to skip (actual currencies, not category)
-            const currencyHrids = new Set([
-                '/items/gold_coin',
-                '/items/cowbell',
-                '/items/task_token',
-                '/items/chimerical_token',
-                '/items/sinister_token',
-                '/items/enchanted_token',
-                '/items/pirate_token',
-            ]);
+            // Currency items to skip (actual currencies, not category) - dungeon tokens are handled
+            // separately below since, unlike these, they have a derivable gold-equivalent value.
+            const currencyHrids = new Set(['/items/gold_coin', '/items/cowbell', '/items/task_token']);
 
             for (const itemElem of itemElems) {
                 // Get item HRID from the icon's <use> sprite reference, not the translatable
@@ -28069,6 +28062,21 @@ self.onmessage = function (e) {
                 if (!countElem) continue;
 
                 const itemCount = parseItemCount(countElem.textContent, 0);
+
+                // Dungeon tokens (Pirate/Chimerical/Sinister/Enchanted): no direct market listing,
+                // but each is spendable in its Token Shop for an item that does trade - use the same
+                // best gold-per-token valuation Net Worth already relies on (calculateDungeonTokenValue),
+                // instead of leaving these at 0 like an actual non-convertible currency.
+                if (tokenValuation_js.DUNGEON_TOKEN_HRIDS.has(itemHrid)) {
+                    const tokenValue = tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null);
+                    const perToken = tokenValue?.value > 0 ? tokenValue.value : 0;
+                    itemElem.dataset.askPrice = perToken;
+                    itemElem.dataset.bidPrice = perToken;
+                    itemElem.dataset.askValue = perToken * itemCount;
+                    itemElem.dataset.bidValue = perToken * itemCount;
+                    itemElem.dataset.priceOutlier = perToken > 0 && tokenValue.isOutlier ? '1' : '0';
+                    continue;
+                }
 
                 // Get item details (reused throughout)
                 const itemDetails = gameData.itemDetailMap[itemHrid];
@@ -29189,16 +29197,6 @@ self.onmessage = function (e) {
      */
 
 
-    /**
-     * Token types and their shop data sources
-     */
-    const DUNGEON_TOKENS = new Set([
-        '/items/chimerical_token',
-        '/items/sinister_token',
-        '/items/enchanted_token',
-        '/items/pirate_token',
-    ]);
-
     const TASK_TOKEN = '/items/task_token';
     const LABYRINTH_TOKEN = '/items/labyrinth_token';
     const COWBELL = '/items/cowbell';
@@ -29304,7 +29302,7 @@ self.onmessage = function (e) {
             }
 
             // Route to appropriate handler
-            if (DUNGEON_TOKENS.has(itemHrid)) {
+            if (tokenValuation_js.DUNGEON_TOKEN_HRIDS.has(itemHrid)) {
                 this._handleDungeonToken(tooltipElement, itemHrid, isCollectionTooltip);
             } else if (itemHrid === TASK_TOKEN) {
                 this._handleTaskToken(tooltipElement, isCollectionTooltip);

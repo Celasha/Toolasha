@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.6.1
+ * Version: 3.6.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13528,6 +13528,42 @@
     });
 
     /**
+     * Native Timestamp Normalization (TLA-025C)
+     * Character Activity's native date-like fields (`character.lastOfflineTime`,
+     * `characterInfo.mooPassExpireTime`) are not guaranteed to already be epoch-ms numbers - the
+     * official MWI client explicitly wraps them in `new Date(...)` before any arithmetic/comparison.
+     * This is the one narrow, pure, fail-closed boundary Character Activity normalizes them through
+     * before any stale comparison, offline-cap arithmetic, or MooPass-window comparison.
+     */
+
+    /**
+     * Normalize a native date-like value to a finite epoch-ms number, or null if it cannot be
+     * trusted. Never relies on implicit numeric/string coercion.
+     * @param {number|string|Date|null|undefined} value
+     * @returns {number|null}
+     */
+    function normalizeNativeTimestamp(value) {
+        if (value == null) return null;
+
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : null;
+        }
+
+        if (value instanceof Date) {
+            const ms = value.getTime();
+            return Number.isFinite(ms) ? ms : null;
+        }
+
+        if (typeof value === 'string') {
+            if (value.trim() === '') return null;
+            const ms = new Date(value).getTime();
+            return Number.isFinite(ms) ? ms : null;
+        }
+
+        return null;
+    }
+
+    /**
      * Combat Simulator Export Module (Metz)
      *
      * Reshapes Toolasha's own Shykai-format player export into the array-of-characters shape the
@@ -13544,8 +13580,18 @@
      * gear/abilities not currently equipped, used by the optimizer for alternate-loadout what-ifs).
      * Both are populated for the self character where the data is available (full inventory,
      * skills, ability catalog) and best-effort for party members from whatever a shared profile
-     * happens to carry (enhancing/alchemy level and tool, when present) - speedGear/owned need a
-     * full inventory a shared profile never exposes, so those stay self-only.
+     * happens to carry (enhancing/alchemy level and tool, skillExperience, speedGear from worn gear
+     * only) - `owned` needs a full inventory a shared profile never exposes, so that stays self-only.
+     *
+     * Also adds `hasMooPass`, `inParty`, and `skillExperience` (total XP per combat skill), none of
+     * which Shykai's own format carries.
+     *
+     * This module runs both in-page (the profile-box "Metz Sim Export" button) and cross-domain on
+     * metzlii.github.io itself (the "Import from Toolasha" button on Metz's Setup screen - see
+     * combat-sim-integration-metz.js). The live `dataManager` singleton is only ever populated on
+     * the game domain, so any self-only read that needs it (inventory, MooPass expiry) must fall
+     * back to the cross-domain GM-stored `characterObj` snapshot (same mechanism `getCharacterData()`
+     * already uses) - see `getSelfInventoryItems`/`getSelfHasMooPass` below.
      */
 
 
@@ -13553,6 +13599,7 @@
     const ALCHEMY_TOOL_LOCATION = '/item_locations/alchemy_tool';
     const INVENTORY_LOCATION = '/item_locations/inventory';
     const SPEED_GEAR_STATS = ['enhancingSpeed', 'skillingSpeed'];
+    const COMBAT_SKILL_NAMES = new Set(['attack', 'magic', 'ranged', 'stamina', 'intelligence', 'defense', 'melee']);
 
     /**
      * Drop Shykai's fixed-length blank-slot padding, keeping only genuinely equipped/set entries.
@@ -13643,22 +13690,102 @@
     }
 
     /**
-     * Self-only: scan the full inventory (not just equipped) for items with an enhancing/skilling
-     * speed stat, matching exactly what Metz's own enhancement-cost formula reads
-     * (server/enhanceCost.mjs: noncombatStats.enhancingSpeed + noncombatStats.skillingSpeed).
-     * @param {Array<Object>} inventoryItems - dataManager.getInventory()
+     * Scan a list of items (self: worn + full inventory; teammate: worn only) for enhancing/skilling
+     * speed items, matching exactly what Metz's own enhancement-cost formula reads
+     * (server/enhanceCost.mjs: noncombatStats.enhancingSpeed + noncombatStats.skillingSpeed). One
+     * row per distinct item hrid, keeping the highest enhancement level seen - the same item can
+     * appear twice (worn + a spare in inventory, or two spares at different levels) for self, but
+     * different items (e.g. chance_cape vs chance_cape_refined) are never collapsed together.
+     * @param {Array<Object>} items
      * @param {Object} itemDetailMap
      * @returns {Array<Object>}
      */
-    function buildSpeedGear(inventoryItems, itemDetailMap) {
-        const speedGear = [];
-        for (const item of inventoryItems || []) {
+    function buildSpeedGear(items, itemDetailMap) {
+        const bestLevelByHrid = new Map();
+        for (const item of items || []) {
             const equipmentDetail = itemDetailMap?.[item.itemHrid]?.equipmentDetail;
-            if (equipmentDetail && hasSpeedStat(equipmentDetail)) {
-                speedGear.push({ itemHrid: item.itemHrid, enhancementLevel: item.enhancementLevel || 0 });
+            if (!equipmentDetail || !hasSpeedStat(equipmentDetail)) continue;
+            const enhancementLevel = item.enhancementLevel || 0;
+            const bestSoFar = bestLevelByHrid.get(item.itemHrid);
+            if (bestSoFar === undefined || enhancementLevel > bestSoFar) {
+                bestLevelByHrid.set(item.itemHrid, enhancementLevel);
             }
         }
-        return speedGear;
+        return Array.from(bestLevelByHrid, ([itemHrid, enhancementLevel]) => ({ itemHrid, enhancementLevel }));
+    }
+
+    /**
+     * Teammate speedGear: worn gear only, via the shared profile's wearableItemMap - unlike self, a
+     * shared profile never exposes a teammate's full inventory.
+     * @param {Object} wearableItemMap
+     * @param {Object} itemDetailMap
+     * @returns {Array<Object>}
+     */
+    function buildTeammateSpeedGear(wearableItemMap, itemDetailMap) {
+        return buildSpeedGear(Object.values(wearableItemMap || {}), itemDetailMap);
+    }
+
+    /**
+     * Self-only: live dataManager inventory when running on the game page, falling back to the
+     * cross-domain GM-stored init snapshot (characterObj.characterItems) when running on a
+     * third-party sim page (e.g. Metz's own Setup screen), where the live dataManager singleton is
+     * never populated. getInventory() returns null specifically when the live cache was never
+     * initialized (cross-domain) - a genuinely empty live inventory is `[]`, not null, and must not
+     * trigger the fallback.
+     * @param {Object} characterObj
+     * @returns {Array<Object>}
+     */
+    function getSelfInventoryItems(characterObj) {
+        const liveInventory = dataManager.getInventory();
+        if (liveInventory !== null) return liveInventory;
+        return Array.isArray(characterObj.characterItems)
+            ? characterObj.characterItems.filter((item) => item?.count !== 0)
+            : [];
+    }
+
+    /**
+     * Self-only hasMooPass, sourced from the server-resolved MooPass expiry rather than the live
+     * `moo_pass_buffs_updated` buff list (which can legitimately be empty while MooPass is still
+     * active). Falls back to the cross-domain GM-stored characterObj snapshot the same way
+     * getSelfInventoryItems does, since dataManager.getMooPassExpireTime() is also only populated
+     * on the game domain.
+     * @param {Object} characterObj
+     * @returns {boolean}
+     */
+    function getSelfHasMooPass(characterObj) {
+        const rawExpireTime = dataManager.getMooPassExpireTime() ?? characterObj.characterInfo?.mooPassExpireTime;
+        const expireTime = normalizeNativeTimestamp(rawExpireTime);
+        return expireTime != null && expireTime > Date.now();
+    }
+
+    /**
+     * @param {Object} characterObj
+     * @param {string} [characterId]
+     * @returns {boolean} True if characterId is a member of the character's current party
+     */
+    function isCurrentPartyMember(characterObj, characterId) {
+        const partySlots = characterObj.partyInfo?.partySlotMap;
+        if (!partySlots || !characterId) return false;
+        return Object.values(partySlots).some((member) => member.characterID === characterId);
+    }
+
+    /**
+     * Build the `skillExperience` block ({attack, magic, ranged, stamina, intelligence, defense,
+     * melee} total XP) from a characterSkills-shaped array. The `experience` field is present on
+     * both self (characterObj.characterSkills) and a teammate's shared profile
+     * (profile.profile.characterSkills), so this works for either source unchanged.
+     * @param {Array<Object>} [skills]
+     * @returns {Object|null} null if no combat skill carried an experience value
+     */
+    function buildSkillExperience(skills) {
+        const experience = {};
+        for (const skill of skills || []) {
+            const skillName = skill?.skillHrid?.split('/').pop();
+            if (skillName && COMBAT_SKILL_NAMES.has(skillName) && typeof skill.experience === 'number') {
+                experience[skillName] = skill.experience;
+            }
+        }
+        return Object.keys(experience).length > 0 ? experience : null;
     }
 
     /**
@@ -13712,14 +13839,16 @@
      * @param {string} name
      * @param {Object} shykaiPlayer
      * @param {Object} [extra]
-     * @param {boolean} [extra.hasMooPass] - Self-only
+     * @param {boolean} [extra.hasMooPass]
+     * @param {boolean} [extra.inParty]
+     * @param {Object|null} [extra.skillExperience] - see buildSkillExperience
      * @param {Array<Object>} [extra.skills] - characterSkills-shaped array, for skilling.enhancing/alchemyLevel
-     * @param {Array<Object>} [extra.speedGear] - Self-only, see buildSpeedGear
+     * @param {Array<Object>} [extra.speedGear] - see buildSpeedGear/buildTeammateSpeedGear
      * @param {Object|null} [extra.owned] - Self-only, see buildOwnedBlock
      * @returns {Object}
      */
     function toMetzCharacter(name, shykaiPlayer, extra = {}) {
-        const { hasMooPass, skills, speedGear, owned, ...rest } = extra;
+        const { hasMooPass, inParty, skillExperience, skills, speedGear, owned, ...rest } = extra;
         const { equipment, skilling } = buildSkillingBlock({ skills, equipment: shykaiPlayer.player.equipment, speedGear });
 
         const character = {
@@ -13732,10 +13861,12 @@
             food: { '/action_types/combat': dropBlankSlots(shykaiPlayer.food['/action_types/combat'], 'itemHrid') },
             drinks: { '/action_types/combat': dropBlankSlots(shykaiPlayer.drinks['/action_types/combat'], 'itemHrid') },
             ...(hasMooPass !== undefined && { hasMooPass }),
+            ...(inParty !== undefined && { inParty }),
             ...rest,
         };
         if (skilling) character.skilling = skilling;
         if (owned) character.owned = owned;
+        if (skillExperience) character.skillExperience = skillExperience;
         if (shykaiPlayer.achievements && Object.keys(shykaiPlayer.achievements).length) {
             character.achievements = shykaiPlayer.achievements;
         }
@@ -13751,14 +13882,16 @@
     function buildSelfMetzCharacter(characterObj, clientObj) {
         const selfPlayer = constructSelfPlayer(characterObj, clientObj);
         const itemDetailMap = clientObj?.itemDetailMap;
-        const inventoryItems = dataManager.getInventory() || [];
+        const inventoryItems = getSelfInventoryItems(characterObj);
         const equippedAbilityHrids = new Set(
             (characterObj.combatUnit?.combatAbilities || []).map((ability) => ability.abilityHrid).filter(Boolean)
         );
 
         return toMetzCharacter(characterObj.character?.name || 'Player 1', selfPlayer, {
-            hasMooPass: (dataManager.getMooPassBuffs()?.length ?? 0) > 0,
+            hasMooPass: getSelfHasMooPass(characterObj),
+            inParty: isCurrentPartyMember(characterObj, characterObj.character?.id),
             skills: characterObj.characterSkills,
+            skillExperience: buildSkillExperience(characterObj.characterSkills),
             speedGear: buildSpeedGear(inventoryItems, itemDetailMap),
             owned: buildOwnedBlock({
                 inventoryItems,
@@ -13770,11 +13903,31 @@
     }
 
     /**
+     * Build the toMetzCharacter `extra` object for a teammate, from their shared profile. Everything
+     * here is best-effort evidence a shared profile actually exposes (hasMooPass, characterSkills,
+     * worn equipment) - never backfilled from the self character's own values.
+     * @param {Object} profile
+     * @param {Object} clientObj
+     * @param {boolean} inParty
+     * @returns {Object}
+     */
+    function buildTeammateExtra(profile, clientObj, inParty) {
+        return {
+            hasMooPass: profile.profile?.sharableCharacter?.hasMooPass ?? false,
+            inParty,
+            skills: profile.profile?.characterSkills,
+            skillExperience: buildSkillExperience(profile.profile?.characterSkills),
+            speedGear: buildTeammateSpeedGear(profile.profile?.wearableItemMap, clientObj?.itemDetailMap),
+        };
+    }
+
+    /**
      * Build the array-of-characters export Metz's Setup screen accepts: your own character, plus
      * any party members Toolasha already has a cached profile for (the same profile cache the
-     * Shykai export uses). Only your own character carries hasMooPass and the owned/speedGear parts
-     * of skilling - a teammate's shared profile never exposes full inventory, though it does carry
-     * enhancing/alchemy level and tool when present, which still populate skilling best-effort.
+     * Shykai export uses). Only your own character carries the `owned` block and inventory-sourced
+     * speedGear entries - a teammate's shared profile never exposes full inventory, though it does
+     * carry enhancing/alchemy level and tool, worn speedGear, hasMooPass, and skillExperience when
+     * present, which still populate best-effort.
      * @param {Object|null} [selfLoadoutOverride] - If given, applied to your own character via
      *   applyLoadoutOverrideToMetzCharacter instead of exporting your live equipped state (used by
      *   the profile-box "Export Full Party" action, which exports a NAMED saved loadout for yourself).
@@ -13807,8 +13960,10 @@
                     continue;
                 }
                 const partyPlayer = constructPartyPlayer(profile, clientObj, battleObj);
+                // inParty is always true here - this loop only reaches members already pulled out of
+                // the live partySlotMap, by construction.
                 team.push(
-                    toMetzCharacter(profile.characterName, partyPlayer, { skills: profile.profile?.characterSkills })
+                    toMetzCharacter(profile.characterName, partyPlayer, buildTeammateExtra(profile, clientObj, true))
                 );
             }
         }
@@ -13839,7 +13994,8 @@
             }
             const battleObj = getBattleData();
             const partyPlayer = constructPartyPlayer(profile, clientObj, battleObj);
-            return toMetzCharacter(profile.characterName, partyPlayer, { skills: profile.profile?.characterSkills });
+            const inParty = isCurrentPartyMember(characterObj, externalProfileId);
+            return toMetzCharacter(profile.characterName, partyPlayer, buildTeammateExtra(profile, clientObj, inParty));
         }
 
         return buildSelfMetzCharacter(characterObj, clientObj);
