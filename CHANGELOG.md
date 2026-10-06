@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.6.2](https://github.com/Celasha/Toolasha/compare/v3.6.1...v3.6.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* correct Metz export's hasMooPass/speedGear and add inParty/skillExperience ([8413f24](https://github.com/Celasha/Toolasha/commit/8413f246e0ff5f64e91d937fa01b4ed4842c649d))
+* value dungeon tokens in inventory badges instead of showing none ([542ebcc](https://github.com/Celasha/Toolasha/commit/542ebcc7913443e57ffa0204e4061db687a28a6d))
+
 ## [3.6.1](https://github.com/Celasha/Toolasha/compare/v3.6.0...v3.6.1) (2026-10-05)
 
 ### Bug Fixes
