@@ -19,6 +19,7 @@ import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profi
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
 import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { calculateDungeonTokenValue, DUNGEON_TOKEN_HRIDS } from '../../utils/token-valuation.js';
 
 /**
  * InventoryBadgeManager class manages all inventory item badges from multiple features
@@ -302,16 +303,9 @@ class InventoryBadgeManager {
             config.getSetting('networth_highEnhancementUseCost') && config.isFeatureEnabled('networth');
         const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
 
-        // Currency items to skip (actual currencies, not category)
-        const currencyHrids = new Set([
-            '/items/gold_coin',
-            '/items/cowbell',
-            '/items/task_token',
-            '/items/chimerical_token',
-            '/items/sinister_token',
-            '/items/enchanted_token',
-            '/items/pirate_token',
-        ]);
+        // Currency items to skip (actual currencies, not category) - dungeon tokens are handled
+        // separately below since, unlike these, they have a derivable gold-equivalent value.
+        const currencyHrids = new Set(['/items/gold_coin', '/items/cowbell', '/items/task_token']);
 
         for (const itemElem of itemElems) {
             // Get item HRID from the icon's <use> sprite reference, not the translatable
@@ -338,6 +332,21 @@ class InventoryBadgeManager {
             if (!countElem) continue;
 
             const itemCount = parseItemCount(countElem.textContent, 0);
+
+            // Dungeon tokens (Pirate/Chimerical/Sinister/Enchanted): no direct market listing,
+            // but each is spendable in its Token Shop for an item that does trade - use the same
+            // best gold-per-token valuation Net Worth already relies on (calculateDungeonTokenValue),
+            // instead of leaving these at 0 like an actual non-convertible currency.
+            if (DUNGEON_TOKEN_HRIDS.has(itemHrid)) {
+                const tokenValue = calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null);
+                const perToken = tokenValue?.value > 0 ? tokenValue.value : 0;
+                itemElem.dataset.askPrice = perToken;
+                itemElem.dataset.bidPrice = perToken;
+                itemElem.dataset.askValue = perToken * itemCount;
+                itemElem.dataset.bidValue = perToken * itemCount;
+                itemElem.dataset.priceOutlier = perToken > 0 && tokenValue.isOutlier ? '1' : '0';
+                continue;
+            }
 
             // Get item details (reused throughout)
             const itemDetails = gameData.itemDetailMap[itemHrid];

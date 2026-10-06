@@ -17,17 +17,8 @@ import {
     buildGuildTokenValueByCredit,
     GUILD_TOKEN_HRID,
 } from '../../utils/guild-credit-conversion.js';
+import { DUNGEON_TOKEN_HRIDS } from '../../utils/token-valuation.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
-
-/**
- * Token types and their shop data sources
- */
-const DUNGEON_TOKENS = new Set([
-    '/items/chimerical_token',
-    '/items/sinister_token',
-    '/items/enchanted_token',
-    '/items/pirate_token',
-]);
 
 const TASK_TOKEN = '/items/task_token';
 const LABYRINTH_TOKEN = '/items/labyrinth_token';
@@ -134,7 +125,7 @@ class DungeonTokenTooltips {
         }
 
         // Route to appropriate handler
-        if (DUNGEON_TOKENS.has(itemHrid)) {
+        if (DUNGEON_TOKEN_HRIDS.has(itemHrid)) {
             this._handleDungeonToken(tooltipElement, itemHrid, isCollectionTooltip);
         } else if (itemHrid === TASK_TOKEN) {
             this._handleTaskToken(tooltipElement, isCollectionTooltip);

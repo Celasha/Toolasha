@@ -3,6 +3,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 const mockCheckOutlier = vi.hoisted(() => vi.fn());
 const mockGetPricesBatch = vi.hoisted(() => vi.fn(() => new Map()));
+const mockCalculateDungeonTokenValue = vi.hoisted(() => vi.fn());
 
 vi.mock('../../core/dom-observer.js', () => ({ default: { onClass: vi.fn(() => () => {}) } }));
 vi.mock('../../core/config.js', () => ({
@@ -21,6 +22,15 @@ vi.mock('../../utils/market-data.js', () => ({ getItemPrice: vi.fn() }));
 vi.mock('../../utils/number-parser.js', () => ({ parseItemCount: vi.fn() }));
 vi.mock('../combat-stats/combat-stats-calculator.js', () => ({ DUNGEON_CHEST_CHEST_KEYS: {} }));
 vi.mock('../../utils/dom-observer-helpers.js', () => ({ createMutationWatcher: vi.fn() }));
+vi.mock('../../utils/token-valuation.js', () => ({
+    calculateDungeonTokenValue: mockCalculateDungeonTokenValue,
+    DUNGEON_TOKEN_HRIDS: new Set([
+        '/items/chimerical_token',
+        '/items/sinister_token',
+        '/items/enchanted_token',
+        '/items/pirate_token',
+    ]),
+}));
 
 const { default: inventoryBadgeManager } = await import('./inventory-badge-manager.js');
 
@@ -108,5 +118,82 @@ describe('InventoryBadgeManager.calculateItemPrices - outlier guard', () => {
         await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
 
         expect(itemElem.dataset.priceOutlier).toBe('0');
+    });
+});
+
+describe('InventoryBadgeManager.calculateItemPrices - dungeon tokens', () => {
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        const { default: dataManager } = await import('../../core/data-manager.js');
+        dataManager.getInitClientData.mockReturnValue({ itemDetailMap: {} });
+        const { parseItemCount } = await import('../../utils/number-parser.js');
+        parseItemCount.mockReturnValue(42);
+    });
+
+    test('values a dungeon token via its best shop gold-per-token rate, times the stack count', async () => {
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 2800, isOutlier: false });
+
+        const itemElem = buildItemContainer({ ariaLabel: 'Pirate Token', href: '#pirate_token' });
+        const countElem = document.createElement('div');
+        countElem.className = 'Item_count';
+        countElem.textContent = '42';
+        itemElem.appendChild(countElem);
+
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(mockCalculateDungeonTokenValue).toHaveBeenCalledWith(
+            '/items/pirate_token',
+            'profitCalc_pricingMode',
+            null
+        );
+        expect(itemElem.dataset.askPrice).toBe('2800');
+        expect(itemElem.dataset.bidPrice).toBe('2800');
+        expect(itemElem.dataset.askValue).toBe(String(2800 * 42));
+        expect(itemElem.dataset.bidValue).toBe(String(2800 * 42));
+        expect(itemElem.dataset.priceOutlier).toBe('0');
+    });
+
+    test('flags priceOutlier when the winning shop item price was outlier-substituted', async () => {
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 1500, isOutlier: true });
+
+        const itemElem = buildItemContainer({ ariaLabel: 'Sinister Token', href: '#sinister_token' });
+        const countElem = document.createElement('div');
+        countElem.className = 'Item_count';
+        countElem.textContent = '42';
+        itemElem.appendChild(countElem);
+
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(itemElem.dataset.priceOutlier).toBe('1');
+    });
+
+    test('leaves a dungeon token at 0 (no badge) when no shop item has a usable price', async () => {
+        mockCalculateDungeonTokenValue.mockReturnValue(null);
+
+        const itemElem = buildItemContainer({ ariaLabel: 'Enchanted Token', href: '#enchanted_token' });
+        const countElem = document.createElement('div');
+        countElem.className = 'Item_count';
+        countElem.textContent = '42';
+        itemElem.appendChild(countElem);
+
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(itemElem.dataset.askValue).toBe('0');
+        expect(itemElem.dataset.bidValue).toBe('0');
+        expect(itemElem.dataset.priceOutlier).toBe('0');
+    });
+
+    test('still zeroes a non-convertible currency (task token) without calling the dungeon valuator', async () => {
+        const itemElem = buildItemContainer({ ariaLabel: 'Task Token', href: '#task_token' });
+        const countElem = document.createElement('div');
+        countElem.className = 'Item_count';
+        countElem.textContent = '42';
+        itemElem.appendChild(countElem);
+
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(mockCalculateDungeonTokenValue).not.toHaveBeenCalled();
+        expect(itemElem.dataset.askValue).toBe('0');
+        expect(itemElem.dataset.bidValue).toBe('0');
     });
 });

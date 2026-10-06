@@ -8,6 +8,19 @@ import dataManager from '../core/data-manager.js';
 import { getItemPriceOutlierInfo } from './market-data.js';
 
 /**
+ * The four dungeon currency tokens (Pirate Cove, Chimerical Dungeon, Sinister Dungeon,
+ * Enchanted Dungeon) - none trade directly on the market, but each is spendable in its own
+ * Token Shop for an item that does, so calculateDungeonTokenValue can derive a gold-per-token
+ * rate for all four.
+ */
+export const DUNGEON_TOKEN_HRIDS = new Set([
+    '/items/chimerical_token',
+    '/items/sinister_token',
+    '/items/enchanted_token',
+    '/items/pirate_token',
+]);
+
+/**
  * Calculate dungeon token value based on best shop item value
  * Uses "best market value per token" approach: finds the shop item with highest (market price / token cost)
  * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
