@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.6.0
+ * Version: 3.6.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16514,16 +16514,19 @@ ${starCSS}
                 return;
             }
 
-            // Tooltip structure: div[0]=name, div[1]=level, div[2]=xp progress, div[3]="XP to next level: N"
+            // Tooltip structure: div[0]=name, div[1]=level, div[2]=total XP, div[3]="XP to next level: N"
             const divs = tooltipEl.querySelectorAll(':scope > div');
             if (divs.length < 4) {
                 return;
             }
 
-            // The tooltip itself carries no icon of its own; its identity comes from whichever nav
-            // bar item it's revealed under (CSS-hover reveal, expected to sit inside that item's
-            // subtree) - resolve via that item's sprite href rather than the translated name text.
-            const navEl = tooltipEl.closest('[class*="NavigationBar_nav"]');
+            // The tooltip itself carries no icon of its own, and it's portal-rendered (no real DOM
+            // ancestor relationship to the nav bar), so closest() can't reach the triggering nav
+            // item. Resolve it via the MUI-generated aria-describedby link on the trigger instead -
+            // the nearest ancestor with an id is the popper root, and the element that describes
+            // itself via that id is the actual nav bar item being hovered.
+            const popperRoot = tooltipEl.closest('[id]');
+            const navEl = popperRoot?.id ? document.querySelector(`[aria-describedby="${popperRoot.id}"]`) : null;
             const useEl = navEl?.querySelector('svg use');
             const skillHrid = getSkillHridFromIconHref(useEl?.getAttribute('href'));
             const skillId = skillHrid ? SKILL_HRID_TO_ID[skillHrid] : null;
