@@ -17,6 +17,7 @@ export const MARKETPLACE_OWNER = Object.freeze({
     ABILITY_BOOK: 'ABILITY_BOOK',
     SELL_QUEUE: 'SELL_QUEUE',
     SHORTCUTS: 'SHORTCUTS',
+    LABYRINTH_SUPPLIES: 'LABYRINTH_SUPPLIES',
 });
 
 class MarketplaceSessionService {

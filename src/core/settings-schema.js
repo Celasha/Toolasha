@@ -1740,6 +1740,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Shows expected clear time and success rate on labyrinth skilling room tiles',
             },
+            labyrinthMissingSuppliesButton: {
+                id: 'labyrinthMissingSuppliesButton',
+                label: 'Labyrinth: Show "Buy Missing Supplies" button',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a button next to the Supplies section that opens the marketplace with tabs for whatever Torch/Shroud/Beacon tier is short of its carry cap',
+            },
             labyrinthRecommendTargetRate: {
                 id: 'labyrinthRecommendTargetRate',
                 label: 'Labyrinth: Recommend target clear rate (%)',

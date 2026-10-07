@@ -1800,6 +1800,9 @@ export default {
         noProtectionNeeded: 'No protection needed',
         protectFromLabel: (p) => `From: +${p.level}`,
     },
+    labyrinthMissingSupplies: {
+        buttonLabel: 'Buy Missing Supplies',
+    },
     enhancementUi: {
         panelTitle: 'Enhancement Tracker',
         clearAllSessionsTooltip: 'Clear all sessions',
@@ -3344,6 +3347,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             labyrinthClearRate: {
                 label: 'Labyrinth clear rate calculator',
                 help: 'Shows expected clear time and success rate on labyrinth skilling room tiles',
+            },
+            labyrinthMissingSuppliesButton: {
+                label: 'Labyrinth: Show "Buy Missing Supplies" button',
+                help: 'Adds a button next to the Supplies section that opens the marketplace with tabs for whatever Torch/Shroud/Beacon tier is short of its carry cap',
             },
             labyrinthRecommendTargetRate: {
                 label: 'Labyrinth: Recommend target clear rate (%)',

@@ -503,6 +503,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'labyrinthMissingSupplies',
+            name: 'Labyrinth Missing Supplies Button',
+            category: 'Combat',
+            module: Combat.labyrinthMissingSupplies,
+            async: false,
+        },
+        {
             key: 'scrollSimulatorUI',
             name: 'Scroll Simulator UI',
             category: 'Combat',

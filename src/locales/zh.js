@@ -1767,6 +1767,9 @@ export default {
         noProtectionNeeded: '无需保护',
         protectFromLabel: (p) => `从：+${p.level}`,
     },
+    labyrinthMissingSupplies: {
+        buttonLabel: '购买缺少的补给',
+    },
     enhancementUi: {
         panelTitle: '强化追踪器',
         clearAllSessionsTooltip: '清除所有会话',
@@ -3254,6 +3257,10 @@ export default {
                 help: '在迷宫商店标签中为可交易物品显示卖价/买价市场价格',
             },
             labyrinthClearRate: { label: '迷宫通关率计算器', help: '在迷宫生产房间的格子上显示预计通关时间和成功率' },
+            labyrinthMissingSuppliesButton: {
+                label: '迷宫：显示"购买缺少的补给"按钮',
+                help: '在补给区域旁添加一个按钮，打开市场并显示低于携带上限的火把/寿衣/信标标签',
+            },
             labyrinthRecommendTargetRate: {
                 label: '迷宫：建议目标通关率（%）',
                 help: '迷宫跳过阈值建议所使用的默认目标通关率',
