@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.6.3](https://github.com/Celasha/Toolasha/compare/v3.6.2...v3.6.3) (2026-10-07)
+
+### Bug Fixes
+
+- stop labyrinth monster attack speed from compounding each recalc ([8e788a5](https://github.com/Celasha/Toolasha/commit/8e788a5a9029c200dc06fb162e494f1f9ef8cb80))
+
 ## [3.6.2](https://github.com/Celasha/Toolasha/compare/v3.6.1...v3.6.2) (2026-10-06)
 
 ### Bug Fixes
