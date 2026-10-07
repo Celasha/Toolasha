@@ -640,6 +640,13 @@ function registerFeatures() {
             async: true,
         },
         {
+            key: 'chat_24hrTimestamps',
+            name: 'Chat 24hr Timestamps',
+            category: 'Chat',
+            module: UI.chat24hrTimestamps,
+            async: false,
+        },
+        {
             key: 'taskProfitDisplay',
             name: 'Task Profit Display',
             category: 'Tasks',

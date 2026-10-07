@@ -64,6 +64,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Adds a Log tab to the chat panel logging item trades, level-ups, guild events, and other in-game toasts',
             },
+            chat_24hrTimestamps: {
+                id: 'chat_24hrTimestamps',
+                label: 'Chat: Reformat message timestamps',
+                type: 'checkbox',
+                default: true,
+                help: 'Reformats chat message timestamps using your Market date/time format settings instead of the browser default',
+            },
             notificationLog_maxEntries: {
                 id: 'notificationLog_maxEntries',
                 label: 'Chat: Max notifications to keep',
@@ -1243,7 +1250,7 @@ export const settingsGroups = {
                     { value: '24hour', label: '24-hour (14:30)' },
                     { value: '12hour', label: '12-hour (2:30 PM)' },
                 ],
-                help: 'Time format used in marketplace listings and action completion times',
+                help: 'Time format used in marketplace listings, action completion times, and chat timestamps',
             },
             market_listingDateFormat: {
                 id: 'market_listingDateFormat',
@@ -1254,7 +1261,7 @@ export const settingsGroups = {
                     { value: 'MM-DD', label: 'MM-DD (01-13)' },
                     { value: 'DD-MM', label: 'DD-MM (13-01)' },
                 ],
-                help: 'Date format used in marketplace listings and action completion times',
+                help: 'Date format used in marketplace listings, action completion times, and chat timestamps',
             },
             market_showOrderTotals: {
                 id: 'market_showOrderTotals',

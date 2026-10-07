@@ -2633,6 +2633,10 @@ export default {
                 label: '聊天：保留的最大通知数',
                 help: '每个角色保留的通知历史数量。标签中的筛选只改变显示内容，不影响存储内容。',
             },
+            chat_24hrTimestamps: {
+                label: '聊天：重新格式化消息时间戳',
+                help: '使用你的市场日期/时间格式设置来重新格式化聊天消息时间戳，而不是使用浏览器默认格式',
+            },
             altClickNavigation: {
                 label: '按住 Alt 点击物品以跳转到制作/采集页面或物品词典',
                 help: '按住 Alt/Option 并点击任意物品，可跳转到其制作/采集页面；若该物品不可制作，则跳转到物品词典',
@@ -3049,11 +3053,11 @@ export default {
             market_listingAgeFormat: { label: '市场：挂单时长显示格式', help: '选择挂单创建时间的显示方式' },
             market_listingTimeFormat: {
                 label: '日期/时间显示的时间格式',
-                help: '用于市场挂单和操作完成时间的时间格式',
+                help: '用于市场挂单、操作完成时间和聊天时间戳的时间格式',
             },
             market_listingDateFormat: {
                 label: '日期/时间显示的日期格式',
-                help: '用于市场挂单和操作完成时间的日期格式',
+                help: '用于市场挂单、操作完成时间和聊天时间戳的日期格式',
             },
             market_showOrderTotals: {
                 label: '市场：在页眉中显示订单总计',

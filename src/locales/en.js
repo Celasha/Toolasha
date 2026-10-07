@@ -2675,6 +2675,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Chat: Max notifications to keep',
                 help: 'How many notifications to keep in history, per character. Filtering in the tab only changes what is shown, not what is stored.',
             },
+            chat_24hrTimestamps: {
+                label: 'Chat: Reformat message timestamps',
+                help: 'Reformats chat message timestamps using your Market date/time format settings instead of the browser default',
+            },
             altClickNavigation: {
                 label: 'Alt+click items to navigate to crafting/gathering or dictionary',
                 help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
@@ -3123,11 +3127,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             market_listingTimeFormat: {
                 label: 'Time format for date/time display',
-                help: 'Time format used in marketplace listings and action completion times',
+                help: 'Time format used in marketplace listings, action completion times, and chat timestamps',
             },
             market_listingDateFormat: {
                 label: 'Date format for date/time display',
-                help: 'Date format used in marketplace listings and action completion times',
+                help: 'Date format used in marketplace listings, action completion times, and chat timestamps',
             },
             market_showOrderTotals: {
                 label: 'Market: Show order totals in header',
