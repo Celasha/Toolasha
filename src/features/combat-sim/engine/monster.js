@@ -166,9 +166,7 @@ class Monster extends CombatUnit {
             }
         });
 
-        if (this.combatDetails.combatStats.attackInterval === 0) {
-            this.combatDetails.combatStats.attackInterval = gameMonster.combatDetails.attackInterval;
-        }
+        this.combatDetails.combatStats.attackInterval = gameMonster.combatDetails.attackInterval;
 
         // Labyrinth room scaling applies once to the monster's base armor/resistance contributions.
         // Defense level is already room-scaled above (labyrinthScaleFactor); scaling the derived

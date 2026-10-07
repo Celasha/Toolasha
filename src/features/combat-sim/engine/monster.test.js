@@ -17,7 +17,7 @@ function makeGameMonster(overrides = {}) {
             defenseLevel: 10,
             rangedLevel: 10,
             magicLevel: 10,
-            attackInterval: 3000000000,
+            attackInterval: 2000000000,
             combatStats: {
                 combatStyleHrids: ['/combat_styles/smash'],
                 armor: 20,
@@ -71,5 +71,32 @@ describe('Monster Labyrinth defense scaling (CSIM-AUD-005) - scale once, not twi
         const monster = buildMonsterAtRoomLevel(0);
         // 0.2 * defenseLevel + combatStats.armor, with defLevelMultiplier=1, levelBonus=0, difficultyTier=0
         expect(monster.combatDetails.totalArmor).toBeCloseTo(0.2 * 10 + 20);
+    });
+});
+
+describe('Monster attackInterval - resets from game data every call, not just when zero', () => {
+    test('uses the monster-specific attackInterval from game data, not the CombatUnit class-field default', () => {
+        const monster = buildMonsterAtRoomLevel(0);
+
+        // The pre-fix bug gated this reset behind `=== 0`, but CombatUnit's class-field default is
+        // 3000000000, never 0 - so the gate never fired and every monster was stuck using that
+        // generic default instead of its own real attackInterval (2000000000 in this fixture,
+        // divided once by the attackLevel speed formula from CombatUnit.updateCombatDetails()).
+        expect(monster.combatDetails.combatStats.attackInterval).toBeCloseTo(2000000000 / (1 + 10 / 2000));
+    });
+
+    test('repeated updateCombatDetails() calls (e.g. from mid-fight buff churn) do not keep shrinking attackInterval', () => {
+        const monster = buildMonsterAtRoomLevel(0);
+        const afterFirstCall = monster.combatDetails.combatStats.attackInterval;
+
+        // Simulate buff-driven recalculation happening again mid-fight (e.g. curse/enrage
+        // triggering addBuff -> updateCombatDetails) with no actual stat change in between.
+        monster.updateCombatDetails();
+        monster.updateCombatDetails();
+        monster.updateCombatDetails();
+
+        // The pre-fix bug divided the already-shrunk value again on every call instead of
+        // resetting to the true base first, so attackInterval ratcheted down with each call.
+        expect(monster.combatDetails.combatStats.attackInterval).toBeCloseTo(afterFirstCall);
     });
 });
