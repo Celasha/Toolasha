@@ -13,6 +13,17 @@ import { getItemPrices } from '../../utils/market-data.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { translateGameName } from '../../utils/game-i18n.js';
 
+// The real battlePanel.{combatDuration,battles,deaths} i18n keys are templated strings
+// with an embedded {{placeholder}}, e.g. "Combat Duration: {{duration}}". Plain i18next
+// t() returns that placeholder as literal text (no interpolation values are passed), so
+// strip from the placeholder onward (and any leftover trailing separator) to get just
+// the label text these dual-match regexes actually need.
+function stripInterpolationTemplate(template) {
+    const placeholderIndex = template.indexOf('{{');
+    const prefix = placeholderIndex >= 0 ? template.slice(0, placeholderIndex) : template;
+    return prefix.replace(/[:：]\s*$/, '').trim();
+}
+
 /**
  * Parse the BattlePanel_combatInfo text into duration/battles/deaths.
  *
@@ -29,10 +40,17 @@ export function parseCombatInfo(text) {
     if (!text) return null;
     const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const durationLabels = [
-        ...new Set(['Combat Duration', translateGameName('battlePanel', 'combatDuration', 'Combat Duration')]),
+        ...new Set([
+            'Combat Duration',
+            stripInterpolationTemplate(translateGameName('battlePanel', 'combatDuration', 'Combat Duration')),
+        ]),
     ];
-    const battlesLabels = [...new Set(['Battles', translateGameName('battlePanel', 'battles', 'Battles')])];
-    const deathsLabels = [...new Set(['Deaths', translateGameName('battlePanel', 'deaths', 'Deaths')])];
+    const battlesLabels = [
+        ...new Set(['Battles', stripInterpolationTemplate(translateGameName('battlePanel', 'battles', 'Battles'))]),
+    ];
+    const deathsLabels = [
+        ...new Set(['Deaths', stripInterpolationTemplate(translateGameName('battlePanel', 'deaths', 'Deaths'))]),
+    ];
     const labelRegexes = [];
     for (const d of durationLabels) {
         for (const b of battlesLabels) {

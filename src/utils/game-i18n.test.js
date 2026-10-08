@@ -77,3 +77,34 @@ describe('game-i18n', () => {
         expect(getItemLocationName('', 'fallback')).toBe('fallback');
     });
 });
+
+describe('game-i18n with only _internalRoot.current populated', () => {
+    // Some game client builds only populate _reactRootContainer._internalRoot.current, not
+    // _reactRootContainer.current directly — the bridge must fall back to that shape too.
+    const internalRootMockT = vi.fn((key) => {
+        const map = { 'itemNames./items/test_item': '测试物品' };
+        return map[key] ?? key;
+    });
+
+    beforeEach(() => {
+        vi.stubGlobal('document', {
+            getElementById: vi.fn(() => ({
+                _reactRootContainer: {
+                    _internalRoot: {
+                        current: {
+                            memoizedProps: { i18n: { t: internalRootMockT } },
+                            sibling: null,
+                            child: null,
+                        },
+                    },
+                },
+            })),
+        });
+    });
+
+    it('finds the i18n instance via the _internalRoot.current fallback', async () => {
+        vi.resetModules();
+        const mod = await import('./game-i18n.js');
+        expect(mod.getItemName('/items/test_item', 'Test Item')).toBe('测试物品');
+    });
+});

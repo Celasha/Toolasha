@@ -106,6 +106,16 @@ const ALLOWLIST = [
     },
     { file: 'src/features/tasks/task-reroll-protection.js', literal: 'Pay', reason: 'safe: locale-independent container check is primary; English text is fallback only (291-315)' },
     { file: 'src/features/tasks/task-reroll-protection.js', literal: 'free', reason: 'safe: locale-independent container check is primary; English text is fallback only (291-315)' },
+    {
+        file: 'src/features/market/auto-fill-price.js',
+        literal: 'best buy',
+        reason: 'safe: additive OR against bestOfferPrefix(), a local wrapper around translateGameName() the AST scan cannot see through (not in I18N_HELPERS)',
+    },
+    {
+        file: 'src/features/market/auto-fill-price.js',
+        literal: 'best sell',
+        reason: 'safe: additive OR against bestOfferPrefix(), a local wrapper around translateGameName() the AST scan cannot see through (not in I18N_HELPERS)',
+    },
 ];
 
 const allowlistWarnings = [];
@@ -586,6 +596,10 @@ if (failures.length > 0) {
     process.exit(1);
 }
 
+const heuristicallySuppressed = hits.filter((hit) => !allowlistKeys.has(`${hit.file}::${hit.literal}`) && hit.suppressed);
+
 console.log(
-    `✅ i18n DOM-literal scan passed: ${hits.length} raw hit(s), ${known.length} allowlisted, no unaccounted English-literal DOM matches.`
+    `✅ i18n DOM-literal scan passed: ${hits.length} raw hit(s), ${known.length} allowlisted, ` +
+        `${heuristicallySuppressed.length} heuristically dual-match-suppressed (unverified — rerun with --all to list), ` +
+        `no unaccounted English-literal DOM matches.`
 );

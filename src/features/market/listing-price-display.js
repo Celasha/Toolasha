@@ -473,26 +473,40 @@ class ListingPriceDisplay {
 
     /**
      * Build a bidirectional lowercased text → colKey map that includes both the
-     * English labels and the game's translated labels so localized headers are
-     * recognized in any locale.
+     * English labels and the translated labels so localized headers are
+     * recognized in any locale. Real game columns are translated via the game's
+     * own i18n; "top order price/age", "total price", and "listed" are headers
+     * Toolasha injects itself, so they're translated via Toolasha's own locale
+     * (the exact same t() call addTableHeaders() uses to render them) rather
+     * than the game's — the game has no i18n key for a header it never renders.
      * @returns {Object<string, string>}
      */
     _buildColKeyMap() {
-        const entries = [
+        const gameColumns = [
             ['status', 'status'],
             ['type', 'type'],
             ['progress', 'progress'],
             ['price', 'price'],
-            ['topOrderPrice', 'top order price'],
-            ['topOrderAge', 'top order age'],
-            ['totalPrice', 'total price'],
-            ['listed', 'listed'],
             ['collect', 'collect'],
         ];
+        const injectedColumns = [
+            ['topOrderPrice', 'top order price', t('listingPriceDisplay.topOrderPriceHeader')],
+            ['topOrderAge', 'top order age', t('listingPriceDisplay.topOrderAgeHeader')],
+            ['totalPrice', 'total price', t('listingPriceDisplay.totalPriceHeader')],
+            ['listed', 'listed', t('listingPriceDisplay.listedHeader')],
+        ];
+
         const map = {};
-        for (const [colKey, english] of entries) {
+        for (const [colKey, english] of gameColumns) {
             map[english] = colKey;
             const translated = translateGameName('marketplacePanel', colKey, english).toLowerCase();
+            if (translated && translated !== english) {
+                map[translated] = colKey;
+            }
+        }
+        for (const [colKey, english, toolashaLabel] of injectedColumns) {
+            map[english] = colKey;
+            const translated = (toolashaLabel || '').trim().toLowerCase();
             if (translated && translated !== english) {
                 map[translated] = colKey;
             }

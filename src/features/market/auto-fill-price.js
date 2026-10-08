@@ -8,6 +8,17 @@ import domObserver from '../../core/dom-observer.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { translateGameName } from '../../utils/game-i18n.js';
 
+// The real game i18n keys for these labels are templated strings with an embedded
+// <bestPrice/> component placeholder, e.g. "Price (Best Buy Offer: <bestPrice/>)".
+// Plain i18next t() returns that placeholder as literal text, so strip everything
+// from the placeholder onward to get a stable, locale-correct prefix to match against.
+export function bestOfferPrefix(key, englishTemplate) {
+    const template = translateGameName('marketplacePanel', key, englishTemplate);
+    const placeholderIndex = template.indexOf('<bestPrice');
+    const prefix = placeholderIndex >= 0 ? template.slice(0, placeholderIndex) : template;
+    return prefix.trim().toLowerCase();
+}
+
 class AutoFillPrice {
     constructor() {
         this.isActive = false;
@@ -88,18 +99,16 @@ class AutoFillPrice {
         }
 
         // Determine if this is a buy or sell order.
-        // The game renders "Best Buy"/"Best Sell" labels in its locale, so match
-        // both English and the game-translated text.
+        // The game renders "Price (Best Buy Offer: ...)" / "Price (Best Sell Offer: ...)" in
+        // its locale, so match both the English prefix and the game-translated prefix.
         const labelParent = bestPriceLabel.parentElement;
         const labelText = labelParent.textContent.toLowerCase();
 
-        const bestBuyTranslated = translateGameName('marketplacePanel', 'bestBuy', 'Best Buy').toLowerCase();
-        const bestSellTranslated = translateGameName('marketplacePanel', 'bestSell', 'Best Sell').toLowerCase();
+        const bestBuyPrefix = bestOfferPrefix('priceBestBuyOffer', 'Price (Best Buy Offer: <bestPrice/>)');
+        const bestSellPrefix = bestOfferPrefix('priceBestSellOffer', 'Price (Best Sell Offer: <bestPrice/>)');
 
-        const isBuyOrder =
-            labelText.includes('best buy') || (bestBuyTranslated && labelText.includes(bestBuyTranslated));
-        const isSellOrder =
-            labelText.includes('best sell') || (bestSellTranslated && labelText.includes(bestSellTranslated));
+        const isBuyOrder = labelText.includes('best buy') || (bestBuyPrefix && labelText.includes(bestBuyPrefix));
+        const isSellOrder = labelText.includes('best sell') || (bestSellPrefix && labelText.includes(bestSellPrefix));
 
         if (!isBuyOrder && !isSellOrder) {
             return;

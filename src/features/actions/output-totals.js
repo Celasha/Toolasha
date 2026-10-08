@@ -15,25 +15,31 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
-import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
-import { getItemCategoryName } from '../../utils/game-i18n.js';
+import { getActionHridFromName, getActionHridFromFiber, getItemHridFromIconHref } from '../../utils/game-lookups.js';
 
-// Locale-aware set of substrings that identify an "essences" drop table.
-// The English label is always included; if the game's i18n returns a translated
-// label we include that too so non-English clients still detect essences.
-let essenceLabels = null;
-export function getEssenceLabels() {
-    if (essenceLabels) return essenceLabels;
-    const en = 'essence';
-    const translated = getItemCategoryName('/item_categories/essences', 'Essences').toLowerCase();
-    essenceLabels = [en, translated].filter(Boolean);
-    return essenceLabels;
-}
+const RESOURCE_CATEGORY_HRID = '/item_categories/resource';
 
-export function textIncludesEssence(text) {
-    if (!text) return false;
-    const lower = text.toLowerCase();
-    return getEssenceLabels().some((label) => lower.includes(label));
+/**
+ * True if any item icon within container resolves to an essence item. Essence display names
+ * are localized, but item HRIDs are not, so this detects essences by HRID via each drop's icon
+ * sprite href rather than matching translated text — locale-independent by construction.
+ * @param {HTMLElement} container - Drop table container element
+ * @returns {boolean}
+ */
+export function containerHasEssenceItem(container) {
+    if (!container) return false;
+
+    const icons = container.querySelectorAll('use');
+    for (const icon of icons) {
+        const href = icon.getAttribute('href') || icon.getAttribute('xlink:href');
+        const hrid = getItemHridFromIconHref(href);
+        if (!hrid || !hrid.includes('essence')) continue;
+
+        const details = dataManager.getItemDetails(hrid);
+        if (details?.categoryHrid === RESOURCE_CATEGORY_HRID) return true;
+    }
+
+    return false;
 }
 
 class OutputTotals {
@@ -174,8 +180,8 @@ class OutputTotals {
                 return;
             }
 
-            // Check for essences (locale-aware)
-            if (textIncludesEssence(container.innerText)) {
+            // Check for essences (locale-independent, by item HRID)
+            if (containerHasEssenceItem(container)) {
                 this.processDropContainer(container, amount, isIndeterminate, placeholderLabel);
                 processedContainers.add(container);
                 return;

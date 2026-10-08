@@ -13,7 +13,7 @@ import { findOptimalTeas, getTeaBuffDescription, getRelevantTeas } from '../../u
 import { formatKMB } from '../../utils/formatters.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
-import { getItemName, getActionName, translateGameName, getItemCategoryName } from '../../utils/game-i18n.js';
+import { getItemName, getActionName, translateGameName } from '../../utils/game-i18n.js';
 
 /**
  * Check if a tab text corresponds to a real action category (i.e., a location tab).
@@ -194,10 +194,12 @@ class TeaRecommendation {
      * @param {HTMLElement} labelElement - The label element
      */
     checkAndInjectButtons(labelElement) {
-        // Only inject on "Consumables" label (game-localized: zh "消耗品")
+        // Only inject on "Consumables" label (game-localized: zh "消耗品"). This label is
+        // rendered under two different real i18n keys depending on which panel it's in.
         const text = labelElement.textContent.trim();
-        const consumablesLabel = getItemCategoryName('/item_categories/consumables', 'Consumables');
-        if (text !== 'Consumables' && text !== consumablesLabel) {
+        const gatheringLabel = translateGameName('gatheringProductionSkillPanel', 'consumables', 'Consumables');
+        const alchemyLabel = translateGameName('alchemyPanel', 'consumables', 'Consumables');
+        if (text !== 'Consumables' && text !== gatheringLabel && text !== alchemyLabel) {
             return;
         }
 

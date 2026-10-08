@@ -18,7 +18,7 @@ function getGameI18n() {
     if (typeof document === 'undefined') return null;
 
     const root = document.getElementById('root');
-    const fiber = root?._reactRootContainer?.current;
+    const fiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
     if (!fiber) return null;
 
     const stack = [fiber];
@@ -35,8 +35,8 @@ function getGameI18n() {
                 cachedI18n = props.value.i18n;
                 return cachedI18n;
             }
-        } catch {
-            // Ignore fiber access errors
+        } catch (error) {
+            console.error('[GameI18n] Fiber access error during tree walk:', error);
         }
         if (f.sibling) stack.push(f.sibling);
         if (f.child) stack.push(f.child);
@@ -57,10 +57,15 @@ export function translateGameName(namespace, hrid, fallback = '') {
     if (!i18n) return fallback;
 
     const key = `${namespace}.${hrid}`;
-    const translated = i18n.t(key);
-    // i18next returns the key itself when no translation exists
-    if (translated === key) return fallback;
-    return translated;
+    try {
+        const translated = i18n.t(key);
+        // i18next returns the key itself when no translation exists
+        if (translated === key) return fallback;
+        return translated;
+    } catch (error) {
+        console.error('[GameI18n] i18n.t() failed for key:', key, error);
+        return fallback;
+    }
 }
 
 export const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);

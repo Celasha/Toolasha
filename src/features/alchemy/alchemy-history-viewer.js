@@ -229,10 +229,17 @@ class AlchemyHistoryViewer {
 
             // Clone an existing tab for structure - matched by the native (English) tab text for
             // any of our enabled types, since the game's own tab labels aren't run through our t().
+            // Checks the raw English literal explicitly (not just via getNativeTabText's fallback)
+            // so a transient i18n lookup glitch can't break matching for English-client users.
             const referenceTab = Array.from(tablist.children).find(
                 (btn) =>
                     !btn.dataset.mwiAlchemyHistoryTab &&
-                    this.enabledTypes.some((type) => btn.textContent.includes(getNativeTabText(type)))
+                    this.enabledTypes.some((type) => {
+                        const englishLabel = type.charAt(0).toUpperCase() + type.slice(1);
+                        return (
+                            btn.textContent.includes(englishLabel) || btn.textContent.includes(getNativeTabText(type))
+                        );
+                    })
             );
             if (!referenceTab) return;
 

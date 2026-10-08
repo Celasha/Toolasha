@@ -282,10 +282,26 @@ class AlchemyActionProtection {
         const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
         const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
         const tabText = selectedTab?.textContent?.trim() || '';
+        const lowerTabText = tabText.toLowerCase();
 
-        if (tabText.includes(getActionName('/actions/alchemy/transmute', 'Transmute'))) return 'transmute';
-        if (tabText.includes(getActionName('/actions/alchemy/decompose', 'Decompose'))) return 'decompose';
-        if (tabText.includes(getActionName('/actions/alchemy/coinify', 'Coinify'))) return 'coinify';
+        if (
+            lowerTabText.includes('transmute') ||
+            tabText.includes(getActionName('/actions/alchemy/transmute', 'Transmute'))
+        ) {
+            return 'transmute';
+        }
+        if (
+            lowerTabText.includes('decompose') ||
+            tabText.includes(getActionName('/actions/alchemy/decompose', 'Decompose'))
+        ) {
+            return 'decompose';
+        }
+        if (
+            lowerTabText.includes('coinify') ||
+            tabText.includes(getActionName('/actions/alchemy/coinify', 'Coinify'))
+        ) {
+            return 'coinify';
+        }
         return null;
     }
 
