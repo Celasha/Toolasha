@@ -73,6 +73,7 @@ class DungeonTrackerUIState {
         const baseStyle = `
             position: fixed;
             z-index: ${zIndex};
+            box-sizing: border-box;
             background: rgba(0, 0, 0, 0.85);
             border: 2px solid #4a9eff;
             border-radius: 8px;
@@ -87,7 +88,7 @@ class DungeonTrackerUIState {
                 ${baseStyle}
                 top: ${this.position.y}px;
                 left: ${this.position.x}px;
-                min-width: ${this.isCollapsed ? '250px' : '480px'};
+                width: min(${this.isCollapsed ? '250px' : '480px'}, calc(100vw - 20px));
             `;
         } else if (this.isCollapsed) {
             // Collapsed: top-left (near action time display)
@@ -95,7 +96,7 @@ class DungeonTrackerUIState {
                 ${baseStyle}
                 top: 10px;
                 left: 10px;
-                min-width: 250px;
+                width: min(250px, calc(100vw - 20px));
             `;
         } else {
             // Expanded: top-center
@@ -104,7 +105,7 @@ class DungeonTrackerUIState {
                 top: 10px;
                 left: 50%;
                 transform: translateX(-50%);
-                min-width: 480px;
+                width: min(480px, calc(100vw - 20px));
             `;
         }
     }

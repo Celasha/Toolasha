@@ -120,8 +120,8 @@ class DungeonTrackerUI {
                     align-items: center;
                     padding: 6px 10px;
                 ">
-                    <div style="flex: 1;">
-                        <span id="mwi-dt-dungeon-name" style="font-weight: bold; font-size: 14px; color: #4a9eff;">
+                    <div style="flex: 1; min-width: 0;">
+                        <span id="mwi-dt-dungeon-name" style="font-weight: bold; font-size: 14px; color: #4a9eff; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                             ${t('dungeonTrackerUi.loadingPlaceholder')}
                         </span>
                     </div>
@@ -150,6 +150,7 @@ class DungeonTrackerUI {
                 <!-- Header Line 2: Stats (always visible) -->
                 <div id="mwi-dt-header-stats" style="
                     display: flex;
+                    flex-wrap: wrap;
                     justify-content: center;
                     align-items: center;
                     padding: 4px 10px 6px 10px;
