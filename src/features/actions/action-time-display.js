@@ -42,6 +42,7 @@ import {
 } from '../../utils/profit-helpers.js';
 import { calculateEnhancementPredictions } from '../enhancement/enhancement-xp.js';
 import { BASE_SUCCESS_RATES, isMathJsAvailable } from '../../utils/enhancement-calculator.js';
+import { translateGameName, getActionName, getItemName } from '../../utils/game-i18n.js';
 
 /**
  * Format a completion Date as a clock string, respecting user's time/date format settings.
@@ -1003,8 +1004,9 @@ export class ActionTimeDisplay {
         // First, strip any stats we previously appended
         const actionNameText = this.getCleanActionName(actionNameElement);
 
-        // Check if no action is running ("Doing nothing...")
-        if (actionNameText.includes('Doing nothing')) {
+        // Check if no action is running ("Doing nothing..." — localized by the game, zh: 无所事事...)
+        const doingNothingLabel = translateGameName('actionsUtil', 'doingNothing', 'Doing nothing');
+        if (actionNameText.includes('Doing nothing') || actionNameText.includes(doingNothingLabel)) {
             this.displayElement.innerHTML = '';
             if (this.profitElement) this.profitElement.innerHTML = '';
             this.clearAppendedStats(actionNameElement);
@@ -1864,6 +1866,17 @@ export class ActionTimeDisplay {
             if (actionDetails.type === '/action_types/enhancing' && currentAction.primaryItemHash) {
                 // Strip enhancement level suffix (e.g. "Cheese Sword +1" → "Cheese Sword")
                 const baseItemName = actionNameFromDom.replace(/\s*\+\d+$/, '');
+                // In non-English locales the DOM renders the translated item name, which
+                // buildItemHridFromName cannot reconstruct - compare against both the English
+                // and translated names of the item in the primaryItemHash first.
+                const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
+                const hashItemName = hashItemHrid ? dataManager.getItemDetails(hashItemHrid)?.name : null;
+                if (hashItemName) {
+                    const translatedItemName = getItemName(hashItemHrid, hashItemName);
+                    if (baseItemName === hashItemName || baseItemName === translatedItemName) {
+                        return true;
+                    }
+                }
                 const baseItemHrid = this.buildItemHridFromName(baseItemName);
                 if (currentAction.primaryItemHash.includes(baseItemHrid)) {
                     return true;
@@ -1874,11 +1887,19 @@ export class ActionTimeDisplay {
             const dropTable = actionDetails.dropTable || [];
             const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDom);
             const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
+            // The DOM renders the game's translated action name in non-English locales, so
+            // compare both names plus their ★ ↔ (R) variants.
+            const translatedActionName = getActionName(currentAction.actionHrid, actionDetails.name);
             const matchesName =
                 actionDetails.name === actionNameFromDom ||
+                translatedActionName === actionNameFromDom ||
                 (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
                 (actionNameFromDom.includes('(R)') &&
-                    actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
+                    actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★')) ||
+                (actionNameFromDom.includes('★') &&
+                    translatedActionName === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
+                (actionNameFromDom.includes('(R)') &&
+                    translatedActionName === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
 
             if (!matchesName && !matchesOutput && !matchesDrop) {
                 return false;
@@ -1888,7 +1909,11 @@ export class ActionTimeDisplay {
                 const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
                 if (hashItemHrid) {
                     const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
-                    if (hashItemDetails?.name === itemNameFromDom) return true;
+                    if (
+                        hashItemDetails?.name === itemNameFromDom ||
+                        getItemName(hashItemHrid, hashItemDetails?.name || '') === itemNameFromDom
+                    )
+                        return true;
                 }
                 return currentAction.primaryItemHash.includes(itemHridFromDom);
             }

@@ -668,8 +668,19 @@ class SettingsUI {
                     .map((option) => {
                         const optValue = typeof option === 'object' ? option.value : option;
                         const optLabel = typeof option === 'object' ? option.label : option;
+                        // Dynamic option labels (e.g. saved loadout names) have no locale entry;
+                        // Toolasha's t() returns the key itself when untranslated, so fall back to
+                        // the raw label. '' values resolve via the conventional `_empty` key.
+                        const optionKey = `settingsSchema.settings.${settingId}.options.${optValue === '' ? '_empty' : optValue}`;
+                        const translated = t(optionKey);
+                        let translatedLabel = translated === optionKey ? optLabel : translated;
+                        if (translatedLabel.endsWith(' (Unavailable)')) {
+                            translatedLabel =
+                                translatedLabel.slice(0, -' (Unavailable)'.length) +
+                                t('settingsSchema.selectUnavailableSuffix');
+                        }
                         const selected = optValue === value ? 'selected' : '';
-                        return `<option value="${optValue}" ${selected}>${optLabel}</option>`;
+                        return `<option value="${optValue}" ${selected}>${translatedLabel}</option>`;
                     })
                     .join('');
 
@@ -713,10 +724,12 @@ class SettingsUI {
                 let tierHTML = '';
                 if (hasTiers) {
                     const options = settingDef.tiers
-                        .map(
-                            (t) =>
-                                `<option value="${t.value}" ${t.value === tier ? 'selected' : ''}>${t.label}</option>`
-                        )
+                        .map((tierOpt) => {
+                            const tierKey = `settingsSchema.tierLabels.${tierOpt.value}`;
+                            const tierTranslated = t(tierKey);
+                            const tierLabel = tierTranslated === tierKey ? tierOpt.label : tierTranslated;
+                            return `<option value="${tierOpt.value}" ${tierOpt.value === tier ? 'selected' : ''}>${tierLabel}</option>`;
+                        })
                         .join('');
                     tierHTML = `<select id="${settingId}_tier" class="toolasha-select-input" style="width:100px; font-size:12px; padding:2px 4px; ${disabledStyle}">${options}</select>`;
                 }

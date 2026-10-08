@@ -18,6 +18,7 @@ import { classifyEquipmentItem } from './equipment-classifier.js';
 import { resolveEquipmentItemCost } from './equipment-resolver.js';
 import { createAcquisitionContext } from './score-acquisition-resolver.js';
 import { emptyCategory, attribute } from './score-result.js';
+import { getItemName } from '../../../utils/game-i18n.js';
 
 /**
  * @param {Object} profileData - Profile data from game
@@ -52,7 +53,10 @@ export async function calculateEquipmentScore(profileData, enhancingParams) {
         const itemDetails = itemDetailMap[itemData.itemHrid];
         if (!itemDetails) continue;
 
-        const itemName = itemDetails.name || itemData.itemHrid.replace('/items/', '');
+        const itemName = getItemName(
+            itemData.itemHrid,
+            itemDetails.name || itemData.itemHrid.replace('/items/', '')
+        );
         const displayName = enhancementLevel > 0 ? `${itemName} +${enhancementLevel}` : itemName;
         const classification = classifyEquipmentItem(itemDetails.equipmentDetail);
 

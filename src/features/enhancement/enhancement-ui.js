@@ -16,6 +16,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
+import { getItemName } from '../../utils/game-i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
@@ -654,7 +655,7 @@ class EnhancementUI {
 
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData?.itemDetailMap?.[session.itemHrid];
-        const itemName = itemDetails?.name || t('enhancementUi.unknownItemFallback');
+        const itemName = getItemName(session.itemHrid, itemDetails?.name || t('enhancementUi.unknownItemFallback'));
 
         const totalAttempts = session.totalAttempts;
         const totalSuccess = session.totalSuccesses;
@@ -816,7 +817,7 @@ class EnhancementUI {
     generateSessionHTML(session) {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData?.itemDetailMap?.[session.itemHrid];
-        const itemName = itemDetails?.name || t('enhancementUi.unknownItemFallback');
+        const itemName = getItemName(session.itemHrid, itemDetails?.name || t('enhancementUi.unknownItemFallback'));
 
         // Calculate stats
         const totalAttempts = session.totalAttempts;
@@ -1076,7 +1077,7 @@ class EnhancementUI {
 
             for (const [itemHrid, data] of Object.entries(session.materialCosts)) {
                 const itemDetails = gameData?.itemDetailMap?.[itemHrid];
-                const itemName = itemDetails?.name || itemHrid;
+                const itemName = getItemName(itemHrid, itemDetails?.name || itemHrid);
                 const unitCost = Math.floor(data.totalCost / data.count);
 
                 html += `
@@ -1102,8 +1103,11 @@ class EnhancementUI {
         // Protection costs
         if (hasProtection) {
             const protectionItemName = session.protectionItemHrid
-                ? gameData?.itemDetailMap?.[session.protectionItemHrid]?.name ||
-                  t('enhancementUi.protectionFallbackName')
+                ? getItemName(
+                      session.protectionItemHrid,
+                      gameData?.itemDetailMap?.[session.protectionItemHrid]?.name ||
+                          t('enhancementUi.protectionFallbackName')
+                  )
                 : t('enhancementUi.protectionFallbackName');
 
             html += `

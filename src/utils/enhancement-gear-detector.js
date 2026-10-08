@@ -168,6 +168,7 @@ export function detectSkillGear(skillName, equipment, itemDetailMap) {
         gear.rareFindBonus += best.rareFindBonus;
         gear.experienceBonus += best.experienceBonus;
         gear.slotBreakdown.push({
+            itemHrid: best.item?.itemHrid || best.itemDetails?.hrid || '',
             name: best.itemDetails.name,
             enhancementLevel: best.enhancementLevel,
             success: best.toolBonus,
@@ -175,7 +176,11 @@ export function detectSkillGear(skillName, equipment, itemDetailMap) {
             rareFind: best.rareFindBonus,
             experience: best.experienceBonus,
         });
-        return { name: best.itemDetails.name, enhancementLevel: best.enhancementLevel };
+        return {
+            itemHrid: best.item?.itemHrid || best.itemDetails?.hrid || '',
+            name: best.itemDetails.name,
+            enhancementLevel: best.enhancementLevel,
+        };
     };
 
     gear.toolSlot = addSlot(bestTool) || null;

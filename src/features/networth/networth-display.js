@@ -17,6 +17,7 @@ import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculato
 import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import networthExclusionPopup from './networth-exclusion-popup.js';
 import { removeExclusion } from './networth-exclusions.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 /**
  * Header Display Component
@@ -967,7 +968,7 @@ class NetworthInventoryDisplay {
                 const keyPriceInfo = getKeyPriceInfo(chestKeyHrid);
                 keyPrice = keyPriceInfo.price ?? 0;
                 keyPriceOutlier = keyPriceInfo.isOutlier;
-                keyName = dataManager.getItemDetails(chestKeyHrid)?.name;
+                keyName = getItemName(chestKeyHrid, dataManager.getItemDetails(chestKeyHrid)?.name);
             }
             detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName, keyPriceOutlier);
         }
@@ -1004,7 +1005,7 @@ class NetworthInventoryDisplay {
             html += '<div style="margin-top: 3px;">';
             for (const drop of pricedDrops) {
                 const pct = (drop.dropRate * 100).toFixed(1);
-                html += `<div>\u2022 ${drop.itemName} (${pct}%): ${networthFormatter(Math.round(drop.expectedValue))}${buildOutlierPriceWarningIcon(drop.isOutlier)}</div>`;
+                html += `<div>\u2022 ${getItemName(drop.itemHrid, drop.itemName)} (${pct}%): ${networthFormatter(Math.round(drop.expectedValue))}${buildOutlierPriceWarningIcon(drop.isOutlier)}</div>`;
             }
             html += '</div>';
         }

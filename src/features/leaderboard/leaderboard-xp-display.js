@@ -9,6 +9,7 @@ import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import { leaderboardXPTracker } from './leaderboard-xp-tracker.js';
 import { fNum, rankBadge, addColumn, makeColumnSortable } from '../../utils/table-columns.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 const CSS_PREFIX = 'mwi-leaderboard-xp';
 
@@ -96,7 +97,11 @@ class LeaderboardXPDisplay {
             sortData: allStats.map((s) => s.lastDayXPH),
         });
 
-        const rankHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Rank');
+        // The header label is localized by the game (zh: 排名), so match both languages.
+        const rankLabel = translateGameName('leaderboardPanel', 'rank', 'Rank');
+        const rankHeader = Array.from(theadTr.children).find(
+            (el) => el.textContent.trim() === 'Rank' || el.textContent.trim() === rankLabel
+        );
         if (rankHeader && !rankHeader.querySelector('.mwi-col-sort-icon')) {
             makeColumnSortable(rankHeader, {
                 sortId: 'rank',

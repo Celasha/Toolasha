@@ -18,6 +18,7 @@ import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import { applyOutlierGuardToPriceCache } from '../../utils/price-cache-outlier-guard.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 /**
  * Create a styled table cell for the listings table.
@@ -422,6 +423,22 @@ class ListingPriceDisplay {
     }
 
     /**
+     * Build a lowercased skip set for non-sortable columns, including the game's
+     * translated labels so Chinese (or other locale) headers are also skipped.
+     * @returns {Set<string>}
+     */
+    _buildSkipCols() {
+        const skip = new Set(['chat link', 'cancel']);
+        const chatLinkTranslated = translateGameName('marketplacePanel', 'chatLink', 'chat link')
+            .toLowerCase();
+        const cancelTranslated = translateGameName('marketplacePanel', 'cancel', 'cancel')
+            .toLowerCase();
+        if (chatLinkTranslated && chatLinkTranslated !== 'chat link') skip.add(chatLinkTranslated);
+        if (cancelTranslated && cancelTranslated !== 'cancel') skip.add(cancelTranslated);
+        return skip;
+    }
+
+    /**
      * Wire click-to-sort on all sortable table headers
      * @param {HTMLElement} tableNode - The listings table
      */
@@ -429,7 +446,7 @@ class ListingPriceDisplay {
         const thead = tableNode.querySelector('thead tr');
         if (!thead) return;
 
-        const SKIP_COLS = new Set(['chat link', 'cancel']);
+        const skipCols = this._buildSkipCols();
 
         for (const th of thead.querySelectorAll('th')) {
             const rawText = th.textContent
@@ -437,7 +454,7 @@ class ListingPriceDisplay {
                 .toLowerCase()
                 .replace(/\s*[▲▼#]$/, '')
                 .trim();
-            if (SKIP_COLS.has(rawText)) continue;
+            if (skipCols.has(rawText)) continue;
 
             const colKey = this._textToColKey(rawText);
             if (!colKey) continue;
@@ -456,20 +473,42 @@ class ListingPriceDisplay {
         }
     }
 
+    /**
+     * Build a bidirectional lowercased text → colKey map that includes both the
+     * English labels and the game's translated labels so localized headers are
+     * recognized in any locale.
+     * @returns {Object<string, string>}
+     */
+    _buildColKeyMap() {
+        const entries = [
+            ['status', 'status'],
+            ['type', 'type'],
+            ['progress', 'progress'],
+            ['price', 'price'],
+            ['topOrderPrice', 'top order price'],
+            ['topOrderAge', 'top order age'],
+            ['totalPrice', 'total price'],
+            ['listed', 'listed'],
+            ['collect', 'collect'],
+        ];
+        const map = {};
+        for (const [colKey, english] of entries) {
+            map[english] = colKey;
+            const translated = translateGameName('marketplacePanel', colKey, english)
+                .toLowerCase();
+            if (translated && translated !== english) {
+                map[translated] = colKey;
+            }
+        }
+        return map;
+    }
+
     /** @returns {string|null} */
     _textToColKey(text) {
-        const map = {
-            status: 'status',
-            type: 'type',
-            progress: 'progress',
-            price: 'price',
-            'top order price': 'topOrderPrice',
-            'top order age': 'topOrderAge',
-            'total price': 'totalPrice',
-            listed: 'listed',
-            collect: 'collect',
-        };
-        return map[text] ?? null;
+        if (!this._colKeyMap) {
+            this._colKeyMap = this._buildColKeyMap();
+        }
+        return this._colKeyMap[text] ?? null;
     }
 
     /** @returns {string} */
@@ -739,14 +778,21 @@ class ListingPriceDisplay {
             }
         }
 
-        // Detect isSell from type cell (2nd cell)
+        // Detect isSell from type cell (2nd cell).
+        // The game renders Buy/Sell labels in its locale, so match both the
+        // English text and the game-translated text.
         let isSell = null;
         const typeCell = row.children[1];
         if (typeCell) {
-            const text = (typeCell.textContent || '').toLowerCase();
-            if (text.includes('sell')) {
+            const raw = typeCell.textContent || '';
+            const lower = raw.toLowerCase();
+            const sellTranslated = translateGameName('marketplacePanel', 'sell', 'Sell')
+                .toLowerCase();
+            const buyTranslated = translateGameName('marketplacePanel', 'buy', 'Buy')
+                .toLowerCase();
+            if (lower.includes('sell') || (sellTranslated && lower.includes(sellTranslated))) {
                 isSell = true;
-            } else if (text.includes('buy')) {
+            } else if (lower.includes('buy') || (buyTranslated && lower.includes(buyTranslated))) {
                 isSell = false;
             }
         }

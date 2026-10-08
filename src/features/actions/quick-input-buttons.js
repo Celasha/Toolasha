@@ -28,6 +28,7 @@ import {
     calculateMultiLevelProgress,
     calculateLevelFromActions,
 } from '../../utils/experience-calculator.js';
+import { getItemName, getHouseRoomName as getGameHouseRoomName } from '../../utils/game-i18n.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { compactActionPanelSection } from './production-tools-layout.js';
 import { calculateActionsPerHour, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
@@ -493,7 +494,7 @@ class QuickInputButtons {
                                 : '';
                         speedLines.push(
                             t('alchemyProfitDisplay.speedDetailLine', {
-                                name: item.itemName,
+                                name: getItemName(item.itemHrid, item.itemName),
                                 enh: enhText,
                                 value: formatPercentage(item.scaledBonus, 1),
                             }) + detailText
@@ -508,7 +509,7 @@ class QuickInputButtons {
                                 : '';
                         speedLines.push(
                             t('alchemyProfitDisplay.speedDetailLine', {
-                                name: item.name,
+                                name: getItemName(item.hrid, item.name),
                                 enh: '',
                                 value: `${item.speed.toFixed(2)}%`,
                             }) + detailText
@@ -572,7 +573,7 @@ class QuickInputButtons {
 
                             speedLines.push(
                                 t('alchemyProfitDisplay.speedDetailLine', {
-                                    name: itemDetails.name,
+                                    name: getItemName(trinketSlot.itemHrid, itemDetails.name),
                                     enh: enhText,
                                     value: `${taskSpeedBonus.toFixed(2)}%`,
                                 }) + detailText
@@ -623,7 +624,7 @@ class QuickInputButtons {
                             speedLines.push(
                                 '    - ' +
                                     t('taskProfitDisplay.levelImpactLine', {
-                                        name: tea.name,
+                                        name: getItemName(tea.itemHrid, tea.name),
                                         pct: baseTeaImpact.toFixed(2),
                                     })
                             );
@@ -672,7 +673,7 @@ class QuickInputButtons {
                         // Show BASE efficiency (without DC scaling) on main line
                         speedLines.push(
                             t('alchemyProfitDisplay.speedDetailLine', {
-                                name: tea.name,
+                                name: getItemName(tea.itemHrid, tea.name),
                                 enh: '',
                                 value: `${tea.baseEfficiency.toFixed(2)}%`,
                             })
@@ -1058,12 +1059,13 @@ class QuickInputButtons {
         if (!roomHrid) return t('taskProfitDisplay.unknownRoomLabel');
 
         const room = houseRooms.get(roomHrid);
-        const roomName = roomHrid
+        const fallbackName = roomHrid
             .split('/')
             .pop()
             .split('_')
             .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
             .join(' ');
+        const roomName = getGameHouseRoomName(roomHrid, fallbackName);
         const level = room?.level || 0;
 
         return t('taskProfitDisplay.roomLevelLabel', { roomName, level });
@@ -1155,7 +1157,7 @@ class QuickInputButtons {
         for (const [hrid, baseSpeed] of Object.entries(enhancingTeaBaseSpeeds)) {
             const teaItemDetails = dataManager.getItemDetails(hrid);
             enhancingTeas[hrid] = {
-                name: teaItemDetails?.name || hrid.split('/').pop().replace(/_/g, ' '),
+                name: getItemName(hrid, teaItemDetails?.name || hrid.split('/').pop().replace(/_/g, ' ')),
                 baseSpeed,
             };
         }
@@ -1167,6 +1169,7 @@ class QuickInputButtons {
             if (teaInfo) {
                 const scaledSpeed = teaInfo.baseSpeed * (1 + drinkConcentration);
                 consumables.push({
+                    hrid: drink.itemHrid,
                     name: teaInfo.name,
                     baseSpeed: teaInfo.baseSpeed * 100,
                     drinkConcentration: drinkConcentration * 100,
@@ -1437,7 +1440,7 @@ class QuickInputButtons {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                         lines.push(
                             t('alchemyProfitDisplay.xpItemBonusLine', {
-                                name: item.name,
+                                name: getItemName(item.itemHrid, item.name),
                                 enh: enhText,
                                 value: item.value.toFixed(2),
                             })
@@ -1451,7 +1454,7 @@ class QuickInputButtons {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                         lines.push(
                             t('alchemyProfitDisplay.xpItemBonusLine', {
-                                name: item.name,
+                                name: getItemName(item.itemHrid, item.name),
                                 enh: enhText,
                                 value: item.value.toFixed(2),
                             })

@@ -11,12 +11,35 @@ import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { formatKMB, formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { getItemPrice } from '../../utils/market-data.js';
+import { getItemName, getActionName } from '../../utils/game-i18n.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import assetManifest from '../../utils/asset-manifest.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 
 const ALCHEMY_TYPES = ['coinify', 'decompose', 'transmute'];
+
+// The alchemy tab labels are the game's action names for these HRIDs
+// (i18n key: actionNames./actions/alchemy/<type>), resolved live via the game's i18next.
+const ALCHEMY_ACTION_HRIDS = {
+    coinify: '/actions/alchemy/coinify',
+    decompose: '/actions/alchemy/decompose',
+    transmute: '/actions/alchemy/transmute',
+};
+
+/**
+ * Whether a tab button is the game's own tab for the given alchemy action.
+ * Resolved at call time so the label follows the game's current UI language.
+ * @param {HTMLElement} btn - Tab button
+ * @param {'coinify'|'decompose'|'transmute'} actionType - Alchemy action type
+ * @returns {boolean}
+ */
+function isAlchemyActionTab(btn, actionType) {
+    if (btn.dataset.mwiBestItemsTab) return false;
+    const fallback = actionType.charAt(0).toUpperCase() + actionType.slice(1);
+    const label = getActionName(ALCHEMY_ACTION_HRIDS[actionType], fallback);
+    return btn.textContent.includes(label);
+}
 
 // Marker substituted for an item name inside a translated template string, then split back out
 // so the actual item name can be rendered as a clickable link in the item's original position -
@@ -135,19 +158,16 @@ class AlchemyBestItems {
             const tablist = document.querySelector('[role="tablist"]');
             if (!tablist) return;
 
-            // Verify this is the alchemy tablist
-            const hasCoinify = Array.from(tablist.children).some(
-                (btn) => btn.textContent.includes('Coinify') && !btn.dataset.mwiBestItemsTab
-            );
+            // Verify this is the alchemy tablist via the game-translated Coinify action label
+            const tabButtons = Array.from(tablist.children);
+            const hasCoinify = tabButtons.some((btn) => isAlchemyActionTab(btn, 'coinify'));
             if (!hasCoinify) return;
 
             // Already injected?
             if (tablist.querySelector('[data-mwi-best-items-tab="true"]')) return;
 
             // Clone an existing tab for structure
-            const referenceTab = Array.from(tablist.children).find(
-                (btn) => btn.textContent.includes('Coinify') && !btn.dataset.mwiBestItemsTab
-            );
+            const referenceTab = tabButtons.find((btn) => isAlchemyActionTab(btn, 'coinify'));
             if (!referenceTab) return;
 
             const tab = referenceTab.cloneNode(true);
@@ -202,6 +222,15 @@ class AlchemyBestItems {
         const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
         const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
         const text = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+        if (!text) return 'coinify';
+
+        // Match the game's live-translated action labels first (e.g. Chinese UI),
+        // then fall back to the English labels.
+        for (const type of ['decompose', 'transmute']) {
+            const fallback = type.charAt(0).toUpperCase() + type.slice(1);
+            const translatedLabel = getActionName(ALCHEMY_ACTION_HRIDS[type], fallback).toLowerCase();
+            if (translatedLabel && text.includes(translatedLabel)) return type;
+        }
 
         if (text.includes('decompose')) return 'decompose';
         if (text.includes('transmute')) return 'transmute';
@@ -619,7 +648,7 @@ class AlchemyBestItems {
             const nameTd = document.createElement('td');
             nameTd.style.cssText = 'padding: 4px 8px;';
             const nameLink = document.createElement('span');
-            nameLink.textContent = item.name;
+            nameLink.textContent = getItemName(item.itemHrid, item.name);
             nameLink.style.cssText = 'color: #93c5fd; cursor: pointer; text-decoration: underline;';
             nameLink.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -777,7 +806,7 @@ class AlchemyBestItems {
 
             for (const drop of profitData.dropRevenues) {
                 const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                const itemName = itemDetails?.name || drop.itemHrid.split('/').pop();
+                const itemName = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid.split('/').pop());
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
                 const dropsDisplay =
                     drop.dropsPerHour >= 10000
@@ -816,7 +845,7 @@ class AlchemyBestItems {
             if (profitData.requirementCosts) {
                 for (const req of profitData.requirementCosts) {
                     const itemDetails = dataManager.getItemDetails(req.itemHrid);
-                    const itemName = itemDetails?.name || req.itemHrid.split('/').pop();
+                    const itemName = getItemName(req.itemHrid, itemDetails?.name || req.itemHrid.split('/').pop());
                     const text = t('alchemyBestItems.materialLine', {
                         itemName: LINK_MARKER,
                         count: req.count,
@@ -831,7 +860,10 @@ class AlchemyBestItems {
             // Catalyst
             if (profitData.catalystCost?.itemHrid && profitData.catalystCostPerHour > 0) {
                 const catDetails = dataManager.getItemDetails(profitData.catalystCost.itemHrid);
-                const catName = catDetails?.name || profitData.catalystCost.itemHrid.split('/').pop();
+                const catName = getItemName(
+                    profitData.catalystCost.itemHrid,
+                    catDetails?.name || profitData.catalystCost.itemHrid.split('/').pop()
+                );
                 const text = t('alchemyBestItems.catalystLine', {
                     itemName: LINK_MARKER,
                     price: formatWithSeparator(Math.round(profitData.catalystCost.price)),
@@ -845,7 +877,7 @@ class AlchemyBestItems {
             if (profitData.consumableCosts?.length > 0) {
                 for (const tea of profitData.consumableCosts) {
                     const teaDetails = dataManager.getItemDetails(tea.itemHrid);
-                    const teaName = teaDetails?.name || tea.itemHrid.split('/').pop();
+                    const teaName = getItemName(tea.itemHrid, teaDetails?.name || tea.itemHrid.split('/').pop());
                     const text = t('alchemyBestItems.teaLine', {
                         itemName: LINK_MARKER,
                         cost: formatKMB(Math.round(tea.costPerHour)),

@@ -12,6 +12,7 @@ import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
 import actionPanelSort from '../actions/action-panel-sort.js';
 import { formatLargeNumber } from '../../utils/formatters.js';
+import { getItemCategoryName, getActionName } from '../../utils/game-i18n.js';
 
 const ALCHEMY_TYPE_LABEL_KEYS = {
     coinify: 'skillingOptimizer.alchemyTypeCoinify',
@@ -280,11 +281,11 @@ class AlchemyActionProtection {
     _getAlchemyType() {
         const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
         const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
-        const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+        const tabText = selectedTab?.textContent?.trim() || '';
 
-        if (tabText.includes('transmute')) return 'transmute';
-        if (tabText.includes('decompose')) return 'decompose';
-        if (tabText.includes('coinify')) return 'coinify';
+        if (tabText.includes(getActionName('/actions/alchemy/transmute', 'Transmute'))) return 'transmute';
+        if (tabText.includes(getActionName('/actions/alchemy/decompose', 'Decompose'))) return 'decompose';
+        if (tabText.includes(getActionName('/actions/alchemy/coinify', 'Coinify'))) return 'coinify';
         return null;
     }
 
@@ -404,7 +405,8 @@ class AlchemyActionProtection {
 
     _getCategoryDisplayName(categoryHrid) {
         const gameData = dataManager.getInitClientData();
-        return gameData?.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
+        const fallback = gameData?.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
+        return getItemCategoryName(categoryHrid, fallback);
     }
 
     _showWarning(container, message) {

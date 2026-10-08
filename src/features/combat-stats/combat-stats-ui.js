@@ -20,6 +20,7 @@ import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { getKeyPricingModeSetting, KEY_PRICING_MODE_CHEAPEST } from '../../utils/dungeon-key-cost.js';
 import { renderCraftingPlanBreakdown } from '../crafting-plan/crafting-plan-tree-renderer.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 const YEAR_SECONDS = 365 * 86400;
 
@@ -733,7 +734,7 @@ class CombatStatsUI {
             {
                 label: t('combatStatsUi.lowestRunwayLabel'),
                 value: stats.firstToRunOut
-                    ? `${stats.firstToRunOut.itemName} · ${formatRunway(stats.firstToRunOut.timeToZeroSeconds)}`
+                    ? `${getItemName(stats.firstToRunOut.itemHrid, stats.firstToRunOut.itemName)} · ${formatRunway(stats.firstToRunOut.timeToZeroSeconds)}`
                     : t('combatStatsUi.runwayNoUsage'),
                 color: stats.firstToRunOut ? getRunwayColor(stats.firstToRunOut.timeToZeroSeconds) : undefined,
                 title: stats.firstToRunOut ? formatRunwayExact(stats.firstToRunOut.timeToZeroSeconds) : undefined,
@@ -956,7 +957,7 @@ class CombatStatsUI {
                                 `;
                                 const deltaColor = item.valueDelta >= 0 ? '#51cf66' : '#ff6b6b';
                                 itemRow.innerHTML = `
-                                    <span>${item.itemName}</span>
+                                    <span>${getItemName(item.itemHrid, item.itemName)}</span>
                                     <span style="text-align: right;">${formatQuantity(item.actualCount, formatNum)}</span>
                                     <span style="text-align: right;">${formatQuantity(item.expectedCount, formatNum)}</span>
                                     <span style="text-align: right; color: ${deltaColor};">${formatNum(item.valueDelta)}</span>
@@ -1028,7 +1029,7 @@ class CombatStatsUI {
                                 let chestBreakdownDiv = null;
 
                                 const nameCell = document.createElement('span');
-                                nameCell.textContent = `▶ ${chest.itemName}`;
+                                nameCell.textContent = `▶ ${getItemName(chest.itemHrid, chest.itemName)}`;
                                 const countCell = document.createElement('span');
                                 countCell.style.textAlign = 'right';
                                 countCell.textContent = formatNum(chest.count);
@@ -1047,7 +1048,7 @@ class CombatStatsUI {
                                 chestRow.onclick = (e) => {
                                     e.stopPropagation();
                                     chestExpanded = !chestExpanded;
-                                    nameCell.textContent = `${chestExpanded ? '▼' : '▶'} ${chest.itemName}`;
+                                    nameCell.textContent = `${chestExpanded ? '▼' : '▶'} ${getItemName(chest.itemHrid, chest.itemName)}`;
                                     if (chestExpanded) {
                                         chestBreakdownDiv = document.createElement('div');
                                         chestBreakdownDiv.style.cssText = `
@@ -1087,7 +1088,7 @@ class CombatStatsUI {
                                                 margin-bottom: 2px;
                                             `;
                                             dropRow.innerHTML = `
-                                                <span>${drop.itemName}</span>
+                                                <span>${getItemName(drop.itemHrid, drop.itemName)}</span>
                                                 <span style="text-align: right;">${formatPercentage(drop.dropRate, 1)}</span>
                                                 <span style="text-align: right;">${drop.avgCount.toFixed(2)}</span>
                                                 <span style="text-align: right;">${drop.hasPriceData ? formatNum(drop.priceEach) : '—'}</span>
@@ -1206,7 +1207,7 @@ class CombatStatsUI {
                                     : item.totalCost;
 
                                 itemRow.innerHTML = `
-                                    <span>${item.itemName}</span>
+                                    <span>${getItemName(item.itemHrid, item.itemName)}</span>
                                     <span style="text-align: right;">${formatQuantity(displayQty, formatNum)}</span>
                                     <span style="text-align: right;">${formatNum(displayPrice)}${buildOutlierPriceWarningIcon(item.isOutlier)}</span>
                                     <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
@@ -1409,7 +1410,7 @@ class CombatStatsUI {
                 // Create text content with KMB formatting
                 const textSpan = document.createElement('span');
                 const rarityColor = this.getRarityColor(item.rarity);
-                textSpan.innerHTML = `<span style="color: ${textColor};">${formatNum(item.count)}</span> <span style="color: ${rarityColor};">× ${item.itemName}</span>`;
+                textSpan.innerHTML = `<span style="color: ${textColor};">${formatNum(item.count)}</span> <span style="color: ${rarityColor};">× ${getItemName(item.itemHrid, item.itemName)}</span>`;
                 itemDiv.appendChild(textSpan);
 
                 // Attach EV tooltip for openable containers (chests, crates, etc.)

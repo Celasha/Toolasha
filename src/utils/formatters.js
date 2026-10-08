@@ -63,11 +63,11 @@ export function timeReadable(sec) {
         const days = Math.floor(remainingAfterMonths / 86400);
 
         const parts = [];
-        if (years > 0) parts.push(`${years} year${years !== 1 ? 's' : ''}`);
-        if (months > 0) parts.push(`${months} month${months !== 1 ? 's' : ''}`);
-        if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+        if (years > 0) parts.push(i18n.t('timeUnits.years', { n: years }));
+        if (months > 0) parts.push(i18n.t('timeUnits.months', { n: months }));
+        if (days > 0) parts.push(i18n.t('timeUnits.days', { n: days }));
 
-        return parts.join(' ');
+        return parts.join(i18n.t('timeUnits.separator'));
     }
 
     // For times >= 1 day, show in days/hours/minutes
@@ -79,11 +79,11 @@ export function timeReadable(sec) {
         const minutes = Math.floor(remainingAfterHours / 60);
 
         const parts = [];
-        if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
-        if (hours > 0) parts.push(`${hours}h`);
-        if (minutes > 0) parts.push(`${minutes}m`);
+        if (days > 0) parts.push(i18n.t('timeUnits.days', { n: days }));
+        if (hours > 0) parts.push(i18n.t('timeUnits.hoursShort', { n: hours }));
+        if (minutes > 0) parts.push(i18n.t('timeUnits.minutesShort', { n: minutes }));
 
-        return parts.join(' ');
+        return parts.join(i18n.t('timeUnits.separator'));
     }
 
     // For times < 1 day, show as HH:MM:SS
@@ -98,11 +98,10 @@ export function timeReadable(sec) {
 
     // For times < 1 minute, just show seconds
     if (hours === 0 && minutes === 0) {
-        return seconds + 's';
+        return i18n.t('timeUnits.secondsShort', { n: seconds });
     }
 
-    const str = hours + 'h ' + pad(minutes) + 'm ' + pad(seconds) + 's';
-    return str;
+    return i18n.t('timeUnits.hms', { h: hours, m: pad(minutes), s: pad(seconds) });
 }
 
 /**

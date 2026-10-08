@@ -9,6 +9,63 @@ import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { translateGameName } from '../../utils/game-i18n.js';
+
+// Locale-aware markers for the party system chat messages this module parses
+// when scanning the chat DOM (the WebSocket path uses message.m keys, which are
+// locale-independent). The game's systemChatMessage templates render localized
+// text (zh: 战斗开始 / 钥匙数量 / 队伍在第N波失败 / 战斗结束), so we match both the
+// English and the translated forms.
+let cachedChatMarkers = null;
+export function getChatMarkers() {
+    if (cachedChatMarkers) return cachedChatMarkers;
+    const prefixOf = (key, enPrefix) => {
+        const template = translateGameName('systemChatMessage', key, enPrefix);
+        const placeholderIndex = template.search(/\$t\(|\{\{/);
+        const prefix = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex)).trimEnd();
+        return prefix || enPrefix;
+    };
+    const waveFailedRegexes = [/Party failed on wave \d+/];
+    const waveTemplate = translateGameName('systemChatMessage', 'partyWaveFailed', 'Party failed on wave {{wave}}.');
+    if (waveTemplate !== 'Party failed on wave {{wave}}.') {
+        waveFailedRegexes.push(
+            new RegExp(
+                waveTemplate
+                    .split('{{wave}}')
+                    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                    .join('\\d+')
+            )
+        );
+    }
+    cachedChatMarkers = {
+        battleStarted: [...new Set(['Battle started:', prefixOf('partyBattleStarted', 'Battle started:')])],
+        battleEnded: [...new Set(['Battle ended:', prefixOf('partyBattleEnded', 'Battle ended:')])],
+        keyCounts: [...new Set(['Key counts:', prefixOf('partyKeyCount', 'Key counts:')])],
+        waveFailed: waveFailedRegexes,
+    };
+    return cachedChatMarkers;
+}
+
+export function isBattleStartedText(text) {
+    return getChatMarkers().battleStarted.some((prefix) => text.includes(prefix));
+}
+export function isKeyCountsText(text) {
+    return getChatMarkers().keyCounts.some((prefix) => text.includes(prefix));
+}
+export function isBattleEndedText(text) {
+    return getChatMarkers().battleEnded.some((prefix) => text.includes(prefix));
+}
+export function isWaveFailedText(text) {
+    return getChatMarkers().waveFailed.some((regex) => regex.test(text));
+}
+function extractDungeonNameAfterPrefix(text, prefixList) {
+    for (const prefix of prefixList) {
+        if (text.includes(prefix)) {
+            return text.split(prefix)[1]?.split(']')[0]?.trim();
+        }
+    }
+    return undefined;
+}
 
 // Heartbeat watchdog: visibilitychange doesn't reliably fire for every stall (a long GC pause, or
 // some OS/browser combinations delaying the event on wake) - checked independently by noticing
@@ -390,8 +447,8 @@ class DungeonTracker {
                         continue; // Skip player messages
                     }
 
-                    // Look for "Battle started:" messages
-                    if (text.includes('Battle started:')) {
+                    // Look for "Battle started:" messages (locale-aware)
+                    if (isBattleStartedText(text)) {
                         // Try to extract timestamp
                         // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
                         const timestampMatch = text.match(
@@ -435,8 +492,8 @@ class DungeonTracker {
                         }
                     }
 
-                    // Look for "Key counts:" messages
-                    if (text.includes('Key counts:')) {
+                    // Look for "Key counts:" messages (locale-aware)
+                    if (isKeyCountsText(text)) {
                         // Parse the message
                         const keyCountsMap = this.parseKeyCountsFromMessage(text);
 
@@ -516,7 +573,7 @@ class DungeonTracker {
                             timestamp: this.firstKeyCountTimestamp,
                             keyCountsMap: latestKeyCountsMap,
                             text:
-                                'Key counts: ' +
+                                t('dungeonTrackerUi.keyCounts') +
                                 Object.entries(latestKeyCountsMap)
                                     .map(([name, count]) => `[${name} - ${count}]`)
                                     .join(', '),
@@ -1549,9 +1606,9 @@ class DungeonTracker {
 
                 const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
 
-                // Extract "Battle started:" messages
-                if (text.includes('Battle started:')) {
-                    const dungeonName = text.split('Battle started:')[1]?.split(']')[0]?.trim();
+                // Extract "Battle started:" messages (locale-aware)
+                if (isBattleStartedText(text)) {
+                    const dungeonName = extractDungeonNameAfterPrefix(text, getChatMarkers().battleStarted);
                     if (dungeonName) {
                         events.push({
                             type: 'battle_start',
@@ -1560,8 +1617,8 @@ class DungeonTracker {
                         });
                     }
                 }
-                // Extract "Key counts:" messages
-                else if (text.includes('Key counts:')) {
+                // Extract "Key counts:" messages (locale-aware)
+                else if (isKeyCountsText(text)) {
                     // Parse team composition from key counts
                     const keyCountsMap = this.parseKeyCountsFromMessage(text);
                     const playerNames = Object.keys(keyCountsMap).sort();
@@ -1575,16 +1632,16 @@ class DungeonTracker {
                         });
                     }
                 }
-                // Extract "Party failed" messages
-                else if (text.match(/Party failed on wave \d+/)) {
+                // Extract "Party failed" messages (locale-aware)
+                else if (isWaveFailedText(text)) {
                     events.push({
                         type: 'fail',
                         timestamp,
                     });
                 }
-                // Extract "Battle ended:" messages (fled/canceled)
-                else if (text.includes('Battle ended:')) {
-                    const dungeonName = text.split('Battle ended:')[1]?.split(']')[0]?.trim();
+                // Extract "Battle ended:" messages (fled/canceled, locale-aware)
+                else if (isBattleEndedText(text)) {
+                    const dungeonName = extractDungeonNameAfterPrefix(text, getChatMarkers().battleEnded);
                     events.push({
                         type: 'cancel',
                         timestamp,

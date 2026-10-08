@@ -4,6 +4,7 @@
  */
 
 import domObserver from '../../core/dom-observer.js';
+import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
 import { navigateToItem, findActionForItem } from '../../utils/item-navigation.js';
 import { setReactInputValue } from '../../utils/react-input.js';
@@ -224,8 +225,12 @@ class ViewActionButton {
         const count = this._calcMissingFromGameData(itemHrid);
         if (count !== null) return count;
 
-        // Fallback: read the split "X" / "/ Y" sibling elements in the action requirements row
-        const svgs = document.querySelectorAll(`svg[aria-label="${itemName}"]`);
+        // Fallback: read the split "X" / "/ Y" sibling elements in the action requirements row.
+        // The SVG aria-label is localized in zh (via itemNames), but also try the English
+        // data name as a fallback in case the label hasn't been translated yet.
+        const gameData = dataManager.getInitClientData();
+        const englishName = gameData?.itemDetailMap?.[itemHrid]?.name || itemName;
+        const svgs = document.querySelectorAll(`svg[aria-label="${itemName}"], svg[aria-label="${englishName}"]`);
         for (const svg of svgs) {
             const itemContainer = svg.closest('[class*="Item_itemContainer"]');
             if (!itemContainer) continue;

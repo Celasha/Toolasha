@@ -12,6 +12,7 @@ import { transmuteHistoryTracker } from './transmute-history-tracker.js';
 import { coinifyHistoryTracker } from './coinify-history-tracker.js';
 import { decomposeHistoryTracker } from './decompose-history-tracker.js';
 import { formatKMB, formatDateTime } from '../../utils/formatters.js';
+import { getItemName as getLocalizedItemName, getActionName } from '../../utils/game-i18n.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
@@ -19,11 +20,14 @@ const CATALYST_OF_COINIFICATION_HRID = '/items/catalyst_of_coinification';
 const CATALYST_OF_DECOMPOSITION_HRID = '/items/catalyst_of_decomposition';
 const PRIME_CATALYST_HRID = '/items/prime_catalyst';
 
-// The native alchemy tab bar's own labels are always in the game's own (possibly non-English)
-// language, but the DOM text we match against to find a reference tab to clone is hardcoded
-// English in the original three viewers this replaces - preserved as-is rather than using our
-// own t()'d action name, which would resolve to Toolasha's locale and likely never match.
-const NATIVE_TAB_TEXT = { transmute: 'Transmute', coinify: 'Coinify', decompose: 'Decompose' };
+// Resolve the native alchemy tab label for a given type in the game's current locale.
+// The game renders these tab labels via its own i18next, so we resolve through game-i18n
+// (which reads the game's React fiber i18n store) to match whatever language the game is
+// showing — falling back to the capitalized English action word when translation is missing.
+function getNativeTabText(type) {
+    const fallback = type.charAt(0).toUpperCase() + type.slice(1);
+    return getActionName(`/actions/alchemy/${type}`, fallback);
+}
 
 const TYPE_ORDER = ['transmute', 'coinify', 'decompose'];
 
@@ -228,7 +232,7 @@ class AlchemyHistoryViewer {
             const referenceTab = Array.from(tablist.children).find(
                 (btn) =>
                     !btn.dataset.mwiAlchemyHistoryTab &&
-                    this.enabledTypes.some((type) => btn.textContent.includes(NATIVE_TAB_TEXT[type]))
+                    this.enabledTypes.some((type) => btn.textContent.includes(getNativeTabText(type)))
             );
             if (!referenceTab) return;
 
@@ -1591,7 +1595,8 @@ class AlchemyHistoryViewer {
             return this.itemNameCache.get(itemHrid);
         }
         const details = dataManager.getItemDetails(itemHrid);
-        const name = details?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        const fallback = details?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        const name = getLocalizedItemName(itemHrid, fallback);
         this.itemNameCache.set(itemHrid, name);
         return name;
     }

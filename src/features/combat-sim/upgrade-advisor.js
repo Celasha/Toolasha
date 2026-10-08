@@ -7,6 +7,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { buildGameDataPayload, calculateSimRevenue } from './combat-sim-adapter.js';
 import { runSimulation, runLabyrinthSimulation, buildExtraBuffs } from './combat-sim-runner.js';
 import { setGameData } from './engine/game-data.js';
@@ -19,6 +20,7 @@ import { getEnhancingParams, getAutoDetectedParams } from '../../utils/enhanceme
 import { getCheapestProtectionPrice, getProductionCost } from '../enhancement/tooltip-enhancement.js';
 import { calculateAbilityLevelUpCost } from '../../utils/ability-cost-calculator.js';
 import { buildOverridesForSkill } from './skilling-sim-helpers.js';
+import { getItemName, getAbilityName, getHouseRoomName } from '../../utils/game-i18n.js';
 
 /** Enhancement breakpoints by slot type */
 const BREAKPOINTS_DEFAULT = [7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
@@ -648,7 +650,10 @@ export function generateCandidates(
             // Enhancement upgrade: next breakpoint
             const nextBP = getNextBreakpoint(currentLevel, slot, currentHrid);
             if (nextBP) {
-                const itemName = gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop();
+                const itemName = getItemName(
+                    currentHrid,
+                    gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop()
+                );
                 candidates.push({
                     slot,
                     currentHrid,
@@ -674,8 +679,8 @@ export function generateCandidates(
                         const upgradeRole = getItemRole(upgradeItem.equipmentDetail?.combatStats);
                         if (upgradeRole !== 'defensive') continue;
 
-                        const upgradeName = upgradeItem.name || upgradeHrid.split('/').pop();
-                        const currentName = itemDetails?.name || currentHrid.split('/').pop();
+                        const upgradeName = getItemName(upgradeHrid, upgradeItem.name || upgradeHrid.split('/').pop());
+                        const currentName = getItemName(currentHrid, itemDetails?.name || currentHrid.split('/').pop());
                         candidates.push({
                             slot,
                             currentHrid,
@@ -691,13 +696,13 @@ export function generateCandidates(
                 // Offensive items: keep existing role-based tier progression
                 const slotKey = `${slot}|${role}`;
                 const slotItems = tierProgression[slotKey];
-                const offensiveCurrentName = itemDetails?.name || currentHrid.split('/').pop();
+                const offensiveCurrentName = getItemName(currentHrid, itemDetails?.name || currentHrid.split('/').pop());
                 const offensiveCandidateHrids = new Set();
                 if (slotItems) {
                     const currentIdx = slotItems.findIndex((item) => item.hrid === currentHrid);
                     if (currentIdx >= 0 && currentIdx < slotItems.length - 1) {
                         const nextTier = slotItems[currentIdx + 1];
-                        const nextName = nextTier.name || nextTier.hrid.split('/').pop();
+                        const nextName = getItemName(nextTier.hrid, nextTier.name || nextTier.hrid.split('/').pop());
                         candidates.push({
                             slot,
                             currentHrid,
@@ -729,7 +734,10 @@ export function generateCandidates(
                                 highestNonRefined.hrid !== nextTier.hrid &&
                                 highestNonRefined.itemLevel > currentItemLevel
                             ) {
-                                const highestName = highestNonRefined.name || highestNonRefined.hrid.split('/').pop();
+                                const highestName = getItemName(
+                                    highestNonRefined.hrid,
+                                    highestNonRefined.name || highestNonRefined.hrid.split('/').pop()
+                                );
                                 candidates.push({
                                     slot,
                                     currentHrid,
@@ -761,7 +769,7 @@ export function generateCandidates(
                         const upgradeRole = getItemRole(upgradeItem.equipmentDetail?.combatStats);
                         if (upgradeRole !== role) continue;
 
-                        const upgradeName = upgradeItem.name || upgradeHrid.split('/').pop();
+                        const upgradeName = getItemName(upgradeHrid, upgradeItem.name || upgradeHrid.split('/').pop());
                         candidates.push({
                             slot,
                             currentHrid,
@@ -807,12 +815,15 @@ export function generateCandidates(
                     const offHandCandidates = findBestOffHand(gameData, damageStyle, item.itemLevel || 999);
                     if (!offHandCandidates.length) continue;
 
-                    const mainName = item.name || itemHrid.split('/').pop();
-                    const currentName = twoHandItem?.name || twoHandEquip.hrid.split('/').pop();
+                    const mainName = getItemName(itemHrid, item.name || itemHrid.split('/').pop());
+                    const currentName = getItemName(
+                        twoHandEquip.hrid,
+                        twoHandItem?.name || twoHandEquip.hrid.split('/').pop()
+                    );
 
                     for (const bestOH of offHandCandidates) {
                         const ohItem = gameData.itemDetailMap[bestOH.hrid];
-                        const ohName = ohItem?.name || bestOH.hrid.split('/').pop();
+                        const ohName = getItemName(bestOH.hrid, ohItem?.name || bestOH.hrid.split('/').pop());
 
                         candidates.push({
                             slot: '/equipment_types/two_hand',
@@ -852,8 +863,11 @@ export function generateCandidates(
                     if (style !== damageStyle) continue;
                     if (getItemRole(eq.combatStats) === 'defensive') continue;
 
-                    const twoHandName = item.name || itemHrid.split('/').pop();
-                    const currentName = mainHandItem?.name || mainHandEquip.hrid.split('/').pop();
+                    const twoHandName = getItemName(itemHrid, item.name || itemHrid.split('/').pop());
+                    const currentName = getItemName(
+                        mainHandEquip.hrid,
+                        mainHandItem?.name || mainHandEquip.hrid.split('/').pop()
+                    );
 
                     const clearedSlots = ['/equipment_types/main_hand'];
                     if (offHandEquip) clearedSlots.push('/equipment_types/off_hand');
@@ -884,7 +898,7 @@ export function generateCandidates(
 
             const abilityDetail = gameData.abilityDetailMap[ability.hrid];
             if (!abilityDetail) continue;
-            const abilityName = abilityDetail.name || ability.hrid.split('/').pop();
+            const abilityName = getAbilityName(ability.hrid, abilityDetail.name || ability.hrid.split('/').pop());
 
             if (mode === 'ability_level') {
                 // Level upgrade candidate
@@ -934,7 +948,7 @@ export function generateCandidates(
                     const abStyle = getAbilityCombatStyle(abDetail);
                     if (!isAbilityCompatible(abStyle, playerStyle)) continue;
 
-                    const swapName = abDetail.name || abHrid.split('/').pop();
+                    const swapName = getAbilityName(abHrid, abDetail.name || abHrid.split('/').pop());
                     candidates.push({
                         slot: `ability_${slotIdx}`,
                         currentHrid: ability.hrid,
@@ -955,7 +969,7 @@ export function generateCandidates(
             if (currentLevel >= HOUSE_ROOM_MAX_LEVEL) continue;
 
             const targetLevel = currentLevel + 1;
-            const roomName = room.name || hrid.split('/').pop();
+            const roomName = getHouseRoomName(hrid, room.name || hrid.split('/').pop());
             candidates.push({
                 slot: `house_${hrid}`,
                 currentHrid: hrid,
@@ -1191,7 +1205,7 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
     let current = 0;
 
     // Run baseline sim
-    onProgress?.({ current: 0, total, description: 'Running baseline...' });
+    onProgress?.({ current: 0, total, description: t('combatSimUi.statusRunningBaseline') });
     const baselineResult = await runSimulation(
         { gameData, playerDTOs, zoneHrid, difficultyTier, hours, communityBuffs },
         null
@@ -1200,7 +1214,7 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
 
     if (abortSignal?.()) return { baseline: null, results: [] };
 
-    onProgress?.({ current, total, description: 'Baseline complete' });
+    onProgress?.({ current, total, description: t('combatSimUi.statusBaselineComplete') });
 
     // Calculate baseline metrics
     const baselineMetrics = computeMetrics(baselineResult, gameData, playerHrid, hours);
@@ -1210,7 +1224,7 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
     for (const candidate of filteredCandidatesWithCost) {
         if (abortSignal?.()) break;
 
-        onProgress?.({ current, total, description: `Simulating: ${candidate.description}` });
+        onProgress?.({ current, total, description: t('combatSimUi.statusSimulatingUpgrade', { name: candidate.description }) });
 
         // Clone playerDTOs and apply candidate upgrade
         const modifiedDTOs = JSON.parse(JSON.stringify(playerDTOs));
@@ -1567,7 +1581,7 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
     let current = 0;
 
     // Run baseline labyrinth sim
-    onProgress?.({ current: 0, total, description: 'Running baseline...' });
+    onProgress?.({ current: 0, total, description: t('combatSimUi.statusRunningBaseline') });
     const baselineResult = await runLabyrinthSimulation({
         gameData,
         playerDTOs: [playerDTOs[playerIndex]],
@@ -1587,7 +1601,7 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
     const baselineEncounters = baselineResult.encounters || 0;
     const baselineWinRate = baselineEncounters / baselineAttempts;
 
-    onProgress?.({ current, total, description: `Baseline: ${(baselineWinRate * 100).toFixed(1)}%` });
+    onProgress?.({ current, total, description: t('combatSimUi.statusBaselineWinRate', { winRate: (baselineWinRate * 100).toFixed(1) }) });
 
     const results = [];
 
@@ -1595,7 +1609,7 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
     for (const candidate of candidatesWithCost) {
         if (abortSignal?.()) break;
 
-        onProgress?.({ current, total, description: `Simulating: ${candidate.description}` });
+        onProgress?.({ current, total, description: t('combatSimUi.statusSimulatingUpgrade', { name: candidate.description }) });
 
         const modifiedDTO = JSON.parse(JSON.stringify(playerDTOs[playerIndex]));
         applyCandidateToDTO(modifiedDTO, candidate);
@@ -1636,7 +1650,7 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
     for (const buffCandidate of combatBuffCandidates) {
         if (abortSignal?.()) break;
 
-        onProgress?.({ current, total, description: `Simulating: ${buffCandidate.description}` });
+        onProgress?.({ current, total, description: t('combatSimUi.statusSimulatingUpgrade', { name: buffCandidate.description }) });
 
         const modifiedBuffs = buildModifiedCombatBuffs(labyrinthCombatBuffs, buffCandidate);
         const simResult = await runLabyrinthSimulation({
@@ -1900,7 +1914,7 @@ export function generateSkillingEquipmentCandidates(editorDTO, gameData, skillEq
             const nextBP = getNextBreakpoint(currentLevel, slot, equip.hrid);
             if (!nextBP) continue;
 
-            const itemName = itemDetails.name || equip.hrid.split('/').pop();
+            const itemName = getItemName(equip.hrid, itemDetails.name || equip.hrid.split('/').pop());
             const candidate = {
                 slot,
                 currentHrid: equip.hrid,
@@ -1946,7 +1960,7 @@ export function runSkillingUpgradeAnalysis(params, onProgress, options = {}) {
     const total = buffCandidates.length + equipCandidates.length + 1;
     let current = 0;
 
-    onProgress?.({ current: 0, total, description: 'Computing baseline...' });
+    onProgress?.({ current: 0, total, description: t('combatSimUi.statusComputingBaseline') });
     const baselineClearRate = computeAverageSkillingClearRateFromEditor(
         roomLevel,
         editorDTO,
@@ -1958,14 +1972,14 @@ export function runSkillingUpgradeAnalysis(params, onProgress, options = {}) {
 
     if (abortSignal?.()) return { baseline: null, results: [] };
 
-    onProgress?.({ current, total, description: `Baseline: ${(baselineClearRate * 100).toFixed(1)}%` });
+    onProgress?.({ current, total, description: t('combatSimUi.statusBaselineClearRate', { clearRate: (baselineClearRate * 100).toFixed(1) }) });
 
     const results = [];
 
     for (const buffCandidate of buffCandidates) {
         if (abortSignal?.()) break;
 
-        onProgress?.({ current, total, description: `Evaluating: ${buffCandidate.description}` });
+        onProgress?.({ current, total, description: t('combatSimUi.statusEvaluating', { name: buffCandidate.description }) });
 
         const modifiedDTO = JSON.parse(JSON.stringify(editorDTO));
         modifiedDTO.tokenUpgrades[buffCandidate.editorKey] = buffCandidate.currentLevel + 1;
@@ -1994,7 +2008,7 @@ export function runSkillingUpgradeAnalysis(params, onProgress, options = {}) {
     for (const candidate of equipCandidates) {
         if (abortSignal?.()) break;
 
-        onProgress?.({ current, total, description: `Evaluating: ${candidate.description}` });
+        onProgress?.({ current, total, description: t('combatSimUi.statusEvaluating', { name: candidate.description }) });
 
         const modifiedDTO = JSON.parse(JSON.stringify(editorDTO));
         const modifiedSkillEquipMap = JSON.parse(JSON.stringify(skillEquipmentMap));

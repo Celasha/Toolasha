@@ -13,6 +13,20 @@ import inventoryBadgeManager from './inventory-badge-manager.js';
 import inventorySort from './inventory-sort.js';
 import { formatKMB } from '../../utils/formatters.js';
 import * as dom from '../../utils/dom.js';
+import { getItemCategoryName } from '../../utils/game-i18n.js';
+
+// Locale-aware set of labels that mean the "Currencies" category. The English
+// label is always included; if the game's i18n returns a translated label we
+// include that too so non-English clients skip it as intended.
+let currenciesLabels = null;
+export function isCurrenciesLabel(text) {
+    if (!currenciesLabels) {
+        const en = 'Currencies';
+        const translated = getItemCategoryName('/item_categories/currencies', en);
+        currenciesLabels = new Set([en.toLowerCase(), translated.toLowerCase()]);
+    }
+    return currenciesLabels.has(text.toLowerCase());
+}
 
 const CSS_ID = 'mwi-inv-category-totals';
 const SPAN_ATTR = 'data-mwi-category-total';
@@ -111,7 +125,7 @@ class InventoryCategoryTotals {
                 ? labelEl.textContent.replace(existingSpan.textContent, '').trim()
                 : labelEl.textContent.trim();
 
-            if (labelText.toLowerCase() === 'currencies') {
+            if (isCurrenciesLabel(labelText)) {
                 continue;
             }
 

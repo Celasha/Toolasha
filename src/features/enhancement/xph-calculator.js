@@ -11,6 +11,7 @@ import { calculateEnhancement } from '../../utils/enhancement-calculator.js';
 import { calculateSuccessXP, calculateFailureXP } from './enhancement-xp.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { formatKMB, formatWithSeparator } from '../../utils/formatters.js';
+import { getItemName } from '../../utils/game-i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { getCheapestProtectionPrice, calculatePerAttemptMaterialCost } from './tooltip-enhancement.js';
@@ -84,7 +85,10 @@ function calculateItemXPH(itemHrid, itemDetails, maxLevel, protectFrom, params) 
             const totalCost = (materialCost || 0) + protCost;
             goldPerXP = totalCost / totalXP;
             costPerHour = goldPerXP * xph;
-            protectionItemName = dataManager.getInitClientData()?.itemDetailMap[protectionInfo.itemHrid]?.name || null;
+            protectionItemName = getItemName(
+                protectionInfo.itemHrid,
+                dataManager.getInitClientData()?.itemDetailMap[protectionInfo.itemHrid]?.name || null
+            );
         } else {
             costPartial = true;
         }
@@ -92,7 +96,7 @@ function calculateItemXPH(itemHrid, itemDetails, maxLevel, protectFrom, params) 
 
     return {
         itemHrid,
-        name: itemDetails.name,
+        name: getItemName(itemHrid, itemDetails.name),
         protectionItemName,
         xph,
         goldPerXP,

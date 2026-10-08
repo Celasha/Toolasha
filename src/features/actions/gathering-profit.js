@@ -25,6 +25,7 @@ import {
     calculateTeaCostsPerHour,
     createPriceCache,
 } from '../../utils/profit-helpers.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 /**
  * Cache for processing action conversions (inputItemHrid → conversion data)
@@ -146,6 +147,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
     });
     const drinkCostPerHour = teaCostData.totalCostPerHour;
     const drinkCosts = teaCostData.costs.map((tea) => ({
+        hrid: tea.itemHrid,
         name: tea.itemName,
         priceEach: tea.pricePerDrink,
         drinksPerHour: tea.drinksPerHour,
@@ -188,7 +190,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
         let rawPerAction = 0;
         let processedPerAction = 0;
 
-        const rawItemName = gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown';
+        const rawItemName = getItemName(drop.itemHrid, gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown');
         const baseItemsPerHour = actionsPerHour * drop.dropRate * avgAmountPerAction * efficiencyMultiplier;
         const baseItemsPerAction = drop.dropRate * avgAmountPerAction;
         const baseRevenuePerAction = baseItemsPerAction * resolvedRawPrice;
@@ -236,7 +238,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
             const processedItemsPerAction = drop.dropRate * processedPerAction;
 
             // Track processing details
-            const processedItemName = gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown';
+            const processedItemName = getItemName(processedItemHrid, gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown');
 
             // Value gain per conversion = cheese value - cost of milk used
             const costOfMilkUsed = conversionRatio * resolvedRawPrice;

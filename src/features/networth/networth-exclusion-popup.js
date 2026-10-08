@@ -13,6 +13,12 @@ import { networthFormatter } from '../../utils/formatters.js';
 import { getExclusions, isExcluded, addExclusion, removeExclusion, clearExclusions } from './networth-exclusions.js';
 import { buildGuildBuffDisplayName } from './networth-calculator.js';
 import loadoutState from '../../core/loadout-state.js';
+import {
+    getItemName,
+    getAbilityName,
+    getHouseRoomName,
+    getItemCategoryName,
+} from '../../utils/game-i18n.js';
 
 class NetworthExclusionPopup {
     constructor() {
@@ -474,7 +480,7 @@ class NetworthExclusionPopup {
                 const loadoutItems = [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])];
                 return loadoutItems.map((eq) => {
                     const details = dataManager.getItemDetails(eq.itemHrid);
-                    const name = details?.name || eq.itemHrid.replace('/items/', '');
+                    const name = getItemName(eq.itemHrid, details?.name || eq.itemHrid.replace('/items/', ''));
                     const priceInfo = getItemPriceOutlierInfo(eq.itemHrid, { mode: 'ask' });
                     return { name, value: priceInfo.value ?? 0, isOutlier: priceInfo.isOutlier };
                 });
@@ -650,12 +656,18 @@ class NetworthExclusionPopup {
         if (!gd) return exc.value;
 
         if (exc.type === 'category') {
-            const name = gd.itemCategoryDetailMap?.[exc.value]?.name;
-            return name ? `${name} (category)` : exc.value;
+            const name = getItemCategoryName(exc.value, gd.itemCategoryDetailMap?.[exc.value]?.name);
+            return name ? t('networthExclusionPopup.categoryNameSuffix', { name }) : exc.value;
         }
-        if (exc.type === 'item') return gd.itemDetailMap?.[exc.value]?.name ?? exc.value;
-        if (exc.type === 'houseRoom') return gd.houseRoomDetailMap?.[exc.value]?.name ?? exc.value;
-        if (exc.type === 'ability') return gd.abilityDetailMap?.[exc.value]?.name ?? exc.value;
+        if (exc.type === 'item') {
+            return getItemName(exc.value, gd.itemDetailMap?.[exc.value]?.name ?? exc.value);
+        }
+        if (exc.type === 'houseRoom') {
+            return getHouseRoomName(exc.value, gd.houseRoomDetailMap?.[exc.value]?.name ?? exc.value);
+        }
+        if (exc.type === 'ability') {
+            return getAbilityName(exc.value, gd.abilityDetailMap?.[exc.value]?.name ?? exc.value);
+        }
         if (exc.type === 'guildBuff') {
             const buff = gd.guildBuffDetailMap?.[exc.value];
             return buff ? buildGuildBuffDisplayName(exc.value, buff) : exc.value;

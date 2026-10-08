@@ -12,6 +12,7 @@ import { getCustomPrice } from '../settings/custom-price-overrides.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { calculateEVBatch } from '../../utils/ev-worker-manager.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 /**
  * ExpectedValueCalculator class handles EV calculations for openable containers
@@ -411,7 +412,7 @@ class ExpectedValueCalculator {
         const expectedReturn = drops.reduce((sum, drop) => sum + drop.expectedValue, 0);
 
         return {
-            itemName: itemDetails.name,
+            itemName: getItemName(itemHrid, itemDetails.name),
             itemHrid,
             expectedValue: expectedReturn,
             drops,
@@ -486,7 +487,7 @@ class ExpectedValueCalculator {
 
             drops.push({
                 itemHrid,
-                itemName: itemDetails.name,
+                itemName: getItemName(itemHrid, itemDetails.name),
                 dropRate,
                 avgCount,
                 priceEach: price || 0,

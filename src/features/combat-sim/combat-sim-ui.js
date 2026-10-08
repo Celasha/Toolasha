@@ -27,6 +27,7 @@ import { runSimulation, cancelSimulation } from './combat-sim-runner.js';
 import { runAllZonesSimulation, cancelAllZonesSimulation } from './all-zones-runner.js';
 import { runUpgradeAnalysis } from './upgrade-advisor.js';
 import { SimEditor } from './sim-editor.js';
+import { getItemName, getActionName } from '../../utils/game-i18n.js';
 
 const PANEL_ID = 'mwi-combat-sim-panel';
 const ACCENT = '#4a9eff';
@@ -625,7 +626,10 @@ class CombatSimUI {
         for (const zone of zones) {
             const option = document.createElement('option');
             option.value = zone.hrid;
-            option.textContent = zone.isDungeon ? t('combatSimUi.dungeonZonePrefix', { name: zone.name }) : zone.name;
+            const localizedZoneName = getActionName(zone.hrid, zone.name);
+            option.textContent = zone.isDungeon
+                ? t('combatSimUi.dungeonZonePrefix', { name: localizedZoneName })
+                : localizedZoneName;
             zoneSelect.appendChild(option);
         }
 
@@ -746,7 +750,7 @@ class CombatSimUI {
             const label = document.createElement('label');
             label.style.cssText =
                 'display:flex; align-items:center; gap:4px; color:#ccc; font-size:11px; padding:1px 0; cursor:pointer;';
-            label.innerHTML = `<input type="checkbox" class="mwi-csim-zone-cb" data-hrid="${zone.hrid}" checked style="margin:0; cursor:pointer;"> ${zone.name}`;
+            label.innerHTML = `<input type="checkbox" class="mwi-csim-zone-cb" data-hrid="${zone.hrid}" checked style="margin:0; cursor:pointer;"> ${getActionName(zone.hrid, zone.name)}`;
             checklist.appendChild(label);
         }
 
@@ -835,7 +839,7 @@ class CombatSimUI {
                 const encounters = (sim.encounters || 0) / simHours;
 
                 return {
-                    zone: r.zone.name,
+                    zone: getActionName(r.zone.zoneHrid, r.zone.name),
                     tier: r.zone.difficultyTier,
                     encounters,
                     deaths: playerDeaths,
@@ -1030,7 +1034,12 @@ class CombatSimUI {
             return;
         }
 
-        const matches = this._seekItems.filter((item) => item.name.toLowerCase().includes(q)).slice(0, 20);
+        const matches = this._seekItems
+            .filter((item) => {
+                const localizedName = getItemName(item.itemHrid, item.name).toLowerCase();
+                return item.name.toLowerCase().includes(q) || localizedName.includes(q);
+            })
+            .slice(0, 20);
 
         if (!matches.length) {
             container.style.display = 'none';
@@ -1042,11 +1051,11 @@ class CombatSimUI {
             const el = document.createElement('div');
             el.style.cssText =
                 'padding:3px 0; font-size:12px; color:#ccc; cursor:pointer; border-bottom:1px solid #1a1a2e;';
-            el.textContent = item.name;
+            el.textContent = getItemName(item.itemHrid, item.name);
             el.addEventListener('mousedown', () => {
                 this._seekSelectedItem = item;
                 const input = this.panel.querySelector('#mwi-csim-seek-input');
-                if (input) input.value = item.name;
+                if (input) input.value = getItemName(item.itemHrid, item.name);
                 container.style.display = 'none';
             });
             container.appendChild(el);
@@ -1062,9 +1071,18 @@ class CombatSimUI {
         const input = this.panel?.querySelector('#mwi-csim-seek-input');
         const queryText = input?.value?.trim() || '';
 
-        // Resolve selected item — either from prior click or by exact name match
-        if (!this._seekSelectedItem || this._seekSelectedItem.name !== queryText) {
-            const match = this._seekItems.find((i) => i.name.toLowerCase() === queryText.toLowerCase());
+        // Resolve selected item — either from prior click or by exact name match.
+        // The input shows the localized name, so match against both English and localized.
+        const selectedDisplayName = this._seekSelectedItem
+            ? getItemName(this._seekSelectedItem.itemHrid, this._seekSelectedItem.name)
+            : null;
+        if (!this._seekSelectedItem || selectedDisplayName !== queryText) {
+            const lowerQuery = queryText.toLowerCase();
+            const match = this._seekItems.find(
+                (i) =>
+                    i.name.toLowerCase() === lowerQuery ||
+                    getItemName(i.itemHrid, i.name).toLowerCase() === lowerQuery
+            );
             if (match) {
                 this._seekSelectedItem = match;
             } else {
@@ -1073,7 +1091,8 @@ class CombatSimUI {
             }
         }
 
-        const { itemHrid, name: itemName } = this._seekSelectedItem;
+        const { itemHrid, name } = this._seekSelectedItem;
+        const itemName = getItemName(itemHrid, name);
 
         const gameData = buildGameDataPayload();
         if (!gameData) {
@@ -1276,7 +1295,7 @@ class CombatSimUI {
                         const cellStyle = 'padding:2px 4px; font-size:10px; white-space:nowrap;';
 
                         if (col.key === 'zone') {
-                            display = row.zone.name;
+                            display = getActionName(row.zone.zoneHrid, row.zone.name);
                         } else if (col.key === 'tier') {
                             display = String(row.zone.difficultyTier);
                         } else if (col.key === 'itemsPerHour') {
@@ -2039,7 +2058,7 @@ class CombatSimUI {
                 for (const drop of dropData) {
                     const perHr = drop.total / hours;
                     const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                    const name = itemDetails?.name || drop.itemHrid.split('/').pop();
+                    const name = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid.split('/').pop());
 
                     const perHrStr = perHr >= 1 ? formatWithSeparator(Math.round(perHr)) : perHr.toFixed(2);
                     const perDay = perHr * 24;
@@ -2134,7 +2153,7 @@ class CombatSimUI {
             for (const cons of consumableEntries) {
                 const perHr = cons.total / hours;
                 const itemDetails = dataManager.getItemDetails(cons.itemHrid);
-                const name = itemDetails?.name || cons.itemHrid.split('/').pop();
+                const name = getItemName(cons.itemHrid, itemDetails?.name || cons.itemHrid.split('/').pop());
 
                 const perHrStr = formatWithSeparator(Math.round(perHr));
                 const perDayStr = formatWithSeparator(Math.round(perHr * 24));
@@ -2219,7 +2238,7 @@ class CombatSimUI {
                 const cColor = key.unitCost > 0 ? costColor : '#444';
 
                 html += `<div style="${costRowStyle}">`;
-                html += `<span style="${labelStyle} flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${key.name}</span>`;
+                html += `<span style="${labelStyle} flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${getItemName(key.itemHrid, key.name)}</span>`;
                 html += `<span style="${valueStyle} ${colNum}">${perHrStr}</span>`;
                 html += `<span style="${valueStyle} ${colNum}">${perDayStr}</span>`;
                 html += `<span style="color:${cColor}; font-weight:600; ${colGold}">${costHrStr}</span>`;

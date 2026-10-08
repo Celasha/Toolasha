@@ -11,6 +11,57 @@ import { formatLargeNumber } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
+import { translateGameName } from '../../utils/game-i18n.js';
+
+/**
+ * Parse the BattlePanel_combatInfo text into duration/battles/deaths.
+ *
+ * The game localizes the labels ("Combat Duration", "Battles", "Deaths") via
+ * its i18next `battlePanel` namespace. We try translated labels first, then
+ * fall back to a structure-only regex that matches by colon separators and the
+ * duration's d/h/m/s time-unit pattern, so non-English clients still parse
+ * even if the suspected i18n keys are wrong.
+ *
+ * @param {string} text - The combat info panel text.
+ * @returns {{days:number, hours:number, minutes:number, seconds:number, battles:number, deaths:number}|null}
+ */
+export function parseCombatInfo(text) {
+    if (!text) return null;
+    const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const durationLabels = [...new Set(['Combat Duration', translateGameName('battlePanel', 'combatDuration', 'Combat Duration')])];
+    const battlesLabels = [...new Set(['Battles', translateGameName('battlePanel', 'battles', 'Battles')])];
+    const deathsLabels = [...new Set(['Deaths', translateGameName('battlePanel', 'deaths', 'Deaths')])];
+    const labelRegexes = [];
+    for (const d of durationLabels) {
+        for (const b of battlesLabels) {
+            for (const dd of deathsLabels) {
+                labelRegexes.push(
+                    new RegExp(
+                        `${escape(d)}: (?:(\\d+)d\\s*)?(?:(\\d+)h\\s*)?(?:(\\d+)m\\s*)?(?:(\\d+)s).*?${escape(b)}: (\\d+).*?${escape(dd)}: (\\d+)`
+                    )
+                );
+            }
+        }
+    }
+    // Fallback: structure-only regex — matches three "label: value" segments by
+    // colon separators, where the first value contains d/h/m/s time units. This
+    // works regardless of label text or locale.
+    labelRegexes.push(/^[^:]+:\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)\b[^.]*\.\s*[^:]+:\s*(\d+)\b[^.]*\.\s*[^:]+:\s*(\d+)/);
+    for (const re of labelRegexes) {
+        const m = text.match(re);
+        if (m) {
+            return {
+                days: parseInt(m[1], 10) || 0,
+                hours: parseInt(m[2], 10) || 0,
+                minutes: parseInt(m[3], 10) || 0,
+                seconds: parseInt(m[4], 10) || 0,
+                battles: parseInt(m[5], 10),
+                deaths: parseInt(m[6], 10),
+            };
+        }
+    }
+    return null;
+}
 
 /**
  * CombatSummary class manages combat completion statistics display
@@ -144,16 +195,14 @@ class CombatSummary {
             const combatInfoElement = document.querySelector('[class*="BattlePanel_combatInfo"]');
 
             if (combatInfoElement) {
-                const matches = combatInfoElement.innerHTML.match(
-                    /Combat Duration: (?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s).*?Battles: (\d+).*?Deaths: (\d+)/
-                );
+                const parsed = parseCombatInfo(combatInfoElement.textContent);
 
-                if (matches) {
-                    const days = parseInt(matches[1], 10) || 0;
-                    const hours = parseInt(matches[2], 10) || 0;
-                    const minutes = parseInt(matches[3], 10) || 0;
-                    const seconds = parseInt(matches[4], 10) || 0;
-                    const battles = parseInt(matches[5], 10) - 1; // Exclude current battle
+                if (parsed) {
+                    const days = parsed.days;
+                    const hours = parsed.hours;
+                    const minutes = parsed.minutes;
+                    const seconds = parsed.seconds;
+                    const battles = parsed.battles - 1; // Exclude current battle
 
                     battleDurationSec = days * 86400 + hours * 3600 + minutes * 60 + seconds;
 

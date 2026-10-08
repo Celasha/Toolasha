@@ -10,6 +10,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { calculateDrinkRemainingSeconds, calculateQueueTimeSeconds } from '../../utils/drink-calculator.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 const SECONDS_PER_HOUR = 3600;
 
@@ -101,11 +102,11 @@ class DrinkTimer {
         wrapper.style.cssText = 'padding: 3px 8px 4px; font-size: 11px; line-height: 1.5;';
 
         // Per-drink time row
-        const drinkParts = drinks.map(({ name, totalSeconds }) => {
+        const drinkParts = drinks.map(({ itemHrid, name, totalSeconds }) => {
             const color =
                 totalSeconds < SECONDS_PER_HOUR ? '#ef4444' : totalSeconds < thresholdSeconds ? '#f0a830' : '#9ca3af';
             const prefix = totalSeconds < thresholdSeconds ? '⚠ ' : '';
-            return `<span style="color:${color};">${prefix}${name}: ${this._formatTime(totalSeconds)}</span>`;
+            return `<span style="color:${color};">${prefix}${getItemName(itemHrid, name)}: ${this._formatTime(totalSeconds)}</span>`;
         });
         const drinkRow = document.createElement('div');
         drinkRow.innerHTML = drinkParts.join('<span style="color:#4b5563;"> · </span>');
@@ -121,7 +122,7 @@ class DrinkTimer {
                 queueRow.style.color = '#f0a830';
                 queueRow.textContent = t('drinkTimer.queueOutlastsWarning', {
                     queueTime: this._formatTime(queueSeconds),
-                    drinkName: shortDrink.name,
+                    drinkName: getItemName(shortDrink.itemHrid, shortDrink.name),
                     shortfallTime: this._formatTime(shortfall),
                 });
                 wrapper.appendChild(queueRow);

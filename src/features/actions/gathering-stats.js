@@ -16,6 +16,7 @@ import { calculateGatheringProfit } from './gathering-profit.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
 import { getActionHridFromName, getActionHridFromIconHref } from '../../utils/game-lookups.js';
+import { getActionName } from '../../utils/game-i18n.js';
 
 class GatheringStats {
     constructor() {
@@ -462,7 +463,7 @@ class GatheringStats {
         };
 
         const bestProfitName = bestProfitHrid
-            ? dataManager.getActionDetails(bestProfitHrid)?.name || bestProfitHrid
+            ? getActionName(bestProfitHrid, dataManager.getActionDetails(bestProfitHrid)?.name || bestProfitHrid)
             : null;
 
         for (const [actionPanel, data] of this.actionElements.entries()) {

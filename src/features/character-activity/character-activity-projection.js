@@ -11,6 +11,7 @@ import loadoutState from '../../core/loadout-state.js';
 import { resolveActionContext, resolveCurrentActionContext } from '../../utils/action-context.js';
 import { calculateDrinkRemainingSeconds } from '../../utils/drink-calculator.js';
 import { getDrinkConcentration, parseArtisanBonus } from '../../utils/tea-parser.js';
+import { getActionName, getItemName } from '../../utils/game-i18n.js';
 import { normalizeNativeTimestamp } from './native-timestamp.js';
 
 const UNCERTAIN_REASON_BY_TYPE = {
@@ -44,19 +45,19 @@ function classifyStopCause(limitType) {
 
 /** Enriched name matching native getActionDisplayName() - item name, enhancement level, combat tier/party. */
 function buildDisplayName(actionObj, actionDetails) {
-    const baseName = actionDetails?.name || actionObj.actionHrid;
+    const baseName = getActionName(actionObj.actionHrid, actionDetails?.name || actionObj.actionHrid);
     if (!actionDetails) return baseName;
 
     if (actionDetails.type === '/action_types/alchemy' && actionObj.primaryItemHash) {
         const { itemHrid } = actionTimeDisplay.parseItemHash(actionObj.primaryItemHash);
         const itemDetails = itemHrid ? dataManager.getItemDetails(itemHrid) : null;
-        if (itemDetails?.name) return `${baseName}: ${itemDetails.name}`;
+        if (itemDetails?.name) return `${baseName}: ${getItemName(itemHrid, itemDetails.name)}`;
     }
 
     if (actionDetails.type === '/action_types/enhancing' && actionObj.primaryItemHash) {
         const { itemHrid, level } = actionTimeDisplay.parseItemHash(actionObj.primaryItemHash);
         const itemDetails = itemHrid ? dataManager.getItemDetails(itemHrid) : null;
-        if (itemDetails?.name) return `${itemDetails.name} +${level}`;
+        if (itemDetails?.name) return `${getItemName(itemHrid, itemDetails.name)} +${level}`;
     }
 
     if (actionObj.actionHrid?.includes('/combat/')) {
@@ -392,7 +393,7 @@ function buildSegment({
 }) {
     return {
         actionHrid: actionObj.actionHrid,
-        actionName: actionDetails?.name || actionObj.actionHrid,
+        actionName: getActionName(actionObj.actionHrid, actionDetails?.name || actionObj.actionHrid),
         displayName: buildDisplayName(actionObj, actionDetails),
         actionTypeHrid: actionDetails?.type || null,
         startAt,

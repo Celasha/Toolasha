@@ -24,6 +24,19 @@ import {
     MARKETPLACE_REMOUNT_GRACE_MS,
     isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
+import { getItemName, translateGameName } from '../../utils/game-i18n.js';
+
+/**
+ * Check whether a marketplace tab label matches an English label or its in-game
+ * translation (tab labels are localized by the game, e.g. zh: My Listings 我的挂牌).
+ * @param {string} text - Tab textContent
+ * @param {string} english - English label
+ * @param {string} key - Game i18n key within the marketplacePanel namespace
+ * @returns {boolean}
+ */
+function matchesMarketplaceTabLabel(text, english, key) {
+    return text.includes(english) || text.includes(translateGameName('marketplacePanel', key, english));
+}
 
 function getGameObject() {
     const root = document.getElementById('root');
@@ -881,7 +894,7 @@ class HouseCostDisplay {
             const tabsContainer = this._getVisibleMarketplaceTabContainer();
             if (tabsContainer) {
                 const hasMarketListings = Array.from(tabsContainer.children).some((btn) =>
-                    btn.textContent.includes('Market Listings')
+                    matchesMarketplaceTabLabel(btn.textContent, 'Market Listings', 'marketListings')
                 );
                 if (hasMarketListings) {
                     return true;
@@ -922,7 +935,9 @@ class HouseCostDisplay {
 
         removeMaterialTabsForOwner(MARKETPLACE_OWNER.HOUSE);
 
-        const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+        const referenceTab = Array.from(tabsContainer.children).find((btn) =>
+            matchesMarketplaceTabLabel(btn.textContent, 'My Listings', 'myListings')
+        );
         if (!referenceTab) {
             console.error('[HouseCostDisplay] Reference tab not found');
             return false;
@@ -939,7 +954,7 @@ class HouseCostDisplay {
         for (const material of missingMaterials) {
             const capturedItemHrid = material.itemHrid;
             const tab = createMaterialTab(
-                material,
+                { ...material, itemName: getItemName(material.itemHrid, material.itemName) },
                 referenceTab,
                 (_e, mat) => {
                     if (!marketplaceSession.isActive(capturedSessionId)) return;

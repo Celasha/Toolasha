@@ -19,6 +19,7 @@ import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
 import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import { getItemName as getLocalizedItemName } from '../../utils/game-i18n.js';
 
 const DECOMPOSE_ACTION_HRID = '/actions/alchemy/decompose';
 const CATALYST_OF_DECOMPOSITION_HRID = '/items/catalyst_of_decomposition';
@@ -419,7 +420,8 @@ class DecomposeHistoryTracker {
      */
     getItemName(itemHrid) {
         const details = dataManager.getItemDetails(itemHrid);
-        return details?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        const fallback = details?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        return getLocalizedItemName(itemHrid, fallback);
     }
 }
 

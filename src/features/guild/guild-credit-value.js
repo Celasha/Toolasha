@@ -28,6 +28,8 @@ import {
     isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
+import { getItemName, translateGameName } from '../../utils/game-i18n.js';
+import { getItemHridFromIconHref } from '../../utils/game-lookups.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { normalizeGuildShrineReturnLabel } from './guild-marketplace-label.js';
 import {
@@ -37,6 +39,19 @@ import {
 } from '../../utils/guild-credit-conversion.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import { setReactInputValue } from '../../utils/react-input.js';
+
+/**
+ * Check whether a marketplace tab label is the native "My Listings" tab. The label is
+ * localized by the game (zh: 我的挂牌), so match the translated label too.
+ * @param {string} text - Tab textContent
+ * @returns {boolean}
+ */
+function isMyListingsTabLabel(text) {
+    return (
+        text.includes('My Listings') ||
+        text.includes(translateGameName('marketplacePanel', 'myListings', 'My Listings'))
+    );
+}
 
 function getVisibleGuildNavigationButton() {
     const buttons = new Set();
@@ -121,6 +136,7 @@ function buildCreditRows(itemDetailMap, creditHrid, { includeToken = true } = {}
         if (sellGPC === null && buyGPC === null) continue;
 
         rows.push({
+            hrid,
             name: item.name,
             itemCount: conv.itemCount,
             creditCount: conv.creditCount,
@@ -270,7 +286,7 @@ class GuildCreditValue {
         removeMaterialTabsForOwner(MARKETPLACE_OWNER.GUILD);
         document.querySelectorAll('[data-mwi-shrine-tab="true"]').forEach((el) => el.remove());
 
-        const referenceTab = Array.from(tabContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+        const referenceTab = Array.from(tabContainer.children).find((btn) => isMyListingsTabLabel(btn.textContent));
         if (!referenceTab) return false;
 
         tabContainer.style.flexWrap = 'wrap';
@@ -282,7 +298,7 @@ class GuildCreditValue {
         for (const mat of model.materials) {
             const capturedMat = mat;
             const tab = createMaterialTab(
-                mat,
+                { ...mat, itemName: getItemName(mat.itemHrid, mat.itemName) },
                 referenceTab,
                 (_e, m) => {
                     if (!marketplaceSession.isActive(capturedSessionId)) return;
@@ -358,9 +374,13 @@ class GuildCreditValue {
         const titleText = titleEl?.textContent?.trim() || '';
         if (!titleText) return;
 
-        const creditHrid = Object.keys(gameData.itemDetailMap || {}).find(
-            (hrid) => hrid.includes('guild_credit') && gameData.itemDetailMap[hrid].name === titleText
-        );
+        // The modal title is rendered in the game's current language, while itemDetailMap
+        // names are English — match both the raw name and its in-game translation.
+        const creditHrid = Object.keys(gameData.itemDetailMap || {}).find((hrid) => {
+            if (!hrid.includes('guild_credit')) return false;
+            const name = gameData.itemDetailMap[hrid].name;
+            return name === titleText || getItemName(hrid, name) === titleText;
+        });
         if (!creditHrid) return;
 
         const rows = buildCreditRows(gameData.itemDetailMap, creditHrid, {
@@ -389,9 +409,10 @@ class GuildCreditValue {
                 const tr = document.createElement('tr');
                 tr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.05); color:${isTop ? '#4ade80' : '#e0e0e0'};`;
                 const rate = row.creditCount === 1 ? `${row.itemCount} → 1` : `${row.itemCount} → ${row.creditCount}`;
+                const localizedName = getItemName(row.hrid, row.name);
                 const nameDisplay = row.isToken
-                    ? `${row.name} <span style="color:#6b7280;font-size:9px;">${t('guildCreditValue.tokensLabel')}</span>`
-                    : row.name;
+                    ? `${localizedName} <span style="color:#6b7280;font-size:9px;">${t('guildCreditValue.tokensLabel')}</span>`
+                    : localizedName;
                 tr.innerHTML = `
                 <td style="padding:4px 6px; text-align:left;">${nameDisplay}</td>
                 <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
@@ -612,7 +633,7 @@ class GuildCreditValue {
 
             // Credit costs
             for (const [itemHrid, count] of Object.entries(credits)) {
-                const name = itemDetailMap[itemHrid]?.name || itemHrid.split('/').pop();
+                const name = getItemName(itemHrid, itemDetailMap[itemHrid]?.name || itemHrid.split('/').pop());
                 const priceInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
                 const price = priceInfo.value;
                 const goldStr =
@@ -695,13 +716,27 @@ class GuildCreditValue {
         insertAfter?.insertAdjacentElement('afterend', wrapper);
     }
 
+    /**
+     * Resolve the selected item HRID from the modal's ItemSelector SVG.
+     * Uses the `<use href>` fragment (locale-independent) rather than the
+     * aria-label (which is localized and breaks name→HRID matching in non-English
+     * clients). Falls back to the aria-label name lookup for older DOM shapes.
+     * @param {Element} modalEl - The modal content element
+     * @returns {string|null} Item HRID or null
+     */
+    _getSelectedItemHrid(modalEl) {
+        const selectorContainer = modalEl.querySelector('[class*="ItemSelector_itemContainer"]');
+        if (!selectorContainer) return null;
+        const useEl = selectorContainer.querySelector('use');
+        const href = useEl?.getAttribute('href') || useEl?.getAttribute('xlink:href') || '';
+        return getItemHridFromIconHref(href);
+    }
+
     _renderExchangeAdvisor(modalEl, creditHrid, rows) {
         modalEl.querySelectorAll('.mwi-exchange-advisor').forEach((el) => el.remove());
 
-        // The source item is inside ItemSelector_itemContainer; its SVG has aria-label="Item Name"
-        const selectorContainer = modalEl.querySelector('[class*="ItemSelector_itemContainer"]');
-        const itemSvg = selectorContainer?.querySelector('svg[aria-label]');
-        const selectedItemName = itemSvg?.getAttribute('aria-label') || null;
+        // Resolve the selected item HRID from the icon's sprite href (locale-independent)
+        const selectedItemHrid = this._getSelectedItemHrid(modalEl);
 
         // Read batch quantity
         const quantityInput = modalEl.querySelector('input[type="number"]');
@@ -724,14 +759,14 @@ class GuildCreditValue {
         border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.2);
     `;
 
-        if (!selectedItemName) {
+        if (!selectedItemHrid) {
             // No item selected yet
             advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${t('guildCreditValue.advisorSelectItemHint')}</div>`;
             modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
             return;
         }
 
-        const selectedRow = validRows.find((r) => r.name === selectedItemName);
+        const selectedRow = validRows.find((r) => r.hrid === selectedItemHrid);
 
         if (!selectedRow) {
             // Item in modal has no conversion for this credit type
@@ -753,7 +788,8 @@ class GuildCreditValue {
         const directCredits = batches * selectedRow.creditCount;
 
         if (!sellPrice || sellPrice <= 0 || !bestRow.sellPrice || bestRow.sellPrice <= 0) {
-            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${t('guildCreditValue.advisorNoPriceData', { name: `<b style="color:#e0e0e0;">${bestRow.name}</b>` })}</div>`;
+            const bestName = `<b style="color:#e0e0e0;">${getItemName(bestRow.hrid, bestRow.name)}</b>`;
+            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${t('guildCreditValue.advisorNoPriceData', { name: bestName })}</div>`;
             modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
             return;
         }
@@ -785,7 +821,7 @@ class GuildCreditValue {
             <span style="color:#e0e0e0;">${formatKMB(net)}</span>
         </div>
         <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-            <span style="color:#aaa;">${t('guildCreditValue.advisorBuyLabel', { name: `<b style="color:#e0e0e0;">${bestRow.name}</b>` })}</span>
+            <span style="color:#aaa;">${t('guildCreditValue.advisorBuyLabel', { name: `<b style="color:#e0e0e0;">${getItemName(bestRow.hrid, bestRow.name)}</b>` })}</span>
             <span style="color:#e0e0e0; font-weight:600;">${t('guildCreditValue.creditsAmount', { amount: bestCredits.toLocaleString() })}</span>
         </div>
         <div style="display:flex; justify-content:space-between; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;">
@@ -817,13 +853,16 @@ class GuildCreditValue {
         const gameData = dataManager.getInitClientData();
         if (!gameData) return;
 
-        const selectorContainer = modalEl.querySelector('[class*="ItemSelector_itemContainer"]');
-        const itemSvg = selectorContainer?.querySelector('svg[aria-label]');
-        const selectedItemName = itemSvg?.getAttribute('aria-label') || null;
-        if (!selectedItemName) return;
+        // Resolve the selected item HRID from the icon's sprite href (locale-independent)
+        const selectedItemHrid = this._getSelectedItemHrid(modalEl);
+        if (!selectedItemHrid) return;
 
-        const conversion = findExchangeConversion(gameData.itemDetailMap, creditHrid, selectedItemName);
-        if (!conversion) return;
+        const itemDetail = gameData.itemDetailMap?.[selectedItemHrid];
+        const conv = (itemDetail?.guildCreditConversions || []).find(
+            (c) => c.creditItemHrid === creditHrid
+        );
+        if (!conv) return;
+        const conversion = { hrid: selectedItemHrid, itemCount: conv.itemCount };
 
         const inventory = dataManager.getInventory() || [];
         const owned = inventory
@@ -1015,6 +1054,7 @@ class GuildCreditValue {
             else if (!isToken && effectiveRequired > 0) allBuyPriced = false;
 
             rows.push({
+                itemHrid,
                 itemName,
                 required,
                 effectiveRequired,
@@ -1042,7 +1082,7 @@ class GuildCreditValue {
                 const tr = document.createElement('tr');
                 tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.05); color:#e0e0e0;';
                 tr.innerHTML = `
-                <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
+                <td style="padding:4px 6px; text-align:left;">${getItemName(row.itemHrid, row.itemName)}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.effectiveRequired.toLocaleString()}${row.owned > 0 ? ` <span style="color:#6b7280;font-size:10px;">${t('guildCreditValue.ownedSuffix', { count: row.owned.toLocaleString() })}</span>` : ''}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatKMB(row.sellEach) + buildOutlierPriceWarningIcon(row.sellEachOutlier) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatKMB(row.buyEach) + buildOutlierPriceWarningIcon(row.buyEachOutlier) : '–'}</td>
@@ -1073,7 +1113,7 @@ class GuildCreditValue {
                         const askStyle = `color:${sortKey === 'bid' ? '#6b7280' : isTop ? '#4ade80' : '#9ca3af'}; font-weight:${sortKey === 'ask' && isTop ? '600' : '400'};`;
                         const bidStyle = `color:${sortKey === 'ask' ? '#6b7280' : isTop ? '#4ade80' : '#9ca3af'}; font-weight:${sortKey === 'bid' && isTop ? '600' : '400'};`;
                         subTr.innerHTML = `
-                        <td style="padding:2px 6px 2px 16px; text-align:left; color:${nameColor};">${rankPrefix} ${opt.name}</td>
+                        <td style="padding:2px 6px 2px 16px; text-align:left; color:${nameColor};">${rankPrefix} ${getItemName(opt.hrid, opt.name)}</td>
                         <td style="padding:2px 6px; text-align:right; color:${nameColor};">${qtyNeeded.toLocaleString()}</td>
                         <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.askPrice ? formatKMB(opt.askPrice) + buildOutlierPriceWarningIcon(opt.askOutlier) : '–'}</td>
                         <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.bidPrice ? formatKMB(opt.bidPrice) + buildOutlierPriceWarningIcon(opt.bidOutlier) : '–'}</td>
@@ -1230,7 +1270,7 @@ class GuildCreditValue {
                         if (!marketplaceSession.isActive(sessionId)) return;
                         tabsContainer = getVisibleMarketplaceTabContainer();
                         referenceTab = tabsContainer
-                            ? Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'))
+                            ? Array.from(tabsContainer.children).find((btn) => isMyListingsTabLabel(btn.textContent))
                             : null;
                         if (referenceTab) break;
                     }
@@ -1263,7 +1303,7 @@ class GuildCreditValue {
                     for (const mat of missingMats) {
                         const capturedMat = mat;
                         const tab = createMaterialTab(
-                            mat,
+                            { ...mat, itemName: getItemName(mat.itemHrid, mat.itemName) },
                             referenceTab,
                             (_e, m) => {
                                 if (!marketplaceSession.isActive(sessionId)) return;

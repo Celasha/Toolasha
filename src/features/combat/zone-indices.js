@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { getQuestFromTaskCard } from '../../utils/game-lookups.js';
 
 // Compiled regex pattern (created once, reused for performance)
 const REGEX_COMBAT_TASK = /(?:Kill|Defeat)\s*-\s*(.+)$/;
@@ -18,6 +19,7 @@ class ZoneIndices {
         this.unregisterObserver = null; // Unregister function from centralized observer
         this.isActive = false;
         this.monsterZoneCache = null; // Cache monster name -> zone index mapping
+        this.monsterHridZoneCache = null; // Cache monster hrid -> zone index mapping
         this.taskMapIndexEnabled = false;
         this.mapIndexEnabled = false;
         this.isInitialized = false;
@@ -111,6 +113,7 @@ class ZoneIndices {
         }
 
         this.monsterZoneCache = new Map();
+        this.monsterHridZoneCache = new Map();
 
         for (const action of Object.values(gameData.actionDetailMap)) {
             // Only check combat actions
@@ -144,6 +147,21 @@ class ZoneIndices {
                     }
                 }
             }
+
+            // Cache every monster hrid (regular spawns + bosses) -> zone index.
+            // Locale-independent, used directly when quest data is available.
+            const spawns = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+            const bosses = action.combatZoneInfo?.fightInfo?.bossSpawns || [];
+            for (const spawn of [...spawns, ...bosses]) {
+                const spawnHrid = spawn.combatMonsterHrid;
+                if (
+                    spawnHrid &&
+                    (!this.monsterHridZoneCache.has(spawnHrid) ||
+                        zoneIndex < this.monsterHridZoneCache.get(spawnHrid))
+                ) {
+                    this.monsterHridZoneCache.set(spawnHrid, zoneIndex);
+                }
+            }
         }
     }
 
@@ -164,22 +182,40 @@ class ZoneIndices {
 
             const taskText = nameElement.textContent;
 
-            // Check if this is a combat task (contains "Kill" or "Defeat")
-            if (!taskText.includes('Kill') && !taskText.includes('Defeat')) {
-                continue; // Not a combat task, skip
+            // Resolve the task card's quest from the React fiber. A task is a combat task
+            // iff its quest carries a monsterHrid - this is locale-independent.
+            const card = nameElement.closest('[class*="RandomTask_randomTask"]');
+            const quest = card ? getQuestFromTaskCard(card) : null;
+
+            let monsterHrid = null;
+            if (quest) {
+                monsterHrid = quest.monsterHrid || null;
+                if (!monsterHrid) {
+                    continue; // Quest resolved - this is a non-combat (skilling) task
+                }
+            } else {
+                // Fiber quest unavailable - fall back to parsing the monster name suffix from
+                // the card text and resolving it via the locale-aware monster name lookup.
+                const monsterName = this.parseCombatTaskSuffix(taskText);
+                if (!monsterName) {
+                    continue;
+                }
+                monsterHrid = dataManager.getMonsterHridFromName(monsterName);
+                if (!monsterHrid) {
+                    continue;
+                }
             }
 
-            // Extract monster name from task text
-            // Format: "Defeat - Jerry" or "Kill - Monster Name"
-            const match = taskText.match(REGEX_COMBAT_TASK);
-            if (!match) {
-                continue; // Couldn't parse monster name
+            // Find the combat zone for this monster (prefer the hrid cache, fall back to
+            // the display-name cache)
+            let zoneIndex = this.getZoneIndexForMonsterHrid(monsterHrid);
+            if (!zoneIndex) {
+                const monsterDetailName =
+                    dataManager.getInitClientData()?.combatMonsterDetailMap?.[monsterHrid]?.name;
+                if (monsterDetailName) {
+                    zoneIndex = this.getZoneIndexForMonster(monsterDetailName);
+                }
             }
-
-            const monsterName = match[1].trim();
-
-            // Find the combat action for this monster
-            const zoneIndex = this.getZoneIndexForMonster(monsterName);
 
             if (zoneIndex) {
                 // Add index to the name element
@@ -221,6 +257,35 @@ class ZoneIndices {
 
             index++;
         }
+    }
+
+    /**
+     * Extract the monster name suffix from a combat task's name text.
+     * English clients render "Kill - X"/"Defeat - X"; translated clients render
+     * "<localized defeat label> - <monster name>". The separator is the only stable
+     * part, so the generic fallback takes the suffix after the last dash. Callers verify
+     * the suffix against combatMonsterDetailMap, so skilling "Skill - Action" names that
+     * aren't monsters resolve to null there.
+     * @param {string} taskText - Task name element text
+     * @returns {string|null} Monster name suffix or null if no dash separator is present
+     */
+    parseCombatTaskSuffix(taskText) {
+        const englishMatch = taskText.match(REGEX_COMBAT_TASK);
+        if (englishMatch) {
+            return englishMatch[1].trim();
+        }
+
+        const localizedMatch = taskText.match(/^[^-－–—]+[-－–—]\s*(.+)$/);
+        return localizedMatch ? localizedMatch[1].trim() : null;
+    }
+
+    /**
+     * Get zone index for a monster HRID
+     * @param {string} monsterHrid - Monster HRID (e.g., "/monsters/rat")
+     * @returns {number|null} Zone index or null if not found
+     */
+    getZoneIndexForMonsterHrid(monsterHrid) {
+        return this.monsterHridZoneCache?.get(monsterHrid) || null;
     }
 
     /**
@@ -317,6 +382,7 @@ class ZoneIndices {
 
         // Clear cache
         this.monsterZoneCache = null;
+        this.monsterHridZoneCache = null;
         this.isActive = false;
         this.isInitialized = false;
     }

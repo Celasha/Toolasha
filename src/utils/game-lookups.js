@@ -10,6 +10,7 @@
 
 import dataManager from '../core/data-manager.js';
 import { getReactFiberFromElement } from './marketplace-autofill.js';
+import { getActionName, getItemName } from './game-i18n.js';
 
 /**
  * Extract the last path segment from an hrid, e.g. "/actions/gathering/milking" -> "milking".
@@ -138,9 +139,10 @@ export function getActionHridFromName(actionName) {
         return null;
     }
 
-    // Try exact match first
+    // Try exact match first (English or translated)
     for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-        if (detail.name === actionName) {
+        const displayName = getActionName(hrid, detail.name);
+        if (displayName === actionName || detail.name === actionName) {
             return hrid;
         }
     }
@@ -148,7 +150,8 @@ export function getActionHridFromName(actionName) {
     // Try ★ ↔ (R) variants for refined items
     for (const variant of getRefinedNameVariants(actionName)) {
         for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            if (detail.name === variant) {
+            const displayName = getActionName(hrid, detail.name);
+            if (displayName === variant || detail.name === variant) {
                 return hrid;
             }
         }
@@ -169,9 +172,10 @@ export function getItemHridFromName(itemName) {
         return null;
     }
 
-    // Try exact match first
+    // Try exact match first (English or translated)
     for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-        if (detail.name === itemName) {
+        const displayName = getItemName(hrid, detail.name);
+        if (displayName === itemName || detail.name === itemName) {
             return hrid;
         }
     }
@@ -179,7 +183,8 @@ export function getItemHridFromName(itemName) {
     // Try ★ ↔ (R) variants for refined items
     for (const variant of getRefinedNameVariants(itemName)) {
         for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-            if (detail.name === variant) {
+            const displayName = getItemName(hrid, detail.name);
+            if (displayName === variant || detail.name === variant) {
                 return hrid;
             }
         }

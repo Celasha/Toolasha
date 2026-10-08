@@ -416,6 +416,7 @@ function parseEquipmentStatBreakdown(
 
         if (value > 0) {
             items.push({
+                itemHrid: equippedItem.itemHrid,
                 name: itemDetails.name,
                 enhancementLevel,
                 value: returnAsPercentage ? value * 100 : value,

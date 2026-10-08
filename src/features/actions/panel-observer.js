@@ -25,6 +25,7 @@ import {
     getActionHridFromFiber,
     getItemHridFromIconHref,
 } from '../../utils/game-lookups.js';
+import { translateGameName, getActionName } from '../../utils/game-i18n.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 
@@ -55,6 +56,34 @@ const _ENHANCING_TYPE = '/action_types/enhancing';
  */
 const updateTimeouts = new Map();
 const timerRegistry = createTimerRegistry();
+
+/**
+ * Labels of the enhancing panel's "Current Action" tab. The game localizes tab text
+ * (zh: 当前行动), so match both English and the translated label.
+ * @returns {Set<string>}
+ */
+function getCurrentActionTabLabels() {
+    return new Set(['Current Action', translateGameName('enhancingPanel', 'currentActionTab', 'Current Action')]);
+}
+
+/**
+ * Labels of the enhancing panel's "Target Level" input label (zh: 目标等级).
+ * @returns {Set<string>}
+ */
+function getTargetLevelLabels() {
+    return new Set(['Target Level', translateGameName('skillActionDetail', 'targetLevel', 'Target Level')]);
+}
+
+/**
+ * Labels of the enhancing panel's "Protect From Level" input label (zh: 保护起始等级).
+ * @returns {Set<string>}
+ */
+function getProtectFromLevelLabels() {
+    return new Set([
+        'Protect From Level',
+        translateGameName('skillActionDetail', 'protectFromLevel', 'Protect From Level'),
+    ]);
+}
 
 /**
  * Event handler debounce timers
@@ -440,7 +469,8 @@ function getCurrentActionTabButton(panel) {
 
     while (current && depth < maxDepth) {
         const buttons = Array.from(current.querySelectorAll('button[role="tab"]'));
-        const currentActionTab = buttons.find((btn) => btn.textContent.trim() === 'Current Action');
+        const currentActionTabLabels = getCurrentActionTabLabels();
+        const currentActionTab = buttons.find((btn) => currentActionTabLabels.has(btn.textContent.trim()));
 
         if (currentActionTab) {
             // Cache it on the panel for future lookups
@@ -496,7 +526,7 @@ function autoFillProtectFrom(panel, itemHrid) {
     if (!protectionItemHrid) return;
 
     const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
-        (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+        (el) => getTargetLevelLabels().has(el.textContent.trim()) && el.children.length === 0
     );
     const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
     const targetLevel = targetInput ? parseInt(targetInput.value, 10) : 0;
@@ -509,7 +539,7 @@ function autoFillProtectFrom(panel, itemHrid) {
     const optimalProtectFrom = pathResult.optimalStrategy.protectFrom;
 
     const protectLabels = Array.from(panel.querySelectorAll('*')).filter(
-        (el) => el.textContent.trim() === 'Protect From Level' && el.children.length === 0
+        (el) => getProtectFromLevelLabels().has(el.textContent.trim()) && el.children.length === 0
     );
     const protectInput = protectLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
     if (!protectInput) return;
@@ -639,7 +669,7 @@ async function handleEnhancingPanel(panel) {
         const autoTargetLevel = config.getSettingValue('enhanceSim_autoTargetLevel', 0);
         if (autoTargetLevel >= 1 && autoTargetLevel <= 20) {
             const labels = Array.from(panel.querySelectorAll('*')).filter(
-                (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+                (el) => getTargetLevelLabels().has(el.textContent.trim()) && el.children.length === 0
             );
             if (labels.length > 0) {
                 const input = labels[0].parentElement?.querySelector('input[type="number"], input[type="text"]');
@@ -696,10 +726,14 @@ function setupTabClickListeners(panel) {
 
     while (current && depth < maxDepth) {
         const buttons = Array.from(current.querySelectorAll('button[role="tab"]'));
-        const foundTabs = buttons.filter((btn) => {
-            const text = btn.textContent.trim();
-            return text === 'Enhance' || text === 'Current Action';
-        });
+        // Tab labels are localized by the game (zh: Enhance 强化 / Current Action 当前行动),
+        // so match both languages.
+        const tabLabels = new Set([
+            'Enhance',
+            getActionName('/actions/enhancing/enhance', 'Enhance'),
+            ...getCurrentActionTabLabels(),
+        ]);
+        const foundTabs = buttons.filter((btn) => tabLabels.has(btn.textContent.trim()));
 
         if (foundTabs.length === 2) {
             tabButtons = foundTabs;
@@ -747,7 +781,7 @@ function setupTabClickListeners(panel) {
  */
 function setupTargetAutoProtectListener(panel) {
     const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
-        (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+        (el) => getTargetLevelLabels().has(el.textContent.trim()) && el.children.length === 0
     );
     const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
     if (!targetInput || autoProtectTargetInputs.has(targetInput)) return;

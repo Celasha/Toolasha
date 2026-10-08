@@ -478,6 +478,7 @@ class AlchemyProfitCalculator {
                 tea: 0, // TODO: Add tea speed bonuses when tea-parser supports it
                 equipmentDetails: relevantSpeeds.map((item) => ({
                     name: item.itemName,
+                    itemHrid: item.itemHrid,
                     enhancementLevel: item.enhancementLevel,
                     speedBonus: item.scaledBonus,
                 })),
@@ -731,6 +732,7 @@ class AlchemyProfitCalculator {
                 tea: teaSpeed,
                 equipmentDetails: relevantSpeeds.map((item) => ({
                     name: item.itemName,
+                    itemHrid: item.itemHrid,
                     enhancementLevel: item.enhancementLevel,
                     speedBonus: item.scaledBonus,
                 })),
@@ -1029,6 +1031,7 @@ class AlchemyProfitCalculator {
                 tea: teaSpeed,
                 equipmentDetails: relevantSpeeds.map((item) => ({
                     name: item.itemName,
+                    itemHrid: item.itemHrid,
                     enhancementLevel: item.enhancementLevel,
                     speedBonus: item.scaledBonus,
                 })),
@@ -1445,6 +1448,7 @@ class AlchemyProfitCalculator {
                 tea: teaSpeed,
                 equipmentDetails: relevantSpeeds.map((item) => ({
                     name: item.itemName,
+                    itemHrid: item.itemHrid,
                     enhancementLevel: item.enhancementLevel,
                     speedBonus: item.scaledBonus,
                 })),
@@ -1786,6 +1790,7 @@ class AlchemyProfitCalculator {
                 tea: teaSpeed,
                 equipmentDetails: relevantSpeeds.map((item) => ({
                     name: item.itemName,
+                    itemHrid: item.itemHrid,
                     enhancementLevel: item.enhancementLevel,
                     speedBonus: item.scaledBonus,
                 })),

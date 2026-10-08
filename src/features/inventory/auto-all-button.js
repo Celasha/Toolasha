@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import tooltipObserver from '../../core/tooltip-observer.js';
+import { getItemName, translateGameName } from '../../utils/game-i18n.js';
 
 class AutoAllButton {
     constructor() {
@@ -115,8 +116,11 @@ class AutoAllButton {
     clickAllButton(container) {
         const buttons = container.querySelectorAll('button');
 
+        // The button label is localized by the game (zh: 全部), so match both.
+        const allLabels = new Set(['All', translateGameName('item', 'all', 'All')]);
+
         for (const button of buttons) {
-            if (button.textContent.trim() === 'All' && !button.disabled) {
+            if (allLabels.has(button.textContent.trim()) && !button.disabled) {
                 button.click();
                 break;
             }
@@ -130,12 +134,14 @@ class AutoAllButton {
      * @returns {string|null} Item HRID or null if not found
      */
     findItemHrid(itemName, gameData) {
-        // Build cache on first use
+        // Build cache on first use. Index both the English data name and the
+        // game's translated display name so the lookup works in any locale.
         if (!this.itemNameToHridCache) {
             this.itemNameToHridCache = new Map();
             for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
                 if (item.name) {
                     this.itemNameToHridCache.set(item.name, hrid);
+                    this.itemNameToHridCache.set(getItemName(hrid, item.name), hrid);
                 }
             }
         }

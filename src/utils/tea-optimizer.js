@@ -21,6 +21,7 @@ import { getItemPriceOutlierInfo } from './market-data.js';
 import { calculateBonusRevenue } from './bonus-revenue-calculator.js';
 import alchemyProfitCalculator from '../features/market/alchemy-profit-calculator.js';
 import { MARKET_TAX } from './profit-constants.js';
+import { translateGameName } from './game-i18n.js';
 
 // Skill name to action type mapping
 export const SKILL_TO_ACTION_TYPE = {
@@ -1086,8 +1087,14 @@ export function findOptimalTeas(
         const skillPrefix = `/action_categories/${normalizedSkill}/`;
 
         for (const [categoryHrid, categoryDetail] of Object.entries(gameData.actionCategoryDetailMap)) {
-            // Match both the category name AND ensure it's for the correct skill
-            if (categoryDetail.name === locationName && categoryHrid.startsWith(skillPrefix)) {
+            // Match both the category name AND ensure it's for the correct skill.
+            // Double-match against the English data name and the game-localized name,
+            // since the location tab text comes from the game DOM (localized in zh).
+            const translatedName = translateGameName('actionCategoryNames', categoryHrid, categoryDetail.name);
+            if (
+                (categoryDetail.name === locationName || translatedName === locationName) &&
+                categoryHrid.startsWith(skillPrefix)
+            ) {
                 targetCategoryHrid = categoryHrid;
                 break;
             }

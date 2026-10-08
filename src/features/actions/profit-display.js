@@ -21,6 +21,7 @@ import {
     calculateGatheringActionTotalsFromBase,
 } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
+import { getItemName } from '../../utils/game-i18n.js';
 import loadoutState from '../../core/loadout-state.js';
 import scrollSimulator from '../combat/scroll-simulator.js';
 import { SCROLL_BUFF_ITEMS } from '../../utils/scroll-buff-values.js';
@@ -412,7 +413,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(drink.missingPrice || drink.isOutlier);
             line.textContent = t('profitDisplay.drinkCostLineNoEach', {
-                name: drink.name,
+                name: getItemName(drink.hrid, drink.name),
                 rate: `${drink.drinksPerHour.toFixed(2)}${t('profitDisplay.hrSuffix')}`,
                 price: formatWithSeparator(drink.priceEach),
                 missingNote: missingPriceNote,
@@ -509,7 +510,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     if ((profitData.details.equipmentEfficiencyItems || []).length > 0) {
         for (const item of profitData.details.equipmentEfficiencyItems) {
             const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-            effRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
+            effRows.push(`+${item.value.toFixed(2)}% ${getItemName(item.itemHrid, item.name)}${enh}`);
         }
     } else if (profitData.details.equipmentEfficiency > 0) {
         effRows.push(
@@ -621,7 +622,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         const rareRows = [];
         for (const item of rareFindBreakdown.equipmentItems || []) {
             const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-            rareRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
+            rareRows.push(`+${item.value.toFixed(2)}% ${getItemName(item.itemHrid, item.name)}${enh}`);
         }
         if (rareFindBreakdown.house > 0) {
             rareRows.push(
@@ -1308,7 +1309,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     if ((profitData.equipmentEfficiencyItems || []).length > 0) {
         for (const item of profitData.equipmentEfficiencyItems) {
             const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-            effRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
+            effRows.push(`+${item.value.toFixed(2)}% ${getItemName(item.itemHrid, item.name)}${enh}`);
         }
     } else if (profitData.equipmentEfficiency > 0) {
         effRows.push(
@@ -1369,7 +1370,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         const rareRows = [];
         for (const item of productionRareFindBreakdown.equipmentItems || []) {
             const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-            rareRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
+            rareRows.push(`+${item.value.toFixed(2)}% ${getItemName(item.itemHrid, item.name)}${enh}`);
         }
         if (productionRareFindBreakdown.house > 0) {
             rareRows.push(
@@ -1945,7 +1946,7 @@ function buildGatheringPerActionBreakdown(profitData) {
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(drink.missingPrice || drink.isOutlier);
             line.textContent = t('profitDisplay.drinkCostLineEach', {
-                name: drink.name,
+                name: getItemName(drink.hrid, drink.name),
                 rate: `${drinksPA.toFixed(2)}${t('profitDisplay.actionSuffix')}`,
                 price: formatWithSeparator(drink.priceEach),
                 missingNote: missingPriceNote,
@@ -2678,7 +2679,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(drink.missingPrice || drink.isOutlier);
             line.textContent = t('profitDisplay.drinkCostLineNoEach', {
-                name: drink.name,
+                name: getItemName(drink.hrid, drink.name),
                 rate: `${totalDrinks.toFixed(2)} ${t('profitDisplay.drinksUnit')}`,
                 price: formatWithSeparator(drink.priceEach),
                 missingNote: missingPriceNote,

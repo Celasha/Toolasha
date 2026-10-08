@@ -10,6 +10,11 @@ import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { translateGameName } from '../../utils/game-i18n.js';
+
+const PARTY_CHANNEL_HRID = '/chat_channel_types/party';
+// Inactive chat tab panels render their channel HRID as bare text (e.g. "/chat_channel_types/party")
+const CHANNEL_HRID_PATTERN = /^\/chat_channel_types\/[a-z_]+$/;
 
 class DungeonTrackerChatAnnotations {
     constructor() {
@@ -143,10 +148,15 @@ class DungeonTrackerChatAnnotations {
         this._pruneDetachedTabHandlers();
 
         // Find all chat tab buttons
-        const tabButtons = document.querySelectorAll('.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root');
+        const chatContainer = document.querySelector('[class*="Chat_tabsComponentContainer"]');
+        const tabButtons = chatContainer
+            ? Array.from(chatContainer.querySelectorAll('.MuiButtonBase-root'))
+            : [];
+        // Resolve the Party tab structurally (locale-independent) once per scan
+        const partyButton = chatContainer ? this._findPartyTabButton(chatContainer) : null;
 
         for (const button of tabButtons) {
-            if (button.textContent.includes('Party')) {
+            if (button === partyButton || this._matchesPartyTabLabel(button)) {
                 // Remove old listener if exists
                 const oldHandler = this.tabClickHandlers.get(button);
                 if (oldHandler) {
@@ -177,6 +187,74 @@ class DungeonTrackerChatAnnotations {
             button.removeEventListener('click', handler);
             this.tabClickHandlers.delete(button);
         }
+    }
+
+    /**
+     * Check whether a tab button is the Party channel tab via non-structural signals
+     * (attribute annotation, game-translated label, English label).
+     * @param {HTMLElement} button - Chat tab button
+     * @returns {boolean}
+     * @private
+     */
+    _matchesPartyTabLabel(button) {
+        if (button?.dataset?.mentionChannel === PARTY_CHANNEL_HRID) return true;
+
+        const text = button?.textContent || '';
+        if (text.includes('Party')) return true;
+
+        const translated = translateGameName('chatChannelTypeNames', PARTY_CHANNEL_HRID, '');
+        return !!translated && text.includes(translated);
+    }
+
+    /**
+     * Find the Party chat tab button without relying on its visible text.
+     *
+     * The game renders every channel tab panel at all times (hidden via CSS when inactive):
+     * inactive panels contain only the channel HRID as text, while the active panel renders
+     * live chat content. Panels and tab buttons share the same fixed order inside the
+     * TabsComponent, so the HRID panel index maps directly to the tab button index.
+     * @param {HTMLElement} [container] - The Chat tabs component container
+     * @returns {HTMLElement|null}
+     * @private
+     */
+    _findPartyTabButton(container) {
+        const chatContainer = container || document.querySelector('[class*="Chat_tabsComponentContainer"]');
+        if (!chatContainer) return null;
+
+        // Fallback-first button set: every MUI button in the container (chat panels may
+        // contain other buttons, so this must only be used for label matching).
+        const allButtons = Array.from(chatContainer.querySelectorAll('.MuiButtonBase-root'));
+        if (allButtons.length === 0) return null;
+
+        const panelsContainer = chatContainer.querySelector('[class*="TabsComponent_tabPanelsContainer"]');
+        if (panelsContainer) {
+            // The tab strip holds exactly one button per panel, in the same order
+            const tabButtons = Array.from(
+                chatContainer.querySelectorAll('[class*="TabsComponent_tabsContainer"] .MuiButtonBase-root')
+            );
+            const panels = Array.from(panelsContainer.children);
+            let partyPanelIndex = panels.findIndex(
+                (panel) => panel.textContent?.trim() === PARTY_CHANNEL_HRID
+            );
+
+            // When the Party tab itself is active its panel shows live chat instead of the
+            // bare HRID; it is then the only panel whose text is not a channel HRID.
+            if (partyPanelIndex === -1) {
+                const nonHridPanels = panels.filter(
+                    (panel) => !CHANNEL_HRID_PATTERN.test(panel.textContent?.trim() || '')
+                );
+                if (nonHridPanels.length === 1) {
+                    partyPanelIndex = panels.indexOf(nonHridPanels[0]);
+                }
+            }
+
+            if (partyPanelIndex !== -1 && tabButtons[partyPanelIndex]) {
+                return tabButtons[partyPanelIndex];
+            }
+        }
+
+        // Fallback for older/simpler DOM structures
+        return allButtons.find((button) => this._matchesPartyTabLabel(button)) || null;
     }
 
     /**
@@ -616,6 +694,44 @@ class DungeonTrackerChatAnnotations {
     }
 
     /**
+     * Build locale-aware markers for the party system chat messages this feature parses.
+     * The messages render from the game's systemChatMessage i18n templates and are
+     * localized (zh: 战斗开始 / 钥匙数量 / 队伍在第N波失败 / 战斗结束), so match both the
+     * English and the translated forms. Recomputed on each call so a late-available
+     * game i18n instance still yields translated markers.
+     * @returns {{battleStarted: string[], battleEnded: string[], keyCounts: string[], waveFailed: RegExp[]}}
+     * @private
+     */
+    _getChatMarkers() {
+        // Extract the visible prefix before the template placeholder, e.g.
+        // "Battle started: $t(actionNames.{{actionHrid}})" -> "Battle started:".
+        const prefixOf = (key, enPrefix) => {
+            const template = translateGameName('systemChatMessage', key, enPrefix);
+            const placeholderIndex = template.search(/\$t\(|\{\{/);
+            const prefix = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex)).trimEnd();
+            return prefix || enPrefix;
+        };
+        const waveFailedRegexes = [/Party failed on wave \d+/];
+        const waveTemplate = translateGameName('systemChatMessage', 'partyWaveFailed', 'Party failed on wave {{wave}}.');
+        if (waveTemplate !== 'Party failed on wave {{wave}}.') {
+            waveFailedRegexes.push(
+                new RegExp(
+                    waveTemplate
+                        .split('{{wave}}')
+                        .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                        .join('\\d+')
+                )
+            );
+        }
+        return {
+            battleStarted: [...new Set(['Battle started:', prefixOf('partyBattleStarted', 'Battle started:')])],
+            battleEnded: [...new Set(['Battle ended:', prefixOf('partyBattleEnded', 'Battle ended:')])],
+            keyCounts: [...new Set(['Key counts:', prefixOf('partyKeyCount', 'Key counts:')])],
+            waveFailed: waveFailedRegexes,
+        };
+    }
+
+    /**
      * Extract chat events from DOM
      * @returns {Array} Array of chat events with timestamps and types
      */
@@ -623,6 +739,7 @@ class DungeonTrackerChatAnnotations {
         // Query ALL chat messages (matches working DRT script - no tab filtering)
         const nodes = [...document.querySelectorAll('[class^="ChatMessage_chatMessage"]')];
         const events = [];
+        const markers = this._getChatMarkers();
 
         for (const node of nodes) {
             if (node.dataset.processed === '1') continue;
@@ -631,14 +748,15 @@ class DungeonTrackerChatAnnotations {
 
             // Check message relevance FIRST before parsing timestamp
             // Battle started message
-            if (text.includes('Battle started:')) {
+            const battleStartedPrefix = markers.battleStarted.find((prefix) => text.includes(prefix));
+            if (battleStartedPrefix) {
                 const timestamp = this.getTimestampFromMessage(node);
                 if (!timestamp) {
                     console.warn('[Dungeon Tracker Debug] Battle started message has no timestamp:', text);
                     continue;
                 }
 
-                const dungeonName = text.split('Battle started:')[1]?.split(']')[0]?.trim();
+                const dungeonName = text.split(battleStartedPrefix)[1]?.split(']')[0]?.trim();
                 if (dungeonName) {
                     // Cache the dungeon name (survives chat scrolling)
                     this.lastSeenDungeonName = dungeonName;
@@ -654,7 +772,7 @@ class DungeonTrackerChatAnnotations {
                 // as a session boundary for the forward-scan pairing logic.
             }
             // Key counts message (warn if timestamp fails - these should always have timestamps)
-            else if (text.includes('Key counts:')) {
+            else if (markers.keyCounts.some((prefix) => text.includes(prefix))) {
                 const timestamp = this.getTimestampFromMessage(node, true);
                 if (!timestamp) continue;
 
@@ -669,7 +787,7 @@ class DungeonTrackerChatAnnotations {
                 });
             }
             // Party failed message
-            else if (text.match(/Party failed on wave \d+/)) {
+            else if (markers.waveFailed.some((regex) => regex.test(text))) {
                 const timestamp = this.getTimestampFromMessage(node);
                 if (!timestamp) continue;
 
@@ -681,7 +799,7 @@ class DungeonTrackerChatAnnotations {
                 // Do NOT mark fail as processed — must persist as session context.
             }
             // Battle ended (canceled/fled)
-            else if (text.includes('Battle ended:')) {
+            else if (markers.battleEnded.some((prefix) => text.includes(prefix))) {
                 const timestamp = this.getTimestampFromMessage(node);
                 if (!timestamp) continue;
 
@@ -735,16 +853,14 @@ class DungeonTrackerChatAnnotations {
      * @returns {boolean} True if party chat is visible
      */
     isPartySelected() {
-        const selectedTabEl = document.querySelector(
-            `.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root[aria-selected="true"]`
-        );
+        const partyButton = this._findPartyTabButton();
         const tabsEl = document.querySelector(
-            '.Chat_tabsComponentContainer__3ZoKe .TabsComponent_tabPanelsContainer__26mzo'
+            '[class*="Chat_tabsComponentContainer"] [class*="TabsComponent_tabPanelsContainer"]'
         );
         return (
-            selectedTabEl &&
-            tabsEl &&
-            selectedTabEl.textContent.includes('Party') &&
+            !!partyButton &&
+            partyButton.getAttribute('aria-selected') === 'true' &&
+            !!tabsEl &&
             !tabsEl.classList.contains('TabsComponent_hidden__255ag')
         );
     }

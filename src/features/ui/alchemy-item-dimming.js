@@ -7,6 +7,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 /**
  * AlchemyItemDimming class dims items based on level requirements
@@ -126,6 +127,9 @@ class AlchemyItemDimming {
         // It appears when clicking in the "Alchemize Item" box
         const itemSelectorMenus = document.querySelectorAll('div.ItemSelector_menu__12sEM');
 
+        // The label is localized by the game (zh: 炼金物品), so match both languages.
+        const alchemizeLabel = translateGameName('skillActionDetail', 'alchemizeItem', 'Alchemize Item');
+
         // Check each menu to find the one with "Alchemize Item" label
         for (const menu of itemSelectorMenus) {
             // Look for the ItemSelector_label element in the document
@@ -133,7 +137,8 @@ class AlchemyItemDimming {
             const alchemyLabels = document.querySelectorAll('div.ItemSelector_label__22ds9');
 
             for (const label of alchemyLabels) {
-                if (label.textContent.trim() === 'Alchemize Item') {
+                const labelText = label.textContent.trim();
+                if (labelText === 'Alchemize Item' || labelText === alchemizeLabel) {
                     // Found the alchemy label, this menu is likely the alchemy selector
                     return menu;
                 }

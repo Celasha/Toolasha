@@ -20,6 +20,7 @@ import {
     createPriceCache,
     resolveItemPrice,
 } from '../../utils/profit-helpers.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 /**
  * ProfitCalculator class handles profit calculations for production actions
@@ -265,7 +266,7 @@ class ProfitCalculator {
         const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
 
         return {
-            itemName: itemDetails.name,
+            itemName: getItemName(itemHrid, itemDetails.name),
             itemHrid,
             actionTime: effectiveActionTime,
             actionsPerHour,
@@ -409,7 +410,7 @@ class ProfitCalculator {
 
                 costs.push({
                     itemHrid: actionDetails.upgradeItemHrid,
-                    itemName: itemDetails.name,
+                    itemName: getItemName(actionDetails.upgradeItemHrid, itemDetails.name),
                     baseAmount: 1,
                     amount: reducedAmount,
                     askPrice: resolved.price,
@@ -447,7 +448,7 @@ class ProfitCalculator {
 
                 costs.push({
                     itemHrid: input.itemHrid,
-                    itemName: itemDetails.name,
+                    itemName: getItemName(input.itemHrid, itemDetails.name),
                     baseAmount: baseAmount,
                     amount: reducedAmount,
                     askPrice: resolved.price,

@@ -5,6 +5,7 @@
  */
 
 import { getItemPriceOutlierInfo } from './market-data.js';
+import { getItemName } from './game-i18n.js';
 import expectedValueCalculator from '../features/market/expected-value-calculator.js';
 import dataManager from '../core/data-manager.js';
 import { parseEssenceFindBonus, parseRareFindBonus, parseRareFindBreakdown } from './equipment-parser.js';
@@ -117,7 +118,7 @@ export function calculateBonusRevenue(
 
             bonusDrops.push({
                 itemHrid: drop.itemHrid,
-                itemName: itemDetails.name,
+                itemName: getItemName(drop.itemHrid, itemDetails.name),
                 dropRate: finalDropRate,
                 dropsPerHour,
                 dropsPerAction,
@@ -180,7 +181,7 @@ export function calculateBonusRevenue(
 
             bonusDrops.push({
                 itemHrid: drop.itemHrid,
-                itemName: itemDetails.name,
+                itemName: getItemName(drop.itemHrid, itemDetails.name),
                 dropRate: finalDropRate,
                 dropsPerHour,
                 dropsPerAction,

@@ -24,6 +24,8 @@ import {
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { debugEquipmentSpeedBonuses, parseEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
 import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
+import { getActionName, getItemName, getMonsterName, translateGameName } from '../../utils/game-i18n.js';
+import { getQuestFromTaskCard } from '../../utils/game-lookups.js';
 import { runSimulation } from '../combat-sim/combat-sim-runner.js';
 import {
     buildAllPlayerDTOs,
@@ -34,8 +36,11 @@ import {
 } from '../combat-sim/combat-sim-adapter.js';
 import loadoutState from '../../core/loadout-state.js';
 
-// Compiled regex pattern (created once, reused for performance)
-const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
+// Compiled regex pattern (created once, reused for performance).
+// Language-neutral: matches the "current / total" progress pair regardless of the
+// localized "Progress:" label, including the full-width slash used by the zh client.
+// The non-digit boundaries avoid grabbing fragments of longer numbers (e.g. reward counts).
+const REGEX_TASK_PROGRESS = /(?:^|[^\d])(\d+)\s*[/／]\s*(\d+)(?:[^\d]|$)/;
 const RATING_MODE_TOKENS = 'tokens';
 const RATING_MODE_GOLD = 'gold';
 
@@ -177,7 +182,7 @@ function calcMaterialsAvailability(materials, remaining, invMap) {
         const need = mat.a * remaining;
         const canDo = Math.floor(have / mat.a);
         if (canDo < craftable) craftable = canDo;
-        details.push({ name: mat.n, have, need, enough: have >= need });
+        details.push({ hrid: mat.h, name: mat.n, have, need, enough: have >= need });
     }
     if (craftable === Infinity) craftable = 0;
     return { craftable, details };
@@ -254,7 +259,7 @@ function renderMaterialDetails(container, details) {
     for (const d of details) {
         const line = document.createElement('div');
         line.style.color = d.enough ? '#4ade80' : config.COLOR_WARNING;
-        line.textContent = `${d.name}: ${formatKMB(d.have)} / ${formatKMB(d.need)}`;
+        line.textContent = `${getItemName(d.hrid, d.name)}: ${formatKMB(d.have)} / ${formatKMB(d.need)}`;
         container.appendChild(line);
     }
 }
@@ -367,6 +372,31 @@ function getRelativeEfficiencyGradientColor(value, minValue, maxValue, minColor,
     const clamped = Math.min(Math.max(normalized, 0), 1);
     const blendedColor = interpolateRgbColor(startColor, endColor, clamped);
     return formatRgbColor(blendedColor);
+}
+
+// Cache of regexes that match "Defeat - Monster Name" task descriptions in
+// whatever language the game client is set to. English + translated fallback.
+let defeatDescriptionRegexes = null;
+function getDefeatDescriptionRegexes() {
+    if (defeatDescriptionRegexes) return defeatDescriptionRegexes;
+    const template = translateGameName('randomTask', 'defeat', 'Defeat');
+    const placeholderIndex = template.indexOf('{{');
+    const translated = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex))
+        .replace(/[-\s]+$/, '')
+        .trim();
+    const labels = ['Defeat', translated || 'Defeat'].filter(Boolean);
+    const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    defeatDescriptionRegexes = escaped.map((label) => new RegExp(`^${label}\\s*-\\s*(.+)$`, 'i'));
+    return defeatDescriptionRegexes;
+}
+
+export function matchDefeatDescription(description) {
+    if (!description) return null;
+    for (const re of getDefeatDescriptionRegexes()) {
+        const m = description.match(re);
+        if (m) return m[1].trim();
+    }
+    return null;
 }
 
 /**
@@ -823,7 +853,7 @@ class TaskProfitDisplay {
             }
 
             // Calculate profit
-            const profitData = await calculateTaskProfit(taskData);
+            const profitData = await calculateTaskProfit(taskData, taskData.questInfo);
 
             // Show combat estimate UI for combat tasks
             if (profitData === null) {
@@ -907,21 +937,28 @@ class TaskProfitDisplay {
             ? nameNode.textContent.replace(zoneSpan.textContent, '').trim()
             : nameNode.textContent.trim();
 
-        // Get quantity from progress (plain div with text "Progress: 0 / 1562")
-        // Find all divs in taskInfo and look for the one containing "Progress:"
+        // Get quantity from the progress pair (e.g. "Progress: 0 / 1562" or zh "进度：0/1562").
+        // The localized "Progress:" label varies by client language, so match the
+        // language-neutral "current / total" number pair directly. Outer wrapper divs also
+        // contain the pair as a substring, so pick the shortest matching div - the progress
+        // div itself is the smallest element that carries exactly this pattern.
         let quantity = 0;
         let currentProgress = 0;
         const taskInfoDivs = taskNode.querySelectorAll('div');
+        let progressMatch = null;
+        let progressMatchLength = Infinity;
         for (const div of taskInfoDivs) {
             const text = div.textContent.trim();
-            if (text.startsWith('Progress:')) {
-                const match = text.match(REGEX_TASK_PROGRESS);
-                if (match) {
-                    currentProgress = parseInt(match[1]); // Current progress
-                    quantity = parseInt(match[2]); // Total quantity
-                }
-                break;
+            if (!text.includes('/') && !text.includes('／')) continue;
+            const match = text.match(REGEX_TASK_PROGRESS);
+            if (match && text.length < progressMatchLength) {
+                progressMatch = match;
+                progressMatchLength = text.length;
             }
+        }
+        if (progressMatch) {
+            currentProgress = parseInt(progressMatch[1], 10); // Current progress
+            quantity = parseInt(progressMatch[2], 10); // Total quantity
         }
 
         // Get rewards
@@ -952,12 +989,22 @@ class TaskProfitDisplay {
             }
         }
 
+        // Resolve locale-independent quest info {actionHrid, monsterHrid} from the card's
+        // React fiber. parseTaskData may receive either the card itself or a descendant
+        // task-info node, so normalize to the card element first.
+        const cardEl = taskNode.closest(GAME.TASK_CARD) || taskNode;
+        const quest = getQuestFromTaskCard(cardEl);
+        const questInfo = quest
+            ? { actionHrid: quest.actionHrid || null, monsterHrid: quest.monsterHrid || null }
+            : null;
+
         const taskData = {
             description,
             coinReward,
             taskTokenReward,
             quantity,
             currentProgress,
+            questInfo,
         };
 
         return taskData;
@@ -1050,13 +1097,19 @@ class TaskProfitDisplay {
      * @private
      */
     async _runCombatSimEstimate(container, taskData, loadoutName, mode = 'solo') {
-        // Extract monster name from "Defeat - Monster Name" description
-        const match = taskData.description.match(/^Defeat\s*-\s*(.+)$/i);
-        const monsterName = match?.[1]?.trim() || null;
+        // Resolve the target monster. Prefer the locale-independent monsterHrid straight from
+        // the task card's React quest; fall back to parsing the English "Defeat - Monster Name"
+        // description when quest data is unavailable.
+        let monsterName = null;
+        let monsterHrid = taskData.questInfo?.monsterHrid || null;
+
+        if (!monsterHrid) {
+            monsterName = matchDefeatDescription(taskData.description);
+            monsterHrid = monsterName ? dataManager.getMonsterHridFromName(monsterName) : null;
+        }
 
         const initClientData = dataManager.getInitClientData();
         const monsterMap = initClientData?.combatMonsterDetailMap;
-        const monsterHrid = monsterName ? dataManager.getMonsterHridFromName(monsterName) : null;
 
         if (!monsterHrid) {
             const knownNames = monsterMap
@@ -1398,19 +1451,32 @@ class TaskProfitDisplay {
             for (const node of allTaskInfos) {
                 const td = this.parseTaskData(node);
                 if (!td) continue;
-                const m = td.description.match(/^Defeat\s*-\s*(.+)$/i);
-                if (!m) continue;
-                const mName = m[1].trim();
-                const mHrid = dataManager.getMonsterHridFromName(mName);
-                if (!mHrid) continue;
+
+                // Resolve the monster. Prefer the locale-independent quest hrid; fall back to
+                // the English "Defeat - Monster Name" description when quest data is missing.
+                let mHrid = td.questInfo?.monsterHrid || null;
+                let mName = null;
+                if (!mHrid) {
+                    mName = matchDefeatDescription(td.description);
+                    if (!mName) continue;
+                    mHrid = dataManager.getMonsterHridFromName(mName);
+                    if (!mHrid) continue;
+                }
                 const mZone = dataManager.getCombatZoneForMonster(mHrid);
                 if (mZone !== zoneHrid) continue;
+
+                // Resolve a display name for the bottleneck summary line
+                if (!mName) {
+                    mName =
+                        dataManager.getInitClientData()?.combatMonsterDetailMap?.[mHrid]?.name ||
+                        mHrid.split('/').pop();
+                }
 
                 const rem = Math.max((td.quantity ?? 0) - (td.currentProgress ?? 0), 0);
                 const mKills = simResult.deaths?.[mHrid] ?? 0;
                 const mKillsPerHour = mKills / 1; // SIM_HOURS = 1
                 const hoursNeeded = mKillsPerHour > 0 ? rem / mKillsPerHour : Infinity;
-                zoneTasks.push({ name: mName, remaining: rem, killsPerHour: mKillsPerHour, hoursNeeded });
+                zoneTasks.push({ hrid: mHrid, name: mName, remaining: rem, killsPerHour: mKillsPerHour, hoursNeeded });
             }
 
             if (zoneTasks.length > 1) {
@@ -1422,14 +1488,16 @@ class TaskProfitDisplay {
                 const summary = document.createElement('div');
                 summary.style.cssText =
                     'margin-top: 4px; font-size: 0.7rem; color: #aaddff; border-top: 1px solid #333; padding-top: 4px;';
-                const zoneName =
+                const zoneName = getActionName(
+                    zoneHrid,
                     dataManager.getInitClientData()?.actionDetailMap?.[zoneHrid]?.name ||
-                    t('taskProfitDisplay.zoneFallbackLabel');
+                        t('taskProfitDisplay.zoneFallbackLabel')
+                );
                 summary.textContent = t('taskProfitDisplay.zoneSummaryLine', {
                     zoneName,
                     fights: formatKMB(fightsNeeded),
                     time: timeReadable(totalSeconds),
-                    bottleneckName: bottleneck.name,
+                    bottleneckName: getMonsterName(bottleneck.hrid, bottleneck.name),
                 });
                 container.appendChild(summary);
             }
@@ -2221,7 +2289,7 @@ class TaskProfitDisplay {
                             ? ` (${(baseTaskSpeed * 100).toFixed(2)}% + ${(enhBonus * enhLevel * 100).toFixed(2)}%)`
                             : '';
                     lines.push(
-                        `<div style="margin-left: 10px;">- ${badgeDetails.name}${enhText}: +${taskSpeedBonus.toFixed(2)}%${detailText}</div>`
+                        `<div style="margin-left: 10px;">- ${getItemName(trinketSlot.itemHrid, badgeDetails.name)}${enhText}: +${taskSpeedBonus.toFixed(2)}%${detailText}</div>`
                     );
                 }
             }

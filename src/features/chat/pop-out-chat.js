@@ -12,6 +12,13 @@ import { t } from '../../core/i18n.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { chatBlockList } from './chat-block-list.js';
+import {
+    getItemName,
+    getAbilityName,
+    getActionName,
+    getMonsterName,
+    getSkillName,
+} from '../../utils/game-i18n.js';
 
 const RELAY_CHANNEL = 'mwi-chat-relay';
 const SEND_CHANNEL = 'mwi-chat-send';
@@ -71,7 +78,9 @@ const SKILL_HRID_TO_NAME = {
  */
 function resolveSystemMessage(messageKey, meta) {
     if (messageKey === 'systemChatMessage.characterLeveledUp') {
-        const skillName = SKILL_HRID_TO_NAME[meta.skillHrid] || meta.skillHrid.split('/').pop().replace(/_/g, ' ');
+        const fallbackSkillName =
+            SKILL_HRID_TO_NAME[meta.skillHrid] || meta.skillHrid.split('/').pop().replace(/_/g, ' ');
+        const skillName = getSkillName(meta.skillHrid, fallbackSkillName);
         return t('popOutChat.levelUpMessage', { name: meta.name, skillName, level: meta.level });
     }
     return null;
@@ -85,7 +94,8 @@ function resolveSystemMessage(messageKey, meta) {
 function resolveLink(link) {
     if (link.linkType === '/chat_link_types/market_listing') {
         const itemDetails = dataManager.getItemDetails(link.itemHrid);
-        const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+        const fallbackName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+        const itemName = getItemName(link.itemHrid, fallbackName);
         const enhancement = link.itemEnhancementLevel > 0 ? ` +${link.itemEnhancementLevel}` : '';
         const count = link.itemCount > 1 ? ` ×${link.itemCount}` : '';
         const price = formatKMB(link.price);
@@ -94,34 +104,40 @@ function resolveLink(link) {
     }
     if (link.linkType === '/chat_link_types/item') {
         const itemDetails = dataManager.getItemDetails(link.itemHrid);
-        const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+        const fallbackName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+        const itemName = getItemName(link.itemHrid, fallbackName);
         const enhancement = link.itemEnhancementLevel > 0 ? ` +${link.itemEnhancementLevel}` : '';
         const count = link.itemCount > 1 ? ` ×${link.itemCount}` : '';
         return `[${itemName}${enhancement}${count}]`;
     }
     if (link.linkType === '/chat_link_types/ability') {
         const abilityDetails = dataManager.getInitClientData()?.abilityDetailMap?.[link.abilityHrid];
-        const abilityName = abilityDetails?.name || link.abilityHrid.split('/').pop().replace(/_/g, ' ');
+        const fallbackName = abilityDetails?.name || link.abilityHrid.split('/').pop().replace(/_/g, ' ');
+        const abilityName = getAbilityName(link.abilityHrid, fallbackName);
         return `[${abilityName} ${t('popOutChat.levelAbbreviation')}${link.abilityLevel}]`;
     }
     if (link.linkType === '/chat_link_types/skill') {
-        const skillName = SKILL_HRID_TO_NAME[link.skillHrid] || link.skillHrid.split('/').pop().replace(/_/g, ' ');
+        const fallbackName = SKILL_HRID_TO_NAME[link.skillHrid] || link.skillHrid.split('/').pop().replace(/_/g, ' ');
+        const skillName = getSkillName(link.skillHrid, fallbackName);
         return `[${skillName} ${t('popOutChat.levelAbbreviation')}${link.skillLevel}]`;
     }
     if (link.linkType === '/chat_link_types/party') {
         const actionDetails = dataManager.getActionDetails(link.partyActionHrid);
-        const zoneName = actionDetails?.name || link.partyActionHrid.split('/').pop().replace(/_/g, ' ');
+        const fallbackName = actionDetails?.name || link.partyActionHrid.split('/').pop().replace(/_/g, ' ');
+        const zoneName = getActionName(link.partyActionHrid, fallbackName);
         const tier = ` T${link.partyDifficultyTier ?? 0}`;
         return `[${t('popOutChat.partyLinkLabel')} ${zoneName}${tier}]`;
     }
     if (link.linkType === '/chat_link_types/collection') {
         const itemDetails = dataManager.getItemDetails(link.itemHrid);
-        const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+        const fallbackName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+        const itemName = getItemName(link.itemHrid, fallbackName);
         return `[${t('popOutChat.collectionLinkLabel')} ${itemName} ×${formatKMB(link.itemCount)}]`;
     }
     if (link.linkType === '/chat_link_types/bestiary') {
         const monsterDetails = dataManager.getInitClientData()?.combatMonsterDetailMap?.[link.monsterHrid];
-        const monsterName = monsterDetails?.name || link.monsterHrid.split('/').pop().replace(/_/g, ' ');
+        const fallbackName = monsterDetails?.name || link.monsterHrid.split('/').pop().replace(/_/g, ' ');
+        const monsterName = getMonsterName(link.monsterHrid, fallbackName);
         return `[${t('popOutChat.bestiaryLinkLabel')} ${monsterName} ×${link.monsterCount}]`;
     }
     // Fallback: humanize the HRID
@@ -463,6 +479,12 @@ class PopOutChat {
         const closePaneTooltip = t('popOutChat.closePaneTooltip');
         const filterInputPlaceholder = t('popOutChat.filterInputPlaceholder');
         const messageInputPlaceholder = t('popOutChat.messageInputPlaceholder');
+        const filterNoFilterLabel = t('popOutChat.filterNoFilter');
+        const filterEnhancedBuyLabel = t('popOutChat.filterEnhancedBuy');
+        const filterEnhancedSellLabel = t('popOutChat.filterEnhancedSell');
+        const filterBuyOnlyLabel = t('popOutChat.filterBuyOnly');
+        const filterSellOnlyLabel = t('popOutChat.filterSellOnly');
+        const filterCustomLabel = t('popOutChat.filterCustom');
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -636,12 +658,12 @@ class PopOutChat {
   const STORAGE_KEY = 'mwi-chat-popout-layout';
 
   const FILTER_PRESETS = [
-    { value: 'none',         label: 'No filter',      regex: null },
-    { value: 'enhanced_buy', label: 'Enhanced Buy',   regex: /\\+\\d+.*Buy\\]/i },
-    { value: 'enhanced_sell',label: 'Enhanced Sell',  regex: /\\+\\d+.*Sell\\]/i },
-    { value: 'buy_only',     label: 'Buy only',       regex: /Buy\\]/i },
-    { value: 'sell_only',    label: 'Sell only',      regex: /Sell\\]/i },
-    { value: 'custom',       label: 'Custom\u2026',   regex: null },
+    { value: 'none',         label: '${filterNoFilterLabel}',      regex: null },
+    { value: 'enhanced_buy', label: '${filterEnhancedBuyLabel}',   regex: /\\+\\d+.*Buy\\]/i },
+    { value: 'enhanced_sell',label: '${filterEnhancedSellLabel}',  regex: /\\+\\d+.*Sell\\]/i },
+    { value: 'buy_only',     label: '${filterBuyOnlyLabel}',       regex: /Buy\\]/i },
+    { value: 'sell_only',    label: '${filterSellOnlyLabel}',      regex: /Sell\\]/i },
+    { value: 'custom',       label: '${filterCustomLabel}',        regex: null },
   ];
 
   function buildCustomRegex(text) {

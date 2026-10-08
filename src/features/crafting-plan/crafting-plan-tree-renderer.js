@@ -11,6 +11,7 @@ import { formatKMB, formatWithSeparator, timeReadable } from '../../utils/format
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 /**
  * Collect all leaf "buy" items from the plan tree into a flat shopping list.
@@ -27,6 +28,7 @@ export function collectBuyItems(node, buyItems) {
             existing.isOutlier = existing.isOutlier || node.isOutlier;
         } else {
             buyItems.set(node.itemHrid, {
+                itemHrid: node.itemHrid,
                 itemName: node.itemName,
                 quantity: node.quantity,
                 unitCost: node.unitCost,
@@ -55,6 +57,7 @@ export function collectCraftSteps(node, craftSteps) {
 
     if (node.strategy === 'craft' && node.actionHrid) {
         craftSteps.push({
+            itemHrid: node.itemHrid,
             itemName: node.itemName,
             quantity: Math.ceil(node.quantity),
             actionsNeeded: node.actionsNeeded,
@@ -223,9 +226,13 @@ export function renderCraftingPlanBreakdown(plan, options = {}) {
             const unit = formatWithSeparator(Math.round(item.unitCost));
             const outlierSuffix = item.isOutlier ? ' ⚠' : '';
             shoppingListContainer.appendChild(
-                createRow(`${item.itemName} x${formatWithSeparator(qty)}${outlierSuffix}`, `${cost} (${unit}/ea)`, {
-                    title: item.isOutlier ? t('marketData.outlierPriceWarningTooltip') : undefined,
-                })
+                createRow(
+                    `${getItemName(item.itemHrid, item.itemName)} x${formatWithSeparator(qty)}${outlierSuffix}`,
+                    `${cost} (${unit}/ea)`,
+                    {
+                        title: item.isOutlier ? t('marketData.outlierPriceWarningTooltip') : undefined,
+                    }
+                )
             );
         }
 
@@ -277,7 +284,9 @@ export function renderCraftingPlanBreakdown(plan, options = {}) {
             } else if (xpStr) {
                 timeStr = ` (${xpStr.slice(3)})`;
             }
-            container.appendChild(createRow(`${i + 1}. ${step.itemName}`, `x${qty}${timeStr}`));
+            container.appendChild(
+                createRow(`${i + 1}. ${getItemName(step.itemHrid, step.itemName)}`, `x${qty}${timeStr}`)
+            );
         }
 
         if (craftMetrics.totalCraftSeconds > 0) {

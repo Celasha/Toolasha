@@ -353,17 +353,18 @@ class TaskRerollTracker {
             return null;
         }
 
-        // Get quantity from progress text
+        // Get total quantity from the progress pair (e.g. "Progress: 0 / 1562" or zh
+        // "进度：0/1562"). The localized label varies, so match the language-neutral
+        // "current / total" number pair directly and take the second group.
         const progressDivs = taskElement.querySelectorAll('div');
         let goalCount = 0;
         for (const div of progressDivs) {
             const text = div.textContent.trim();
-            if (text.startsWith('Progress:')) {
-                const match = text.match(/Progress:\s*\d+\s*\/\s*(\d+)/);
-                if (match) {
-                    goalCount = parseInt(match[1]);
-                    break;
-                }
+            if (!text.includes('/') && !text.includes('／')) continue;
+            const match = text.match(/(\d+)\s*[/／]\s*(\d+)/);
+            if (match) {
+                goalCount = parseInt(match[2], 10);
+                break;
             }
         }
 

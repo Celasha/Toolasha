@@ -16,6 +16,7 @@ import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel } from '../../utils/panel-z-index.js';
+import { getActionName } from '../../utils/game-i18n.js';
 
 class DungeonTrackerUI {
     constructor() {
@@ -426,7 +427,7 @@ class DungeonTrackerUI {
         if (dungeonName) {
             if (run.dungeonName && run.tier !== null) {
                 dungeonName.textContent = t('dungeonTrackerUi.dungeonNameWithTier', {
-                    name: run.dungeonName,
+                    name: getActionName(run.dungeonHrid, run.dungeonName),
                     tier: run.tier,
                 });
             } else {

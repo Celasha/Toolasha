@@ -22,6 +22,7 @@ import {
     isAbbreviationEnabled,
 } from '../../utils/formatters.js';
 import { getItemPrice, getItemPrices, getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import { getItemName } from '../../utils/game-i18n.js';
 import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
 import { parseItemCount } from '../../utils/number-parser.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
@@ -922,8 +923,11 @@ export function buildEnhancementTooltipHTML(enhancementData) {
     }
 
     // Look up the localized item name instead of hardcoding the English string
-    const mirrorItemName =
-        dataManager.getInitClientData()?.itemDetailMap?.['/items/philosophers_mirror']?.name || "Philosopher's Mirror";
+    const mirrorItemName = getItemName(
+        '/items/philosophers_mirror',
+        dataManager.getInitClientData()?.itemDetailMap?.['/items/philosophers_mirror']?.name ||
+            "Philosopher's Mirror"
+    );
 
     // Show Philosopher's Mirror usage if applicable
     if (optimalStrategy.usedMirror && optimalStrategy.mirrorStartLevel) {
@@ -969,7 +973,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         const gameData = dataManager.getInitClientData();
         const consumedHrid = optimalStrategy.consumedItemHrid ?? itemHrid;
         const baseItemDetails = gameData?.itemDetailMap[consumedHrid];
-        const baseItemName = baseItemDetails?.name || consumedHrid;
+        const baseItemName = getItemName(consumedHrid, baseItemDetails?.name || consumedHrid);
 
         const consumedRows = sortedConsumed.map((item) => {
             const prices = getItemPrices(consumedHrid, item.level);
@@ -1074,7 +1078,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                 totalAsk += askPrice * count;
                 totalBid += bidPrice * count;
                 rows.push({
-                    name: mat.name,
+                    name: getItemName(mat.itemHrid, mat.name),
                     count,
                     askPrice,
                     bidPrice,
@@ -1099,7 +1103,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                 const gameData = dataManager.getInitClientData();
                 const protDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
                 if (protDetails?.name) {
-                    protName = protDetails.name;
+                    protName = getItemName(optimalStrategy.protectionItemHrid, protDetails.name);
                 }
             }
             rows.push({ name: protName, count, askPrice, bidPrice, bidOutlier: optimalStrategy.protectionBidOutlier });

@@ -5,6 +5,7 @@
 
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 
 class ExternalLinks {
     constructor() {
@@ -60,23 +61,23 @@ class ExternalLinks {
     addLinks(container) {
         const links = [
             {
-                label: 'Combat Sim',
+                label: t('externalLinks.combatSim'),
                 url: 'https://metzlii.github.io/metz-combat-simulator/',
             },
             {
-                label: 'Enhancelator',
+                label: t('externalLinks.enhancelator'),
                 url: 'https://doh-nuts.github.io/Enhancelator/',
             },
             {
-                label: 'Milkonomy',
+                label: t('externalLinks.milkonomy'),
                 url: 'https://hyhfish.github.io/milkonomy/#/dashboard',
             },
             {
-                label: "Socko's Combat Tracker",
+                label: t('externalLinks.sockosCombatTracker'),
                 url: 'https://sockosnewcombattracker.pages.dev/',
             },
             {
-                label: 'mwilinks',
+                label: t('externalLinks.mwilinks'),
                 url: 'https://www.mwilinks.site/',
             },
         ];

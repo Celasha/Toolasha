@@ -13,6 +13,7 @@ import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import { navigateToMyListings } from '../../utils/marketplace-tabs.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 import listingRefreshNavigator from './listing-refresh-navigator.js';
 
 const CONTAINER_SEL = '[class*="MarketplacePanel_marketNavButtonContainer"]';
@@ -105,8 +106,11 @@ class ListingNextNavigator {
         }
 
         if (!this.nativeRefreshBtn) {
+            // The Refresh button label is localized by the game (zh: 刷新), so match the
+            // translated label too.
+            const refreshLabels = new Set(['Refresh', translateGameName('marketplacePanel', 'refresh', 'Refresh')]);
             const found = Array.from(container.querySelectorAll('button')).find(
-                (b) => b.id !== NEXT_BTN_ID && b.textContent.trim() === 'Refresh'
+                (b) => b.id !== NEXT_BTN_ID && refreshLabels.has(b.textContent.trim())
             );
             if (found) {
                 found.style.display = 'none';

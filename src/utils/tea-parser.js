@@ -169,6 +169,7 @@ export function parseTeaEfficiencyBreakdown(actionTypeHrid, activeDrinks, itemDe
         // Only add to breakdown if this tea contributes efficiency
         if (totalEfficiency > 0) {
             teaBreakdown.push({
+                itemHrid: drink.itemHrid,
                 name: itemDetails.name,
                 efficiency: totalEfficiency,
                 baseEfficiency: baseEfficiency,
@@ -361,6 +362,7 @@ export function parseActionLevelBonusBreakdown(activeDrinks, itemDetailMap, drin
         // Only add to breakdown if this tea contributes action level
         if (totalActionLevel > 0) {
             teaBreakdown.push({
+                itemHrid: drink.itemHrid,
                 name: itemDetails.name,
                 actionLevel: totalActionLevel,
                 baseActionLevel: baseActionLevel,

@@ -278,25 +278,25 @@ function buildFlags(includeFilters = true, includeFavorites = true) {
             { from: 8000, to: 9999, checked: true },
             { label: '10k-100k', from: 10000, to: 99999, checked: true },
             { label: '100k+', from: 100000, to: Infinity, checked: true },
-            { label: 'Not dungeon', className: 'nod', checked: true, fn: matchNoDungeon },
+            { label: t('collectionFilters.notDungeon'), className: 'nod', checked: true, fn: matchNoDungeon },
             { dungeon: 'd1', checked: true },
             { dungeon: 'd2', checked: true },
             { dungeon: 'd3', checked: true },
             { dungeon: 'd4', checked: true },
             {
-                label: 'Skilling Outfits',
+                label: t('collectionFilters.skillingOutfits'),
                 className: 'skilling-outfit',
                 checked: true,
                 fn: (itemId) => SKILLING_OUTFITS.has(itemId),
             },
             {
-                label: 'Uncollected Charms',
+                label: t('collectionFilters.uncollectedCharms'),
                 className: 'charm',
                 checked: false,
                 fn: (itemId, n) => itemId.includes('charm') && n === 0,
             },
             {
-                label: 'Uncollected Celestials',
+                label: t('collectionFilters.uncollectedCelestials'),
                 className: 'celestial',
                 checked: false,
                 fn: (itemId, n) => itemId.includes('celestial') && n === 0,
@@ -306,7 +306,7 @@ function buildFlags(includeFilters = true, includeFavorites = true) {
 
     if (includeFavorites) {
         flags.push({
-            label: 'Always Show Favorites',
+            label: t('collectionFilters.alwaysShowFavorites'),
             className: 'favorite',
             checked: true,
             fn: null,
@@ -786,12 +786,12 @@ class CollectionFilters {
         panelEl.insertAdjacentHTML(
             'beforeend',
             `<div class="toolasha-cf cf-sort-row" style="display:flex;align-items:center;gap:6px;margin-top:4px;">` +
-                `<span style="font-size:12px;color:#aaa;">Sort:</span>` +
+                `<span style="font-size:12px;color:#aaa;">${t('collectionFilters.sortLabel')}</span>` +
                 `<select class="toolasha-cf cf-sort-select" style="font-size:12px;background:#222;color:#eee;border:1px solid #444;border-radius:4px;padding:1px 4px;">` +
-                `<option value="default"${this.sortMode === 'default' ? ' selected' : ''}>Default</option>` +
-                `<option value="items-needed"${this.sortMode === 'items-needed' ? ' selected' : ''}>Items to next tier</option>` +
-                `<option value="gold-cost"${this.sortMode === 'gold-cost' ? ' selected' : ''}>Gold cost to next tier</option>` +
-                `<option value="time-to-next-tier"${this.sortMode === 'time-to-next-tier' ? ' selected' : ''}>Time to next tier</option>` +
+                `<option value="default"${this.sortMode === 'default' ? ' selected' : ''}>${t('collectionFilters.sortDefault')}</option>` +
+                `<option value="items-needed"${this.sortMode === 'items-needed' ? ' selected' : ''}>${t('collectionFilters.sortItemsToNextTier')}</option>` +
+                `<option value="gold-cost"${this.sortMode === 'gold-cost' ? ' selected' : ''}>${t('collectionFilters.sortGoldCostToNextTier')}</option>` +
+                `<option value="time-to-next-tier"${this.sortMode === 'time-to-next-tier' ? ' selected' : ''}>${t('collectionFilters.sortTimeToNextTier')}</option>` +
                 `</select></div>`
         );
         panelEl.querySelector('.cf-sort-select').addEventListener('change', (e) => {
@@ -1133,11 +1133,11 @@ class CollectionFilters {
      */
     _getBadgeStalenessTooltip(count) {
         if (!this.collectionsLastUpdated) {
-            return 'Collection data not yet loaded \u2014 visit Collections page to refresh';
+            return t('collectionFilters.collectionDataNotLoaded');
         }
         const age = Date.now() - this.collectionsLastUpdated;
         const relativeTime = formatRelativeTime(age);
-        return `${formatCount(count)} collected \u2014 updated ${relativeTime} ago`;
+        return t('collectionFilters.collectedUpdatedAgo', { count: formatCount(count), relativeTime });
     }
 
     /**

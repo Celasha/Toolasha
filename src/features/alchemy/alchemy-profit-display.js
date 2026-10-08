@@ -10,6 +10,7 @@ import { t } from '../../core/i18n.js';
 import alchemyProfit from './alchemy-profit.js';
 import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 import { formatWithSeparator, formatPercentage, formatLargeNumber, timeReadable } from '../../utils/formatters.js';
+import { getItemName, getActionName } from '../../utils/game-i18n.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
@@ -310,13 +311,13 @@ export class AlchemyProfitDisplay {
 
             const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
             const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
-            const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+            const tabText = selectedTab?.textContent?.trim() || '';
 
-            if (tabText.includes('coinify')) {
+            if (tabText.includes(getActionName('/actions/alchemy/coinify', 'Coinify'))) {
                 isCoinify = true;
-            } else if (tabText.includes('transmute')) {
+            } else if (tabText.includes(getActionName('/actions/alchemy/transmute', 'Transmute'))) {
                 isTransmute = true;
-            } else if (tabText.includes('decompose')) {
+            } else if (tabText.includes(getActionName('/actions/alchemy/decompose', 'Decompose'))) {
                 isDecompose = true;
             } else if (actionHrid) {
                 isCoinify = actionHrid === '/actions/alchemy/coinify';
@@ -560,7 +561,7 @@ export class AlchemyProfitDisplay {
 
             for (const drop of normalDrops) {
                 const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                const itemName = itemDetails?.name || drop.itemHrid;
+                const itemName = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid);
                 const decimals = 2; // Always use 2 decimals
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
 
@@ -613,7 +614,7 @@ export class AlchemyProfitDisplay {
 
             for (const drop of essenceDrops) {
                 const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                const itemName = itemDetails?.name || drop.itemHrid;
+                const itemName = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid);
                 const decimals = 2; // Always use 2 decimals
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
 
@@ -656,7 +657,7 @@ export class AlchemyProfitDisplay {
 
             for (const drop of rareDrops) {
                 const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                const itemName = itemDetails?.name || drop.itemHrid;
+                const itemName = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid);
                 const decimals = drop.dropsPerHour < 1 ? 2 : 1;
                 const baseDropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
                 const effectiveDropRatePct = formatPercentage(
@@ -725,7 +726,7 @@ export class AlchemyProfitDisplay {
             const materialCostsContent = document.createElement('div');
             for (const material of profitData.requirementCosts) {
                 const itemDetails = dataManager.getItemDetails(material.itemHrid);
-                const itemName = itemDetails?.name || material.itemHrid;
+                const itemName = getItemName(material.itemHrid, itemDetails?.name || material.itemHrid);
                 const amountPerHour = material.count * profitData.actionsPerHour;
 
                 const line = document.createElement('div');
@@ -787,7 +788,10 @@ export class AlchemyProfitDisplay {
         if (profitData.catalystCost && profitData.catalystCost.itemHrid) {
             const catalystContent = document.createElement('div');
             const itemDetails = dataManager.getItemDetails(profitData.catalystCost.itemHrid);
-            const itemName = itemDetails?.name || profitData.catalystCost.itemHrid;
+            const itemName = getItemName(
+                profitData.catalystCost.itemHrid,
+                itemDetails?.name || profitData.catalystCost.itemHrid
+            );
 
             // Calculate catalysts per hour (only consumed on success)
             const catalystsPerHour = profitData.actionsPerHour * profitData.successRate;
@@ -831,7 +835,7 @@ export class AlchemyProfitDisplay {
             const drinkCostsContent = document.createElement('div');
             for (const drink of profitData.consumableCosts) {
                 const itemDetails = dataManager.getItemDetails(drink.itemHrid);
-                const itemName = itemDetails?.name || drink.itemHrid;
+                const itemName = getItemName(drink.itemHrid, itemDetails?.name || drink.itemHrid);
 
                 // Format drinks per hour
                 const formattedDrinkAmount =
@@ -1305,7 +1309,7 @@ export class AlchemyProfitDisplay {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                         lines.push(
                             t('alchemyProfitDisplay.speedDetailLine', {
-                                name: item.name,
+                                name: getItemName(item.itemHrid, item.name),
                                 enh: enhText,
                                 value: formatPercentage(item.speedBonus, 1),
                             })
@@ -1325,7 +1329,7 @@ export class AlchemyProfitDisplay {
                     for (const tea of speedBreakdown.teaDetails) {
                         lines.push(
                             t('alchemyProfitDisplay.speedDetailLine', {
-                                name: tea.name,
+                                name: getItemName(tea.itemHrid, tea.name),
                                 enh: '',
                                 value: formatPercentage(tea.speedBonus, 1),
                             })
@@ -1582,7 +1586,7 @@ export class AlchemyProfitDisplay {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                         lines.push(
                             t('alchemyProfitDisplay.xpItemBonusLine', {
-                                name: item.name,
+                                name: getItemName(item.itemHrid, item.name),
                                 enh: enhText,
                                 value: item.value.toFixed(2),
                             })
@@ -1596,7 +1600,7 @@ export class AlchemyProfitDisplay {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                         lines.push(
                             t('alchemyProfitDisplay.xpItemBonusLine', {
-                                name: item.name,
+                                name: getItemName(item.itemHrid, item.name),
                                 enh: enhText,
                                 value: item.value.toFixed(2),
                             })
