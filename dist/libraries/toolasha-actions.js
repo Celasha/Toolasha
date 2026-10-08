@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.6.3
+ * Version: 3.7.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -101,12 +101,130 @@
     }
 
     /**
+     * Game i18n Bridge
+     *
+     * Obtains the game's i18next instance from the React fiber tree and provides
+     * locale-independent translation of game data names (items, actions, monsters,
+     * skills, etc.). Falls back to the English name when the i18n instance is
+     * unavailable or the key is missing.
+     */
+
+    let cachedI18n = null;
+
+    /**
+     * Walk the React fiber tree from #root to find the i18next instance.
+     * @returns {import('i18next').i18n | null}
+     */
+    function getGameI18n() {
+        if (cachedI18n) return cachedI18n;
+        if (typeof document === 'undefined') return null;
+
+        const root = document.getElementById('root');
+        const fiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+        if (!fiber) return null;
+
+        const stack = [fiber];
+        while (stack.length > 0) {
+            const f = stack.pop();
+            if (!f) continue;
+            try {
+                const props = f.memoizedProps || {};
+                if (props.i18n && typeof props.i18n.t === 'function') {
+                    cachedI18n = props.i18n;
+                    return cachedI18n;
+                }
+                if (props.value?.i18n && typeof props.value.i18n.t === 'function') {
+                    cachedI18n = props.value.i18n;
+                    return cachedI18n;
+                }
+            } catch (error) {
+                console.error('[GameI18n] Fiber access error during tree walk:', error);
+            }
+            if (f.sibling) stack.push(f.sibling);
+            if (f.child) stack.push(f.child);
+        }
+        return null;
+    }
+
+    /**
+     * Translate a game data name via the game's i18next instance.
+     * @param {string} namespace - i18n namespace (e.g. 'itemNames')
+     * @param {string} hrid - Game data HRID (e.g. '/items/abyssal_essence')
+     * @param {string} [fallback=''] - English name to fall back to
+     * @returns {string} Translated name or fallback
+     */
+    function translateGameName(namespace, hrid, fallback = '') {
+        if (!hrid) return fallback;
+        const i18n = getGameI18n();
+        if (!i18n) return fallback;
+
+        const key = `${namespace}.${hrid}`;
+        try {
+            const translated = i18n.t(key);
+            // i18next returns the key itself when no translation exists
+            if (translated === key) return fallback;
+            return translated;
+        } catch (error) {
+            console.error('[GameI18n] i18n.t() failed for key:', key, error);
+            return fallback;
+        }
+    }
+
+    const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);
+    const getActionName = (hrid, fallback = '') => translateGameName('actionNames', hrid, fallback);
+    const getSkillName = (hrid, fallback = '') => translateGameName('skillNames', hrid, fallback);
+    /**
+     * Translate an equipment slot name. The game exposes slot display names under
+     * `equipmentTypeNames` with `/equipment_types/<slot>` HRIDs; item location
+     * HRIDs (`/item_locations/<slot>`) share the same final segment.
+     * @param {string} hrid - Item location or equipment type HRID
+     * @param {string} [fallback=''] - English name to fall back to
+     * @returns {string} Translated slot name or fallback
+     */
+    const getItemLocationName = (hrid, fallback = '') => {
+        if (!hrid) return fallback;
+        const equipmentHrid = hrid.startsWith('/item_locations/')
+            ? `/equipment_types/${hrid.slice('/item_locations/'.length)}`
+            : hrid;
+        return translateGameName('equipmentTypeNames', equipmentHrid, fallback);
+    };
+    const getHouseRoomName = (hrid, fallback = '') => translateGameName('houseRoomNames', hrid, fallback);
+
+    /**
      * Enhancement Display
      *
      * Displays enhancement calculations in the enhancement action panel.
      * Shows expected attempts, time, and protection items needed.
      */
 
+
+    /**
+     * Labels of the enhancing panel's "Target Level" input label. The game localizes label
+     * text (zh: 目标等级), so match both English and the translated label.
+     * @returns {Set<string>}
+     */
+    function getTargetLevelLabels$1() {
+        return new Set(['Target Level', translateGameName('skillActionDetail', 'targetLevel', 'Target Level')]);
+    }
+
+    /**
+     * Labels of the enhancing panel's "Protect From Level" input label (zh: 保护起始等级).
+     * @returns {Set<string>}
+     */
+    function getProtectFromLevelLabels$1() {
+        return new Set([
+            'Protect From Level',
+            translateGameName('skillActionDetail', 'protectFromLevel', 'Protect From Level'),
+        ]);
+    }
+
+    /**
+     * Labels of the enhancing panel's "Current Action" tab (zh: 当前行动).
+     * @returns {Set<string>}
+     */
+    function getCurrentActionTabLabels$1() {
+        return new Set(['Current Action', translateGameName('enhancingPanel', 'currentActionTab', 'Current Action')]);
+    }
 
     /**
      * Format a number with thousands separator and 2 decimal places
@@ -127,10 +245,11 @@
      */
     function getEnhancementTargetLevelFromUI(panel) {
         const directInput = panel?.querySelector('[class*="enhancingMaxLevelInputContainer"] input');
+        const targetLevelLabels = getTargetLevelLabels$1();
         const input =
             directInput ||
             Array.from(panel?.querySelectorAll('*') || [])
-                .find((element) => element.children.length === 0 && element.textContent.trim() === 'Target Level')
+                .find((element) => element.children.length === 0 && targetLevelLabels.has(element.textContent.trim()))
                 ?.parentElement?.querySelector('input[type="number"], input[type="text"]');
 
         const targetLevel = Number.parseInt(input?.value || '', 10);
@@ -446,7 +565,7 @@
                     materialCost += itemCost;
 
                     // Store breakdown by item name with quantity and unit price
-                    const itemName = itemDetail?.name || cost.itemHrid;
+                    const itemName = getItemName(cost.itemHrid, itemDetail?.name || cost.itemHrid);
                     materialBreakdown[itemName] = {
                         cost: itemCost,
                         quantity: quantity,
@@ -472,7 +591,7 @@
                 }
 
                 protectionCost = calc.protectionCount * protectionPrice;
-                const protectionName = protectionItemDetail?.name || protectionItemHrid;
+                const protectionName = getItemName(protectionItemHrid, protectionItemDetail?.name || protectionItemHrid);
                 materialBreakdown[protectionName] = {
                     cost: protectionCost,
                     quantity: calc.protectionCount,
@@ -678,9 +797,10 @@
      * @returns {number} Protect from level (0 = never, 1-20)
      */
     function getProtectFromLevelFromUI(panel) {
-        // Find the "Protect From Level" input
+        // Find the "Protect From Level" input (zh: 保护起始等级)
+        const protectFromLevelLabels = getProtectFromLevelLabels$1();
         const labels = Array.from(panel.querySelectorAll('*')).filter(
-            (el) => el.textContent.trim() === 'Protect From Level' && el.children.length === 0
+            (el) => protectFromLevelLabels.has(el.textContent.trim()) && el.children.length === 0
         );
 
         if (labels.length > 0) {
@@ -734,7 +854,7 @@
 
         // Item info
         lines.push(
-            `<div style="color: #ddd; margin-bottom: 12px; font-weight: bold;">${itemDetails.name} <span style="color: #888;">${i18n_js.t('enhancementDisplay.itemLevelSuffix', { itemLevel: itemDetails.itemLevel })}</span></div>`
+            `<div style="color: #ddd; margin-bottom: 12px; font-weight: bold;">${getItemName(itemDetails.hrid, itemDetails.name)} <span style="color: #888;">${i18n_js.t('enhancementDisplay.itemLevelSuffix', { itemLevel: itemDetails.itemLevel })}</span></div>`
         );
 
         // Current stats section
@@ -755,25 +875,27 @@
             `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.houseLabel')}</span> ${i18n_js.t('enhancementDisplay.observatoryLevelValue', { level: params.houseLevel })}</div>`
         );
 
+        const slotName = (slot) => getItemName(slot.itemHrid, slot.name);
+
         // Display each equipment slot
         if (params.toolSlot) {
             lines.push(
-                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.toolLabel')}</span> ${params.toolSlot.name}${params.toolSlot.enhancementLevel > 0 ? ` +${params.toolSlot.enhancementLevel}` : ''}</div>`
+                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.toolLabel')}</span> ${slotName(params.toolSlot)}${params.toolSlot.enhancementLevel > 0 ? ` +${params.toolSlot.enhancementLevel}` : ''}</div>`
             );
         }
         if (params.bodySlot) {
             lines.push(
-                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.bodyLabel')}</span> ${params.bodySlot.name}${params.bodySlot.enhancementLevel > 0 ? ` +${params.bodySlot.enhancementLevel}` : ''}</div>`
+                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.bodyLabel')}</span> ${slotName(params.bodySlot)}${params.bodySlot.enhancementLevel > 0 ? ` +${params.bodySlot.enhancementLevel}` : ''}</div>`
             );
         }
         if (params.legsSlot) {
             lines.push(
-                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.legsLabel')}</span> ${params.legsSlot.name}${params.legsSlot.enhancementLevel > 0 ? ` +${params.legsSlot.enhancementLevel}` : ''}</div>`
+                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.legsLabel')}</span> ${slotName(params.legsSlot)}${params.legsSlot.enhancementLevel > 0 ? ` +${params.legsSlot.enhancementLevel}` : ''}</div>`
             );
         }
         if (params.handsSlot) {
             lines.push(
-                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.handsLabel')}</span> ${params.handsSlot.name}${params.handsSlot.enhancementLevel > 0 ? ` +${params.handsSlot.enhancementLevel}` : ''}</div>`
+                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.handsLabel')}</span> ${slotName(params.handsSlot)}${params.handsSlot.enhancementLevel > 0 ? ` +${params.handsSlot.enhancementLevel}` : ''}</div>`
             );
         }
         lines.push('</div>');
@@ -841,7 +963,8 @@
                 );
                 const successSlots = (params.slotBreakdown || []).filter((s) => s.success > 0);
                 for (const slot of successSlots) {
-                    const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                    const label =
+                        slot.enhancementLevel > 0 ? `${slotName(slot)} +${slot.enhancementLevel}` : slotName(slot);
                     lines.push(
                         `<div style="color: #88ff88; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.success.toFixed(2)}%</div>`
                     );
@@ -882,7 +1005,8 @@
                 );
                 const speedSlots = (params.slotBreakdown || []).filter((s) => s.speed > 0);
                 for (const slot of speedSlots) {
-                    const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                    const label =
+                        slot.enhancementLevel > 0 ? `${slotName(slot)} +${slot.enhancementLevel}` : slotName(slot);
                     lines.push(
                         `<div style="color: #aaddff; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.speed.toFixed(1)}%</div>`
                     );
@@ -954,7 +1078,8 @@
                 );
                 const rfSlots = (params.slotBreakdown || []).filter((s) => s.rareFind > 0);
                 for (const slot of rfSlots) {
-                    const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                    const label =
+                        slot.enhancementLevel > 0 ? `${slotName(slot)} +${slot.enhancementLevel}` : slotName(slot);
                     lines.push(
                         `<div style="color: #ffaa55; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.rareFind.toFixed(1)}%</div>`
                     );
@@ -994,7 +1119,8 @@
                 );
                 const expSlots = (params.slotBreakdown || []).filter((s) => s.experience > 0);
                 for (const slot of expSlots) {
-                    const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                    const label =
+                        slot.enhancementLevel > 0 ? `${slotName(slot)} +${slot.enhancementLevel}` : slotName(slot);
                     lines.push(
                         `<div style="color: #ffdd88; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.experience.toFixed(1)}%</div>`
                     );
@@ -1053,7 +1179,7 @@
             // Materials per attempt with pricing
             enhancementCosts.forEach((cost) => {
                 const itemDetail = gameData.itemDetailMap[cost.itemHrid];
-                const itemName = itemDetail ? itemDetail.name : cost.itemHrid;
+                const itemName = itemDetail ? getItemName(cost.itemHrid, itemDetail.name) : cost.itemHrid;
 
                 // Get price
                 let itemPrice = 0;
@@ -1083,7 +1209,10 @@
             if (protectFromLevel >= 2) {
                 if (protectionItemHrid) {
                     const protectionItemDetail = gameData.itemDetailMap[protectionItemHrid];
-                    const protectionItemName = protectionItemDetail?.name || protectionItemHrid;
+                    const protectionItemName = getItemName(
+                        protectionItemHrid,
+                        protectionItemDetail?.name || protectionItemHrid
+                    );
 
                     // Get protection item price
                     let protectionPrice = 0;
@@ -1149,7 +1278,8 @@
 
         while (current && depth < maxDepth) {
             const buttons = Array.from(current.querySelectorAll('button[role="tab"]'));
-            const currentActionTab = buttons.find((btn) => btn.textContent.trim() === 'Current Action');
+            const currentActionTabLabels = getCurrentActionTabLabels$1();
+            const currentActionTab = buttons.find((btn) => currentActionTabLabels.has(btn.textContent.trim()));
 
             if (currentActionTab) {
                 // Cache it on the panel for future lookups
@@ -1527,6 +1657,7 @@
         });
         const drinkCostPerHour = teaCostData.totalCostPerHour;
         const drinkCosts = teaCostData.costs.map((tea) => ({
+            hrid: tea.itemHrid,
             name: tea.itemName,
             priceEach: tea.pricePerDrink,
             drinksPerHour: tea.drinksPerHour,
@@ -1569,7 +1700,7 @@
             let rawPerAction = 0;
             let processedPerAction = 0;
 
-            const rawItemName = gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown';
+            const rawItemName = getItemName(drop.itemHrid, gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown');
             const baseItemsPerHour = actionsPerHour * drop.dropRate * avgAmountPerAction * efficiencyMultiplier;
             const baseItemsPerAction = drop.dropRate * avgAmountPerAction;
             const baseRevenuePerAction = baseItemsPerAction * resolvedRawPrice;
@@ -1617,7 +1748,10 @@
                 const processedItemsPerAction = drop.dropRate * processedPerAction;
 
                 // Track processing details
-                const processedItemName = gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown';
+                const processedItemName = getItemName(
+                    processedItemHrid,
+                    gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown'
+                );
 
                 // Value gain per conversion = cheese value - cost of milk used
                 const costOfMilkUsed = conversionRatio * resolvedRawPrice;
@@ -2427,7 +2561,7 @@
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(drink.missingPrice || drink.isOutlier);
                 line.textContent = i18n_js.t('profitDisplay.drinkCostLineNoEach', {
-                    name: drink.name,
+                    name: getItemName(drink.hrid, drink.name),
                     rate: `${drink.drinksPerHour.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
                     price: formatters_js.formatWithSeparator(drink.priceEach),
                     missingNote: missingPriceNote,
@@ -2524,7 +2658,7 @@
         if ((profitData.details.equipmentEfficiencyItems || []).length > 0) {
             for (const item of profitData.details.equipmentEfficiencyItems) {
                 const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                effRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
+                effRows.push(`+${item.value.toFixed(2)}% ${getItemName(item.itemHrid, item.name)}${enh}`);
             }
         } else if (profitData.details.equipmentEfficiency > 0) {
             effRows.push(
@@ -2636,7 +2770,7 @@
             const rareRows = [];
             for (const item of rareFindBreakdown.equipmentItems || []) {
                 const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                rareRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
+                rareRows.push(`+${item.value.toFixed(2)}% ${getItemName(item.itemHrid, item.name)}${enh}`);
             }
             if (rareFindBreakdown.house > 0) {
                 rareRows.push(
@@ -3323,7 +3457,7 @@
         if ((profitData.equipmentEfficiencyItems || []).length > 0) {
             for (const item of profitData.equipmentEfficiencyItems) {
                 const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                effRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
+                effRows.push(`+${item.value.toFixed(2)}% ${getItemName(item.itemHrid, item.name)}${enh}`);
             }
         } else if (profitData.equipmentEfficiency > 0) {
             effRows.push(
@@ -3384,7 +3518,7 @@
             const rareRows = [];
             for (const item of productionRareFindBreakdown.equipmentItems || []) {
                 const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                rareRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
+                rareRows.push(`+${item.value.toFixed(2)}% ${getItemName(item.itemHrid, item.name)}${enh}`);
             }
             if (productionRareFindBreakdown.house > 0) {
                 rareRows.push(
@@ -3960,7 +4094,7 @@
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(drink.missingPrice || drink.isOutlier);
                 line.textContent = i18n_js.t('profitDisplay.drinkCostLineEach', {
-                    name: drink.name,
+                    name: getItemName(drink.hrid, drink.name),
                     rate: `${drinksPA.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
                     price: formatters_js.formatWithSeparator(drink.priceEach),
                     missingNote: missingPriceNote,
@@ -4693,7 +4827,7 @@
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(drink.missingPrice || drink.isOutlier);
                 line.textContent = i18n_js.t('profitDisplay.drinkCostLineNoEach', {
-                    name: drink.name,
+                    name: getItemName(drink.hrid, drink.name),
                     rate: `${totalDrinks.toFixed(2)} ${i18n_js.t('profitDisplay.drinksUnit')}`,
                     price: formatters_js.formatWithSeparator(drink.priceEach),
                     missingNote: missingPriceNote,
@@ -6530,11 +6664,17 @@
             if (allInputs.length === 1) return allInputs[0];
 
             const labeled = allInputs.filter((input) => {
+                // Labels are localized by the game (zh: Quantity 数量 / Enhancement Level 强化等级);
+                // match the translated strings alongside the English ones.
+                const quantityLabel = translateGameName('marketplacePanel', 'quantity', 'Quantity');
+                const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
                 let parent = input.parentElement;
                 for (let depth = 0; parent && depth < 4; depth += 1) {
                     const text = parent.textContent || '';
-                    if (text.includes('Enhancement Level') && !text.includes('Quantity')) return false;
-                    if (text.includes('Quantity') && !text.includes('Enhancement Level')) return true;
+                    const mentionsEnhancement = text.includes('Enhancement Level') || text.includes(enhancementLabel);
+                    const mentionsQuantity = text.includes('Quantity') || text.includes(quantityLabel);
+                    if (mentionsEnhancement && !mentionsQuantity) return false;
+                    if (mentionsQuantity && !mentionsEnhancement) return true;
                     parent = parent.parentElement;
                 }
                 return false;
@@ -6547,7 +6687,14 @@
             const header = modal.querySelector('[class*="MarketplacePanel_header"]');
             if (!header) return false;
             const text = header.textContent?.trim() || '';
-            return text.includes('Buy Now') || text.includes('Buy Listing');
+            // Header text is localized (zh: Buy Now 立即购买 / Buy Listing 购买挂牌); the React
+            // state check in targetMatchesInput remains the strict ownership verification.
+            return (
+                text.includes('Buy Now') ||
+                text.includes('Buy Listing') ||
+                text.includes(translateGameName('marketplacePanel', 'buyNow', 'Buy Now')) ||
+                text.includes(translateGameName('marketplacePanel', 'buyListing', 'Buy Listing'))
+            );
         }
 
         function resolveQuantity(target) {
@@ -6750,9 +6897,10 @@
             return null;
         }
 
-        // Try exact match first
+        // Try exact match first (English or translated)
         for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            if (detail.name === actionName) {
+            const displayName = getActionName(hrid, detail.name);
+            if (displayName === actionName || detail.name === actionName) {
                 return hrid;
             }
         }
@@ -6760,7 +6908,8 @@
         // Try ★ ↔ (R) variants for refined items
         for (const variant of getRefinedNameVariants(actionName)) {
             for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-                if (detail.name === variant) {
+                const displayName = getActionName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
                     return hrid;
                 }
             }
@@ -6781,9 +6930,10 @@
             return null;
         }
 
-        // Try exact match first
+        // Try exact match first (English or translated)
         for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-            if (detail.name === itemName) {
+            const displayName = getItemName(hrid, detail.name);
+            if (displayName === itemName || detail.name === itemName) {
                 return hrid;
             }
         }
@@ -6791,7 +6941,8 @@
         // Try ★ ↔ (R) variants for refined items
         for (const variant of getRefinedNameVariants(itemName)) {
             for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-                if (detail.name === variant) {
+                const displayName = getItemName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
                     return hrid;
                 }
             }
@@ -6954,8 +7105,71 @@
         // Like Enhancelator lines 456-465
         const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
         let mirrorStartLevel = null;
+        let refinedFodder = null;
 
-        if (mirrorPrice > 0) {
+        // Refined items (e.g. "Furious Spear (R)") can never be produced via Mirror combination --
+        // the game only lets Transmute create a refined copy. Per the live client's
+        // getPhilosophersMirrorCost formula, Mirror-protecting a refined item's enhancement always
+        // consumes one NON-refined copy of its base item at (currentLevel - 1); the refined item itself
+        // is never "rebuilt" from two lower copies the way ordinary (fungible) items are. That means the
+        // Fibonacci multi-level cascade below -- which assumes both combine components can themselves be
+        // products of earlier combines -- doesn't apply to refined items. Only the single final step
+        // (fodder at targetLevel-2, primary already at targetLevel-1) is modeled here.
+        const isRefined = itemHrid.includes('_refined');
+        const baseItemHrid = isRefined ? itemDetails.baseItemHrids?.[0] : null;
+
+        if (mirrorPrice > 0 && isRefined && baseItemHrid) {
+            const fodderLevel = currentEnhancementLevel - 2;
+            if (fodderLevel >= 0) {
+                const baseItemDetails = gameData.itemDetailMap[baseItemHrid];
+                const baseItemLevel = baseItemDetails?.itemLevel || itemLevel;
+
+                let fodderCost, fodderTime, fodderAttempts;
+                if (fodderLevel === 0) {
+                    fodderCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+                        ? Math.min(
+                              getProductionCost(baseItemHrid) || Infinity,
+                              marketData_js.getItemPrices(baseItemHrid, 0)?.ask || Infinity
+                          ) || getRealisticBaseItemPrice(baseItemHrid)
+                        : getRealisticBaseItemPrice(baseItemHrid);
+                    fodderTime = 0;
+                    fodderAttempts = 0;
+                } else {
+                    const fodderResults = [];
+                    const neverProtect = calculateCostForStrategy(baseItemHrid, fodderLevel, 0, baseItemLevel, config);
+                    if (neverProtect) fodderResults.push({ protectFrom: 0, ...neverProtect });
+                    for (let protectFrom = 2; protectFrom <= fodderLevel; protectFrom++) {
+                        const result = calculateCostForStrategy(
+                            baseItemHrid,
+                            fodderLevel,
+                            protectFrom,
+                            baseItemLevel,
+                            config
+                        );
+                        if (result) fodderResults.push({ protectFrom, ...result });
+                    }
+                    if (fodderResults.length > 0) {
+                        const bestFodder = fodderResults.reduce((best, curr) =>
+                            curr.totalCost < best.totalCost ? curr : best
+                        );
+                        fodderCost = bestFodder.totalCost;
+                        fodderTime = bestFodder.totalTime;
+                        fodderAttempts = bestFodder.expectedAttempts;
+                    }
+                }
+
+                if (typeof fodderCost === 'number') {
+                    const traditionalCost = targetCosts[currentEnhancementLevel];
+                    const mirrorCost = targetCosts[currentEnhancementLevel - 1] + fodderCost + mirrorPrice;
+
+                    if (mirrorCost < traditionalCost) {
+                        mirrorStartLevel = currentEnhancementLevel;
+                        targetCosts[currentEnhancementLevel] = mirrorCost;
+                        refinedFodder = { hrid: baseItemHrid, level: fodderLevel, fodderCost, fodderTime, fodderAttempts };
+                    }
+                }
+            }
+        } else if (mirrorPrice > 0 && !isRefined) {
             for (let level = 3; level <= currentEnhancementLevel; level++) {
                 const traditionalCost = targetCosts[level];
                 const mirrorCost = targetCosts[level - 2] + targetCosts[level - 1] + mirrorPrice;
@@ -6980,7 +7194,20 @@
 
         let optimalStrategy;
 
-        if (mirrorStartLevel !== null) {
+        if (refinedFodder !== null) {
+            // Refined item, single-step Mirror protection: one non-refined fodder copy consumed,
+            // no Fibonacci cascade (see comment above where refinedFodder is computed).
+            optimalStrategy = buildRefinedMirrorResult(
+                itemHrid,
+                currentEnhancementLevel,
+                targetCosts,
+                targetTimes,
+                targetAttempts,
+                refinedFodder,
+                optimalTraditional,
+                mirrorPrice
+            );
+        } else if (mirrorStartLevel !== null) {
             // Mirror was used - build mirror-optimized result
             optimalStrategy = buildMirrorOptimizedResult(
                 itemHrid,
@@ -7105,6 +7332,71 @@
             console.error('[Enhancement Tooltip] Strategy calculation error:', error);
             return null;
         }
+    }
+
+    /**
+     * Build mirror-optimized result for a refined item's single protected step.
+     * A refined item is a unique owned instance -- it's never "rebuilt" by combining two lower
+     * copies, so (unlike buildMirrorOptimizedResult) there is no Fibonacci cascade here: exactly one
+     * non-refined fodder copy is consumed, at (targetLevel - 2), while the refined item's own climb to
+     * (targetLevel - 1) is shown as its own row in its own (refined) species.
+     * @private
+     */
+    function buildRefinedMirrorResult(
+        itemHrid,
+        targetLevel,
+        targetCosts,
+        targetTimes,
+        targetAttempts,
+        refinedFodder,
+        optimalTraditional,
+        mirrorPrice
+    ) {
+        const { hrid: fodderHrid, level: fodderLevel, fodderCost, fodderTime, fodderAttempts } = refinedFodder;
+
+        const upperLevel = targetLevel - 1;
+        const upperCost = targetCosts[upperLevel];
+        const upperTime = targetTimes[upperLevel];
+        const upperAttempts = targetAttempts[upperLevel];
+
+        return {
+            protectFrom: optimalTraditional.protectFrom,
+            label:
+                optimalTraditional.protectFrom === 0
+                    ? i18n_js.t('tooltipEnhancement.neverProtectionLabel')
+                    : i18n_js.t('tooltipEnhancement.fromLevelLabel', { level: optimalTraditional.protectFrom }),
+            expectedAttempts: upperAttempts + fodderAttempts,
+            totalTime: upperTime + fodderTime,
+            baseCost: 0, // Not applicable for mirror phase
+            materialCost: 0, // Not applicable for mirror phase
+            protectionCost: 0, // Not applicable for mirror phase
+            protectionItemHrid: null,
+            protectionCount: 0,
+            consumedItemsCost: upperCost + fodderCost,
+            philosopherMirrorCost: mirrorPrice,
+            totalCost: targetCosts[targetLevel],
+            mirrorStartLevel: targetLevel,
+            usedMirror: true,
+            traditionalCost: optimalTraditional.totalCost,
+            consumedItems: [
+                {
+                    hrid: itemHrid,
+                    level: upperLevel,
+                    quantity: 1,
+                    costEach: upperCost,
+                    totalCost: upperCost,
+                },
+                {
+                    hrid: fodderHrid,
+                    level: fodderLevel,
+                    quantity: 1,
+                    costEach: fodderCost,
+                    totalCost: fodderCost,
+                },
+            ],
+            mirrorCount: 1,
+            consumedItemHrid: itemHrid,
+        };
     }
 
     /**
@@ -7696,6 +7988,34 @@
     const timerRegistry$1 = timerRegistry_js.createTimerRegistry();
 
     /**
+     * Labels of the enhancing panel's "Current Action" tab. The game localizes tab text
+     * (zh: 当前行动), so match both English and the translated label.
+     * @returns {Set<string>}
+     */
+    function getCurrentActionTabLabels() {
+        return new Set(['Current Action', translateGameName('enhancingPanel', 'currentActionTab', 'Current Action')]);
+    }
+
+    /**
+     * Labels of the enhancing panel's "Target Level" input label (zh: 目标等级).
+     * @returns {Set<string>}
+     */
+    function getTargetLevelLabels() {
+        return new Set(['Target Level', translateGameName('skillActionDetail', 'targetLevel', 'Target Level')]);
+    }
+
+    /**
+     * Labels of the enhancing panel's "Protect From Level" input label (zh: 保护起始等级).
+     * @returns {Set<string>}
+     */
+    function getProtectFromLevelLabels() {
+        return new Set([
+            'Protect From Level',
+            translateGameName('skillActionDetail', 'protectFromLevel', 'Protect From Level'),
+        ]);
+    }
+
+    /**
      * Event handler debounce timers
      */
     let itemsUpdatedDebounceTimer = null;
@@ -8070,7 +8390,8 @@
 
         while (current && depth < maxDepth) {
             const buttons = Array.from(current.querySelectorAll('button[role="tab"]'));
-            const currentActionTab = buttons.find((btn) => btn.textContent.trim() === 'Current Action');
+            const currentActionTabLabels = getCurrentActionTabLabels();
+            const currentActionTab = buttons.find((btn) => currentActionTabLabels.has(btn.textContent.trim()));
 
             if (currentActionTab) {
                 // Cache it on the panel for future lookups
@@ -8126,7 +8447,7 @@
         if (!protectionItemHrid) return;
 
         const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
-            (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+            (el) => getTargetLevelLabels().has(el.textContent.trim()) && el.children.length === 0
         );
         const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
         const targetLevel = targetInput ? parseInt(targetInput.value, 10) : 0;
@@ -8139,7 +8460,7 @@
         const optimalProtectFrom = pathResult.optimalStrategy.protectFrom;
 
         const protectLabels = Array.from(panel.querySelectorAll('*')).filter(
-            (el) => el.textContent.trim() === 'Protect From Level' && el.children.length === 0
+            (el) => getProtectFromLevelLabels().has(el.textContent.trim()) && el.children.length === 0
         );
         const protectInput = protectLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
         if (!protectInput) return;
@@ -8268,7 +8589,7 @@
             const autoTargetLevel = config.getSettingValue('enhanceSim_autoTargetLevel', 0);
             if (autoTargetLevel >= 1 && autoTargetLevel <= 20) {
                 const labels = Array.from(panel.querySelectorAll('*')).filter(
-                    (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+                    (el) => getTargetLevelLabels().has(el.textContent.trim()) && el.children.length === 0
                 );
                 if (labels.length > 0) {
                     const input = labels[0].parentElement?.querySelector('input[type="number"], input[type="text"]');
@@ -8325,10 +8646,14 @@
 
         while (current && depth < maxDepth) {
             const buttons = Array.from(current.querySelectorAll('button[role="tab"]'));
-            const foundTabs = buttons.filter((btn) => {
-                const text = btn.textContent.trim();
-                return text === 'Enhance' || text === 'Current Action';
-            });
+            // Tab labels are localized by the game (zh: Enhance 强化 / Current Action 当前行动),
+            // so match both languages.
+            const tabLabels = new Set([
+                'Enhance',
+                getActionName('/actions/enhancing/enhance', 'Enhance'),
+                ...getCurrentActionTabLabels(),
+            ]);
+            const foundTabs = buttons.filter((btn) => tabLabels.has(btn.textContent.trim()));
 
             if (foundTabs.length === 2) {
                 tabButtons = foundTabs;
@@ -8376,7 +8701,7 @@
      */
     function setupTargetAutoProtectListener(panel) {
         const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
-            (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+            (el) => getTargetLevelLabels().has(el.textContent.trim()) && el.children.length === 0
         );
         const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
         if (!targetInput || autoProtectTargetInputs.has(targetInput)) return;
@@ -9631,8 +9956,9 @@
             // First, strip any stats we previously appended
             const actionNameText = this.getCleanActionName(actionNameElement);
 
-            // Check if no action is running ("Doing nothing...")
-            if (actionNameText.includes('Doing nothing')) {
+            // Check if no action is running ("Doing nothing..." — localized by the game, zh: 无所事事...)
+            const doingNothingLabel = translateGameName('actionsUtil', 'doingNothing', 'Doing nothing');
+            if (actionNameText.includes('Doing nothing') || actionNameText.includes(doingNothingLabel)) {
                 this.displayElement.innerHTML = '';
                 if (this.profitElement) this.profitElement.innerHTML = '';
                 this.clearAppendedStats(actionNameElement);
@@ -10492,6 +10818,17 @@
                 if (actionDetails.type === '/action_types/enhancing' && currentAction.primaryItemHash) {
                     // Strip enhancement level suffix (e.g. "Cheese Sword +1" → "Cheese Sword")
                     const baseItemName = actionNameFromDom.replace(/\s*\+\d+$/, '');
+                    // In non-English locales the DOM renders the translated item name, which
+                    // buildItemHridFromName cannot reconstruct - compare against both the English
+                    // and translated names of the item in the primaryItemHash first.
+                    const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
+                    const hashItemName = hashItemHrid ? dataManager.getItemDetails(hashItemHrid)?.name : null;
+                    if (hashItemName) {
+                        const translatedItemName = getItemName(hashItemHrid, hashItemName);
+                        if (baseItemName === hashItemName || baseItemName === translatedItemName) {
+                            return true;
+                        }
+                    }
                     const baseItemHrid = this.buildItemHridFromName(baseItemName);
                     if (currentAction.primaryItemHash.includes(baseItemHrid)) {
                         return true;
@@ -10502,11 +10839,19 @@
                 const dropTable = actionDetails.dropTable || [];
                 const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDom);
                 const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
+                // The DOM renders the game's translated action name in non-English locales, so
+                // compare both names plus their ★ ↔ (R) variants.
+                const translatedActionName = getActionName(currentAction.actionHrid, actionDetails.name);
                 const matchesName =
                     actionDetails.name === actionNameFromDom ||
+                    translatedActionName === actionNameFromDom ||
                     (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
                     (actionNameFromDom.includes('(R)') &&
-                        actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
+                        actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★')) ||
+                    (actionNameFromDom.includes('★') &&
+                        translatedActionName === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
+                    (actionNameFromDom.includes('(R)') &&
+                        translatedActionName === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
 
                 if (!matchesName && !matchesOutput && !matchesDrop) {
                     return false;
@@ -10516,7 +10861,11 @@
                     const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
                     if (hashItemHrid) {
                         const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
-                        if (hashItemDetails?.name === itemNameFromDom) return true;
+                        if (
+                            hashItemDetails?.name === itemNameFromDom ||
+                            getItemName(hashItemHrid, hashItemDetails?.name || '') === itemNameFromDom
+                        )
+                            return true;
                     }
                     return currentAction.primaryItemHash.includes(itemHridFromDom);
                 }
@@ -12489,7 +12838,7 @@
                                     : '';
                             speedLines.push(
                                 i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
-                                    name: item.itemName,
+                                    name: getItemName(item.itemHrid, item.itemName),
                                     enh: enhText,
                                     value: formatters_js.formatPercentage(item.scaledBonus, 1),
                                 }) + detailText
@@ -12504,7 +12853,7 @@
                                     : '';
                             speedLines.push(
                                 i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
-                                    name: item.name,
+                                    name: getItemName(item.hrid, item.name),
                                     enh: '',
                                     value: `${item.speed.toFixed(2)}%`,
                                 }) + detailText
@@ -12568,7 +12917,7 @@
 
                                 speedLines.push(
                                     i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
-                                        name: itemDetails.name,
+                                        name: getItemName(trinketSlot.itemHrid, itemDetails.name),
                                         enh: enhText,
                                         value: `${taskSpeedBonus.toFixed(2)}%`,
                                     }) + detailText
@@ -12619,7 +12968,7 @@
                                 speedLines.push(
                                     '    - ' +
                                         i18n_js.t('taskProfitDisplay.levelImpactLine', {
-                                            name: tea.name,
+                                            name: getItemName(tea.itemHrid, tea.name),
                                             pct: baseTeaImpact.toFixed(2),
                                         })
                                 );
@@ -12668,7 +13017,7 @@
                             // Show BASE efficiency (without DC scaling) on main line
                             speedLines.push(
                                 i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
-                                    name: tea.name,
+                                    name: getItemName(tea.itemHrid, tea.name),
                                     enh: '',
                                     value: `${tea.baseEfficiency.toFixed(2)}%`,
                                 })
@@ -13054,12 +13403,13 @@
             if (!roomHrid) return i18n_js.t('taskProfitDisplay.unknownRoomLabel');
 
             const room = houseRooms.get(roomHrid);
-            const roomName = roomHrid
+            const fallbackName = roomHrid
                 .split('/')
                 .pop()
                 .split('_')
                 .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
                 .join(' ');
+            const roomName = getHouseRoomName(roomHrid, fallbackName);
             const level = room?.level || 0;
 
             return i18n_js.t('taskProfitDisplay.roomLevelLabel', { roomName, level });
@@ -13151,7 +13501,7 @@
             for (const [hrid, baseSpeed] of Object.entries(enhancingTeaBaseSpeeds)) {
                 const teaItemDetails = dataManager.getItemDetails(hrid);
                 enhancingTeas[hrid] = {
-                    name: teaItemDetails?.name || hrid.split('/').pop().replace(/_/g, ' '),
+                    name: getItemName(hrid, teaItemDetails?.name || hrid.split('/').pop().replace(/_/g, ' ')),
                     baseSpeed,
                 };
             }
@@ -13163,6 +13513,7 @@
                 if (teaInfo) {
                     const scaledSpeed = teaInfo.baseSpeed * (1 + drinkConcentration);
                     consumables.push({
+                        hrid: drink.itemHrid,
                         name: teaInfo.name,
                         baseSpeed: teaInfo.baseSpeed * 100,
                         drinkConcentration: drinkConcentration * 100,
@@ -13433,7 +13784,7 @@
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                             lines.push(
                                 i18n_js.t('alchemyProfitDisplay.xpItemBonusLine', {
-                                    name: item.name,
+                                    name: getItemName(item.itemHrid, item.name),
                                     enh: enhText,
                                     value: item.value.toFixed(2),
                                 })
@@ -13447,7 +13798,7 @@
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                             lines.push(
                                 i18n_js.t('alchemyProfitDisplay.xpItemBonusLine', {
-                                    name: item.name,
+                                    name: getItemName(item.itemHrid, item.name),
                                     enh: enhText,
                                     value: item.value.toFixed(2),
                                 })
@@ -13693,6 +14044,31 @@
      */
 
 
+    const RESOURCE_CATEGORY_HRID = '/item_categories/resource';
+
+    /**
+     * True if any item icon within container resolves to an essence item. Essence display names
+     * are localized, but item HRIDs are not, so this detects essences by HRID via each drop's icon
+     * sprite href rather than matching translated text — locale-independent by construction.
+     * @param {HTMLElement} container - Drop table container element
+     * @returns {boolean}
+     */
+    function containerHasEssenceItem(container) {
+        if (!container) return false;
+
+        const icons = container.querySelectorAll('use');
+        for (const icon of icons) {
+            const href = icon.getAttribute('href') || icon.getAttribute('xlink:href');
+            const hrid = getItemHridFromIconHref(href);
+            if (!hrid || !hrid.includes('essence')) continue;
+
+            const details = dataManager.getItemDetails(hrid);
+            if (details?.categoryHrid === RESOURCE_CATEGORY_HRID) return true;
+        }
+
+        return false;
+    }
+
     class OutputTotals {
         constructor() {
             this.observedInputs = new Map(); // input element → cleanup function
@@ -13831,8 +14207,8 @@
                     return;
                 }
 
-                // Check for essences
-                if (container.innerText.toLowerCase().includes('essence')) {
+                // Check for essences (locale-independent, by item HRID)
+                if (containerHasEssenceItem(container)) {
                     this.processDropContainer(container, amount, isIndeterminate, placeholderLabel);
                     processedContainers.add(container);
                     return;
@@ -14465,21 +14841,31 @@
                 .join('')
                 .trim();
 
-            // Build reverse lookup cache on first use (name → hrid)
+            // Build reverse lookup cache on first use (name → hrid). The tile renders the
+            // game's translated action name in non-English locales, so index both the
+            // English data name and the translated display name.
             if (!this.actionNameToHridCache) {
                 const initData = dataManager.getInitClientData();
                 if (!initData) {
                     return null;
                 }
 
+                const indexName = (name, hrid) => {
+                    this.actionNameToHridCache.set(name, hrid);
+                    // Add ★ ↔ (R) variants so both display formats resolve
+                    if (name.includes('(R)')) {
+                        this.actionNameToHridCache.set(name.replace(/\s*\(R\)/, ' ★'), hrid);
+                    } else if (name.includes('★')) {
+                        this.actionNameToHridCache.set(name.replace(/\s*★/, ' (R)'), hrid);
+                    }
+                };
+
                 this.actionNameToHridCache = new Map();
                 for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
-                    this.actionNameToHridCache.set(action.name, hrid);
-                    // Add ★ ↔ (R) variants so both display formats resolve
-                    if (action.name.includes('(R)')) {
-                        this.actionNameToHridCache.set(action.name.replace(/\s*\(R\)/, ' ★'), hrid);
-                    } else if (action.name.includes('★')) {
-                        this.actionNameToHridCache.set(action.name.replace(/\s*★/, ' (R)'), hrid);
+                    indexName(action.name, hrid);
+                    const translatedName = getActionName(hrid, action.name);
+                    if (translatedName !== action.name) {
+                        indexName(translatedName, hrid);
                     }
                 }
             }
@@ -14846,7 +15232,7 @@
             };
 
             const bestProfitName = bestProfitHrid
-                ? dataManager.getActionDetails(bestProfitHrid)?.name || bestProfitHrid
+                ? getActionName(bestProfitHrid, dataManager.getActionDetails(bestProfitHrid)?.name || bestProfitHrid)
                 : null;
 
             for (const [actionPanel, data] of this.actionElements.entries()) {
@@ -15641,7 +16027,7 @@
             };
 
             const bestProfitName = bestProfitHrid
-                ? dataManager.getActionDetails(bestProfitHrid)?.name || bestProfitHrid
+                ? getActionName(bestProfitHrid, dataManager.getActionDetails(bestProfitHrid)?.name || bestProfitHrid)
                 : null;
 
             for (const [actionPanel, data] of this.actionElements.entries()) {
@@ -16267,6 +16653,19 @@
     const MARKETPLACE_REMOUNT_GRACE_MS = 350;
 
     /**
+     * Check whether a rendered tab label matches a native Marketplace tab name.
+     * Tab labels are localized by the game (zh: Market Listings 商品列表 /
+     * My Listings 我的挂牌), so match both the English and translated text.
+     * @param {string} text - Rendered tab text
+     * @param {'marketListings'|'myListings'} key - marketplacePanel i18n key
+     * @returns {boolean}
+     */
+    function matchesMarketplaceTabLabel(text, key) {
+        const fallback = key === 'marketListings' ? 'Market Listings' : 'My Listings';
+        return text.includes(fallback) || text.includes(translateGameName('marketplacePanel', key, fallback));
+    }
+
+    /**
      * Return true only when an element and all element ancestors are actually visible.
      * @param {HTMLElement} element
      * @returns {boolean}
@@ -16298,7 +16697,9 @@
                 if (!isElementActuallyVisible(tabsContainer)) continue;
                 const hasNativeTab = Array.from(tabsContainer.children).some((tab) => {
                     const text = tab.textContent || '';
-                    return text.includes('Market Listings') || text.includes('My Listings');
+                    return (
+                        matchesMarketplaceTabLabel(text, 'marketListings') || matchesMarketplaceTabLabel(text, 'myListings')
+                    );
                 });
                 if (hasNativeTab) candidates.add(tabsContainer);
             }
@@ -16323,7 +16724,10 @@
             return tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('Mui-selected');
         });
 
-        return selectedNativeTabs.length === 1 && selectedNativeTabs[0].textContent.includes('Market Listings');
+        return (
+            selectedNativeTabs.length === 1 &&
+            matchesMarketplaceTabLabel(selectedNativeTabs[0].textContent, 'marketListings')
+        );
     }
 
     /**
@@ -17120,9 +17524,13 @@
         const root = panel?.closest('[class*="SkillActionDetail_skillActionDetail"]') || panel;
         if (!root) return 0;
         const selects = Array.from(root.querySelectorAll('select'));
+        // The "Loadout" label is localized by the game (zh: 配装), so match both languages.
+        const loadoutLabel = translateGameName('skillActionDetail', 'loadout', 'Loadout');
         const loadoutSelect = selects.find((select) => {
             const contextText = select.parentElement?.parentElement?.textContent || select.parentElement?.textContent || '';
-            return /Loadout/i.test(contextText) && select.id !== 'enhancementDropdown';
+            return (
+                (/Loadout/i.test(contextText) || contextText.includes(loadoutLabel)) && select.id !== 'enhancementDropdown'
+            );
         });
         return loadoutSelect?.value ?? null;
     }
@@ -17211,8 +17619,10 @@
      * @returns {number} Repeat count (defaults to 1 if not found)
      */
     function getRepeatCountFromUI(panel) {
+        // The label is localized by the game (zh: 重复), so match both languages.
+        const repeatLabels = new Set(['Repeat', translateGameName('skillActionDetail', 'repeat', 'Repeat')]);
         const labels = Array.from(panel.querySelectorAll('*')).filter(
-            (el) => el.textContent.trim() === 'Repeat' && el.children.length === 0
+            (el) => repeatLabels.has(el.textContent.trim()) && el.children.length === 0
         );
 
         if (labels.length > 0) {
@@ -17229,8 +17639,13 @@
     }
 
     function getTargetLevelFromUI(panel) {
+        // The label is localized by the game (zh: 目标等级), so match both languages.
+        const targetLevelLabels = new Set([
+            'Target Level',
+            translateGameName('skillActionDetail', 'targetLevel', 'Target Level'),
+        ]);
         const labels = Array.from(panel.querySelectorAll('*')).filter(
-            (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+            (el) => targetLevelLabels.has(el.textContent.trim()) && el.children.length === 0
         );
 
         if (labels.length > 0) {
@@ -17903,11 +18318,14 @@
 
         if (returnContext?.actionHrid) {
             const details = dataManager.getActionDetails(returnContext.actionHrid);
-            displayName = details?.name || returnContext.actionHrid.split('/').pop();
+            displayName = getActionName(
+                returnContext.actionHrid,
+                details?.name || returnContext.actionHrid.split('/').pop()
+            );
             if (returnContext.numActions > 0) displayName += ` (\u00d7${formatters_js.formatWithSeparator(returnContext.numActions)})`;
         } else if (returnContext?.enhancementContext) {
             const ctx = returnContext.enhancementContext;
-            const itemName = dataManager.getItemDetails(ctx.itemHrid)?.name || '...';
+            const itemName = getItemName(ctx.itemHrid, dataManager.getItemDetails(ctx.itemHrid)?.name || '...');
             displayName = `${itemName} +${ctx.startLevel}\u2192+${ctx.targetLevel}`;
         } else {
             return null;
@@ -18210,7 +18628,11 @@
 
         removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS);
 
-        const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+        // The native tab label is localized by the game (zh: 我的挂牌), so match both languages.
+        const myListingsLabel = translateGameName('marketplacePanel', 'myListings', 'My Listings');
+        const referenceTab = Array.from(tabsContainer.children).find(
+            (btn) => btn.textContent.includes('My Listings') || btn.textContent.includes(myListingsLabel)
+        );
         if (!referenceTab) {
             console.error('[MissingMats] Reference tab not found');
             return false;
@@ -19722,6 +20144,7 @@
                 existing.isOutlier = existing.isOutlier || node.isOutlier;
             } else {
                 buyItems.set(node.itemHrid, {
+                    itemHrid: node.itemHrid,
                     itemName: node.itemName,
                     quantity: node.quantity,
                     unitCost: node.unitCost,
@@ -19750,6 +20173,7 @@
 
         if (node.strategy === 'craft' && node.actionHrid) {
             craftSteps.push({
+                itemHrid: node.itemHrid,
                 itemName: node.itemName,
                 quantity: Math.ceil(node.quantity),
                 actionsNeeded: node.actionsNeeded,
@@ -19918,9 +20342,13 @@
                 const unit = formatters_js.formatWithSeparator(Math.round(item.unitCost));
                 const outlierSuffix = item.isOutlier ? ' ⚠' : '';
                 shoppingListContainer.appendChild(
-                    createRow(`${item.itemName} x${formatters_js.formatWithSeparator(qty)}${outlierSuffix}`, `${cost} (${unit}/ea)`, {
-                        title: item.isOutlier ? i18n_js.t('marketData.outlierPriceWarningTooltip') : undefined,
-                    })
+                    createRow(
+                        `${getItemName(item.itemHrid, item.itemName)} x${formatters_js.formatWithSeparator(qty)}${outlierSuffix}`,
+                        `${cost} (${unit}/ea)`,
+                        {
+                            title: item.isOutlier ? i18n_js.t('marketData.outlierPriceWarningTooltip') : undefined,
+                        }
+                    )
                 );
             }
 
@@ -19972,7 +20400,9 @@
                 } else if (xpStr) {
                     timeStr = ` (${xpStr.slice(3)})`;
                 }
-                container.appendChild(createRow(`${i + 1}. ${step.itemName}`, `x${qty}${timeStr}`));
+                container.appendChild(
+                    createRow(`${i + 1}. ${getItemName(step.itemHrid, step.itemName)}`, `x${qty}${timeStr}`)
+                );
             }
 
             if (craftMetrics.totalCraftSeconds > 0) {
@@ -20645,7 +21075,10 @@
 
     function createCraftingPlanReturnTab(referenceTab, returnContext, sessionId) {
         const actionDetail = dataManager.getActionDetails(returnContext.actionHrid);
-        const actionName = actionDetail?.name || returnContext.actionHrid.split('/').pop();
+        const actionName = getActionName(
+            returnContext.actionHrid,
+            actionDetail?.name || returnContext.actionHrid.split('/').pop()
+        );
         const displayName = `${actionName} (×${formatters_js.formatWithSeparator(returnContext.numActions)})`;
 
         const tab = referenceTab.cloneNode(true);
@@ -20705,7 +21138,12 @@
 
         removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN);
 
-        const referenceTab = Array.from(container.children).find((tab) => tab.textContent.includes('My Listings'));
+        // The My Listings tab label is localized by the game (zh: 我的挂牌), so match the
+        // translated label too.
+        const myListingsLabels = ['My Listings', translateGameName('marketplacePanel', 'myListings', 'My Listings')];
+        const referenceTab = Array.from(container.children).find((tab) =>
+            myListingsLabels.some((label) => tab.textContent.includes(label))
+        );
         if (!referenceTab) return false;
         container.style.flexWrap = 'wrap';
 
@@ -20735,7 +21173,12 @@
                 });
                 if (!armed || !navigateToMarketplace(material.itemHrid, 0)) marketplaceSession_js.marketplaceSession.end(sessionId);
             };
-            const tab = createMaterialTab(material, referenceTab, handler, marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN);
+            const tab = createMaterialTab(
+                { ...material, itemName: getItemName(material.itemHrid, material.itemName) },
+                referenceTab,
+                handler,
+                marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN
+            );
             tabRef.tab = tab;
             container.appendChild(tab);
         }
@@ -22890,8 +23333,14 @@
             const skillPrefix = `/action_categories/${normalizedSkill}/`;
 
             for (const [categoryHrid, categoryDetail] of Object.entries(gameData.actionCategoryDetailMap)) {
-                // Match both the category name AND ensure it's for the correct skill
-                if (categoryDetail.name === locationName && categoryHrid.startsWith(skillPrefix)) {
+                // Match both the category name AND ensure it's for the correct skill.
+                // Double-match against the English data name and the game-localized name,
+                // since the location tab text comes from the game DOM (localized in zh).
+                const translatedName = translateGameName('actionCategoryNames', categoryHrid, categoryDetail.name);
+                if (
+                    (categoryDetail.name === locationName || translatedName === locationName) &&
+                    categoryHrid.startsWith(skillPrefix)
+                ) {
                     targetCategoryHrid = categoryHrid;
                     break;
                 }
@@ -23491,6 +23940,25 @@
 
 
     /**
+     * Check if a tab text corresponds to a real action category (i.e., a location tab).
+     * Matches against actionCategoryDetailMap by both the English data name and the
+     * game-localized name, so it works regardless of client language. Special tabs
+     * (Enhance, Current Action, alchemy action tabs) won't match any category.
+     * @param {string} text - Tab text from the game DOM
+     * @returns {boolean}
+     */
+    function isLocationCategoryName(text) {
+        const gameData = dataManager.getInitClientData?.();
+        const categoryMap = gameData?.actionCategoryDetailMap;
+        if (!categoryMap) return true; // No data loaded yet — don't filter (preserve old behavior)
+        for (const [categoryHrid, categoryDetail] of Object.entries(categoryMap)) {
+            if (categoryDetail.name === text) return true;
+            if (translateGameName('actionCategoryNames', categoryHrid, categoryDetail.name) === text) return true;
+        }
+        return false;
+    }
+
+    /**
      * Get the currently selected location tab name
      * @returns {string|null} Location name or null if no location tabs exist
      */
@@ -23506,8 +23974,9 @@
             // Check if this tab is selected
             if (button.getAttribute('aria-selected') === 'true') {
                 const text = button.textContent?.trim();
-                // Skip special tabs that aren't locations
-                if (text && !['Enhance', 'Current Action', 'Decompose', 'Transmute'].includes(text)) {
+                // Only return tabs that match a gathering location category. Special tabs
+                // (Enhance, Current Action, alchemy action tabs) won't match any category → null.
+                if (text && isLocationCategoryName(text)) {
                     return text;
                 }
             }
@@ -23527,11 +23996,11 @@
 
         const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
         const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
-        const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+        const tabText = selectedTab?.textContent?.trim() || '';
 
-        if (tabText.includes('coinify')) actionType = 'coinify';
-        else if (tabText.includes('transmute')) actionType = 'transmute';
-        else if (tabText.includes('decompose')) actionType = 'decompose';
+        if (tabText.includes(getActionName('/actions/alchemy/coinify', 'Coinify'))) actionType = 'coinify';
+        else if (tabText.includes(getActionName('/actions/alchemy/transmute', 'Transmute'))) actionType = 'transmute';
+        else if (tabText.includes(getActionName('/actions/alchemy/decompose', 'Decompose'))) actionType = 'decompose';
 
         if (!actionType) {
             // Fall back to active action in queue
@@ -23555,7 +24024,7 @@
 
         const enhancementLevel = requirements[0].enhancementLevel || 0;
         const itemDetails = dataManager.getItemDetails(itemHrid);
-        const itemName = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        const itemName = getItemName(itemHrid, itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' '));
 
         return { actionType, itemHrid, enhancementLevel, itemName };
     }
@@ -23649,8 +24118,12 @@
          * @param {HTMLElement} labelElement - The label element
          */
         checkAndInjectButtons(labelElement) {
-            // Only inject on "Consumables" label
-            if (labelElement.textContent.trim() !== 'Consumables') {
+            // Only inject on "Consumables" label (game-localized: zh "消耗品"). This label is
+            // rendered under two different real i18n keys depending on which panel it's in.
+            const text = labelElement.textContent.trim();
+            const gatheringLabel = translateGameName('gatheringProductionSkillPanel', 'consumables', 'Consumables');
+            const alchemyLabel = translateGameName('alchemyPanel', 'consumables', 'Consumables');
+            if (text !== 'Consumables' && text !== gatheringLabel && text !== alchemyLabel) {
                 return;
             }
 
@@ -23911,7 +24384,7 @@
                 color: #fff;
                 font-weight: 500;
             `;
-                    teaName.textContent = tea.name;
+                    teaName.textContent = getItemName(tea.hrid, tea.name);
 
                     const teaBuffs = document.createElement('span');
                     teaBuffs.style.cssText = `
@@ -24201,7 +24674,7 @@
                     color: rgba(255, 255, 255, 0.7);
                 `;
                     const cells = [
-                        { text: tea.name, align: 'left' },
+                        { text: getItemName(tea.hrid, tea.name), align: 'left' },
                         { text: tea.unitsPerHour.toFixed(1), align: 'right' },
                         { text: formatters_js.formatKMB(tea.unitPrice), align: 'right' },
                         { text: formatters_js.formatKMB(tea.costPerHour), align: 'right', color: config.COLOR_GOLD },
@@ -24318,7 +24791,7 @@
             for (const hrid of allConstraintTeas) {
                 const isPinned = this.pinnedTeas.has(hrid);
                 const isBanned = this.bannedTeas.has(hrid);
-                const teaDisplayName = gameData?.itemDetailMap?.[hrid]?.name || hrid;
+                const teaDisplayName = getItemName(hrid, gameData?.itemDetailMap?.[hrid]?.name || hrid);
 
                 const row = document.createElement('div');
                 row.style.cssText = `
@@ -24497,7 +24970,7 @@
                     color: rgba(255, 255, 255, 0.8);
                     padding: 2px 0;
                 `;
-                    teaRow.textContent = tea.name;
+                    teaRow.textContent = getItemName(tea.hrid, tea.name);
                     xpCol.appendChild(teaRow);
                 }
 
@@ -24533,7 +25006,7 @@
                     color: rgba(255, 255, 255, 0.8);
                     padding: 2px 0;
                 `;
-                    teaRow.textContent = tea.name;
+                    teaRow.textContent = getItemName(tea.hrid, tea.name);
                     goldCol.appendChild(teaRow);
                 }
 
@@ -25020,7 +25493,7 @@
             margin-top: 2px;
             pointer-events: none;
         `;
-            span.textContent = count > 0 ? `(${formatCount(count)} in inventory)` : '';
+            span.textContent = count > 0 ? i18n_js.t('inventoryCountDisplay.inInventorySuffix', { count: formatCount(count) }) : '';
 
             // Insert after the info container (nameEl's parent) so it sits on its own
             // line below the action name row. Inserting after nameEl itself puts the span
@@ -25056,7 +25529,8 @@
                 if (!span || !span.dataset.outputHrid) continue;
                 const count = countMap.get(span.dataset.outputHrid) || 0;
                 span.style.color = config.COLOR_INV_COUNT;
-                span.textContent = count > 0 ? `(${formatCount(count)} in inventory)` : '';
+                span.textContent =
+                    count > 0 ? i18n_js.t('inventoryCountDisplay.inInventorySuffix', { count: formatCount(count) }) : '';
             }
         }
 
@@ -25418,11 +25892,11 @@
                 const details = dataManager.getActionDetails(actionHrid);
                 if (!details) continue;
 
-                let displayName = details.name;
+                let displayName = getActionName(actionHrid, details.name);
                 if (pinnedItemHrid) {
                     const itemDetails = dataManager.getItemDetails(pinnedItemHrid);
                     if (itemDetails) {
-                        displayName = `${details.name} ${itemDetails.name}`;
+                        displayName = `${getActionName(actionHrid, details.name)} ${getItemName(pinnedItemHrid, itemDetails.name)}`;
                     }
                 }
 
@@ -26500,11 +26974,11 @@
             wrapper.style.cssText = 'padding: 3px 8px 4px; font-size: 11px; line-height: 1.5;';
 
             // Per-drink time row
-            const drinkParts = drinks.map(({ name, totalSeconds }) => {
+            const drinkParts = drinks.map(({ itemHrid, name, totalSeconds }) => {
                 const color =
                     totalSeconds < SECONDS_PER_HOUR ? '#ef4444' : totalSeconds < thresholdSeconds ? '#f0a830' : '#9ca3af';
                 const prefix = totalSeconds < thresholdSeconds ? '⚠ ' : '';
-                return `<span style="color:${color};">${prefix}${name}: ${this._formatTime(totalSeconds)}</span>`;
+                return `<span style="color:${color};">${prefix}${getItemName(itemHrid, name)}: ${this._formatTime(totalSeconds)}</span>`;
             });
             const drinkRow = document.createElement('div');
             drinkRow.innerHTML = drinkParts.join('<span style="color:#4b5563;"> · </span>');
@@ -26520,7 +26994,7 @@
                     queueRow.style.color = '#f0a830';
                     queueRow.textContent = i18n_js.t('drinkTimer.queueOutlastsWarning', {
                         queueTime: this._formatTime(queueSeconds),
-                        drinkName: shortDrink.name,
+                        drinkName: getItemName(shortDrink.itemHrid, shortDrink.name),
                         shortfallTime: this._formatTime(shortfall),
                     });
                     wrapper.appendChild(queueRow);
@@ -26872,13 +27346,13 @@
 
                 const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
                 const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
-                const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+                const tabText = selectedTab?.textContent?.trim() || '';
 
-                if (tabText.includes('coinify')) {
+                if (tabText.includes(getActionName('/actions/alchemy/coinify', 'Coinify'))) {
                     isCoinify = true;
-                } else if (tabText.includes('transmute')) {
+                } else if (tabText.includes(getActionName('/actions/alchemy/transmute', 'Transmute'))) {
                     isTransmute = true;
-                } else if (tabText.includes('decompose')) {
+                } else if (tabText.includes(getActionName('/actions/alchemy/decompose', 'Decompose'))) {
                     isDecompose = true;
                 } else if (actionHrid) {
                     isCoinify = actionHrid === '/actions/alchemy/coinify';
@@ -27122,7 +27596,7 @@
 
                 for (const drop of normalDrops) {
                     const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                    const itemName = itemDetails?.name || drop.itemHrid;
+                    const itemName = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid);
                     const decimals = 2; // Always use 2 decimals
                     const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
 
@@ -27175,7 +27649,7 @@
 
                 for (const drop of essenceDrops) {
                     const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                    const itemName = itemDetails?.name || drop.itemHrid;
+                    const itemName = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid);
                     const decimals = 2; // Always use 2 decimals
                     const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
 
@@ -27218,7 +27692,7 @@
 
                 for (const drop of rareDrops) {
                     const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                    const itemName = itemDetails?.name || drop.itemHrid;
+                    const itemName = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid);
                     const decimals = drop.dropsPerHour < 1 ? 2 : 1;
                     const baseDropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
                     const effectiveDropRatePct = formatters_js.formatPercentage(
@@ -27287,7 +27761,7 @@
                 const materialCostsContent = document.createElement('div');
                 for (const material of profitData.requirementCosts) {
                     const itemDetails = dataManager.getItemDetails(material.itemHrid);
-                    const itemName = itemDetails?.name || material.itemHrid;
+                    const itemName = getItemName(material.itemHrid, itemDetails?.name || material.itemHrid);
                     const amountPerHour = material.count * profitData.actionsPerHour;
 
                     const line = document.createElement('div');
@@ -27349,7 +27823,10 @@
             if (profitData.catalystCost && profitData.catalystCost.itemHrid) {
                 const catalystContent = document.createElement('div');
                 const itemDetails = dataManager.getItemDetails(profitData.catalystCost.itemHrid);
-                const itemName = itemDetails?.name || profitData.catalystCost.itemHrid;
+                const itemName = getItemName(
+                    profitData.catalystCost.itemHrid,
+                    itemDetails?.name || profitData.catalystCost.itemHrid
+                );
 
                 // Calculate catalysts per hour (only consumed on success)
                 const catalystsPerHour = profitData.actionsPerHour * profitData.successRate;
@@ -27393,7 +27870,7 @@
                 const drinkCostsContent = document.createElement('div');
                 for (const drink of profitData.consumableCosts) {
                     const itemDetails = dataManager.getItemDetails(drink.itemHrid);
-                    const itemName = itemDetails?.name || drink.itemHrid;
+                    const itemName = getItemName(drink.itemHrid, itemDetails?.name || drink.itemHrid);
 
                     // Format drinks per hour
                     const formattedDrinkAmount =
@@ -27867,7 +28344,7 @@
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                             lines.push(
                                 i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
-                                    name: item.name,
+                                    name: getItemName(item.itemHrid, item.name),
                                     enh: enhText,
                                     value: formatters_js.formatPercentage(item.speedBonus, 1),
                                 })
@@ -27887,7 +28364,7 @@
                         for (const tea of speedBreakdown.teaDetails) {
                             lines.push(
                                 i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
-                                    name: tea.name,
+                                    name: getItemName(tea.itemHrid, tea.name),
                                     enh: '',
                                     value: formatters_js.formatPercentage(tea.speedBonus, 1),
                                 })
@@ -28144,7 +28621,7 @@
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                             lines.push(
                                 i18n_js.t('alchemyProfitDisplay.xpItemBonusLine', {
-                                    name: item.name,
+                                    name: getItemName(item.itemHrid, item.name),
                                     enh: enhText,
                                     value: item.value.toFixed(2),
                                 })
@@ -28158,7 +28635,7 @@
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                             lines.push(
                                 i18n_js.t('alchemyProfitDisplay.xpItemBonusLine', {
-                                    name: item.name,
+                                    name: getItemName(item.itemHrid, item.name),
                                     enh: enhText,
                                     value: item.value.toFixed(2),
                                 })
@@ -28425,6 +28902,28 @@
 
     const ALCHEMY_TYPES = ['coinify', 'decompose', 'transmute'];
 
+    // The alchemy tab labels are the game's action names for these HRIDs
+    // (i18n key: actionNames./actions/alchemy/<type>), resolved live via the game's i18next.
+    const ALCHEMY_ACTION_HRIDS = {
+        coinify: '/actions/alchemy/coinify',
+        decompose: '/actions/alchemy/decompose',
+        transmute: '/actions/alchemy/transmute',
+    };
+
+    /**
+     * Whether a tab button is the game's own tab for the given alchemy action.
+     * Resolved at call time so the label follows the game's current UI language.
+     * @param {HTMLElement} btn - Tab button
+     * @param {'coinify'|'decompose'|'transmute'} actionType - Alchemy action type
+     * @returns {boolean}
+     */
+    function isAlchemyActionTab(btn, actionType) {
+        if (btn.dataset.mwiBestItemsTab) return false;
+        const fallback = actionType.charAt(0).toUpperCase() + actionType.slice(1);
+        const label = getActionName(ALCHEMY_ACTION_HRIDS[actionType], fallback);
+        return btn.textContent.includes(label);
+    }
+
     // Marker substituted for an item name inside a translated template string, then split back out
     // so the actual item name can be rendered as a clickable link in the item's original position -
     // this keeps word order correct across locales (e.g. Chinese vs English) without hardcoding it.
@@ -28542,19 +29041,16 @@
                 const tablist = document.querySelector('[role="tablist"]');
                 if (!tablist) return;
 
-                // Verify this is the alchemy tablist
-                const hasCoinify = Array.from(tablist.children).some(
-                    (btn) => btn.textContent.includes('Coinify') && !btn.dataset.mwiBestItemsTab
-                );
+                // Verify this is the alchemy tablist via the game-translated Coinify action label
+                const tabButtons = Array.from(tablist.children);
+                const hasCoinify = tabButtons.some((btn) => isAlchemyActionTab(btn, 'coinify'));
                 if (!hasCoinify) return;
 
                 // Already injected?
                 if (tablist.querySelector('[data-mwi-best-items-tab="true"]')) return;
 
                 // Clone an existing tab for structure
-                const referenceTab = Array.from(tablist.children).find(
-                    (btn) => btn.textContent.includes('Coinify') && !btn.dataset.mwiBestItemsTab
-                );
+                const referenceTab = tabButtons.find((btn) => isAlchemyActionTab(btn, 'coinify'));
                 if (!referenceTab) return;
 
                 const tab = referenceTab.cloneNode(true);
@@ -28609,6 +29105,15 @@
             const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
             const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
             const text = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+            if (!text) return 'coinify';
+
+            // Match the game's live-translated action labels first (e.g. Chinese UI),
+            // then fall back to the English labels.
+            for (const type of ['decompose', 'transmute']) {
+                const fallback = type.charAt(0).toUpperCase() + type.slice(1);
+                const translatedLabel = getActionName(ALCHEMY_ACTION_HRIDS[type], fallback).toLowerCase();
+                if (translatedLabel && text.includes(translatedLabel)) return type;
+            }
 
             if (text.includes('decompose')) return 'decompose';
             if (text.includes('transmute')) return 'transmute';
@@ -29026,7 +29531,7 @@
                 const nameTd = document.createElement('td');
                 nameTd.style.cssText = 'padding: 4px 8px;';
                 const nameLink = document.createElement('span');
-                nameLink.textContent = item.name;
+                nameLink.textContent = getItemName(item.itemHrid, item.name);
                 nameLink.style.cssText = 'color: #93c5fd; cursor: pointer; text-decoration: underline;';
                 nameLink.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -29184,7 +29689,7 @@
 
                 for (const drop of profitData.dropRevenues) {
                     const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                    const itemName = itemDetails?.name || drop.itemHrid.split('/').pop();
+                    const itemName = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid.split('/').pop());
                     const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
                     const dropsDisplay =
                         drop.dropsPerHour >= 10000
@@ -29223,7 +29728,7 @@
                 if (profitData.requirementCosts) {
                     for (const req of profitData.requirementCosts) {
                         const itemDetails = dataManager.getItemDetails(req.itemHrid);
-                        const itemName = itemDetails?.name || req.itemHrid.split('/').pop();
+                        const itemName = getItemName(req.itemHrid, itemDetails?.name || req.itemHrid.split('/').pop());
                         const text = i18n_js.t('alchemyBestItems.materialLine', {
                             itemName: LINK_MARKER,
                             count: req.count,
@@ -29238,7 +29743,10 @@
                 // Catalyst
                 if (profitData.catalystCost?.itemHrid && profitData.catalystCostPerHour > 0) {
                     const catDetails = dataManager.getItemDetails(profitData.catalystCost.itemHrid);
-                    const catName = catDetails?.name || profitData.catalystCost.itemHrid.split('/').pop();
+                    const catName = getItemName(
+                        profitData.catalystCost.itemHrid,
+                        catDetails?.name || profitData.catalystCost.itemHrid.split('/').pop()
+                    );
                     const text = i18n_js.t('alchemyBestItems.catalystLine', {
                         itemName: LINK_MARKER,
                         price: formatters_js.formatWithSeparator(Math.round(profitData.catalystCost.price)),
@@ -29252,7 +29760,7 @@
                 if (profitData.consumableCosts?.length > 0) {
                     for (const tea of profitData.consumableCosts) {
                         const teaDetails = dataManager.getItemDetails(tea.itemHrid);
-                        const teaName = teaDetails?.name || tea.itemHrid.split('/').pop();
+                        const teaName = getItemName(tea.itemHrid, teaDetails?.name || tea.itemHrid.split('/').pop());
                         const text = i18n_js.t('alchemyBestItems.teaLine', {
                             itemName: LINK_MARKER,
                             cost: formatters_js.formatKMB(Math.round(tea.costPerHour)),
@@ -30117,6 +30625,7 @@
             if (!progression.some((p) => p.itemHrid !== null)) continue;
 
             slots[locationHrid] = {
+                locationHrid,
                 name: SLOT_DISPLAY_NAMES[locationHrid] || locationHrid,
                 candidateCount: candidates.length,
                 progression,
@@ -30466,18 +30975,54 @@
         // Tab injection
         // -------------------------------------------------------------------------
 
-        _findTabList() {
-            for (const tl of document.querySelectorAll('[role="tablist"]')) {
-                for (const tab of tl.querySelectorAll('[role="tab"]')) {
-                    if (tab.textContent.trim().startsWith('Loadouts')) return tl;
+        /**
+         * Find the game's native Loadouts tab button in the Character Management tab bar
+         * without relying on its translated label.
+         *
+         * The game mounts every Character Management panel (hidden via CSS when inactive);
+         * the Loadouts panel root carries the LoadoutsPanel_loadoutsPanel class and lives in
+         * a tab panel whose index maps directly to the tab button index inside the same
+         * TabsComponent. Falls back to the game-translated / English "Loadouts" label.
+         * @returns {HTMLElement|null}
+         * @private
+         */
+        _findLoadoutsTab() {
+            // Structural: Loadouts panel content → owning tab panel → same-index tab button
+            const loadoutsPanel = document.querySelector('[class*="LoadoutsPanel_loadoutsPanel"]');
+            if (loadoutsPanel) {
+                const panelsContainer = loadoutsPanel.closest('[class*="TabsComponent_tabPanelsContainer"]');
+                const tabsRoot = panelsContainer?.parentElement;
+                const tabList = tabsRoot?.querySelector('[role="tablist"]');
+                if (panelsContainer && tabsRoot && tabList) {
+                    const panelIndex = Array.from(panelsContainer.children).findIndex((panel) =>
+                        panel.contains?.(loadoutsPanel)
+                    );
+                    const buttons = Array.from(tabList.querySelectorAll('[role="tab"]'));
+                    if (panelIndex !== -1 && buttons[panelIndex]) {
+                        return buttons[panelIndex];
+                    }
                 }
+            }
+
+            // Fallback: game-translated label ("Loadouts"), then the English label.
+            // Never match our own previously-injected tab.
+            const translatedLabel = translateGameName('characterManagement', 'loadouts', 'Loadouts');
+            for (const tab of document.querySelectorAll('[role="tablist"] [role="tab"]')) {
+                if (tab.classList.contains(TAB_CLASS)) continue;
+                const label = tab.textContent.trim();
+                if (label.startsWith(translatedLabel) || label.startsWith('Loadouts')) return tab;
             }
             return null;
         }
 
+        _findTabList() {
+            return this._findLoadoutsTab()?.closest('[role="tablist"]') || null;
+        }
+
         _tryInjectTabButton() {
-            const tabList = this._findTabList();
-            if (!tabList) return;
+            const loadoutsTab = this._findLoadoutsTab();
+            const tabList = loadoutsTab?.closest('[role="tablist"]');
+            if (!tabList || !loadoutsTab) return;
             if (tabList.querySelector(`.${TAB_CLASS}`)) return;
 
             const existingTab = tabList.querySelector('[role="tab"]');
@@ -30492,10 +31037,7 @@
                 this._toggleFloatingPanel();
             });
 
-            const loadoutsTab = [...tabList.querySelectorAll('[role="tab"]')].find((t) =>
-                t.textContent.trim().startsWith('Loadouts')
-            );
-            if (loadoutsTab?.nextSibling) tabList.insertBefore(btn, loadoutsTab.nextSibling);
+            if (loadoutsTab.nextSibling) tabList.insertBefore(btn, loadoutsTab.nextSibling);
             else tabList.appendChild(btn);
             this.tabBtn = btn;
 
@@ -31104,8 +31646,8 @@
             skillSelect.style.cssText = inputCss + ' flex: 1; cursor: pointer;';
             for (const s of SKILL_NAMES) {
                 const opt = document.createElement('option');
-                opt.value = s;
-                opt.textContent = s;
+                opt.value = s; // internal identity stays English (drives hrid lookup)
+                opt.textContent = getSkillName(`/skills/${s.toLowerCase()}`, s);
                 if (s === this.currentSkill) opt.selected = true;
                 skillSelect.appendChild(opt);
             }
@@ -31395,7 +31937,7 @@
             row.style.cssText = 'display: flex; align-items: center; gap: 6px; padding: 2px 0;';
 
             const label = document.createElement('span');
-            label.textContent = SLOT_DISPLAY_NAMES[locationHrid] || locationHrid;
+            label.textContent = getItemLocationName(locationHrid, SLOT_DISPLAY_NAMES[locationHrid] || locationHrid);
             label.style.cssText =
                 'font-size: 10px; color: rgba(255,255,255,0.35); width: 58px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em;';
             row.appendChild(label);
@@ -31669,7 +32211,7 @@
         `;
 
             const name = document.createElement('span');
-            name.textContent = item.name;
+            name.textContent = getItemName(item.hrid, item.name);
             row.appendChild(name);
 
             if (item.itemLevel > 0) {
@@ -31802,9 +32344,13 @@
                 // actions only.
                 const isChecked =
                     this.selectedActionHrids === null ? action.available : this.selectedActionHrids.has(action.hrid);
+                const localizedActionName = getActionName(action.hrid, action.name);
                 const label = action.available
-                    ? action.name
-                    : i18n_js.t('skillingOptimizer.actionLockedLabel', { name: action.name, level: action.requiredLevel });
+                    ? localizedActionName
+                    : i18n_js.t('skillingOptimizer.actionLockedLabel', {
+                          name: localizedActionName,
+                          level: action.requiredLevel,
+                      });
                 const { row, cb } = makeRow(label, isChecked, false, (checked) => {
                     if (this.selectedActionHrids === null) {
                         this.selectedActionHrids = new Set(available.map((a) => a.hrid));
@@ -31825,7 +32371,7 @@
                     }
                     anchorBtn.textContent = getBtnLabel();
                 });
-                itemRows.push({ cb, hrid: action.hrid, row, name: action.name });
+                itemRows.push({ cb, hrid: action.hrid, row, name: `${action.name} ${localizedActionName}` });
                 popup.appendChild(row);
             }
 
@@ -32287,7 +32833,7 @@
             transition.style.cssText = 'margin-left: 8px;';
             const fromSpan = document.createElement('span');
             fromSpan.style.cssText = 'color: rgba(255,255,255,0.5);';
-            fromSpan.textContent = `${houseRoomCandidate.roomName} +${houseRoomCandidate.currentLevel}`;
+            fromSpan.textContent = `${getHouseRoomName(houseRoomCandidate.houseRoomHrid, houseRoomCandidate.roomName)} +${houseRoomCandidate.currentLevel}`;
             transition.appendChild(fromSpan);
             transition.appendChild(document.createTextNode(' → '));
             const toSpan = document.createElement('span');
@@ -32353,7 +32899,13 @@
                 tr.style.cssText = topBorder;
                 const nameTd = document.createElement('td');
                 nameTd.style.cssText = 'padding: 4px 8px;';
-                this._appendSlotLabelWithDiff(nameTd, slotData.name, loadoutItemHrid, optimalItemHrid, loadoutEntry);
+                this._appendSlotLabelWithDiff(
+                    nameTd,
+                    getItemLocationName(slotData.locationHrid, slotData.name),
+                    loadoutItemHrid,
+                    optimalItemHrid,
+                    loadoutEntry
+                );
 
                 if (!suggestedEntry) {
                     const none = document.createElement('span');
@@ -32375,9 +32927,10 @@
 
                 const fromSpan = document.createElement('span');
                 fromSpan.style.cssText = 'color: rgba(255,255,255,0.5);';
+                const suggestedItemName = getItemName(suggestedEntry.itemHrid, suggestedEntry.itemName);
                 fromSpan.textContent = loadoutItemHrid
                     ? sameBaseItem
-                        ? `${suggestedEntry.itemName} +${loadoutEntry.enhancementLevel}`
+                        ? `${suggestedItemName} +${loadoutEntry.enhancementLevel}`
                         : `${this._getItemName(loadoutItemHrid) || loadoutItemHrid} +${loadoutEntry.enhancementLevel}`
                     : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
                 transition.appendChild(fromSpan);
@@ -32387,7 +32940,7 @@
                 toSpan.style.cssText = `color: ${config.COLOR_ACCENT}; font-weight: 600;`;
                 toSpan.textContent = sameBaseItem
                     ? `+${suggestedEntry.enhancementLevel}`
-                    : `${suggestedEntry.itemName} +${suggestedEntry.enhancementLevel}`;
+                    : `${suggestedItemName} +${suggestedEntry.enhancementLevel}`;
                 this._applyRefinedTooltip(toSpan, suggestedEntry.itemHrid);
                 this._applyIncompleteTooltip(toSpan, suggestedEntry.hasMissingPrice, suggestedEntry.isOutlier);
                 transition.appendChild(toSpan);
@@ -32411,7 +32964,7 @@
                         slotLabel.style.cssText =
                             'font-size: 10px; color: rgba(255,255,255,0.38); text-transform: uppercase; ' +
                             'letter-spacing: 0.04em; margin-right: 8px;';
-                        slotLabel.textContent = slotData.name;
+                        slotLabel.textContent = getItemLocationName(slotData.locationHrid, slotData.name);
                         nameTd.appendChild(slotLabel);
                     }
 
@@ -32423,7 +32976,7 @@
 
                     const nameSpan = document.createElement('span');
                     nameSpan.style.cssText = `color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
-                    nameSpan.textContent = tier.itemName;
+                    nameSpan.textContent = getItemName(tier.itemHrid, tier.itemName);
                     this._applyRefinedTooltip(nameSpan, tier.itemHrid);
                     this._applyIncompleteTooltip(nameSpan, tier.hasMissingPrice, tier.isOutlier);
                     nameTd.appendChild(nameSpan);
@@ -32703,7 +33256,7 @@
             for (const tea of teas) {
                 const row = document.createElement('div');
                 row.style.cssText = 'font-size:12px;color:rgba(255,255,255,0.8);padding:1px 0;';
-                row.textContent = `• ${tea.name}`;
+                row.textContent = `• ${getItemName(tea.hrid, tea.name)}`;
                 col.appendChild(row);
             }
             return col;
@@ -32723,7 +33276,8 @@
 
         _getItemName(hrid) {
             const gameData = window.Toolasha?.Core?.dataManager?.getInitClientData?.();
-            return gameData?.itemDetailMap?.[hrid]?.name || null;
+            const englishName = gameData?.itemDetailMap?.[hrid]?.name;
+            return englishName ? getItemName(hrid, englishName) : null;
         }
 
         // -------------------------------------------------------------------------

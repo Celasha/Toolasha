@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.6.3
+ * Version: 3.7.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -71,11 +71,11 @@
             const days = Math.floor(remainingAfterMonths / 86400);
 
             const parts = [];
-            if (years > 0) parts.push(`${years} year${years !== 1 ? 's' : ''}`);
-            if (months > 0) parts.push(`${months} month${months !== 1 ? 's' : ''}`);
-            if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+            if (years > 0) parts.push(i18n.t('timeUnits.years', { n: years }));
+            if (months > 0) parts.push(i18n.t('timeUnits.months', { n: months }));
+            if (days > 0) parts.push(i18n.t('timeUnits.days', { n: days }));
 
-            return parts.join(' ');
+            return parts.join(i18n.t('timeUnits.separator'));
         }
 
         // For times >= 1 day, show in days/hours/minutes
@@ -87,11 +87,11 @@
             const minutes = Math.floor(remainingAfterHours / 60);
 
             const parts = [];
-            if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
-            if (hours > 0) parts.push(`${hours}h`);
-            if (minutes > 0) parts.push(`${minutes}m`);
+            if (days > 0) parts.push(i18n.t('timeUnits.days', { n: days }));
+            if (hours > 0) parts.push(i18n.t('timeUnits.hoursShort', { n: hours }));
+            if (minutes > 0) parts.push(i18n.t('timeUnits.minutesShort', { n: minutes }));
 
-            return parts.join(' ');
+            return parts.join(i18n.t('timeUnits.separator'));
         }
 
         // For times < 1 day, show as HH:MM:SS
@@ -106,11 +106,10 @@
 
         // For times < 1 minute, just show seconds
         if (hours === 0 && minutes === 0) {
-            return seconds + 's';
+            return i18n.t('timeUnits.secondsShort', { n: seconds });
         }
 
-        const str = hours + 'h ' + pad(minutes) + 'm ' + pad(seconds) + 's';
-        return str;
+        return i18n.t('timeUnits.hms', { h: hours, m: pad(minutes), s: pad(seconds) });
     }
 
     /**
@@ -1147,6 +1146,7 @@
 
             if (value > 0) {
                 items.push({
+                    itemHrid: equippedItem.itemHrid,
                     name: itemDetails.name,
                     enhancementLevel,
                     value: value * 100 ,
@@ -1490,6 +1490,7 @@
             // Only add to breakdown if this tea contributes efficiency
             if (totalEfficiency > 0) {
                 teaBreakdown.push({
+                    itemHrid: drink.itemHrid,
                     name: itemDetails.name,
                     efficiency: totalEfficiency,
                     baseEfficiency: baseEfficiency,
@@ -1682,6 +1683,7 @@
             // Only add to breakdown if this tea contributes action level
             if (totalActionLevel > 0) {
                 teaBreakdown.push({
+                    itemHrid: drink.itemHrid,
                     name: itemDetails.name,
                     actionLevel: totalActionLevel,
                     baseActionLevel: baseActionLevel,
@@ -2711,6 +2713,78 @@
     });
 
     /**
+     * Game i18n Bridge
+     *
+     * Obtains the game's i18next instance from the React fiber tree and provides
+     * locale-independent translation of game data names (items, actions, monsters,
+     * skills, etc.). Falls back to the English name when the i18n instance is
+     * unavailable or the key is missing.
+     */
+
+    let cachedI18n = null;
+
+    /**
+     * Walk the React fiber tree from #root to find the i18next instance.
+     * @returns {import('i18next').i18n | null}
+     */
+    function getGameI18n() {
+        if (cachedI18n) return cachedI18n;
+        if (typeof document === 'undefined') return null;
+
+        const root = document.getElementById('root');
+        const fiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+        if (!fiber) return null;
+
+        const stack = [fiber];
+        while (stack.length > 0) {
+            const f = stack.pop();
+            if (!f) continue;
+            try {
+                const props = f.memoizedProps || {};
+                if (props.i18n && typeof props.i18n.t === 'function') {
+                    cachedI18n = props.i18n;
+                    return cachedI18n;
+                }
+                if (props.value?.i18n && typeof props.value.i18n.t === 'function') {
+                    cachedI18n = props.value.i18n;
+                    return cachedI18n;
+                }
+            } catch (error) {
+                console.error('[GameI18n] Fiber access error during tree walk:', error);
+            }
+            if (f.sibling) stack.push(f.sibling);
+            if (f.child) stack.push(f.child);
+        }
+        return null;
+    }
+
+    /**
+     * Translate a game data name via the game's i18next instance.
+     * @param {string} namespace - i18n namespace (e.g. 'itemNames')
+     * @param {string} hrid - Game data HRID (e.g. '/items/abyssal_essence')
+     * @param {string} [fallback=''] - English name to fall back to
+     * @returns {string} Translated name or fallback
+     */
+    function translateGameName(namespace, hrid, fallback = '') {
+        if (!hrid) return fallback;
+        const i18n = getGameI18n();
+        if (!i18n) return fallback;
+
+        const key = `${namespace}.${hrid}`;
+        try {
+            const translated = i18n.t(key);
+            // i18next returns the key itself when no translation exists
+            if (translated === key) return fallback;
+            return translated;
+        } catch (error) {
+            console.error('[GameI18n] i18n.t() failed for key:', key, error);
+            return fallback;
+        }
+    }
+
+    const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);
+
+    /**
      * Game Data Lookup Utilities
      *
      * Centralized functions for resolving display names to HRIDs, plus locale-independent
@@ -3371,7 +3445,7 @@
             }
 
             const itemDetails = itemDetailMap[drink.itemHrid];
-            const itemName = itemDetails?.name || 'Unknown';
+            const itemName = getItemName(drink.itemHrid, itemDetails?.name || 'Unknown');
             const price =
                 typeof getItemPrice === 'function'
                     ? getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' })
@@ -5307,7 +5381,7 @@ self.onmessage = function (e) {
             const expectedReturn = drops.reduce((sum, drop) => sum + drop.expectedValue, 0);
 
             return {
-                itemName: itemDetails.name,
+                itemName: getItemName(itemHrid, itemDetails.name),
                 itemHrid,
                 expectedValue: expectedReturn,
                 drops,
@@ -5382,7 +5456,7 @@ self.onmessage = function (e) {
 
                 drops.push({
                     itemHrid,
-                    itemName: itemDetails.name,
+                    itemName: getItemName(itemHrid, itemDetails.name),
                     dropRate,
                     avgCount,
                     priceEach: price || 0,
@@ -5545,7 +5619,7 @@ self.onmessage = function (e) {
 
                 bonusDrops.push({
                     itemHrid: drop.itemHrid,
-                    itemName: itemDetails.name,
+                    itemName: getItemName(drop.itemHrid, itemDetails.name),
                     dropRate: finalDropRate,
                     dropsPerHour,
                     dropsPerAction,
@@ -5608,7 +5682,7 @@ self.onmessage = function (e) {
 
                 bonusDrops.push({
                     itemHrid: drop.itemHrid,
-                    itemName: itemDetails.name,
+                    itemName: getItemName(drop.itemHrid, itemDetails.name),
                     dropRate: finalDropRate,
                     dropsPerHour,
                     dropsPerAction,
@@ -5681,6 +5755,7 @@ self.onmessage = function (e) {
             // Add to breakdown
             breakdown.push({
                 name: itemDetails.name,
+                itemHrid: item.itemHrid,
                 value: itemWisdom,
                 enhancementLevel: enhancementLevel,
             });
@@ -5725,6 +5800,7 @@ self.onmessage = function (e) {
             // Add to breakdown
             breakdown.push({
                 name: itemDetails.name,
+                itemHrid: item.itemHrid,
                 value: itemCharmXP,
                 enhancementLevel: enhancementLevel,
             });
@@ -7237,6 +7313,7 @@ self.onmessage = function (e) {
             gear.rareFindBonus += best.rareFindBonus;
             gear.experienceBonus += best.experienceBonus;
             gear.slotBreakdown.push({
+                itemHrid: best.item?.itemHrid || best.itemDetails?.hrid || '',
                 name: best.itemDetails.name,
                 enhancementLevel: best.enhancementLevel,
                 success: best.toolBonus,
@@ -7244,7 +7321,11 @@ self.onmessage = function (e) {
                 rareFind: best.rareFindBonus,
                 experience: best.experienceBonus,
             });
-            return { name: best.itemDetails.name, enhancementLevel: best.enhancementLevel };
+            return {
+                itemHrid: best.item?.itemHrid || best.itemDetails?.hrid || '',
+                name: best.itemDetails.name,
+                enhancementLevel: best.enhancementLevel,
+            };
         };
 
         gear.toolSlot = addSlot(bestTool) || null;

@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.6.3
+ * Version: 3.7.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, marketplaceSession_js, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
+(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, marketplaceSession_js, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
     'use strict';
 
     /**
@@ -542,6 +542,83 @@
     }
 
     /**
+     * Game i18n Bridge
+     *
+     * Obtains the game's i18next instance from the React fiber tree and provides
+     * locale-independent translation of game data names (items, actions, monsters,
+     * skills, etc.). Falls back to the English name when the i18n instance is
+     * unavailable or the key is missing.
+     */
+
+    let cachedI18n = null;
+
+    /**
+     * Walk the React fiber tree from #root to find the i18next instance.
+     * @returns {import('i18next').i18n | null}
+     */
+    function getGameI18n() {
+        if (cachedI18n) return cachedI18n;
+        if (typeof document === 'undefined') return null;
+
+        const root = document.getElementById('root');
+        const fiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+        if (!fiber) return null;
+
+        const stack = [fiber];
+        while (stack.length > 0) {
+            const f = stack.pop();
+            if (!f) continue;
+            try {
+                const props = f.memoizedProps || {};
+                if (props.i18n && typeof props.i18n.t === 'function') {
+                    cachedI18n = props.i18n;
+                    return cachedI18n;
+                }
+                if (props.value?.i18n && typeof props.value.i18n.t === 'function') {
+                    cachedI18n = props.value.i18n;
+                    return cachedI18n;
+                }
+            } catch (error) {
+                console.error('[GameI18n] Fiber access error during tree walk:', error);
+            }
+            if (f.sibling) stack.push(f.sibling);
+            if (f.child) stack.push(f.child);
+        }
+        return null;
+    }
+
+    /**
+     * Translate a game data name via the game's i18next instance.
+     * @param {string} namespace - i18n namespace (e.g. 'itemNames')
+     * @param {string} hrid - Game data HRID (e.g. '/items/abyssal_essence')
+     * @param {string} [fallback=''] - English name to fall back to
+     * @returns {string} Translated name or fallback
+     */
+    function translateGameName(namespace, hrid, fallback = '') {
+        if (!hrid) return fallback;
+        const i18n = getGameI18n();
+        if (!i18n) return fallback;
+
+        const key = `${namespace}.${hrid}`;
+        try {
+            const translated = i18n.t(key);
+            // i18next returns the key itself when no translation exists
+            if (translated === key) return fallback;
+            return translated;
+        } catch (error) {
+            console.error('[GameI18n] i18n.t() failed for key:', key, error);
+            return fallback;
+        }
+    }
+
+    const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);
+    const getActionName = (hrid, fallback = '') => translateGameName('actionNames', hrid, fallback);
+    const getActionTypeName = (hrid, fallback = '') => translateGameName('actionTypeNames', hrid, fallback);
+    const getMonsterName = (hrid, fallback = '') => translateGameName('monsterNames', hrid, fallback);
+    const getSkillName = (hrid, fallback = '') => translateGameName('skillNames', hrid, fallback);
+    const getAbilityName = (hrid, fallback = '') => translateGameName('abilityNames', hrid, fallback);
+
+    /**
      * Collection Navigation
      * Adds "View Action" and "Item Dictionary" buttons when clicking collection items.
      * Works for both collected items (injects into game popover) and uncollected items
@@ -727,7 +804,8 @@
             this.dismissPopover();
 
             const itemDetails = dataManager.getItemDetails(itemHrid);
-            const itemName = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+            const fallbackName = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+            const itemName = getItemName(itemHrid, fallbackName);
 
             const rect = tile.getBoundingClientRect();
 
@@ -1226,25 +1304,25 @@
                 { from: 8000, to: 9999, checked: true },
                 { label: '10k-100k', from: 10000, to: 99999, checked: true },
                 { label: '100k+', from: 100000, to: Infinity, checked: true },
-                { label: 'Not dungeon', className: 'nod', checked: true, fn: matchNoDungeon },
+                { label: i18n_js.t('collectionFilters.notDungeon'), className: 'nod', checked: true, fn: matchNoDungeon },
                 { dungeon: 'd1', checked: true },
                 { dungeon: 'd2', checked: true },
                 { dungeon: 'd3', checked: true },
                 { dungeon: 'd4', checked: true },
                 {
-                    label: 'Skilling Outfits',
+                    label: i18n_js.t('collectionFilters.skillingOutfits'),
                     className: 'skilling-outfit',
                     checked: true,
                     fn: (itemId) => SKILLING_OUTFITS.has(itemId),
                 },
                 {
-                    label: 'Uncollected Charms',
+                    label: i18n_js.t('collectionFilters.uncollectedCharms'),
                     className: 'charm',
                     checked: false,
                     fn: (itemId, n) => itemId.includes('charm') && n === 0,
                 },
                 {
-                    label: 'Uncollected Celestials',
+                    label: i18n_js.t('collectionFilters.uncollectedCelestials'),
                     className: 'celestial',
                     checked: false,
                     fn: (itemId, n) => itemId.includes('celestial') && n === 0,
@@ -1254,7 +1332,7 @@
 
         if (includeFavorites) {
             flags.push({
-                label: 'Always Show Favorites',
+                label: i18n_js.t('collectionFilters.alwaysShowFavorites'),
                 className: 'favorite',
                 checked: true,
                 fn: null,
@@ -1734,12 +1812,12 @@ ${starCSS}
             panelEl.insertAdjacentHTML(
                 'beforeend',
                 `<div class="toolasha-cf cf-sort-row" style="display:flex;align-items:center;gap:6px;margin-top:4px;">` +
-                    `<span style="font-size:12px;color:#aaa;">Sort:</span>` +
+                    `<span style="font-size:12px;color:#aaa;">${i18n_js.t('collectionFilters.sortLabel')}</span>` +
                     `<select class="toolasha-cf cf-sort-select" style="font-size:12px;background:#222;color:#eee;border:1px solid #444;border-radius:4px;padding:1px 4px;">` +
-                    `<option value="default"${this.sortMode === 'default' ? ' selected' : ''}>Default</option>` +
-                    `<option value="items-needed"${this.sortMode === 'items-needed' ? ' selected' : ''}>Items to next tier</option>` +
-                    `<option value="gold-cost"${this.sortMode === 'gold-cost' ? ' selected' : ''}>Gold cost to next tier</option>` +
-                    `<option value="time-to-next-tier"${this.sortMode === 'time-to-next-tier' ? ' selected' : ''}>Time to next tier</option>` +
+                    `<option value="default"${this.sortMode === 'default' ? ' selected' : ''}>${i18n_js.t('collectionFilters.sortDefault')}</option>` +
+                    `<option value="items-needed"${this.sortMode === 'items-needed' ? ' selected' : ''}>${i18n_js.t('collectionFilters.sortItemsToNextTier')}</option>` +
+                    `<option value="gold-cost"${this.sortMode === 'gold-cost' ? ' selected' : ''}>${i18n_js.t('collectionFilters.sortGoldCostToNextTier')}</option>` +
+                    `<option value="time-to-next-tier"${this.sortMode === 'time-to-next-tier' ? ' selected' : ''}>${i18n_js.t('collectionFilters.sortTimeToNextTier')}</option>` +
                     `</select></div>`
             );
             panelEl.querySelector('.cf-sort-select').addEventListener('change', (e) => {
@@ -2081,11 +2159,11 @@ ${starCSS}
          */
         _getBadgeStalenessTooltip(count) {
             if (!this.collectionsLastUpdated) {
-                return 'Collection data not yet loaded \u2014 visit Collections page to refresh';
+                return i18n_js.t('collectionFilters.collectionDataNotLoaded');
             }
             const age = Date.now() - this.collectionsLastUpdated;
             const relativeTime = formatters_js.formatRelativeTime(age);
-            return `${formatCount(count)} collected \u2014 updated ${relativeTime} ago`;
+            return i18n_js.t('collectionFilters.collectedUpdatedAgo', { count: formatCount(count), relativeTime });
         }
 
         /**
@@ -2430,10 +2508,11 @@ ${starCSS}
             color: #ffcccc;
         `;
 
-            // Convert lowercase keys to proper item names
+            // Convert lowercase keys to proper item names (localized for the match-list echo;
+            // the English maps above stay untouched since command arguments match English names)
             const properNames = matches.map((lowerName) => {
                 const hrid = this.itemData.itemNameToHrid[lowerName];
-                return this.itemData.itemHridToName[hrid];
+                return getItemName(hrid, this.itemData.itemHridToName[hrid]);
             });
 
             const matchList = properNames.slice(0, 5).join(', ') + (properNames.length > 5 ? '...' : '');
@@ -4080,7 +4159,9 @@ ${starCSS}
      */
     function resolveSystemMessage(messageKey, meta) {
         if (messageKey === 'systemChatMessage.characterLeveledUp') {
-            const skillName = SKILL_HRID_TO_NAME[meta.skillHrid] || meta.skillHrid.split('/').pop().replace(/_/g, ' ');
+            const fallbackSkillName =
+                SKILL_HRID_TO_NAME[meta.skillHrid] || meta.skillHrid.split('/').pop().replace(/_/g, ' ');
+            const skillName = getSkillName(meta.skillHrid, fallbackSkillName);
             return i18n_js.t('popOutChat.levelUpMessage', { name: meta.name, skillName, level: meta.level });
         }
         return null;
@@ -4094,7 +4175,8 @@ ${starCSS}
     function resolveLink(link) {
         if (link.linkType === '/chat_link_types/market_listing') {
             const itemDetails = dataManager.getItemDetails(link.itemHrid);
-            const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+            const fallbackName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+            const itemName = getItemName(link.itemHrid, fallbackName);
             const enhancement = link.itemEnhancementLevel > 0 ? ` +${link.itemEnhancementLevel}` : '';
             const count = link.itemCount > 1 ? ` ×${link.itemCount}` : '';
             const price = formatters_js.formatKMB(link.price);
@@ -4103,34 +4185,40 @@ ${starCSS}
         }
         if (link.linkType === '/chat_link_types/item') {
             const itemDetails = dataManager.getItemDetails(link.itemHrid);
-            const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+            const fallbackName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+            const itemName = getItemName(link.itemHrid, fallbackName);
             const enhancement = link.itemEnhancementLevel > 0 ? ` +${link.itemEnhancementLevel}` : '';
             const count = link.itemCount > 1 ? ` ×${link.itemCount}` : '';
             return `[${itemName}${enhancement}${count}]`;
         }
         if (link.linkType === '/chat_link_types/ability') {
             const abilityDetails = dataManager.getInitClientData()?.abilityDetailMap?.[link.abilityHrid];
-            const abilityName = abilityDetails?.name || link.abilityHrid.split('/').pop().replace(/_/g, ' ');
+            const fallbackName = abilityDetails?.name || link.abilityHrid.split('/').pop().replace(/_/g, ' ');
+            const abilityName = getAbilityName(link.abilityHrid, fallbackName);
             return `[${abilityName} ${i18n_js.t('popOutChat.levelAbbreviation')}${link.abilityLevel}]`;
         }
         if (link.linkType === '/chat_link_types/skill') {
-            const skillName = SKILL_HRID_TO_NAME[link.skillHrid] || link.skillHrid.split('/').pop().replace(/_/g, ' ');
+            const fallbackName = SKILL_HRID_TO_NAME[link.skillHrid] || link.skillHrid.split('/').pop().replace(/_/g, ' ');
+            const skillName = getSkillName(link.skillHrid, fallbackName);
             return `[${skillName} ${i18n_js.t('popOutChat.levelAbbreviation')}${link.skillLevel}]`;
         }
         if (link.linkType === '/chat_link_types/party') {
             const actionDetails = dataManager.getActionDetails(link.partyActionHrid);
-            const zoneName = actionDetails?.name || link.partyActionHrid.split('/').pop().replace(/_/g, ' ');
+            const fallbackName = actionDetails?.name || link.partyActionHrid.split('/').pop().replace(/_/g, ' ');
+            const zoneName = getActionName(link.partyActionHrid, fallbackName);
             const tier = ` T${link.partyDifficultyTier ?? 0}`;
             return `[${i18n_js.t('popOutChat.partyLinkLabel')} ${zoneName}${tier}]`;
         }
         if (link.linkType === '/chat_link_types/collection') {
             const itemDetails = dataManager.getItemDetails(link.itemHrid);
-            const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+            const fallbackName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+            const itemName = getItemName(link.itemHrid, fallbackName);
             return `[${i18n_js.t('popOutChat.collectionLinkLabel')} ${itemName} ×${formatters_js.formatKMB(link.itemCount)}]`;
         }
         if (link.linkType === '/chat_link_types/bestiary') {
             const monsterDetails = dataManager.getInitClientData()?.combatMonsterDetailMap?.[link.monsterHrid];
-            const monsterName = monsterDetails?.name || link.monsterHrid.split('/').pop().replace(/_/g, ' ');
+            const fallbackName = monsterDetails?.name || link.monsterHrid.split('/').pop().replace(/_/g, ' ');
+            const monsterName = getMonsterName(link.monsterHrid, fallbackName);
             return `[${i18n_js.t('popOutChat.bestiaryLinkLabel')} ${monsterName} ×${link.monsterCount}]`;
         }
         // Fallback: humanize the HRID
@@ -4472,6 +4560,12 @@ ${starCSS}
             const closePaneTooltip = i18n_js.t('popOutChat.closePaneTooltip');
             const filterInputPlaceholder = i18n_js.t('popOutChat.filterInputPlaceholder');
             const messageInputPlaceholder = i18n_js.t('popOutChat.messageInputPlaceholder');
+            const filterNoFilterLabel = i18n_js.t('popOutChat.filterNoFilter');
+            const filterEnhancedBuyLabel = i18n_js.t('popOutChat.filterEnhancedBuy');
+            const filterEnhancedSellLabel = i18n_js.t('popOutChat.filterEnhancedSell');
+            const filterBuyOnlyLabel = i18n_js.t('popOutChat.filterBuyOnly');
+            const filterSellOnlyLabel = i18n_js.t('popOutChat.filterSellOnly');
+            const filterCustomLabel = i18n_js.t('popOutChat.filterCustom');
             return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4645,12 +4739,12 @@ ${starCSS}
   const STORAGE_KEY = 'mwi-chat-popout-layout';
 
   const FILTER_PRESETS = [
-    { value: 'none',         label: 'No filter',      regex: null },
-    { value: 'enhanced_buy', label: 'Enhanced Buy',   regex: /\\+\\d+.*Buy\\]/i },
-    { value: 'enhanced_sell',label: 'Enhanced Sell',  regex: /\\+\\d+.*Sell\\]/i },
-    { value: 'buy_only',     label: 'Buy only',       regex: /Buy\\]/i },
-    { value: 'sell_only',    label: 'Sell only',      regex: /Sell\\]/i },
-    { value: 'custom',       label: 'Custom\u2026',   regex: null },
+    { value: 'none',         label: '${filterNoFilterLabel}',      regex: null },
+    { value: 'enhanced_buy', label: '${filterEnhancedBuyLabel}',   regex: /\\+\\d+.*Buy\\]/i },
+    { value: 'enhanced_sell',label: '${filterEnhancedSellLabel}',  regex: /\\+\\d+.*Sell\\]/i },
+    { value: 'buy_only',     label: '${filterBuyOnlyLabel}',       regex: /Buy\\]/i },
+    { value: 'sell_only',    label: '${filterSellOnlyLabel}',      regex: /Sell\\]/i },
+    { value: 'custom',       label: '${filterCustomLabel}',        regex: null },
   ];
 
   function buildCustomRegex(text) {
@@ -5476,6 +5570,104 @@ ${starCSS}
     const chatHistoryExtender = new ChatHistoryExtender();
 
     /**
+     * Chat 24hr Timestamps
+     * Reformats native chat message timestamps using the user's Market date/time
+     * format settings instead of the browser's default locale (which is often 12-hour AM/PM).
+     * Based on the original "MilkyWayIdle 24hr Timestamps" script by Opzon.
+     */
+
+
+    // Matches the native client's "[M/D H:MM:SS AM/PM]" or "[H:MM:SS AM/PM]" timestamp text.
+    const TIMESTAMP_RE = /^\[(?:(\d{1,2}\/\d{1,2})\s+)?(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)\]$/i;
+
+    /**
+     * Reformat a single timestamp span's text according to the current date/time settings.
+     * No-op if the text doesn't match the expected AM/PM pattern (already reformatted, or unrecognized).
+     * @param {Element} span
+     */
+    function processTimestampNode(span) {
+        const match = span.textContent.match(TIMESTAMP_RE);
+        if (!match) return;
+
+        const [, datePart, hourStr, minuteStr, secondStr, meridiem] = match;
+        const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
+        const dateFormat = config.getSettingValue('market_listingDateFormat', 'MM-DD');
+
+        let hour = parseInt(hourStr, 10);
+        if (meridiem.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+        if (meridiem.toUpperCase() === 'AM' && hour === 12) hour = 0;
+
+        let timeText;
+        if (use24h) {
+            timeText = `${String(hour).padStart(2, '0')}:${minuteStr}:${secondStr}`;
+        } else {
+            const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+            const outMeridiem = hour < 12 ? 'AM' : 'PM';
+            timeText = `${hour12}:${minuteStr}:${secondStr} ${outMeridiem}`;
+        }
+
+        let newText = `[${timeText}]`;
+        if (datePart) {
+            const [month, day] = datePart.split('/');
+            const paddedMonth = month.padStart(2, '0');
+            const paddedDay = day.padStart(2, '0');
+            const dateText = dateFormat === 'DD-MM' ? `${paddedDay}/${paddedMonth}` : `${paddedMonth}/${paddedDay}`;
+            newText = `[${dateText} ${timeText}]`;
+        }
+
+        span.textContent = newText;
+    }
+
+    /**
+     * Re-process all timestamp spans currently in the DOM. Used on initialize() and whenever
+     * the user changes the time/date format settings, so already-rendered messages update too.
+     */
+    function reprocessAllTimestamps() {
+        document.querySelectorAll('[class*="ChatMessage_timestamp"]').forEach(processTimestampNode);
+    }
+
+    class Chat24hrTimestamps {
+        constructor() {
+            this.isInitialized = false;
+            this.unregisterObserver = null;
+            this.onSettingChange = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('chat_24hrTimestamps')) return;
+
+            this.isInitialized = true;
+
+            this.unregisterObserver = domObserver.onClass(
+                'Chat24hrTimestamps',
+                'ChatMessage_timestamp',
+                processTimestampNode
+            );
+            reprocessAllTimestamps();
+
+            this.onSettingChange = () => reprocessAllTimestamps();
+            config.onSettingChange('market_listingTimeFormat', this.onSettingChange);
+            config.onSettingChange('market_listingDateFormat', this.onSettingChange);
+        }
+
+        disable() {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+            if (this.onSettingChange) {
+                config.offSettingChange('market_listingTimeFormat', this.onSettingChange);
+                config.offSettingChange('market_listingDateFormat', this.onSettingChange);
+                this.onSettingChange = null;
+            }
+            this.isInitialized = false;
+        }
+    }
+
+    const chat24hrTimestamps = new Chat24hrTimestamps();
+
+    /**
      * Gathering Profit Calculator
      *
      * Calculates comprehensive profit/hour for gathering actions (Foraging, Woodcutting, Milking) including:
@@ -5608,6 +5800,7 @@ ${starCSS}
         });
         const drinkCostPerHour = teaCostData.totalCostPerHour;
         const drinkCosts = teaCostData.costs.map((tea) => ({
+            hrid: tea.itemHrid,
             name: tea.itemName,
             priceEach: tea.pricePerDrink,
             drinksPerHour: tea.drinksPerHour,
@@ -5650,7 +5843,7 @@ ${starCSS}
             let rawPerAction = 0;
             let processedPerAction = 0;
 
-            const rawItemName = gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown';
+            const rawItemName = getItemName(drop.itemHrid, gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown');
             const baseItemsPerHour = actionsPerHour * drop.dropRate * avgAmountPerAction * efficiencyMultiplier;
             const baseItemsPerAction = drop.dropRate * avgAmountPerAction;
             const baseRevenuePerAction = baseItemsPerAction * resolvedRawPrice;
@@ -5698,7 +5891,10 @@ ${starCSS}
                 const processedItemsPerAction = drop.dropRate * processedPerAction;
 
                 // Track processing details
-                const processedItemName = gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown';
+                const processedItemName = getItemName(
+                    processedItemHrid,
+                    gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown'
+                );
 
                 // Value gain per conversion = cheese value - cost of milk used
                 const costOfMilkUsed = conversionRatio * resolvedRawPrice;
@@ -5918,11 +6114,194 @@ ${starCSS}
     }
 
     /**
+     * Marketplace Buy Modal Autofill Utility
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
+     */
+
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs, plus locale-independent
+     * resolution via icon sprite references (see below) - prefer the sprite-based functions
+     * over the name-based ones wherever a `<use>` element is reachable, since display names are
+     * translated client-side and the name-based functions below only ever match the client's
+     * English-language data, silently failing on any other game locale.
+     */
+
+
+    /**
+     * Extract the last path segment from an hrid, e.g. "/actions/gathering/milking" -> "milking".
+     * This is the fragment MWI's sprite sheets key icons by, for both actions and skills.
+     * @param {string} hrid
+     * @returns {string}
+     */
+    function lastHridSegment(hrid) {
+        return hrid.slice(hrid.lastIndexOf('/') + 1);
+    }
+    let skillFragmentToHridMap = null;
+
+    /**
+     * Resolve a skill HRID from its icon sprite `<use>` href (e.g.
+     * ".../skills_sprite.<hash>.svg#milking"), which is locale-independent - the href's fragment is
+     * always the skill's last hrid segment, unlike the nav bar's rendered label text.
+     * @param {string|null|undefined} href
+     * @returns {string|null}
+     */
+    function getSkillHridFromIconHref(href) {
+        if (!href || !href.includes('skills_sprite')) return null;
+        const fragment = href.split('#')[1];
+        if (!fragment) return null;
+
+        if (!skillFragmentToHridMap) {
+            skillFragmentToHridMap = new Map();
+            const gameData = dataManager.getInitClientData();
+            for (const hrid of Object.keys(gameData?.skillDetailMap || {})) {
+                skillFragmentToHridMap.set(lastHridSegment(hrid), hrid);
+            }
+        }
+
+        return skillFragmentToHridMap.get(fragment) || null;
+    }
+
+    /**
+     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
+     * @param {string} name - Original display name
+     * @returns {string[]} Array of alternate names to try (may be empty)
+     */
+    function getRefinedNameVariants(name) {
+        const variants = [];
+        if (name.includes('★')) {
+            variants.push(name.replace(/\s*★/, ' (R)'));
+        }
+        if (name.includes('(R)')) {
+            variants.push(name.replace(/\s*\(R\)/, ' ★'));
+        }
+        return variants;
+    }
+
+    /**
+     * Resolve a task card's underlying quest object (which carries actionHrid/monsterHrid directly)
+     * by walking the React fiber tree from the card's own "Go"/success button up to the component
+     * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
+     * "SkillType - TaskName" text.
+     * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
+     * @returns {Object|null} The characterQuest object, or null if not found.
+     */
+    function getQuestFromTaskCard(taskCard) {
+        const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
+        if (!goBtn) return null;
+
+        let f = getReactFiberFromElement(goBtn)?.return;
+        while (f) {
+            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                return f.memoizedProps.characterQuest;
+            }
+            f = f.return;
+        }
+        return null;
+    }
+
+    /**
+     * Find an action HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} actionName - Display name of the action
+     * @returns {string|null} Action HRID or null if not found
+     */
+    function getActionHridFromName(actionName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) {
+            return null;
+        }
+
+        // Try exact match first (English or translated)
+        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+            const displayName = getActionName(hrid, detail.name);
+            if (displayName === actionName || detail.name === actionName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(actionName)) {
+            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+                const displayName = getActionName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Task Profit Calculator
      * Calculates total profit for gathering and production tasks
      * Includes task rewards (coins, task tokens, Purple's Gift) + action profit
      */
 
+
+    const GATHERING_TYPE_SET = new Set(profitConstants_js.GATHERING_TYPES);
+    const PRODUCTION_TYPE_SET = new Set(profitConstants_js.PRODUCTION_TYPES);
 
     /**
      * Calculate Task Token value from Task Shop items
@@ -6020,11 +6399,48 @@ ${starCSS}
     }
 
     /**
-     * Detect task type from description
+     * Detect task type from locale-independent quest info
+     * @param {Object} questInfo - Quest info { actionHrid, monsterHrid } from the task card's React fiber
+     * @returns {string} Task type: 'gathering', 'production', 'combat', or 'unknown'
+     */
+    function detectTaskType(questInfo) {
+        // Combat quests carry a monsterHrid
+        if (questInfo?.monsterHrid) {
+            return 'combat';
+        }
+
+        const actionHrid = questInfo?.actionHrid;
+        if (!actionHrid) {
+            return 'unknown';
+        }
+
+        const actionDetail = dataManager.getInitClientData()?.actionDetailMap?.[actionHrid];
+        const actionTypeHrid = actionDetail?.actionTypeHrid || actionDetail?.type;
+        if (!actionTypeHrid) {
+            return 'unknown';
+        }
+
+        if (actionTypeHrid === '/action_types/combat') {
+            return 'combat';
+        }
+        if (GATHERING_TYPE_SET.has(actionTypeHrid)) {
+            return 'gathering';
+        }
+        if (PRODUCTION_TYPE_SET.has(actionTypeHrid)) {
+            return 'production';
+        }
+
+        return 'unknown';
+    }
+
+    /**
+     * Detect task type from the English "Skill - Action" description text.
+     * Fallback only - the skill name is translated in non-English clients, so this can only
+     * ever resolve on the English UI; quest-info-based detection is the preferred path.
      * @param {string} taskDescription - Task description text (e.g., "Cheesesmithing - Holy Cheese")
      * @returns {string} Task type: 'gathering', 'production', 'combat', or 'unknown'
      */
-    function detectTaskType(taskDescription) {
+    function detectTaskTypeFromDescription(taskDescription) {
         // Extract skill from "Skill - Action" format
         const skillMatch = taskDescription.match(/^([^-]+)\s*-/);
         if (!skillMatch) return 'unknown';
@@ -6032,12 +6448,12 @@ ${starCSS}
         const skill = skillMatch[1].trim().toLowerCase();
 
         // Gathering skills
-        if (['foraging', 'woodcutting', 'milking'].includes(skill)) {
+        if (profitConstants_js.GATHERING_TYPES.some((hrid) => hrid.split('/').pop() === skill)) {
             return 'gathering';
         }
 
         // Production skills
-        if (['cheesesmithing', 'brewing', 'cooking', 'crafting', 'tailoring'].includes(skill)) {
+        if (profitConstants_js.PRODUCTION_TYPES.some((hrid) => hrid.split('/').pop() === skill)) {
             return 'production';
         }
 
@@ -6082,11 +6498,11 @@ ${starCSS}
 
         const actionName = match[1].trim();
 
-        // Find matching action HRID by searching for action name in action details
-        for (const [actionHrid, actionDetail] of Object.entries(actionDetailMap)) {
-            if (actionDetail.name && actionDetail.name.toLowerCase() === actionName.toLowerCase()) {
-                return { actionHrid, quantity, currentProgress, description: taskDescription };
-            }
+        // Find matching action HRID via the locale-aware name lookup (matches translated
+        // display names as well as the client's English data names)
+        const actionHrid = getActionHridFromName(actionName);
+        if (actionHrid) {
+            return { actionHrid, quantity, currentProgress, description: taskDescription };
         }
 
         console.warn('[TaskProfit] parseTaskDescription: no actionHrid found for action name', {
@@ -6236,25 +6652,58 @@ ${starCSS}
     /**
      * Calculate complete task profit
      * @param {Object} taskData - Task data {description, coinReward, taskTokenReward}
+     * @param {Object|null} [questInfo=null] - Locale-independent quest info {actionHrid, monsterHrid}
+     * resolved from the task card's React fiber. When provided, description text parsing is skipped.
      * @returns {Promise<Object|null>} Complete profit breakdown or null for combat/unknown tasks
      */
-    async function calculateTaskProfit(taskData) {
-        const taskType = detectTaskType(taskData.description);
+    async function calculateTaskProfit(taskData, questInfo = null) {
+        let taskType;
+        let taskInfo = null;
 
-        // Skip combat tasks entirely
-        if (taskType === 'combat') {
-            return null;
+        if (questInfo) {
+            taskType = detectTaskType(questInfo);
+
+            // Skip combat tasks entirely
+            if (taskType === 'combat') {
+                return null;
+            }
+
+            // HRID known directly from the quest - skip the translated description text parsing
+            if (questInfo.actionHrid && (taskType === 'gathering' || taskType === 'production')) {
+                taskInfo = {
+                    actionHrid: questInfo.actionHrid,
+                    quantity: taskData.quantity,
+                    currentProgress: taskData.currentProgress,
+                    description: taskData.description,
+                };
+            }
+        } else {
+            // Fallback path: derive the type from the English "Skill - Action" description text
+            taskType = detectTaskTypeFromDescription(taskData.description);
+
+            // Skip combat tasks entirely
+            if (taskType === 'combat') {
+                return null;
+            }
         }
 
-        // Parse task details
-        const taskInfo = parseTaskDescription(taskData.description, taskType, taskData.quantity, taskData.currentProgress);
+        // Fallback parsing from description text (quest info missing, or type unknown above)
         if (!taskInfo) {
-            // Return error state for UI to display "Unable to calculate"
-            return {
-                type: taskType,
-                error: 'Unable to parse task description',
-                totalProfit: 0,
-            };
+            taskInfo = parseTaskDescription(taskData.description, taskType, taskData.quantity, taskData.currentProgress);
+            if (!taskInfo) {
+                // Return error state for UI to display "Unable to calculate"
+                return {
+                    type: taskType,
+                    error: 'Unable to parse task description',
+                    totalProfit: 0,
+                };
+            }
+
+            // Text parsing resolved the action - re-derive its type from the action HRID so the
+            // correct profit calculator runs even if the description-based guess was 'unknown'
+            if (taskType !== 'gathering' && taskType !== 'production') {
+                taskType = detectTaskType({ actionHrid: taskInfo.actionHrid });
+            }
         }
 
         // Calculate task rewards
@@ -7647,8 +8096,11 @@ ${starCSS}
      */
 
 
-    // Compiled regex pattern (created once, reused for performance)
-    const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
+    // Compiled regex pattern (created once, reused for performance).
+    // Language-neutral: matches the "current / total" progress pair regardless of the
+    // localized "Progress:" label, including the full-width slash used by the zh client.
+    // The non-digit boundaries avoid grabbing fragments of longer numbers (e.g. reward counts).
+    const REGEX_TASK_PROGRESS = /(?:^|[^\d])(\d+)\s*[/／]\s*(\d+)(?:[^\d]|$)/;
     const RATING_MODE_TOKENS = 'tokens';
     const RATING_MODE_GOLD = 'gold';
 
@@ -7790,7 +8242,7 @@ ${starCSS}
             const need = mat.a * remaining;
             const canDo = Math.floor(have / mat.a);
             if (canDo < craftable) craftable = canDo;
-            details.push({ name: mat.n, have, need, enough: have >= need });
+            details.push({ hrid: mat.h, name: mat.n, have, need, enough: have >= need });
         }
         if (craftable === Infinity) craftable = 0;
         return { craftable, details };
@@ -7867,7 +8319,7 @@ ${starCSS}
         for (const d of details) {
             const line = document.createElement('div');
             line.style.color = d.enough ? '#4ade80' : config.COLOR_WARNING;
-            line.textContent = `${d.name}: ${formatters_js.formatKMB(d.have)} / ${formatters_js.formatKMB(d.need)}`;
+            line.textContent = `${getItemName(d.hrid, d.name)}: ${formatters_js.formatKMB(d.have)} / ${formatters_js.formatKMB(d.need)}`;
             container.appendChild(line);
         }
     }
@@ -7980,6 +8432,31 @@ ${starCSS}
         const clamped = Math.min(Math.max(normalized, 0), 1);
         const blendedColor = interpolateRgbColor(startColor, endColor, clamped);
         return formatRgbColor(blendedColor);
+    }
+
+    // Cache of regexes that match "Defeat - Monster Name" task descriptions in
+    // whatever language the game client is set to. English + translated fallback.
+    let defeatDescriptionRegexes = null;
+    function getDefeatDescriptionRegexes() {
+        if (defeatDescriptionRegexes) return defeatDescriptionRegexes;
+        const template = translateGameName('randomTask', 'defeat', 'Defeat');
+        const placeholderIndex = template.indexOf('{{');
+        const translated = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex))
+            .replace(/[-\s]+$/, '')
+            .trim();
+        const labels = ['Defeat', translated || 'Defeat'].filter(Boolean);
+        const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        defeatDescriptionRegexes = escaped.map((label) => new RegExp(`^${label}\\s*-\\s*(.+)$`, 'i'));
+        return defeatDescriptionRegexes;
+    }
+
+    function matchDefeatDescription(description) {
+        if (!description) return null;
+        for (const re of getDefeatDescriptionRegexes()) {
+            const m = description.match(re);
+            if (m) return m[1].trim();
+        }
+        return null;
     }
 
     /**
@@ -8436,7 +8913,7 @@ ${starCSS}
                 }
 
                 // Calculate profit
-                const profitData = await calculateTaskProfit(taskData);
+                const profitData = await calculateTaskProfit(taskData, taskData.questInfo);
 
                 // Show combat estimate UI for combat tasks
                 if (profitData === null) {
@@ -8520,21 +8997,28 @@ ${starCSS}
                 ? nameNode.textContent.replace(zoneSpan.textContent, '').trim()
                 : nameNode.textContent.trim();
 
-            // Get quantity from progress (plain div with text "Progress: 0 / 1562")
-            // Find all divs in taskInfo and look for the one containing "Progress:"
+            // Get quantity from the progress pair (e.g. "Progress: 0 / 1562" or zh "进度：0/1562").
+            // The localized "Progress:" label varies by client language, so match the
+            // language-neutral "current / total" number pair directly. Outer wrapper divs also
+            // contain the pair as a substring, so pick the shortest matching div - the progress
+            // div itself is the smallest element that carries exactly this pattern.
             let quantity = 0;
             let currentProgress = 0;
             const taskInfoDivs = taskNode.querySelectorAll('div');
+            let progressMatch = null;
+            let progressMatchLength = Infinity;
             for (const div of taskInfoDivs) {
                 const text = div.textContent.trim();
-                if (text.startsWith('Progress:')) {
-                    const match = text.match(REGEX_TASK_PROGRESS);
-                    if (match) {
-                        currentProgress = parseInt(match[1]); // Current progress
-                        quantity = parseInt(match[2]); // Total quantity
-                    }
-                    break;
+                if (!text.includes('/') && !text.includes('／')) continue;
+                const match = text.match(REGEX_TASK_PROGRESS);
+                if (match && text.length < progressMatchLength) {
+                    progressMatch = match;
+                    progressMatchLength = text.length;
                 }
+            }
+            if (progressMatch) {
+                currentProgress = parseInt(progressMatch[1], 10); // Current progress
+                quantity = parseInt(progressMatch[2], 10); // Total quantity
             }
 
             // Get rewards
@@ -8565,12 +9049,22 @@ ${starCSS}
                 }
             }
 
+            // Resolve locale-independent quest info {actionHrid, monsterHrid} from the card's
+            // React fiber. parseTaskData may receive either the card itself or a descendant
+            // task-info node, so normalize to the card element first.
+            const cardEl = taskNode.closest(selectors_js.GAME.TASK_CARD) || taskNode;
+            const quest = getQuestFromTaskCard(cardEl);
+            const questInfo = quest
+                ? { actionHrid: quest.actionHrid || null, monsterHrid: quest.monsterHrid || null }
+                : null;
+
             const taskData = {
                 description,
                 coinReward,
                 taskTokenReward,
                 quantity,
                 currentProgress,
+                questInfo,
             };
 
             return taskData;
@@ -8663,13 +9157,19 @@ ${starCSS}
          * @private
          */
         async _runCombatSimEstimate(container, taskData, loadoutName, mode = 'solo') {
-            // Extract monster name from "Defeat - Monster Name" description
-            const match = taskData.description.match(/^Defeat\s*-\s*(.+)$/i);
-            const monsterName = match?.[1]?.trim() || null;
+            // Resolve the target monster. Prefer the locale-independent monsterHrid straight from
+            // the task card's React quest; fall back to parsing the English "Defeat - Monster Name"
+            // description when quest data is unavailable.
+            let monsterName = null;
+            let monsterHrid = taskData.questInfo?.monsterHrid || null;
+
+            if (!monsterHrid) {
+                monsterName = matchDefeatDescription(taskData.description);
+                monsterHrid = monsterName ? dataManager.getMonsterHridFromName(monsterName) : null;
+            }
 
             const initClientData = dataManager.getInitClientData();
             const monsterMap = initClientData?.combatMonsterDetailMap;
-            const monsterHrid = monsterName ? dataManager.getMonsterHridFromName(monsterName) : null;
 
             if (!monsterHrid) {
                 const knownNames = monsterMap
@@ -9011,19 +9511,32 @@ ${starCSS}
                 for (const node of allTaskInfos) {
                     const td = this.parseTaskData(node);
                     if (!td) continue;
-                    const m = td.description.match(/^Defeat\s*-\s*(.+)$/i);
-                    if (!m) continue;
-                    const mName = m[1].trim();
-                    const mHrid = dataManager.getMonsterHridFromName(mName);
-                    if (!mHrid) continue;
+
+                    // Resolve the monster. Prefer the locale-independent quest hrid; fall back to
+                    // the English "Defeat - Monster Name" description when quest data is missing.
+                    let mHrid = td.questInfo?.monsterHrid || null;
+                    let mName = null;
+                    if (!mHrid) {
+                        mName = matchDefeatDescription(td.description);
+                        if (!mName) continue;
+                        mHrid = dataManager.getMonsterHridFromName(mName);
+                        if (!mHrid) continue;
+                    }
                     const mZone = dataManager.getCombatZoneForMonster(mHrid);
                     if (mZone !== zoneHrid) continue;
+
+                    // Resolve a display name for the bottleneck summary line
+                    if (!mName) {
+                        mName =
+                            dataManager.getInitClientData()?.combatMonsterDetailMap?.[mHrid]?.name ||
+                            mHrid.split('/').pop();
+                    }
 
                     const rem = Math.max((td.quantity ?? 0) - (td.currentProgress ?? 0), 0);
                     const mKills = simResult.deaths?.[mHrid] ?? 0;
                     const mKillsPerHour = mKills / 1; // SIM_HOURS = 1
                     const hoursNeeded = mKillsPerHour > 0 ? rem / mKillsPerHour : Infinity;
-                    zoneTasks.push({ name: mName, remaining: rem, killsPerHour: mKillsPerHour, hoursNeeded });
+                    zoneTasks.push({ hrid: mHrid, name: mName, remaining: rem, killsPerHour: mKillsPerHour, hoursNeeded });
                 }
 
                 if (zoneTasks.length > 1) {
@@ -9035,14 +9548,16 @@ ${starCSS}
                     const summary = document.createElement('div');
                     summary.style.cssText =
                         'margin-top: 4px; font-size: 0.7rem; color: #aaddff; border-top: 1px solid #333; padding-top: 4px;';
-                    const zoneName =
+                    const zoneName = getActionName(
+                        zoneHrid,
                         dataManager.getInitClientData()?.actionDetailMap?.[zoneHrid]?.name ||
-                        i18n_js.t('taskProfitDisplay.zoneFallbackLabel');
+                            i18n_js.t('taskProfitDisplay.zoneFallbackLabel')
+                    );
                     summary.textContent = i18n_js.t('taskProfitDisplay.zoneSummaryLine', {
                         zoneName,
                         fights: formatters_js.formatKMB(fightsNeeded),
                         time: formatters_js.timeReadable(totalSeconds),
-                        bottleneckName: bottleneck.name,
+                        bottleneckName: getMonsterName(bottleneck.hrid, bottleneck.name),
                     });
                     container.appendChild(summary);
                 }
@@ -9834,7 +10349,7 @@ ${starCSS}
                                 ? ` (${(baseTaskSpeed * 100).toFixed(2)}% + ${(enhBonus * enhLevel * 100).toFixed(2)}%)`
                                 : '';
                         lines.push(
-                            `<div style="margin-left: 10px;">- ${badgeDetails.name}${enhText}: +${taskSpeedBonus.toFixed(2)}%${detailText}</div>`
+                            `<div style="margin-left: 10px;">- ${getItemName(trinketSlot.itemHrid, badgeDetails.name)}${enhText}: +${taskSpeedBonus.toFixed(2)}%${detailText}</div>`
                         );
                     }
                 }
@@ -10537,17 +11052,18 @@ ${starCSS}
                 return null;
             }
 
-            // Get quantity from progress text
+            // Get total quantity from the progress pair (e.g. "Progress: 0 / 1562" or zh
+            // "进度：0/1562"). The localized label varies, so match the language-neutral
+            // "current / total" number pair directly and take the second group.
             const progressDivs = taskElement.querySelectorAll('div');
             let goalCount = 0;
             for (const div of progressDivs) {
                 const text = div.textContent.trim();
-                if (text.startsWith('Progress:')) {
-                    const match = text.match(/Progress:\s*\d+\s*\/\s*(\d+)/);
-                    if (match) {
-                        goalCount = parseInt(match[1]);
-                        break;
-                    }
+                if (!text.includes('/') && !text.includes('／')) continue;
+                const match = text.match(/(\d+)\s*[/／]\s*(\d+)/);
+                if (match) {
+                    goalCount = parseInt(match[2], 10);
+                    break;
                 }
             }
 
@@ -10989,7 +11505,7 @@ ${starCSS}
             Object.entries(this.dungeonConfig).forEach(([hrid, dungeon]) => {
                 const dungeonIcon = this.createFilterIcon(
                     dungeon.id,
-                    dungeon.name,
+                    getActionName(hrid, dungeon.name),
                     dungeon.spriteId,
                     () => this.getDungeonFilterEnabled(hrid),
                     'actions'
@@ -11307,184 +11823,6 @@ ${starCSS}
     const taskIconFilters = new TaskIconFilters();
 
     /**
-     * Marketplace Buy Modal Autofill Utility
-     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
-     * an instance, then drives it with startSession / arm / exitSession.
-     *
-     * Exported helpers:
-     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
-     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
-     *   createAutofillManager(observerId)
-     */
-
-    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
-    const MAX_REACT_TREE_FIBERS = 50000;
-
-    function getReactRootFiber() {
-        const rootElement = document.getElementById('root');
-        const rootContainer = rootElement?._reactRootContainer;
-        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
-    }
-
-    function findReactFiberFromRoot(element) {
-        const rootFiber = getReactRootFiber();
-        if (!rootFiber || !element) return null;
-
-        const stack = [rootFiber];
-        const visited = new Set();
-        let matchedFiber = null;
-
-        while (stack.length > 0) {
-            const fiber = stack.pop();
-            if (!fiber || visited.has(fiber)) continue;
-            visited.add(fiber);
-
-            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
-
-            if (fiber.stateNode === element) {
-                if (matchedFiber && matchedFiber !== fiber) return null;
-                matchedFiber = fiber;
-            }
-
-            if (fiber.sibling) stack.push(fiber.sibling);
-            if (fiber.child) stack.push(fiber.child);
-        }
-
-        return matchedFiber;
-    }
-
-    function getReactFiberFromElement(element) {
-        if (!element) return null;
-
-        const directFibers = new Set(
-            Object.getOwnPropertyNames(element)
-                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
-                .map((key) => element[key])
-                .filter(Boolean)
-        );
-        if (directFibers.size > 1) return null;
-        if (directFibers.size === 1) return directFibers.values().next().value;
-
-        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
-        // Resolve the exact host fiber from the public React root instead.
-        return findReactFiberFromRoot(element);
-    }
-
-    /**
-     * Game Data Lookup Utilities
-     *
-     * Centralized functions for resolving display names to HRIDs, plus locale-independent
-     * resolution via icon sprite references (see below) - prefer the sprite-based functions
-     * over the name-based ones wherever a `<use>` element is reachable, since display names are
-     * translated client-side and the name-based functions below only ever match the client's
-     * English-language data, silently failing on any other game locale.
-     */
-
-
-    /**
-     * Extract the last path segment from an hrid, e.g. "/actions/gathering/milking" -> "milking".
-     * This is the fragment MWI's sprite sheets key icons by, for both actions and skills.
-     * @param {string} hrid
-     * @returns {string}
-     */
-    function lastHridSegment(hrid) {
-        return hrid.slice(hrid.lastIndexOf('/') + 1);
-    }
-    let skillFragmentToHridMap = null;
-
-    /**
-     * Resolve a skill HRID from its icon sprite `<use>` href (e.g.
-     * ".../skills_sprite.<hash>.svg#milking"), which is locale-independent - the href's fragment is
-     * always the skill's last hrid segment, unlike the nav bar's rendered label text.
-     * @param {string|null|undefined} href
-     * @returns {string|null}
-     */
-    function getSkillHridFromIconHref(href) {
-        if (!href || !href.includes('skills_sprite')) return null;
-        const fragment = href.split('#')[1];
-        if (!fragment) return null;
-
-        if (!skillFragmentToHridMap) {
-            skillFragmentToHridMap = new Map();
-            const gameData = dataManager.getInitClientData();
-            for (const hrid of Object.keys(gameData?.skillDetailMap || {})) {
-                skillFragmentToHridMap.set(lastHridSegment(hrid), hrid);
-            }
-        }
-
-        return skillFragmentToHridMap.get(fragment) || null;
-    }
-
-    /**
-     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
-     * @param {string} name - Original display name
-     * @returns {string[]} Array of alternate names to try (may be empty)
-     */
-    function getRefinedNameVariants(name) {
-        const variants = [];
-        if (name.includes('★')) {
-            variants.push(name.replace(/\s*★/, ' (R)'));
-        }
-        if (name.includes('(R)')) {
-            variants.push(name.replace(/\s*\(R\)/, ' ★'));
-        }
-        return variants;
-    }
-
-    /**
-     * Resolve a task card's underlying quest object (which carries actionHrid/monsterHrid directly)
-     * by walking the React fiber tree from the card's own "Go"/success button up to the component
-     * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
-     * "SkillType - TaskName" text.
-     * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
-     * @returns {Object|null} The characterQuest object, or null if not found.
-     */
-    function getQuestFromTaskCard(taskCard) {
-        const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
-        if (!goBtn) return null;
-
-        let f = getReactFiberFromElement(goBtn)?.return;
-        while (f) {
-            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
-                return f.memoizedProps.characterQuest;
-            }
-            f = f.return;
-        }
-        return null;
-    }
-
-    /**
-     * Find an action HRID from its display name.
-     * Tries exact match first, then ★ ↔ (R) variants for refined items.
-     * @param {string} actionName - Display name of the action
-     * @returns {string|null} Action HRID or null if not found
-     */
-    function getActionHridFromName(actionName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) {
-            return null;
-        }
-
-        // Try exact match first
-        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            if (detail.name === actionName) {
-                return hrid;
-            }
-        }
-
-        // Try ★ ↔ (R) variants for refined items
-        for (const variant of getRefinedNameVariants(actionName)) {
-            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-                if (detail.name === variant) {
-                    return hrid;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * Task Icons
      * Adds visual icon overlays to task cards
      */
@@ -11501,6 +11839,10 @@ ${starCSS}
             this.actionsByHrid = null;
             this.monstersByHrid = null;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+
+            // Cache for localized "Defeat" labels (English + translated) so the
+            // isCombatTask check works under non-English clients.
+            this.defeatLabels = null;
 
             // Sprite URLs resolved from asset manifest
             this.manifestUrls = {};
@@ -11818,6 +12160,24 @@ ${starCSS}
         }
 
         /**
+         * Build a set of localized "Defeat" labels (English + translated) for the
+         * isCombatTask check. The game's i18next template may be "Defeat {{count}}"
+         * or a translated equivalent; we strip the {{...}} placeholder so the
+         * prefix matches the task card's "Defeat - MonsterName" prefix.
+         * @returns {Set<string>}
+         */
+        _getDefeatLabels() {
+            if (this.defeatLabels) return this.defeatLabels;
+            const template = translateGameName('randomTask', 'defeat', 'Defeat');
+            const placeholderIndex = template.indexOf('{{');
+            const translated = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex))
+                .replace(/[-\s]+$/, '')
+                .trim();
+            this.defeatLabels = new Set(['Defeat', translated || 'Defeat']);
+            return this.defeatLabels;
+        }
+
+        /**
          * Parse task card to extract task information
          */
         parseTaskCard(taskCard) {
@@ -11840,7 +12200,7 @@ ${starCSS}
                 skillType: skillType.trim(),
                 taskName: taskName.trim(),
                 fullText,
-                isCombatTask: skillType.trim() === 'Defeat',
+                isCombatTask: this._getDefeatLabels().has(skillType.trim()),
             };
 
             return taskInfo;
@@ -12801,11 +13161,15 @@ ${starCSS}
                         if (btn.classList.contains('Button_success__6d6kU')) return;
                         if (btn.classList.contains('Button_buy__3s24l')) return;
 
-                        // Only intercept actual reroll actions (Pay / Free Reroll), not the initial "Reroll" expand button
+                        // Only intercept actual reroll actions (Pay / Free Reroll), not the initial "Reroll" expand button.
+                        // The game renders all three reroll choices (pay cowbells, pay coins, MooPass free reroll)
+                        // inside RandomTask_rerollOptionsContainer — use that locale-independent container first;
+                        // keep the English text checks as fallback (and for simpler DOM in tests).
                         const btnText = btn.textContent?.trim() || '';
+                        const isRerollOption = !!btn.closest('[class*="RandomTask_rerollOptionsContainer"]');
                         const isPayButton = btnText.startsWith('Pay');
                         const isFreeReroll = btnText.toLowerCase().includes('free');
-                        if (!isPayButton && !isFreeReroll) return;
+                        if (!isRerollOption && !isPayButton && !isFreeReroll) return;
 
                         // Find the parent task card
                         const card = btn.closest('[class*="RandomTask_randomTask"]');
@@ -13079,16 +13443,20 @@ ${starCSS}
                     }
                     if (monsterHrids.size > 1) {
                         zoneMonsters[hrid] = [...monsterHrids];
-                        items.push({ hrid, name: action.name, type: 'zone', isZone: true });
+                        items.push({ hrid, name: getActionName(hrid, action.name), type: 'zone', isZone: true });
                     }
                     continue;
                 }
-                items.push({ hrid, name: action.name, type: action.type?.split('/').pop() || 'other' });
+                items.push({
+                    hrid,
+                    name: getActionName(hrid, action.name),
+                    type: action.type?.split('/').pop() || 'other',
+                });
             }
 
             // Combat monsters
             for (const [hrid, monster] of Object.entries(gameData.combatMonsterDetailMap || {})) {
-                items.push({ hrid, name: monster.name, type: 'combat' });
+                items.push({ hrid, name: getMonsterName(hrid, monster.name), type: 'combat' });
             }
 
             items.sort((a, b) => a.name.localeCompare(b.name));
@@ -13522,7 +13890,52 @@ ${starCSS}
          */
         isTaskCompleted(taskCard) {
             const claimButton = taskCard.querySelector('button.Button_button__1Fe9z.Button_buy__3s24l');
-            return claimButton && claimButton.textContent.includes('Claim Reward');
+            if (!claimButton) return false;
+            // The button label is localized by the game (zh: 领取奖励), so match both.
+            const text = claimButton.textContent;
+            const translatedLabel = translateGameName('randomTask', 'claimReward', 'Claim Reward');
+            return text.includes('Claim Reward') || text.includes(translatedLabel);
+        }
+
+        /**
+         * Get the sort order for a parsed skill-type label. The label is the game's action
+         * type display name, which is localized (zh: 挤奶, 采摘, ...), so match each English
+         * TASK_ORDER key's translated name as well.
+         * @param {string} skillType - Skill type label parsed from the task card name
+         * @returns {number} Sort order (999 if unknown)
+         */
+        getSkillTypeOrder(skillType) {
+            if (this.TASK_ORDER[skillType] !== undefined) {
+                return this.TASK_ORDER[skillType];
+            }
+            if (!this.localizedSkillTypeOrder) {
+                this.localizedSkillTypeOrder = new Map();
+                for (const [englishName, order] of Object.entries(this.TASK_ORDER)) {
+                    if (englishName === 'Defeat') continue; // Combat label handled by isCombatSkillType
+                    const translated = getActionTypeName(`/action_types/${englishName.toLowerCase()}`, englishName);
+                    this.localizedSkillTypeOrder.set(translated, order);
+                }
+            }
+            return this.localizedSkillTypeOrder.get(skillType) ?? 999;
+        }
+
+        /**
+         * Check whether a parsed skill-type label is the combat "Defeat" label, in English
+         * or the game's current-language translation (zh: 击败, from randomTask.defeat
+         * template "Defeat - {{monsterName}}").
+         * @param {string} skillType - Skill type label parsed from the task card name
+         * @returns {boolean}
+         */
+        isCombatSkillType(skillType) {
+            if (!this.defeatLabels) {
+                const defeatTemplate = translateGameName('randomTask', 'defeat', 'Defeat');
+                const placeholderIndex = defeatTemplate.indexOf('{{');
+                const translated = (placeholderIndex === -1 ? defeatTemplate : defeatTemplate.slice(0, placeholderIndex))
+                    .replace(/[-\s]+$/, '')
+                    .trim();
+                this.defeatLabels = new Set(['Defeat', translated || 'Defeat']);
+            }
+            return this.defeatLabels.has(skillType);
         }
 
         /**
@@ -13534,8 +13947,8 @@ ${starCSS}
                 return { skillOrder: 999, taskName: '', isCombat: false, monsterSortIndex: 999, isCompleted: false };
             }
 
-            const skillOrder = this.TASK_ORDER[parsed.skillType] || 999;
-            const isCombat = parsed.skillType === 'Defeat';
+            const isCombat = this.isCombatSkillType(parsed.skillType);
+            const skillOrder = isCombat ? this.TASK_ORDER.Defeat : this.getSkillTypeOrder(parsed.skillType);
             const isCompleted = this.isTaskCompleted(taskCard);
 
             // For combat tasks, get monster sort index from game data
@@ -13957,7 +14370,7 @@ ${starCSS}
                 }
 
                 // Calculate profit data (which includes material costs)
-                const profitData = await calculateTaskProfit(taskData);
+                const profitData = await calculateTaskProfit(taskData, taskData.questInfo);
 
                 if (!profitData || !profitData.action) {
                     continue;
@@ -14093,23 +14506,40 @@ ${starCSS}
 
             const description = nameNode.textContent.trim();
 
-            // Check if combat task (contains "Defeat")
-            const isCombat = description.includes('Defeat');
+            // Resolve locale-independent quest info from the task card's React fiber.
+            // taskNode is a descendant task-info node, so normalize to the card element first.
+            const cardEl = taskNode.closest(selectors_js.GAME.TASK_CARD) || taskNode;
+            const quest = getQuestFromTaskCard(cardEl);
+            const questInfo = quest
+                ? { actionHrid: quest.actionHrid || null, monsterHrid: quest.monsterHrid || null }
+                : null;
 
-            // Get quantity from progress (plain div with text "Progress: 0 / 1562")
+            // Check if combat task: the quest's monsterHrid is locale-independent;
+            // fall back to the task name's "Defeat" label (localized by the game, zh: 击败)
+            // when quest data is unavailable.
+            const isCombat = quest ? !!quest.monsterHrid : this._isCombatDescription(description);
+
+            // Get quantity from the progress pair (e.g. "Progress: 0 / 1562" or zh "进度：0/1562").
+            // The localized label varies, so match the language-neutral "current / total" number
+            // pair directly. Pick the shortest matching div to avoid outer wrapper divs that only
+            // contain the pair as a substring.
             let quantity = 0;
             let currentProgress = 0;
             const taskInfoDivs = taskNode.querySelectorAll('div');
+            let progressMatch = null;
+            let progressMatchLength = Infinity;
             for (const div of taskInfoDivs) {
                 const text = div.textContent.trim();
-                if (text.startsWith('Progress:')) {
-                    const progressMatch = text.match(/(\d+)\s*\/\s*(\d+)/);
-                    if (progressMatch) {
-                        currentProgress = parseInt(progressMatch[1], 10);
-                        quantity = parseInt(progressMatch[2], 10);
-                    }
-                    break;
+                if (!text.includes('/') && !text.includes('／')) continue;
+                const progressPattern = text.match(/(?:^|[^\d])(\d+)\s*[/／]\s*(\d+)(?:[^\d]|$)/);
+                if (progressPattern && text.length < progressMatchLength) {
+                    progressMatch = progressPattern;
+                    progressMatchLength = text.length;
                 }
+            }
+            if (progressMatch) {
+                currentProgress = parseInt(progressMatch[1], 10);
+                quantity = parseInt(progressMatch[2], 10);
             }
 
             // Get rewards
@@ -14149,7 +14579,25 @@ ${starCSS}
                 quantity,
                 currentProgress,
                 isCombat,
+                questInfo,
             };
+        }
+
+        /**
+         * Check whether a task card description is a combat ("Defeat - ...") task, matching
+         * both the English label and the game's current-language translation (zh: 击败,
+         * from the randomTask.defeat template "Defeat - {{monsterName}}").
+         * @param {string} description - Task card name text
+         * @returns {boolean}
+         */
+        _isCombatDescription(description) {
+            if (description.includes('Defeat')) return true;
+            const defeatTemplate = translateGameName('randomTask', 'defeat', 'Defeat');
+            const placeholderIndex = defeatTemplate.indexOf('{{');
+            const defeatLabel = (placeholderIndex === -1 ? defeatTemplate : defeatTemplate.slice(0, placeholderIndex))
+                .replace(/[-\s]+$/, '')
+                .trim();
+            return defeatLabel.length > 0 && description.includes(defeatLabel);
         }
 
         /**
@@ -14419,10 +14867,10 @@ ${starCSS}
                 let taskName = '';
                 if (isCombat && monsterHrid) {
                     const monsterDetails = dataManager.getInitClientData()?.combatMonsterDetailMap?.[monsterHrid];
-                    taskName = monsterDetails?.name || monsterHrid.split('/').pop();
+                    taskName = getMonsterName(monsterHrid, monsterDetails?.name || monsterHrid.split('/').pop());
                 } else if (actionHrid) {
                     const actionDetails = dataManager.getInitClientData()?.actionDetailMap?.[actionHrid];
-                    taskName = actionDetails?.name || actionHrid.split('/').pop();
+                    taskName = getActionName(actionHrid, actionDetails?.name || actionHrid.split('/').pop());
                 }
 
                 // Calculate action profit for non-combat tasks
@@ -14431,10 +14879,16 @@ ${starCSS}
 
                 if (!isCombat && actionHrid) {
                     try {
+                        // Locale-independent quest info straight from the quest data
+                        const questInfo = {
+                            actionHrid: quest.actionHrid || null,
+                            monsterHrid: quest.monsterHrid || null,
+                        };
+
                         // Get action details to build proper task description
                         const actionDetails = dataManager.getInitClientData()?.actionDetailMap?.[actionHrid];
                         if (actionDetails) {
-                            // Build description in format "Skill - Action Name"
+                            // Build description in format "Skill - Action Name" as a text fallback
                             // Extract skill name from type field like '/action_types/foraging'
                             const skillName = actionDetails.type?.split('/').pop() || '';
                             const formattedSkill =
@@ -14449,7 +14903,7 @@ ${starCSS}
                                 quantity: quest.goalCount,
                                 currentProgress: quest.currentCount || 0,
                             };
-                            const profitData = await calculateTaskProfit(taskData);
+                            const profitData = await calculateTaskProfit(taskData, questInfo);
                             if (profitData && profitData.action) {
                                 actionProfit = profitData.action.totalValue || profitData.action.totalProfit || 0;
                                 completionSeconds = calculateTaskCompletionSeconds(profitData);
@@ -14988,8 +15442,10 @@ ${starCSS}
          * Return all enabled Claim Reward buttons in the task list.
          */
         _getClaimableButtons(taskList) {
+            // The button label is localized by the game (zh: 领取奖励), so match both.
+            const claimLabels = new Set(['Claim Reward', translateGameName('randomTask', 'claimReward', 'Claim Reward')]);
             return Array.from(taskList.querySelectorAll(CLAIM_BTN_SELECTOR)).filter(
-                (btn) => btn.textContent.trim() === 'Claim Reward' && !btn.disabled
+                (btn) => claimLabels.has(btn.textContent.trim()) && !btn.disabled
             );
         }
 
@@ -15254,15 +15710,19 @@ ${starCSS}
                     }
                     if (monsterHrids.size > 1) {
                         zoneMonsters[hrid] = [...monsterHrids];
-                        items.push({ hrid, name: action.name, type: 'zone', isZone: true });
+                        items.push({ hrid, name: getActionName(hrid, action.name), type: 'zone', isZone: true });
                     }
                     continue;
                 }
-                items.push({ hrid, name: action.name, type: action.type?.split('/').pop() || 'other' });
+                items.push({
+                    hrid,
+                    name: getActionName(hrid, action.name),
+                    type: action.type?.split('/').pop() || 'other',
+                });
             }
 
             for (const [hrid, monster] of Object.entries(gameData.combatMonsterDetailMap || {})) {
-                items.push({ hrid, name: monster.name, type: 'combat' });
+                items.push({ hrid, name: getMonsterName(hrid, monster.name), type: 'combat' });
             }
 
             items.sort((a, b) => a.name.localeCompare(b.name));
@@ -16253,15 +16713,15 @@ ${starCSS}
         const h = Math.floor((ms % d1) / h1);
         const m = Math.ceil((ms % h1) / m1);
 
-        const s = (n) => (n === 1 ? '' : 's');
         const parts = [];
 
-        if (w >= 1) parts.push(`${w} week${s(w)}`);
-        if (d >= 1) parts.push(`${d} day${s(d)}`);
-        if (ms < w1 && h >= 1) parts.push(`${h} hour${s(h)}`);
-        if (ms < 6 * h1 && m >= 1) parts.push(`${m} minute${s(m)}`);
+        if (w >= 1) parts.push(i18n_js.t('xpTracker.timeWeeks', { n: w }));
+        if (d >= 1) parts.push(i18n_js.t('xpTracker.timeDays', { n: d }));
+        if (ms < w1 && h >= 1) parts.push(i18n_js.t('xpTracker.timeHours', { n: h }));
+        if (ms < 6 * h1 && m >= 1) parts.push(i18n_js.t('xpTracker.timeMinutes', { n: m }));
 
-        return parts.join(' ') || '< 1 minute';
+        if (parts.length === 0) return i18n_js.t('xpTracker.lessThanOneMinute');
+        return parts.join(i18n_js.t('xpTracker.timePartSeparator'));
     }
 
     class XPTracker {
@@ -16567,7 +17027,7 @@ ${starCSS}
             const div = document.createElement('div');
             div.className = 'mwi-xp-time-left';
             div.style.cssText = `font-size: 12px; color: ${config.COLOR_HOURS_TO_LEVEL}; margin-top: 4px;`;
-            div.innerHTML = `<span style="font-weight:700">${timeStr}</span> till next level`;
+            div.innerHTML = `<span style="font-weight:700">${i18n_js.t('xpTracker.tillNextLevel', { time: timeStr })}</span>`;
 
             divs[3].insertAdjacentElement('afterend', div);
         }
@@ -16691,6 +17151,16 @@ ${starCSS}
      */
 
 
+    const SCROLL_BUFF_VALUES = {
+        '/buff_types/efficiency': 0.14,
+        '/buff_types/gathering': 0.18,
+        '/buff_types/wisdom': 0.2,
+        '/buff_types/action_speed': 0.15,
+        '/buff_types/rare_find': 0.6,
+        '/buff_types/processing': 0.2,
+        '/buff_types/gourmet': 0.16,
+    };
+
     const SCROLL_BUFF_ITEMS = {
         '/buff_types/efficiency': 'seal_of_efficiency',
         '/buff_types/gathering': 'seal_of_gathering',
@@ -16710,6 +17180,21 @@ ${starCSS}
         '/buff_types/processing': 'Scroll of Processing (+20%)',
         '/buff_types/gourmet': 'Scroll of Gourmet (+16%)',
     };
+
+    /**
+     * Build the display label for a scroll buff, translating the scroll item name via the game's
+     * own i18n (falls back to the English label when unavailable). The percentage suffix comes from
+     * SCROLL_BUFF_VALUES so it always matches the simulated value.
+     * @param {string} buffTypeHrid - e.g. '/buff_types/efficiency'
+     * @returns {string} e.g. '效率卷轴 (+14%)'
+     */
+    function getScrollBuffLabel(buffTypeHrid) {
+        const itemHrid = SCROLL_BUFF_ITEMS[buffTypeHrid];
+        const englishName = (SCROLL_BUFF_LABELS[buffTypeHrid] || buffTypeHrid).replace(/\s*\(\+\d+%\)$/, '');
+        const name = itemHrid ? getItemName(`/items/${itemHrid}`, englishName) : englishName;
+        const pct = Math.round((SCROLL_BUFF_VALUES[buffTypeHrid] || 0) * 100);
+        return `${name} (+${pct}%)`;
+    }
 
     /**
      * Scroll Simulator UI
@@ -16910,8 +17395,8 @@ ${starCSS}
             line-height: 1.4;
         `;
             note.textContent = this.loadoutName
-                ? 'These scrolls override the defaults when this loadout is active for a skill.'
-                : 'Applied when no loadout matches the current skill (or automatic saved-loadout calculations are disabled).';
+                ? i18n_js.t('scrollSimulatorUi.noteForLoadout')
+                : i18n_js.t('scrollSimulatorUi.noteForDefaults');
             body.appendChild(note);
 
             // Scroll rows
@@ -16938,7 +17423,7 @@ ${starCSS}
 
                 const label = document.createElement('span');
                 label.style.cssText = `font-size: 0.82rem; color: rgba(255,255,255,0.85);`;
-                label.textContent = SCROLL_BUFF_LABELS[buffTypeHrid];
+                label.textContent = getScrollBuffLabel(buffTypeHrid);
 
                 row.appendChild(checkbox);
                 if (icon) row.appendChild(icon);
@@ -17156,7 +17641,8 @@ ${starCSS}
         'market_listingAgeFormat',
         // market_listingTimeFormat / market_listingDateFormat are excluded here on purpose: despite
         // the market_ prefix, they're general date/time display preferences also consumed by
-        // formatDateTime(), Character Activity Status, and Pop-out Chat, not marketplace-only UI.
+        // formatDateTime(), Character Activity Status, Pop-out Chat, and Chat 24hr Timestamps,
+        // not marketplace-only UI.
         'market_showOrderTotals',
         'market_showHistoryViewer',
         'market_showPhiloCalculator',
@@ -18427,8 +18913,19 @@ ${starCSS}
                         .map((option) => {
                             const optValue = typeof option === 'object' ? option.value : option;
                             const optLabel = typeof option === 'object' ? option.label : option;
+                            // Dynamic option labels (e.g. saved loadout names) have no locale entry;
+                            // Toolasha's t() returns the key itself when untranslated, so fall back to
+                            // the raw label. '' values resolve via the conventional `_empty` key.
+                            const optionKey = `settingsSchema.settings.${settingId}.options.${optValue === '' ? '_empty' : optValue}`;
+                            const translated = i18n_js.t(optionKey);
+                            let translatedLabel = translated === optionKey ? optLabel : translated;
+                            if (translatedLabel.endsWith(' (Unavailable)')) {
+                                translatedLabel =
+                                    translatedLabel.slice(0, -' (Unavailable)'.length) +
+                                    i18n_js.t('settingsSchema.selectUnavailableSuffix');
+                            }
                             const selected = optValue === value ? 'selected' : '';
-                            return `<option value="${optValue}" ${selected}>${optLabel}</option>`;
+                            return `<option value="${optValue}" ${selected}>${translatedLabel}</option>`;
                         })
                         .join('');
 
@@ -18472,10 +18969,12 @@ ${starCSS}
                     let tierHTML = '';
                     if (hasTiers) {
                         const options = settingDef.tiers
-                            .map(
-                                (t) =>
-                                    `<option value="${t.value}" ${t.value === tier ? 'selected' : ''}>${t.label}</option>`
-                            )
+                            .map((tierOpt) => {
+                                const tierKey = `settingsSchema.tierLabels.${tierOpt.value}`;
+                                const tierTranslated = i18n_js.t(tierKey);
+                                const tierLabel = tierTranslated === tierKey ? tierOpt.label : tierTranslated;
+                                return `<option value="${tierOpt.value}" ${tierOpt.value === tier ? 'selected' : ''}>${tierLabel}</option>`;
+                            })
                             .join('');
                         tierHTML = `<select id="${settingId}_tier" class="toolasha-select-input" style="width:100px; font-size:12px; padding:2px 4px; ${disabledStyle}">${options}</select>`;
                     }
@@ -21961,8 +22460,9 @@ ${starCSS}
             // First, strip any stats we previously appended
             const actionNameText = this.getCleanActionName(actionNameElement);
 
-            // Check if no action is running ("Doing nothing...")
-            if (actionNameText.includes('Doing nothing')) {
+            // Check if no action is running ("Doing nothing..." — localized by the game, zh: 无所事事...)
+            const doingNothingLabel = translateGameName('actionsUtil', 'doingNothing', 'Doing nothing');
+            if (actionNameText.includes('Doing nothing') || actionNameText.includes(doingNothingLabel)) {
                 this.displayElement.innerHTML = '';
                 if (this.profitElement) this.profitElement.innerHTML = '';
                 this.clearAppendedStats(actionNameElement);
@@ -22822,6 +23322,17 @@ ${starCSS}
                 if (actionDetails.type === '/action_types/enhancing' && currentAction.primaryItemHash) {
                     // Strip enhancement level suffix (e.g. "Cheese Sword +1" → "Cheese Sword")
                     const baseItemName = actionNameFromDom.replace(/\s*\+\d+$/, '');
+                    // In non-English locales the DOM renders the translated item name, which
+                    // buildItemHridFromName cannot reconstruct - compare against both the English
+                    // and translated names of the item in the primaryItemHash first.
+                    const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
+                    const hashItemName = hashItemHrid ? dataManager.getItemDetails(hashItemHrid)?.name : null;
+                    if (hashItemName) {
+                        const translatedItemName = getItemName(hashItemHrid, hashItemName);
+                        if (baseItemName === hashItemName || baseItemName === translatedItemName) {
+                            return true;
+                        }
+                    }
                     const baseItemHrid = this.buildItemHridFromName(baseItemName);
                     if (currentAction.primaryItemHash.includes(baseItemHrid)) {
                         return true;
@@ -22832,11 +23343,19 @@ ${starCSS}
                 const dropTable = actionDetails.dropTable || [];
                 const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDom);
                 const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
+                // The DOM renders the game's translated action name in non-English locales, so
+                // compare both names plus their ★ ↔ (R) variants.
+                const translatedActionName = getActionName(currentAction.actionHrid, actionDetails.name);
                 const matchesName =
                     actionDetails.name === actionNameFromDom ||
+                    translatedActionName === actionNameFromDom ||
                     (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
                     (actionNameFromDom.includes('(R)') &&
-                        actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
+                        actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★')) ||
+                    (actionNameFromDom.includes('★') &&
+                        translatedActionName === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
+                    (actionNameFromDom.includes('(R)') &&
+                        translatedActionName === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
 
                 if (!matchesName && !matchesOutput && !matchesDrop) {
                     return false;
@@ -22846,7 +23365,11 @@ ${starCSS}
                     const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
                     if (hashItemHrid) {
                         const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
-                        if (hashItemDetails?.name === itemNameFromDom) return true;
+                        if (
+                            hashItemDetails?.name === itemNameFromDom ||
+                            getItemName(hashItemHrid, hashItemDetails?.name || '') === itemNameFromDom
+                        )
+                            return true;
                     }
                     return currentAction.primaryItemHash.includes(itemHridFromDom);
                 }
@@ -24941,6 +25464,7 @@ ${starCSS}
         chatBlockList: chatBlockList$1,
         chatHistoryExtender,
         notificationLog,
+        chat24hrTimestamps,
         taskProfitDisplay,
         taskRerollTracker,
         taskSorter,
@@ -24961,4 +25485,4 @@ ${starCSS}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);

@@ -1,12 +1,614 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.6.3
+ * Version: 3.7.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, loadoutState, storage, i18n_js, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, marketData_js, warningIcon_js, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, dom, enhancementCalculator_js, enhancementConfig_js, teaParser_js, marketValuesAPI, abilityCostCalculator_js, equipmentParser_js, marketplaceSession_js, actionCalculator_js, efficiency_js, materialCalculator_js, experienceCalculator_js, tooltipObserver, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketplaceSession_js, loadoutState, storage, i18n_js, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, marketData_js, warningIcon_js, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, dom, enhancementCalculator_js, enhancementConfig_js, teaParser_js, marketValuesAPI, abilityCostCalculator_js, equipmentParser_js, actionCalculator_js, efficiency_js, materialCalculator_js, experienceCalculator_js, tooltipObserver, houseCostCalculator_js) {
     'use strict';
+
+    /**
+     * Game i18n Bridge
+     *
+     * Obtains the game's i18next instance from the React fiber tree and provides
+     * locale-independent translation of game data names (items, actions, monsters,
+     * skills, etc.). Falls back to the English name when the i18n instance is
+     * unavailable or the key is missing.
+     */
+
+    let cachedI18n = null;
+
+    /**
+     * Walk the React fiber tree from #root to find the i18next instance.
+     * @returns {import('i18next').i18n | null}
+     */
+    function getGameI18n() {
+        if (cachedI18n) return cachedI18n;
+        if (typeof document === 'undefined') return null;
+
+        const root = document.getElementById('root');
+        const fiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+        if (!fiber) return null;
+
+        const stack = [fiber];
+        while (stack.length > 0) {
+            const f = stack.pop();
+            if (!f) continue;
+            try {
+                const props = f.memoizedProps || {};
+                if (props.i18n && typeof props.i18n.t === 'function') {
+                    cachedI18n = props.i18n;
+                    return cachedI18n;
+                }
+                if (props.value?.i18n && typeof props.value.i18n.t === 'function') {
+                    cachedI18n = props.value.i18n;
+                    return cachedI18n;
+                }
+            } catch (error) {
+                console.error('[GameI18n] Fiber access error during tree walk:', error);
+            }
+            if (f.sibling) stack.push(f.sibling);
+            if (f.child) stack.push(f.child);
+        }
+        return null;
+    }
+
+    /**
+     * Translate a game data name via the game's i18next instance.
+     * @param {string} namespace - i18n namespace (e.g. 'itemNames')
+     * @param {string} hrid - Game data HRID (e.g. '/items/abyssal_essence')
+     * @param {string} [fallback=''] - English name to fall back to
+     * @returns {string} Translated name or fallback
+     */
+    function translateGameName(namespace, hrid, fallback = '') {
+        if (!hrid) return fallback;
+        const i18n = getGameI18n();
+        if (!i18n) return fallback;
+
+        const key = `${namespace}.${hrid}`;
+        try {
+            const translated = i18n.t(key);
+            // i18next returns the key itself when no translation exists
+            if (translated === key) return fallback;
+            return translated;
+        } catch (error) {
+            console.error('[GameI18n] i18n.t() failed for key:', key, error);
+            return fallback;
+        }
+    }
+
+    const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);
+    const getActionName = (hrid, fallback = '') => translateGameName('actionNames', hrid, fallback);
+    const getMonsterName = (hrid, fallback = '') => translateGameName('monsterNames', hrid, fallback);
+    const getAbilityName = (hrid, fallback = '') => translateGameName('abilityNames', hrid, fallback);
+    const getHouseRoomName = (hrid, fallback = '') => translateGameName('houseRoomNames', hrid, fallback);
+    const getAchievementName = (hrid, fallback = '') => translateGameName('achievementNames', hrid, fallback);
+    const getGuildShrineName = (hrid, fallback = '') => translateGameName('guildShrineNames', hrid, fallback);
+
+    /**
+     * Marketplace Buy Modal Autofill Utility
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
+     */
+
+
+    const MARKETPLACE_PANEL_SELECTOR = '[class*="MarketplacePanel_marketplacePanel"]';
+    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+    const MAX_REACT_OWNER_DEPTH = 256;
+
+    function hasMarketplaceStateSignature(state) {
+        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
+    }
+
+    function isElementVisible(element) {
+        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
+
+        for (let current = element; current; current = current.parentElement) {
+            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+            const style = window.getComputedStyle(current);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    function normalizeMarketplaceState(state) {
+        if (!hasMarketplaceStateSignature(state)) return null;
+        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
+        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
+        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
+        if (typeof state.isSell !== 'boolean') return null;
+        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
+        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
+        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
+        if (
+            state.enhancementLevelInput !== undefined &&
+            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
+        ) {
+            return null;
+        }
+
+        return {
+            marketTabKey: state.marketTabKey,
+            marketListingsView: state.marketListingsView,
+            itemHrid: state.itemHrid,
+            enhancementLevel: state.enhancementLevel,
+            enhancementLevelInput: state.enhancementLevelInput,
+            isSell: state.isSell,
+            showPostListing: state.showPostListing,
+            isPostNewListing: state.isPostNewListing,
+            isInstantOrder: state.isInstantOrder,
+            quantityInput: state.quantityInput,
+            priceInput: state.priceInput,
+        };
+    }
+
+    /**
+     * Read the live Marketplace React component state from the unique visible Marketplace panel.
+     * The selected component must be on that panel host fiber's bounded return ancestry.
+     *
+     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
+     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
+     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
+     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
+     */
+    function getMarketplaceRuntimeComponentFromElement(element) {
+        let fiber = getReactFiberFromElement(element);
+        let depth = 0;
+        const candidates = [];
+        const seen = new Set();
+
+        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
+            const stateNode = fiber.stateNode;
+            if (
+                stateNode &&
+                !seen.has(stateNode) &&
+                typeof stateNode.setState === 'function' &&
+                typeof stateNode.handleQuantityInputChanged === 'function' &&
+                hasMarketplaceStateSignature(stateNode.state)
+            ) {
+                seen.add(stateNode);
+                candidates.push(stateNode);
+            }
+            fiber = fiber.return;
+            depth += 1;
+        }
+
+        // Fail closed when the ancestry is unexpectedly deeper than the bound or
+        // contains more than one Marketplace-like owner. The quantity input must
+        // identify one exact live component before we write to a controlled input.
+        if (fiber || candidates.length !== 1) return null;
+        return candidates[0];
+    }
+
+    /**
+     * Read Marketplace state from the exact DOM element that belongs to the live component.
+     * @param {HTMLElement} element
+     * @returns {ReturnType<typeof normalizeMarketplaceState>}
+     */
+    function readMarketplaceRuntimeStateFromElement(element) {
+        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
+    }
+
+    function readMarketplaceRuntimeState() {
+        const visiblePanels = Array.from(document.querySelectorAll(MARKETPLACE_PANEL_SELECTOR)).filter(isElementVisible);
+        if (visiblePanels.length !== 1) return null;
+        return readMarketplaceRuntimeStateFromElement(visiblePanels[0]);
+    }
+
+    /**
+     * Create an autofill manager instance for one marketplace workflow owner.
+     *
+     * Lifecycle:
+     *   initialize()      — call once at feature startup; installs the buy-modal observer
+     *   startSession(opts) — claim a session slot by sessionId
+     *   arm(opts)         — atomically set target; only 'buy' modalMode is accepted
+     *   setItem()         — @deprecated, use arm()
+     *   setQuantityProvider() — @deprecated, use arm()
+     *   exitSession(sessionId) — disarm without ending the marketplace session token
+     *   cleanup()         — call on feature disable; removes observer
+     *
+     * @param {string} observerId
+     * @returns {Object}
+     */
+    function createAutofillManager(observerId) {
+        let observerUnregister = null;
+        let activeSessionId = null;
+        let targetGeneration = 0;
+        let activeTarget = null;
+        let legacyDraft = null;
+        const modalRetryTimers = new Set();
+        const filledModalGenerations = new WeakMap();
+
+        function clearRetryTimers() {
+            for (const timer of modalRetryTimers) clearTimeout(timer);
+            modalRetryTimers.clear();
+        }
+
+        function invalidateTarget() {
+            clearRetryTimers();
+            targetGeneration += 1;
+            activeTarget = null;
+            legacyDraft = null;
+        }
+
+        function isValidItemHrid(itemHrid) {
+            return typeof itemHrid === 'string' && itemHrid.startsWith('/items/') && itemHrid.length > 7;
+        }
+
+        function isValidEnhancementLevel(enhancementLevel) {
+            return Number.isInteger(enhancementLevel) && enhancementLevel >= 0;
+        }
+
+        function startSession({
+            itemHrid = null,
+            enhancementLevel = 0,
+            sessionId = null,
+            quantityProvider = null,
+            modalMode = 'buy',
+        } = {}) {
+            activeSessionId = marketplaceSession_js.marketplaceSession.isActive(sessionId) ? sessionId : null;
+            invalidateTarget();
+
+            if (activeSessionId !== null && (itemHrid !== null || quantityProvider !== null)) {
+                arm({ sessionId, itemHrid, enhancementLevel, modalMode, quantityProvider });
+            }
+        }
+
+        function arm(opts = {}) {
+            const { sessionId, itemHrid = null, enhancementLevel = 0, modalMode = 'buy', quantityProvider } = opts || {};
+
+            if (sessionId !== activeSessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                activeSessionId = null;
+                invalidateTarget();
+                return false;
+            }
+
+            if (
+                modalMode !== 'buy' ||
+                !isValidItemHrid(itemHrid) ||
+                !isValidEnhancementLevel(enhancementLevel) ||
+                typeof quantityProvider !== 'function'
+            ) {
+                invalidateTarget();
+                return false;
+            }
+
+            activeTarget = Object.freeze({
+                generation: ++targetGeneration,
+                sessionId,
+                itemHrid,
+                enhancementLevel,
+                modalMode,
+                quantityProvider,
+            });
+            legacyDraft = null;
+            return true;
+        }
+
+        /** @deprecated Use arm(). */
+        function setItem(itemHrid, enhancementLevel = 0, sessionId) {
+            if (sessionId === undefined) {
+                invalidateTarget();
+                return false;
+            }
+            if (sessionId !== activeSessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                activeSessionId = null;
+                invalidateTarget();
+                return false;
+            }
+            if (!isValidItemHrid(itemHrid) || !isValidEnhancementLevel(enhancementLevel)) {
+                invalidateTarget();
+                return false;
+            }
+
+            invalidateTarget();
+            legacyDraft = Object.freeze({ sessionId, itemHrid, enhancementLevel });
+            return true;
+        }
+
+        /** @deprecated Use arm(). */
+        function setQuantityProvider(quantityProvider, sessionId) {
+            if (sessionId === undefined) {
+                invalidateTarget();
+                return false;
+            }
+            if (sessionId !== activeSessionId) return false;
+            if (!legacyDraft || legacyDraft.sessionId !== sessionId) {
+                invalidateTarget();
+                return false;
+            }
+
+            return arm({
+                sessionId,
+                itemHrid: legacyDraft.itemHrid,
+                enhancementLevel: legacyDraft.enhancementLevel,
+                modalMode: 'buy',
+                quantityProvider,
+            });
+        }
+
+        function exitSession(sessionId) {
+            if (sessionId !== undefined && sessionId !== activeSessionId) return;
+            activeSessionId = null;
+            invalidateTarget();
+        }
+
+        function findWorkingQuantityInput(modal) {
+            // The marketplace update switched this field from a native number input to a text
+            // input (to support typed compact values like "5k"), so match both types.
+            const structuralInputs = Array.from(
+                modal.querySelectorAll(
+                    '[class*="MarketplacePanel_quantityInputs"] input[type="number"], ' +
+                        '[class*="MarketplacePanel_quantityInputs"] input[type="text"]'
+                )
+            );
+            if (structuralInputs.length === 1) return structuralInputs[0];
+            if (structuralInputs.length > 1) return null;
+
+            const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
+            if (allInputs.length === 1) return allInputs[0];
+
+            const labeled = allInputs.filter((input) => {
+                // Labels are localized by the game (zh: Quantity 数量 / Enhancement Level 强化等级);
+                // match the translated strings alongside the English ones.
+                const quantityLabel = translateGameName('marketplacePanel', 'quantity', 'Quantity');
+                const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
+                let parent = input.parentElement;
+                for (let depth = 0; parent && depth < 4; depth += 1) {
+                    const text = parent.textContent || '';
+                    const mentionsEnhancement = text.includes('Enhancement Level') || text.includes(enhancementLabel);
+                    const mentionsQuantity = text.includes('Quantity') || text.includes(quantityLabel);
+                    if (mentionsEnhancement && !mentionsQuantity) return false;
+                    if (mentionsQuantity && !mentionsEnhancement) return true;
+                    parent = parent.parentElement;
+                }
+                return false;
+            });
+            return labeled.length === 1 ? labeled[0] : null;
+        }
+
+        function isVisibleBuyModal(modal) {
+            if (!modal || !modal.isConnected || !isElementVisible(modal)) return false;
+            const header = modal.querySelector('[class*="MarketplacePanel_header"]');
+            if (!header) return false;
+            const text = header.textContent?.trim() || '';
+            // Header text is localized (zh: Buy Now 立即购买 / Buy Listing 购买挂牌); the React
+            // state check in targetMatchesInput remains the strict ownership verification.
+            return (
+                text.includes('Buy Now') ||
+                text.includes('Buy Listing') ||
+                text.includes(translateGameName('marketplacePanel', 'buyNow', 'Buy Now')) ||
+                text.includes(translateGameName('marketplacePanel', 'buyListing', 'Buy Listing'))
+            );
+        }
+
+        function resolveQuantity(target) {
+            try {
+                const quantity = target.quantityProvider();
+                return typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? Math.trunc(quantity) : 0;
+            } catch (error) {
+                console.error('[MarketplaceAutofill] quantityProvider failed:', error);
+                return 0;
+            }
+        }
+
+        function targetMatchesInput(target, quantityInput) {
+            const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+            // MWI uses two exact buy forms: an instant order from an existing ask and
+            // a patient New Buy Listing. Reject mixed flag states rather than widening
+            // the verified write path to every post-listing modal.
+            const isInstantBuy = state?.isPostNewListing === false && state?.isInstantOrder === true;
+            const isNewBuyListing = state?.isPostNewListing === true && state?.isInstantOrder === false;
+
+            return (
+                state?.marketTabKey === 'MarketListings' &&
+                state?.marketListingsView === 'OrderBook' &&
+                state?.showPostListing === true &&
+                state?.isSell === false &&
+                (isInstantBuy || isNewBuyListing) &&
+                state?.itemHrid === target.itemHrid &&
+                state?.enhancementLevel === target.enhancementLevel &&
+                state?.enhancementLevelInput === target.enhancementLevel
+            );
+        }
+
+        function fillVerifiedModal(modal, target) {
+            if (!target || activeTarget !== target) return false;
+            if (activeSessionId !== target.sessionId || !marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) return false;
+            if (!isVisibleBuyModal(modal)) return false;
+            const quantityInput = findWorkingQuantityInput(modal);
+            if (!quantityInput || !targetMatchesInput(target, quantityInput)) return false;
+
+            const quantity = resolveQuantity(target);
+            if (quantity <= 0) return false;
+
+            const previousFill = filledModalGenerations.get(modal);
+            if (
+                previousFill?.generation === target.generation &&
+                previousFill.input === quantityInput &&
+                previousFill.quantity === quantity &&
+                Number(quantityInput.value) === quantity
+            ) {
+                return true;
+            }
+
+            // Re-check ownership after the provider call, immediately before the proven write path.
+            if (activeTarget !== target || activeSessionId !== target.sessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(target.sessionId) || !targetMatchesInput(target, quantityInput)) return false;
+
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (typeof nativeInputValueSetter !== 'function') return false;
+
+            nativeInputValueSetter.call(quantityInput, quantity.toString());
+            quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+            filledModalGenerations.set(modal, { generation: target.generation, input: quantityInput, quantity });
+            marketplaceSession_js.marketplaceSession.consume(target.sessionId);
+            return true;
+        }
+
+        function handleObservedModal(modal) {
+            const target = activeTarget;
+            if (!target || !modal) return;
+
+            // The Marketplace modal can mount before its owning React component has
+            // converged on the selected item. Retry this observed modal for a bounded
+            // 1.5-second window, but keep the verified workflow target armed afterward
+            // so an unrelated or retained modal cannot destroy the next exact Buy fill.
+            const delays = [0, 25, 75, 150, 300, 500, 750, 1000, 1500];
+            delays.forEach((delay) => {
+                const timer = setTimeout(() => {
+                    modalRetryTimers.delete(timer);
+                    if (!activeTarget || activeTarget.generation !== target.generation) return;
+                    if (fillVerifiedModal(modal, target)) {
+                        clearRetryTimers();
+                    }
+                    // Keep the verified target armed after a bounded miss. A retained or unrelated
+                    // modal must not destroy the workflow; the next exact Buy modal can still fill.
+                }, delay);
+                modalRetryTimers.add(timer);
+            });
+        }
+
+        return {
+            initialize() {
+                if (observerUnregister) observerUnregister();
+                observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', handleObservedModal);
+            },
+            startSession,
+            arm,
+            setItem,
+            setQuantityProvider,
+            exitSession,
+            cleanup() {
+                if (observerUnregister) {
+                    observerUnregister();
+                    observerUnregister = null;
+                }
+                activeSessionId = null;
+                invalidateTarget();
+            },
+        };
+    }
+
+    /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs, plus locale-independent
+     * resolution via icon sprite references (see below) - prefer the sprite-based functions
+     * over the name-based ones wherever a `<use>` element is reachable, since display names are
+     * translated client-side and the name-based functions below only ever match the client's
+     * English-language data, silently failing on any other game locale.
+     */
+
+
+    /**
+     * Resolve a task card's underlying quest object (which carries actionHrid/monsterHrid directly)
+     * by walking the React fiber tree from the card's own "Go"/success button up to the component
+     * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
+     * "SkillType - TaskName" text.
+     * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
+     * @returns {Object|null} The characterQuest object, or null if not found.
+     */
+    function getQuestFromTaskCard(taskCard) {
+        const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
+        if (!goBtn) return null;
+
+        let f = getReactFiberFromElement(goBtn)?.return;
+        while (f) {
+            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                return f.memoizedProps.characterQuest;
+            }
+            f = f.return;
+        }
+        return null;
+    }
+
+    /**
+     * Get the coin cost of an item from the in-game shop.
+     * Returns 0 if the item is not available in the shop or not purchasable with coins.
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Coin cost, or 0 if not available in shop
+     */
+    function getShopCoinCost(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.shopItemDetailMap) return 0;
+
+        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
+            if (shopItem.itemHrid === itemHrid) {
+                if (shopItem.costs && shopItem.costs.length > 0) {
+                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
+                    if (coinCost) {
+                        return coinCost.count;
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
 
     /**
      * Combat Zone Indices
@@ -25,6 +627,7 @@
             this.unregisterObserver = null; // Unregister function from centralized observer
             this.isActive = false;
             this.monsterZoneCache = null; // Cache monster name -> zone index mapping
+            this.monsterHridZoneCache = null; // Cache monster hrid -> zone index mapping
             this.taskMapIndexEnabled = false;
             this.mapIndexEnabled = false;
             this.isInitialized = false;
@@ -118,6 +721,7 @@
             }
 
             this.monsterZoneCache = new Map();
+            this.monsterHridZoneCache = new Map();
 
             for (const action of Object.values(gameData.actionDetailMap)) {
                 // Only check combat actions
@@ -151,6 +755,20 @@
                         }
                     }
                 }
+
+                // Cache every monster hrid (regular spawns + bosses) -> zone index.
+                // Locale-independent, used directly when quest data is available.
+                const spawns = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+                const bosses = action.combatZoneInfo?.fightInfo?.bossSpawns || [];
+                for (const spawn of [...spawns, ...bosses]) {
+                    const spawnHrid = spawn.combatMonsterHrid;
+                    if (
+                        spawnHrid &&
+                        (!this.monsterHridZoneCache.has(spawnHrid) || zoneIndex < this.monsterHridZoneCache.get(spawnHrid))
+                    ) {
+                        this.monsterHridZoneCache.set(spawnHrid, zoneIndex);
+                    }
+                }
             }
         }
 
@@ -171,22 +789,39 @@
 
                 const taskText = nameElement.textContent;
 
-                // Check if this is a combat task (contains "Kill" or "Defeat")
-                if (!taskText.includes('Kill') && !taskText.includes('Defeat')) {
-                    continue; // Not a combat task, skip
+                // Resolve the task card's quest from the React fiber. A task is a combat task
+                // iff its quest carries a monsterHrid - this is locale-independent.
+                const card = nameElement.closest('[class*="RandomTask_randomTask"]');
+                const quest = card ? getQuestFromTaskCard(card) : null;
+
+                let monsterHrid = null;
+                if (quest) {
+                    monsterHrid = quest.monsterHrid || null;
+                    if (!monsterHrid) {
+                        continue; // Quest resolved - this is a non-combat (skilling) task
+                    }
+                } else {
+                    // Fiber quest unavailable - fall back to parsing the monster name suffix from
+                    // the card text and resolving it via the locale-aware monster name lookup.
+                    const monsterName = this.parseCombatTaskSuffix(taskText);
+                    if (!monsterName) {
+                        continue;
+                    }
+                    monsterHrid = dataManager.getMonsterHridFromName(monsterName);
+                    if (!monsterHrid) {
+                        continue;
+                    }
                 }
 
-                // Extract monster name from task text
-                // Format: "Defeat - Jerry" or "Kill - Monster Name"
-                const match = taskText.match(REGEX_COMBAT_TASK);
-                if (!match) {
-                    continue; // Couldn't parse monster name
+                // Find the combat zone for this monster (prefer the hrid cache, fall back to
+                // the display-name cache)
+                let zoneIndex = this.getZoneIndexForMonsterHrid(monsterHrid);
+                if (!zoneIndex) {
+                    const monsterDetailName = dataManager.getInitClientData()?.combatMonsterDetailMap?.[monsterHrid]?.name;
+                    if (monsterDetailName) {
+                        zoneIndex = this.getZoneIndexForMonster(monsterDetailName);
+                    }
                 }
-
-                const monsterName = match[1].trim();
-
-                // Find the combat action for this monster
-                const zoneIndex = this.getZoneIndexForMonster(monsterName);
 
                 if (zoneIndex) {
                     // Add index to the name element
@@ -228,6 +863,35 @@
 
                 index++;
             }
+        }
+
+        /**
+         * Extract the monster name suffix from a combat task's name text.
+         * English clients render "Kill - X"/"Defeat - X"; translated clients render
+         * "<localized defeat label> - <monster name>". The separator is the only stable
+         * part, so the generic fallback takes the suffix after the last dash. Callers verify
+         * the suffix against combatMonsterDetailMap, so skilling "Skill - Action" names that
+         * aren't monsters resolve to null there.
+         * @param {string} taskText - Task name element text
+         * @returns {string|null} Monster name suffix or null if no dash separator is present
+         */
+        parseCombatTaskSuffix(taskText) {
+            const englishMatch = taskText.match(REGEX_COMBAT_TASK);
+            if (englishMatch) {
+                return englishMatch[1].trim();
+            }
+
+            const localizedMatch = taskText.match(/^[^-－–—]+[-－–—]\s*(.+)$/);
+            return localizedMatch ? localizedMatch[1].trim() : null;
+        }
+
+        /**
+         * Get zone index for a monster HRID
+         * @param {string} monsterHrid - Monster HRID (e.g., "/monsters/rat")
+         * @returns {number|null} Zone index or null if not found
+         */
+        getZoneIndexForMonsterHrid(monsterHrid) {
+            return this.monsterHridZoneCache?.get(monsterHrid) || null;
         }
 
         /**
@@ -324,6 +988,7 @@
 
             // Clear cache
             this.monsterZoneCache = null;
+            this.monsterHridZoneCache = null;
             this.isActive = false;
             this.isInitialized = false;
         }
@@ -461,7 +1126,7 @@
         removeOverlays();
     }
 
-    function initialize$4() {
+    function initialize$5() {
         if (!settingChangeHandler$1) {
             settingChangeHandler$1 = (enabled) => {
                 if (enabled) {
@@ -478,7 +1143,7 @@
         }
     }
 
-    function cleanup$1() {
+    function cleanup$2() {
         deactivate$1();
         if (settingChangeHandler$1) {
             config.offSettingChange('loadoutEnhancementDisplay', settingChangeHandler$1);
@@ -488,8 +1153,8 @@
 
     var loadoutEnhancementDisplay = {
         name: 'Loadout Enhancement Display',
-        initialize: initialize$4,
-        cleanup: cleanup$1,
+        initialize: initialize$5,
+        cleanup: cleanup$2,
     };
 
     /**
@@ -702,6 +1367,16 @@
      */
 
 
+    const SCROLL_BUFF_VALUES = {
+        '/buff_types/efficiency': 0.14,
+        '/buff_types/gathering': 0.18,
+        '/buff_types/wisdom': 0.2,
+        '/buff_types/action_speed': 0.15,
+        '/buff_types/rare_find': 0.6,
+        '/buff_types/processing': 0.2,
+        '/buff_types/gourmet': 0.16,
+    };
+
     const SCROLL_BUFF_ITEMS = {
         '/buff_types/efficiency': 'seal_of_efficiency',
         '/buff_types/gathering': 'seal_of_gathering',
@@ -721,6 +1396,21 @@
         '/buff_types/processing': 'Scroll of Processing (+20%)',
         '/buff_types/gourmet': 'Scroll of Gourmet (+16%)',
     };
+
+    /**
+     * Build the display label for a scroll buff, translating the scroll item name via the game's
+     * own i18n (falls back to the English label when unavailable). The percentage suffix comes from
+     * SCROLL_BUFF_VALUES so it always matches the simulated value.
+     * @param {string} buffTypeHrid - e.g. '/buff_types/efficiency'
+     * @returns {string} e.g. '效率卷轴 (+14%)'
+     */
+    function getScrollBuffLabel(buffTypeHrid) {
+        const itemHrid = SCROLL_BUFF_ITEMS[buffTypeHrid];
+        const englishName = (SCROLL_BUFF_LABELS[buffTypeHrid] || buffTypeHrid).replace(/\s*\(\+\d+%\)$/, '');
+        const name = itemHrid ? getItemName(`/items/${itemHrid}`, englishName) : englishName;
+        const pct = Math.round((SCROLL_BUFF_VALUES[buffTypeHrid] || 0) * 100);
+        return `${name} (+${pct}%)`;
+    }
 
     /**
      * Scroll Simulator UI
@@ -921,8 +1611,8 @@
             line-height: 1.4;
         `;
             note.textContent = this.loadoutName
-                ? 'These scrolls override the defaults when this loadout is active for a skill.'
-                : 'Applied when no loadout matches the current skill (or automatic saved-loadout calculations are disabled).';
+                ? i18n_js.t('scrollSimulatorUi.noteForLoadout')
+                : i18n_js.t('scrollSimulatorUi.noteForDefaults');
             body.appendChild(note);
 
             // Scroll rows
@@ -949,7 +1639,7 @@
 
                 const label = document.createElement('span');
                 label.style.cssText = `font-size: 0.82rem; color: rgba(255,255,255,0.85);`;
-                label.textContent = SCROLL_BUFF_LABELS[buffTypeHrid];
+                label.textContent = getScrollBuffLabel(buffTypeHrid);
 
                 row.appendChild(checkbox);
                 if (icon) row.appendChild(icon);
@@ -1041,7 +1731,7 @@
 
     // ─── Loadout panel button ───────────────────────────────────────
 
-    function injectButton(navButtons) {
+    function injectButton$1(navButtons) {
         if (document.getElementById(BUTTON_ID$1)) return;
         if (!config.getSetting('simulateScrollEffects')) return;
 
@@ -1074,7 +1764,7 @@
             unregisterObserver = domObserver.onClass('ScrollSimulatorUI', 'LoadoutsPanel_buttonsContainer', (node) => {
                 const panel = node.closest('[class*="LoadoutsPanel_selectedLoadout"]') || node.parentElement;
                 const navButtons = panel?.querySelector('[class*="LoadoutsPanel_navButtons"]');
-                if (navButtons) injectButton(navButtons);
+                if (navButtons) injectButton$1(navButtons);
             });
         }
 
@@ -1082,7 +1772,7 @@
         const navButtons = document.querySelector(
             '[class*="LoadoutsPanel_selectedLoadout"] [class*="LoadoutsPanel_navButtons"]'
         );
-        if (navButtons) injectButton(navButtons);
+        if (navButtons) injectButton$1(navButtons);
     }
 
     function deactivate() {
@@ -1094,7 +1784,7 @@
         popup.close();
     }
 
-    function initialize$3() {
+    function initialize$4() {
         if (!settingChangeHandler) {
             settingChangeHandler = (enabled) => {
                 if (enabled) {
@@ -1128,7 +1818,7 @@
 
     var scrollSimulatorUI = {
         name: 'Scroll Simulator UI',
-        initialize: initialize$3,
+        initialize: initialize$4,
         openDefaultsPopup,
         disable: disable$2,
     };
@@ -1745,6 +2435,62 @@
      */
 
 
+    // Locale-aware markers for the party system chat messages this module parses
+    // when scanning the chat DOM (the WebSocket path uses message.m keys, which are
+    // locale-independent). The game's systemChatMessage templates render localized
+    // text (zh: 战斗开始 / 钥匙数量 / 队伍在第N波失败 / 战斗结束), so we match both the
+    // English and the translated forms.
+    let cachedChatMarkers = null;
+    function getChatMarkers() {
+        if (cachedChatMarkers) return cachedChatMarkers;
+        const prefixOf = (key, enPrefix) => {
+            const template = translateGameName('systemChatMessage', key, enPrefix);
+            const placeholderIndex = template.search(/\$t\(|\{\{/);
+            const prefix = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex)).trimEnd();
+            return prefix || enPrefix;
+        };
+        const waveFailedRegexes = [/Party failed on wave \d+/];
+        const waveTemplate = translateGameName('systemChatMessage', 'partyWaveFailed', 'Party failed on wave {{wave}}.');
+        if (waveTemplate !== 'Party failed on wave {{wave}}.') {
+            waveFailedRegexes.push(
+                new RegExp(
+                    waveTemplate
+                        .split('{{wave}}')
+                        .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                        .join('\\d+')
+                )
+            );
+        }
+        cachedChatMarkers = {
+            battleStarted: [...new Set(['Battle started:', prefixOf('partyBattleStarted', 'Battle started:')])],
+            battleEnded: [...new Set(['Battle ended:', prefixOf('partyBattleEnded', 'Battle ended:')])],
+            keyCounts: [...new Set(['Key counts:', prefixOf('partyKeyCount', 'Key counts:')])],
+            waveFailed: waveFailedRegexes,
+        };
+        return cachedChatMarkers;
+    }
+
+    function isBattleStartedText(text) {
+        return getChatMarkers().battleStarted.some((prefix) => text.includes(prefix));
+    }
+    function isKeyCountsText(text) {
+        return getChatMarkers().keyCounts.some((prefix) => text.includes(prefix));
+    }
+    function isBattleEndedText(text) {
+        return getChatMarkers().battleEnded.some((prefix) => text.includes(prefix));
+    }
+    function isWaveFailedText(text) {
+        return getChatMarkers().waveFailed.some((regex) => regex.test(text));
+    }
+    function extractDungeonNameAfterPrefix(text, prefixList) {
+        for (const prefix of prefixList) {
+            if (text.includes(prefix)) {
+                return text.split(prefix)[1]?.split(']')[0]?.trim();
+            }
+        }
+        return undefined;
+    }
+
     // Heartbeat watchdog: visibilitychange doesn't reliably fire for every stall (a long GC pause, or
     // some OS/browser combinations delaying the event on wake) - checked independently by noticing
     // the interval itself ran much later than scheduled.
@@ -2125,8 +2871,8 @@
                             continue; // Skip player messages
                         }
 
-                        // Look for "Battle started:" messages
-                        if (text.includes('Battle started:')) {
+                        // Look for "Battle started:" messages (locale-aware)
+                        if (isBattleStartedText(text)) {
                             // Try to extract timestamp
                             // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
                             const timestampMatch = text.match(
@@ -2170,8 +2916,8 @@
                             }
                         }
 
-                        // Look for "Key counts:" messages
-                        if (text.includes('Key counts:')) {
+                        // Look for "Key counts:" messages (locale-aware)
+                        if (isKeyCountsText(text)) {
                             // Parse the message
                             const keyCountsMap = this.parseKeyCountsFromMessage(text);
 
@@ -2251,7 +2997,7 @@
                                 timestamp: this.firstKeyCountTimestamp,
                                 keyCountsMap: latestKeyCountsMap,
                                 text:
-                                    'Key counts: ' +
+                                    i18n_js.t('dungeonTrackerUi.keyCounts') +
                                     Object.entries(latestKeyCountsMap)
                                         .map(([name, count]) => `[${name} - ${count}]`)
                                         .join(', '),
@@ -3278,9 +4024,9 @@
 
                     const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
 
-                    // Extract "Battle started:" messages
-                    if (text.includes('Battle started:')) {
-                        const dungeonName = text.split('Battle started:')[1]?.split(']')[0]?.trim();
+                    // Extract "Battle started:" messages (locale-aware)
+                    if (isBattleStartedText(text)) {
+                        const dungeonName = extractDungeonNameAfterPrefix(text, getChatMarkers().battleStarted);
                         if (dungeonName) {
                             events.push({
                                 type: 'battle_start',
@@ -3289,8 +4035,8 @@
                             });
                         }
                     }
-                    // Extract "Key counts:" messages
-                    else if (text.includes('Key counts:')) {
+                    // Extract "Key counts:" messages (locale-aware)
+                    else if (isKeyCountsText(text)) {
                         // Parse team composition from key counts
                         const keyCountsMap = this.parseKeyCountsFromMessage(text);
                         const playerNames = Object.keys(keyCountsMap).sort();
@@ -3304,16 +4050,16 @@
                             });
                         }
                     }
-                    // Extract "Party failed" messages
-                    else if (text.match(/Party failed on wave \d+/)) {
+                    // Extract "Party failed" messages (locale-aware)
+                    else if (isWaveFailedText(text)) {
                         events.push({
                             type: 'fail',
                             timestamp,
                         });
                     }
-                    // Extract "Battle ended:" messages (fled/canceled)
-                    else if (text.includes('Battle ended:')) {
-                        const dungeonName = text.split('Battle ended:')[1]?.split(']')[0]?.trim();
+                    // Extract "Battle ended:" messages (fled/canceled, locale-aware)
+                    else if (isBattleEndedText(text)) {
+                        const dungeonName = extractDungeonNameAfterPrefix(text, getChatMarkers().battleEnded);
                         events.push({
                             type: 'cancel',
                             timestamp,
@@ -3403,6 +4149,10 @@
      * Handles both real-time (new messages) and batch (historical messages) processing
      */
 
+
+    const PARTY_CHANNEL_HRID = '/chat_channel_types/party';
+    // Inactive chat tab panels render their channel HRID as bare text (e.g. "/chat_channel_types/party")
+    const CHANNEL_HRID_PATTERN = /^\/chat_channel_types\/[a-z_]+$/;
 
     class DungeonTrackerChatAnnotations {
         constructor() {
@@ -3536,10 +4286,13 @@
             this._pruneDetachedTabHandlers();
 
             // Find all chat tab buttons
-            const tabButtons = document.querySelectorAll('.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root');
+            const chatContainer = document.querySelector('[class*="Chat_tabsComponentContainer"]');
+            const tabButtons = chatContainer ? Array.from(chatContainer.querySelectorAll('.MuiButtonBase-root')) : [];
+            // Resolve the Party tab structurally (locale-independent) once per scan
+            const partyButton = chatContainer ? this._findPartyTabButton(chatContainer) : null;
 
             for (const button of tabButtons) {
-                if (button.textContent.includes('Party')) {
+                if (button === partyButton || this._matchesPartyTabLabel(button)) {
                     // Remove old listener if exists
                     const oldHandler = this.tabClickHandlers.get(button);
                     if (oldHandler) {
@@ -3570,6 +4323,72 @@
                 button.removeEventListener('click', handler);
                 this.tabClickHandlers.delete(button);
             }
+        }
+
+        /**
+         * Check whether a tab button is the Party channel tab via non-structural signals
+         * (attribute annotation, game-translated label, English label).
+         * @param {HTMLElement} button - Chat tab button
+         * @returns {boolean}
+         * @private
+         */
+        _matchesPartyTabLabel(button) {
+            if (button?.dataset?.mentionChannel === PARTY_CHANNEL_HRID) return true;
+
+            const text = button?.textContent || '';
+            if (text.includes('Party')) return true;
+
+            const translated = translateGameName('chatChannelTypeNames', PARTY_CHANNEL_HRID, '');
+            return !!translated && text.includes(translated);
+        }
+
+        /**
+         * Find the Party chat tab button without relying on its visible text.
+         *
+         * The game renders every channel tab panel at all times (hidden via CSS when inactive):
+         * inactive panels contain only the channel HRID as text, while the active panel renders
+         * live chat content. Panels and tab buttons share the same fixed order inside the
+         * TabsComponent, so the HRID panel index maps directly to the tab button index.
+         * @param {HTMLElement} [container] - The Chat tabs component container
+         * @returns {HTMLElement|null}
+         * @private
+         */
+        _findPartyTabButton(container) {
+            const chatContainer = container || document.querySelector('[class*="Chat_tabsComponentContainer"]');
+            if (!chatContainer) return null;
+
+            // Fallback-first button set: every MUI button in the container (chat panels may
+            // contain other buttons, so this must only be used for label matching).
+            const allButtons = Array.from(chatContainer.querySelectorAll('.MuiButtonBase-root'));
+            if (allButtons.length === 0) return null;
+
+            const panelsContainer = chatContainer.querySelector('[class*="TabsComponent_tabPanelsContainer"]');
+            if (panelsContainer) {
+                // The tab strip holds exactly one button per panel, in the same order
+                const tabButtons = Array.from(
+                    chatContainer.querySelectorAll('[class*="TabsComponent_tabsContainer"] .MuiButtonBase-root')
+                );
+                const panels = Array.from(panelsContainer.children);
+                let partyPanelIndex = panels.findIndex((panel) => panel.textContent?.trim() === PARTY_CHANNEL_HRID);
+
+                // When the Party tab itself is active its panel shows live chat instead of the
+                // bare HRID; it is then the only panel whose text is not a channel HRID.
+                if (partyPanelIndex === -1) {
+                    const nonHridPanels = panels.filter(
+                        (panel) => !CHANNEL_HRID_PATTERN.test(panel.textContent?.trim() || '')
+                    );
+                    if (nonHridPanels.length === 1) {
+                        partyPanelIndex = panels.indexOf(nonHridPanels[0]);
+                    }
+                }
+
+                if (partyPanelIndex !== -1 && tabButtons[partyPanelIndex]) {
+                    return tabButtons[partyPanelIndex];
+                }
+            }
+
+            // Fallback for older/simpler DOM structures
+            return allButtons.find((button) => this._matchesPartyTabLabel(button)) || null;
         }
 
         /**
@@ -4006,6 +4825,48 @@
         }
 
         /**
+         * Build locale-aware markers for the party system chat messages this feature parses.
+         * The messages render from the game's systemChatMessage i18n templates and are
+         * localized (zh: 战斗开始 / 钥匙数量 / 队伍在第N波失败 / 战斗结束), so match both the
+         * English and the translated forms. Recomputed on each call so a late-available
+         * game i18n instance still yields translated markers.
+         * @returns {{battleStarted: string[], battleEnded: string[], keyCounts: string[], waveFailed: RegExp[]}}
+         * @private
+         */
+        _getChatMarkers() {
+            // Extract the visible prefix before the template placeholder, e.g.
+            // "Battle started: $t(actionNames.{{actionHrid}})" -> "Battle started:".
+            const prefixOf = (key, enPrefix) => {
+                const template = translateGameName('systemChatMessage', key, enPrefix);
+                const placeholderIndex = template.search(/\$t\(|\{\{/);
+                const prefix = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex)).trimEnd();
+                return prefix || enPrefix;
+            };
+            const waveFailedRegexes = [/Party failed on wave \d+/];
+            const waveTemplate = translateGameName(
+                'systemChatMessage',
+                'partyWaveFailed',
+                'Party failed on wave {{wave}}.'
+            );
+            if (waveTemplate !== 'Party failed on wave {{wave}}.') {
+                waveFailedRegexes.push(
+                    new RegExp(
+                        waveTemplate
+                            .split('{{wave}}')
+                            .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                            .join('\\d+')
+                    )
+                );
+            }
+            return {
+                battleStarted: [...new Set(['Battle started:', prefixOf('partyBattleStarted', 'Battle started:')])],
+                battleEnded: [...new Set(['Battle ended:', prefixOf('partyBattleEnded', 'Battle ended:')])],
+                keyCounts: [...new Set(['Key counts:', prefixOf('partyKeyCount', 'Key counts:')])],
+                waveFailed: waveFailedRegexes,
+            };
+        }
+
+        /**
          * Extract chat events from DOM
          * @returns {Array} Array of chat events with timestamps and types
          */
@@ -4013,6 +4874,7 @@
             // Query ALL chat messages (matches working DRT script - no tab filtering)
             const nodes = [...document.querySelectorAll('[class^="ChatMessage_chatMessage"]')];
             const events = [];
+            const markers = this._getChatMarkers();
 
             for (const node of nodes) {
                 if (node.dataset.processed === '1') continue;
@@ -4021,14 +4883,15 @@
 
                 // Check message relevance FIRST before parsing timestamp
                 // Battle started message
-                if (text.includes('Battle started:')) {
+                const battleStartedPrefix = markers.battleStarted.find((prefix) => text.includes(prefix));
+                if (battleStartedPrefix) {
                     const timestamp = this.getTimestampFromMessage(node);
                     if (!timestamp) {
                         console.warn('[Dungeon Tracker Debug] Battle started message has no timestamp:', text);
                         continue;
                     }
 
-                    const dungeonName = text.split('Battle started:')[1]?.split(']')[0]?.trim();
+                    const dungeonName = text.split(battleStartedPrefix)[1]?.split(']')[0]?.trim();
                     if (dungeonName) {
                         // Cache the dungeon name (survives chat scrolling)
                         this.lastSeenDungeonName = dungeonName;
@@ -4044,7 +4907,7 @@
                     // as a session boundary for the forward-scan pairing logic.
                 }
                 // Key counts message (warn if timestamp fails - these should always have timestamps)
-                else if (text.includes('Key counts:')) {
+                else if (markers.keyCounts.some((prefix) => text.includes(prefix))) {
                     const timestamp = this.getTimestampFromMessage(node, true);
                     if (!timestamp) continue;
 
@@ -4059,7 +4922,7 @@
                     });
                 }
                 // Party failed message
-                else if (text.match(/Party failed on wave \d+/)) {
+                else if (markers.waveFailed.some((regex) => regex.test(text))) {
                     const timestamp = this.getTimestampFromMessage(node);
                     if (!timestamp) continue;
 
@@ -4071,7 +4934,7 @@
                     // Do NOT mark fail as processed — must persist as session context.
                 }
                 // Battle ended (canceled/fled)
-                else if (text.includes('Battle ended:')) {
+                else if (markers.battleEnded.some((prefix) => text.includes(prefix))) {
                     const timestamp = this.getTimestampFromMessage(node);
                     if (!timestamp) continue;
 
@@ -4125,16 +4988,14 @@
          * @returns {boolean} True if party chat is visible
          */
         isPartySelected() {
-            const selectedTabEl = document.querySelector(
-                `.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root[aria-selected="true"]`
-            );
+            const partyButton = this._findPartyTabButton();
             const tabsEl = document.querySelector(
-                '.Chat_tabsComponentContainer__3ZoKe .TabsComponent_tabPanelsContainer__26mzo'
+                '[class*="Chat_tabsComponentContainer"] [class*="TabsComponent_tabPanelsContainer"]'
             );
             return (
-                selectedTabEl &&
-                tabsEl &&
-                selectedTabEl.textContent.includes('Party') &&
+                !!partyButton &&
+                partyButton.getAttribute('aria-selected') === 'true' &&
+                !!tabsEl &&
                 !tabsEl.classList.contains('TabsComponent_hidden__255ag')
             );
         }
@@ -4349,6 +5210,9 @@
             // Position state
             this.position = null; // { x, y } or null for default
 
+            // Size state (custom width in px, only honored while expanded; null = default)
+            this.width = null;
+
             // Grouping and filtering state
             this.groupBy = 'team'; // 'team' or 'dungeon'
             this.filterDungeon = 'all'; // 'all' or specific dungeon name
@@ -4368,6 +5232,7 @@
                 this.isKeysExpanded = savedState.isKeysExpanded || false;
                 this.isRunHistoryExpanded = savedState.isRunHistoryExpanded || false;
                 this.position = savedState.position || null;
+                this.width = savedState.width || null;
 
                 // Load grouping/filtering state
                 this.groupBy = savedState.groupBy || 'team';
@@ -4387,6 +5252,7 @@
                     isKeysExpanded: this.isKeysExpanded,
                     isRunHistoryExpanded: this.isRunHistoryExpanded,
                     position: this.position,
+                    width: this.width,
                     groupBy: this.groupBy,
                     filterDungeon: this.filterDungeon,
                     filterTeam: this.filterTeam,
@@ -4405,6 +5271,7 @@
             const baseStyle = `
             position: fixed;
             z-index: ${zIndex};
+            box-sizing: border-box;
             background: rgba(0, 0, 0, 0.85);
             border: 2px solid #4a9eff;
             border-radius: 8px;
@@ -4413,13 +5280,19 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
         `;
 
+            // Custom width applies in both collapsed and expanded modes (shared with position,
+            // which is likewise unified across modes rather than tracked separately per mode).
+            const defaultWidth = this.isCollapsed ? 250 : 480;
+            const targetWidth = this.width || defaultWidth;
+            const widthStyle = `width: min(${targetWidth}px, calc(100vw - 20px));`;
+
             if (this.position) {
                 // Custom position (user dragged it)
                 container.style.cssText = `
                 ${baseStyle}
                 top: ${this.position.y}px;
                 left: ${this.position.x}px;
-                min-width: ${this.isCollapsed ? '250px' : '480px'};
+                ${widthStyle}
             `;
             } else if (this.isCollapsed) {
                 // Collapsed: top-left (near action time display)
@@ -4427,7 +5300,7 @@
                 ${baseStyle}
                 top: 10px;
                 left: 10px;
-                min-width: 250px;
+                ${widthStyle}
             `;
             } else {
                 // Expanded: top-center
@@ -4436,7 +5309,7 @@
                 top: 10px;
                 left: 50%;
                 transform: translateX(-50%);
-                min-width: 480px;
+                ${widthStyle}
             `;
             }
         }
@@ -5274,10 +6147,16 @@
             this.history = historyRef;
             this.isDragging = false;
             this.dragOffset = { x: 0, y: 0 };
+            this.isResizing = false;
+            this.resizeStartX = 0;
+            this.resizeStartWidth = 0;
+            this.resizeWidthMultiplier = 1;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             // Store drag handlers for cleanup
             this.dragMoveHandler = null;
             this.dragUpHandler = null;
+            this.resizeMoveHandler = null;
+            this.resizeUpHandler = null;
             this.keyboardShortcutHandler = null;
         }
 
@@ -5291,6 +6170,7 @@
             this.callbacks = callbacks;
 
             this.setupDragging();
+            this.setupResizing();
             this.setupCollapseButton();
             this.setupKeysToggle();
             this.setupRunHistoryToggle();
@@ -5370,6 +6250,67 @@
 
             document.addEventListener('mousemove', this.dragMoveHandler);
             document.addEventListener('mouseup', this.dragUpHandler);
+        }
+
+        /**
+         * Setup resize handle (width-only, bottom-right corner grip)
+         */
+        setupResizing() {
+            const handle = this.container.querySelector('#mwi-dt-resize-handle');
+            if (!handle) return;
+
+            const MIN_WIDTH = 200;
+
+            handle.addEventListener('mouseenter', () => {
+                handle.style.background = 'rgba(74, 158, 255, 0.4)';
+            });
+            handle.addEventListener('mouseleave', () => {
+                if (!this.isResizing) handle.style.background = 'transparent';
+            });
+
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation(); // Don't let this bubble into the header's drag handler
+
+                bringPanelToFront(this.container);
+                this.isResizing = true;
+                this.resizeStartX = e.clientX;
+                this.resizeStartWidth = this.container.getBoundingClientRect().width;
+                // Centered (no custom position) panels grow from their midpoint, so the right edge
+                // only moves half as far as the cursor — double the delta to keep edge-tracking 1:1.
+                this.resizeWidthMultiplier = this.state.position ? 1 : 2;
+            });
+
+            // Remove old handlers if they exist
+            if (this.resizeMoveHandler) {
+                document.removeEventListener('mousemove', this.resizeMoveHandler);
+            }
+            if (this.resizeUpHandler) {
+                document.removeEventListener('mouseup', this.resizeUpHandler);
+            }
+
+            this.resizeMoveHandler = (e) => {
+                if (!this.isResizing) return;
+
+                const delta = (e.clientX - this.resizeStartX) * this.resizeWidthMultiplier;
+                let newWidth = this.resizeStartWidth + delta;
+                newWidth = Math.max(MIN_WIDTH, newWidth);
+                newWidth = Math.min(newWidth, window.innerWidth - 20);
+
+                this.container.style.width = `${newWidth}px`;
+            };
+
+            this.resizeUpHandler = () => {
+                if (this.isResizing) {
+                    this.isResizing = false;
+                    handle.style.background = 'transparent';
+                    this.state.width = Math.round(this.container.getBoundingClientRect().width);
+                    this.state.save();
+                }
+            };
+
+            document.addEventListener('mousemove', this.resizeMoveHandler);
+            document.addEventListener('mouseup', this.resizeUpHandler);
         }
 
         /**
@@ -5565,13 +6506,10 @@
                 this.applyExpandedState();
             }
 
-            // If no custom position, update to new default position
-            if (!this.state.position) {
-                this.state.updatePosition(this.container);
-            } else {
-                // Just update width for custom positions
-                this.container.style.minWidth = this.state.isCollapsed ? '250px' : '480px';
-            }
+            // Recompute width/position for the new state — handles both default-centered and
+            // custom-dragged positions, and collapsed always uses the fixed compact width
+            // regardless of any custom resize width saved while expanded.
+            this.state.updatePosition(this.container);
 
             this.state.save();
         }
@@ -5746,8 +6684,8 @@
         }
 
         /**
-         * Setup keyboard shortcut for resetting position
-         * Ctrl+Shift+D to reset dungeon tracker to default position
+         * Setup keyboard shortcut for resetting position and size
+         * Ctrl+Shift+D to reset dungeon tracker to default position and size
          */
         setupKeyboardShortcut() {
             if (this.keyboardShortcutHandler) {
@@ -5755,7 +6693,7 @@
             }
 
             this.keyboardShortcutHandler = (e) => {
-                // Ctrl+Shift+D - Reset dungeon tracker position
+                // Ctrl+Shift+D - Reset dungeon tracker position and size
                 if (e.ctrlKey && e.shiftKey && e.key === 'D') {
                     e.preventDefault();
                     this.resetPosition();
@@ -5765,11 +6703,12 @@
         }
 
         /**
-         * Reset dungeon tracker position to default (center)
+         * Reset dungeon tracker position and size to default (centered, default width)
          */
         resetPosition() {
-            // Clear saved position (re-enables default centering)
+            // Clear saved position and custom width (re-enables default centering/sizing)
             this.state.position = null;
+            this.state.width = null;
 
             // Re-apply position styling
             this.state.updatePosition(this.container);
@@ -5934,6 +6873,7 @@
 
             // Add HTML structure
             this.container.innerHTML = `
+            <div id="mwi-dt-inner" style="overflow: hidden; border-radius: 6px;">
             <div id="mwi-dt-header" style="
                 background: #2d3748;
                 border-radius: 6px 6px 0 0;
@@ -5946,8 +6886,8 @@
                     align-items: center;
                     padding: 6px 10px;
                 ">
-                    <div style="flex: 1;">
-                        <span id="mwi-dt-dungeon-name" style="font-weight: bold; font-size: 14px; color: #4a9eff;">
+                    <div style="flex: 1; min-width: 0;">
+                        <span id="mwi-dt-dungeon-name" style="font-weight: bold; font-size: 14px; color: #4a9eff; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                             ${i18n_js.t('dungeonTrackerUi.loadingPlaceholder')}
                         </span>
                     </div>
@@ -5957,8 +6897,8 @@
                             00:00
                         </span>
                     </div>
-                    <div style="flex: 1; display: flex; gap: 8px; align-items: center; justify-content: flex-end;">
-                        <span id="mwi-dt-wave-counter" style="font-size: 13px; color: #aaa;">
+                    <div style="flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center; justify-content: flex-end; overflow: hidden;">
+                        <span id="mwi-dt-wave-counter" style="font-size: 13px; color: #aaa; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                             ${i18n_js.t('dungeonTrackerUi.waveCounter', { current: 1, max: 50 })}
                         </span>
                         <button id="mwi-dt-collapse-btn" style="
@@ -5969,6 +6909,7 @@
                             font-size: 16px;
                             padding: 0 4px;
                             line-height: 1;
+                            flex-shrink: 0;
                         " title="${i18n_js.t('dungeonTrackerUi.collapseExpandTooltip')}">▼</button>
                     </div>
                 </div>
@@ -5976,6 +6917,7 @@
                 <!-- Header Line 2: Stats (always visible) -->
                 <div id="mwi-dt-header-stats" style="
                     display: flex;
+                    flex-wrap: wrap;
                     justify-content: center;
                     align-items: center;
                     padding: 4px 10px 6px 10px;
@@ -5984,12 +6926,9 @@
                     gap: 12px;
                 ">
                     <span>${i18n_js.t('dungeonTrackerUi.headerLastRunLabel')}<span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
-                    <span>|</span>
-                    <span>${i18n_js.t('dungeonTrackerUi.headerAvgClearLabel')}<span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
-                    <span>|</span>
-                    <span>${i18n_js.t('dungeonTrackerUi.headerRunsLabel')}<span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
-                    <span>|</span>
-                    <span>${i18n_js.t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>| ${i18n_js.t('dungeonTrackerUi.headerAvgClearLabel')}<span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
+                    <span>| ${i18n_js.t('dungeonTrackerUi.headerRunsLabel')}<span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>| ${i18n_js.t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
                 </div>
             </div>
 
@@ -6218,6 +7157,27 @@
                     </div>
                 </div>
             </div>
+            </div>
+
+            <div id="mwi-dt-resize-handle" style="
+                position: absolute;
+                bottom: 0;
+                right: 0;
+                width: 16px;
+                height: 16px;
+                cursor: ew-resize;
+                z-index: 1;
+                display: flex;
+                align-items: flex-end;
+                justify-content: flex-end;
+                padding: 2px;
+                box-sizing: border-box;
+                border-radius: 0 0 6px 0;
+            " title="${i18n_js.t('dungeonTrackerUi.resizeHandleTooltip')}">
+                <svg width="10" height="10" viewBox="0 0 10 10" style="pointer-events: none; opacity: 0.6;">
+                    <path d="M9 1 L1 9 M9 5 L5 9" stroke="#4a9eff" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                </svg>
+            </div>
         `;
 
             // Add to page
@@ -6252,7 +7212,7 @@
             if (dungeonName) {
                 if (run.dungeonName && run.tier !== null) {
                     dungeonName.textContent = i18n_js.t('dungeonTrackerUi.dungeonNameWithTier', {
-                        name: run.dungeonName,
+                        name: getActionName(run.dungeonHrid, run.dungeonName),
                         tier: run.tier,
                     });
                 } else {
@@ -6640,6 +7600,78 @@
      */
 
 
+    // The real battlePanel.{combatDuration,battles,deaths} i18n keys are templated strings
+    // with an embedded {{placeholder}}, e.g. "Combat Duration: {{duration}}". Plain i18next
+    // t() returns that placeholder as literal text (no interpolation values are passed), so
+    // strip from the placeholder onward (and any leftover trailing separator) to get just
+    // the label text these dual-match regexes actually need.
+    function stripInterpolationTemplate(template) {
+        const placeholderIndex = template.indexOf('{{');
+        const prefix = placeholderIndex >= 0 ? template.slice(0, placeholderIndex) : template;
+        return prefix.replace(/[:：]\s*$/, '').trim();
+    }
+
+    /**
+     * Parse the BattlePanel_combatInfo text into duration/battles/deaths.
+     *
+     * The game localizes the labels ("Combat Duration", "Battles", "Deaths") via
+     * its i18next `battlePanel` namespace. We try translated labels first, then
+     * fall back to a structure-only regex that matches by colon separators and the
+     * duration's d/h/m/s time-unit pattern, so non-English clients still parse
+     * even if the suspected i18n keys are wrong.
+     *
+     * @param {string} text - The combat info panel text.
+     * @returns {{days:number, hours:number, minutes:number, seconds:number, battles:number, deaths:number}|null}
+     */
+    function parseCombatInfo(text) {
+        if (!text) return null;
+        const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const durationLabels = [
+            ...new Set([
+                'Combat Duration',
+                stripInterpolationTemplate(translateGameName('battlePanel', 'combatDuration', 'Combat Duration')),
+            ]),
+        ];
+        const battlesLabels = [
+            ...new Set(['Battles', stripInterpolationTemplate(translateGameName('battlePanel', 'battles', 'Battles'))]),
+        ];
+        const deathsLabels = [
+            ...new Set(['Deaths', stripInterpolationTemplate(translateGameName('battlePanel', 'deaths', 'Deaths'))]),
+        ];
+        const labelRegexes = [];
+        for (const d of durationLabels) {
+            for (const b of battlesLabels) {
+                for (const dd of deathsLabels) {
+                    labelRegexes.push(
+                        new RegExp(
+                            `${escape(d)}: (?:(\\d+)d\\s*)?(?:(\\d+)h\\s*)?(?:(\\d+)m\\s*)?(?:(\\d+)s).*?${escape(b)}: (\\d+).*?${escape(dd)}: (\\d+)`
+                        )
+                    );
+                }
+            }
+        }
+        // Fallback: structure-only regex — matches three "label: value" segments by
+        // colon separators, where the first value contains d/h/m/s time units. This
+        // works regardless of label text or locale.
+        labelRegexes.push(
+            /^[^:]+:\s*(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)\b[^.]*\.\s*[^:]+:\s*(\d+)\b[^.]*\.\s*[^:]+:\s*(\d+)/
+        );
+        for (const re of labelRegexes) {
+            const m = text.match(re);
+            if (m) {
+                return {
+                    days: parseInt(m[1], 10) || 0,
+                    hours: parseInt(m[2], 10) || 0,
+                    minutes: parseInt(m[3], 10) || 0,
+                    seconds: parseInt(m[4], 10) || 0,
+                    battles: parseInt(m[5], 10),
+                    deaths: parseInt(m[6], 10),
+                };
+            }
+        }
+        return null;
+    }
+
     /**
      * CombatSummary class manages combat completion statistics display
      */
@@ -6772,16 +7804,14 @@
                 const combatInfoElement = document.querySelector('[class*="BattlePanel_combatInfo"]');
 
                 if (combatInfoElement) {
-                    const matches = combatInfoElement.innerHTML.match(
-                        /Combat Duration: (?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s).*?Battles: (\d+).*?Deaths: (\d+)/
-                    );
+                    const parsed = parseCombatInfo(combatInfoElement.textContent);
 
-                    if (matches) {
-                        const days = parseInt(matches[1], 10) || 0;
-                        const hours = parseInt(matches[2], 10) || 0;
-                        const minutes = parseInt(matches[3], 10) || 0;
-                        const seconds = parseInt(matches[4], 10) || 0;
-                        const battles = parseInt(matches[5], 10) - 1; // Exclude current battle
+                    if (parsed) {
+                        const days = parsed.days;
+                        const hours = parsed.hours;
+                        const minutes = parsed.minutes;
+                        const seconds = parsed.seconds;
+                        const battles = parsed.battles - 1; // Exclude current battle
 
                         battleDurationSec = days * 86400 + hours * 3600 + minutes * 60 + seconds;
 
@@ -7330,6 +8360,11 @@
      */
 
 
+    // Labyrinth tab bar renders exactly four tabs/panels in this fixed order:
+    // Labyrinth (Xp), Room (Zp), Automation (eg), Labyrinth Shop (tg).
+    const LABYRINTH_TAB_COUNT$1 = 4;
+    const AUTOMATION_TAB_INDEX = 2;
+
     class LabyrinthBestLevel {
         constructor() {
             this.unregisterHandlers = [];
@@ -7421,12 +8456,53 @@
         }
 
         /**
+         * Find the Automation tab button inside the Labyrinth tab bar without relying on its
+         * translated label. The game always mounts every panel (hidden via CSS when inactive),
+         * and the Automation panel root carries the LabyrinthPanel_automationTab class, so the
+         * panel index maps directly to the tab button index.
+         * @param {Element} container - The LabyrinthPanel_tabsComponentContainer element
+         * @returns {HTMLButtonElement|null}
+         */
+        findAutomationTabButton(container) {
+            const tabsRoot = container.querySelector(':scope > [class*="TabsComponent_tabsComponent"]');
+            if (tabsRoot) {
+                const panelsContainer = tabsRoot.querySelector(':scope > [class*="TabsComponent_tabPanelsContainer"]');
+                const buttons = Array.from(
+                    tabsRoot.querySelectorAll(':scope > [class*="TabsComponent_tabsContainer"] [role="tab"]')
+                );
+                const panels = panelsContainer ? Array.from(panelsContainer.children) : [];
+
+                const panelIndex = panels.findIndex((panel) =>
+                    panel.querySelector?.('[class*="LabyrinthPanel_automationTab"]')
+                );
+                if (panelIndex !== -1 && buttons[panelIndex]) {
+                    return buttons[panelIndex];
+                }
+
+                // The Labyrinth tab bar always has exactly four tabs in a fixed order
+                if (buttons.length === LABYRINTH_TAB_COUNT$1 && buttons[AUTOMATION_TAB_INDEX]) {
+                    return buttons[AUTOMATION_TAB_INDEX];
+                }
+            }
+
+            // Fallback: game-translated label, then the English label
+            const fallbackButtons = Array.from(container.querySelectorAll('button[role="tab"]'));
+            const translatedLabel = translateGameName('labyrinthPanel', 'automation', 'Automation');
+            return (
+                fallbackButtons.find(
+                    (btn) =>
+                        btn.textContent.trim().startsWith(translatedLabel) ||
+                        btn.textContent.trim().startsWith('Automation')
+                ) || null
+            );
+        }
+
+        /**
          * Find the Automation tab button and attach a click listener to it
          * @param {Element} container - The LabyrinthPanel_tabsComponentContainer element
          */
         attachAutomationClickListener(container) {
-            const buttons = Array.from(container.querySelectorAll('button[role="tab"]'));
-            const automationBtn = buttons.find((btn) => btn.textContent.trim().startsWith('Automation'));
+            const automationBtn = this.findAutomationTabButton(container);
 
             if (!automationBtn) {
                 return;
@@ -7581,6 +8657,11 @@
      */
 
 
+    // Labyrinth tab bar renders exactly four tabs/panels in this fixed order:
+    // Labyrinth (Xp), Room (Zp), Automation (eg), Labyrinth Shop (tg).
+    const LABYRINTH_TAB_COUNT = 4;
+    const SHOP_TAB_INDEX = 3;
+
     class LabyrinthShopPrices {
         constructor() {
             this.unregisterHandlers = [];
@@ -7642,12 +8723,54 @@
         }
 
         /**
+         * Find the Labyrinth Shop tab button without relying on its translated label.
+         * The game always mounts every panel (hidden via CSS when inactive), and the Shop
+         * panel root carries the LabyrinthPanel_labyrinthShopTab class, so the panel index
+         * maps directly to the tab button index.
+         * @param {Element} container - The LabyrinthPanel_tabsComponentContainer element
+         * @returns {HTMLButtonElement|null}
+         */
+        findShopTabButton(container) {
+            const tabsRoot = container.querySelector(':scope > [class*="TabsComponent_tabsComponent"]');
+            if (tabsRoot) {
+                const panelsContainer = tabsRoot.querySelector(':scope > [class*="TabsComponent_tabPanelsContainer"]');
+                const buttons = Array.from(
+                    tabsRoot.querySelectorAll(':scope > [class*="TabsComponent_tabsContainer"] [role="tab"]')
+                );
+                const panels = panelsContainer ? Array.from(panelsContainer.children) : [];
+
+                const panelIndex = panels.findIndex((panel) =>
+                    panel.querySelector?.('[class*="LabyrinthPanel_labyrinthShopTab"]')
+                );
+                if (panelIndex !== -1 && buttons[panelIndex]) {
+                    return buttons[panelIndex];
+                }
+
+                // The Labyrinth tab bar always has exactly four tabs in a fixed order
+                if (buttons.length === LABYRINTH_TAB_COUNT && buttons[SHOP_TAB_INDEX]) {
+                    return buttons[SHOP_TAB_INDEX];
+                }
+            }
+
+            // Fallback: game-translated label ("Labyrinth Shop"), then English labels
+            const fallbackButtons = Array.from(container.querySelectorAll('button[role="tab"]'));
+            const translatedLabel = translateGameName('labyrinthPanel', 'labyrinthShop', 'Labyrinth Shop');
+            return (
+                fallbackButtons.find(
+                    (btn) =>
+                        btn.textContent.trim().startsWith(translatedLabel) ||
+                        btn.textContent.trim().startsWith('Labyrinth Shop') ||
+                        btn.textContent.trim().startsWith('Shop')
+                ) || null
+            );
+        }
+
+        /**
          * Find the Shop tab button and attach a click listener to it
          * @param {Element} container - The LabyrinthPanel_tabsComponentContainer element
          */
         attachShopClickListener(container) {
-            const buttons = Array.from(container.querySelectorAll('button[role="tab"]'));
-            const shopBtn = buttons.find((btn) => btn.textContent.trim().startsWith('Shop'));
+            const shopBtn = this.findShopTabButton(container);
 
             if (!shopBtn) {
                 return;
@@ -10525,7 +11648,10 @@
 
                 const gameDataLocal = dataManager.getInitClientData();
                 const monsterDetail = gameDataLocal?.combatMonsterDetailMap?.[monsterHrid];
-                const monsterName = monsterDetail?.name || monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
+                const monsterName = getMonsterName(
+                    monsterHrid,
+                    monsterDetail?.name || monsterHrid.replace('/monsters/', '').replace(/_/g, ' ')
+                );
 
                 const snapshot = loadoutState.getUsableSnapshotById(loadoutId);
                 const loadoutName = snapshot?.name || i18n_js.t('labyrinthClearRate.loadoutFallbackName', { id: loadoutId });
@@ -10925,10 +12051,17 @@
             if (!next) return;
 
             const { cell, roomHrid, isSkill, recommendedThreshold } = next;
-            const findButton = (label) =>
-                Array.from(cell.querySelectorAll('button')).find((b) => b.textContent.trim() === label);
+            // Match both English and the game-translated button label so the
+            // automation works in any client locale.
+            const findButton = (english, key) => {
+                const translated = translateGameName('labyrinthPanel', key, english);
+                return Array.from(cell.querySelectorAll('button')).find((b) => {
+                    const txt = b.textContent.trim();
+                    return txt === english || txt === translated;
+                });
+            };
 
-            const editButton = findButton('Edit');
+            const editButton = findButton('Edit', 'edit');
             if (!editButton) {
                 console.warn('[Toolasha] Apply Skip: Edit button not found for room', roomHrid);
                 return;
@@ -10942,7 +12075,7 @@
             }
             reactInput_js.typeIntoReactInput(input, recommendedThreshold);
 
-            const saveButton = findButton('Save');
+            const saveButton = findButton('Save', 'save');
             if (!saveButton) {
                 console.warn('[Toolasha] Apply Skip: Save button not found for room', roomHrid);
                 return;
@@ -11789,6 +12922,784 @@
     }
 
     const labyrinthClearRate = new LabyrinthClearRate();
+
+    /**
+     * Marketplace Custom Tabs Utility
+     * Provides shared functionality for creating and managing custom marketplace tabs
+     * Used by missing materials features (actions, houses, etc.)
+     */
+
+
+    const MARKETPLACE_REMOUNT_GRACE_MS = 350;
+
+    /**
+     * Check whether a rendered tab label matches a native Marketplace tab name.
+     * Tab labels are localized by the game (zh: Market Listings 商品列表 /
+     * My Listings 我的挂牌), so match both the English and translated text.
+     * @param {string} text - Rendered tab text
+     * @param {'marketListings'|'myListings'} key - marketplacePanel i18n key
+     * @returns {boolean}
+     */
+    function matchesMarketplaceTabLabel(text, key) {
+        const fallback = key === 'marketListings' ? 'Market Listings' : 'My Listings';
+        return text.includes(fallback) || text.includes(translateGameName('marketplacePanel', key, fallback));
+    }
+
+    /**
+     * Return true only when an element and all element ancestors are actually visible.
+     * @param {HTMLElement} element
+     * @returns {boolean}
+     */
+    function isElementActuallyVisible(element) {
+        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
+
+        for (let current = element; current; current = current.parentElement) {
+            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+            const style = window.getComputedStyle(current);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get the unique visible Marketplace native tab container.
+     * Hidden retained panels and ambiguous duplicate visible panels fail closed.
+     * @returns {HTMLElement|null}
+     */
+    function getVisibleMarketplaceTabContainer() {
+        const candidates = new Set();
+
+        for (const panel of document.querySelectorAll('[class*="MarketplacePanel_marketplacePanel"]')) {
+            if (!isElementActuallyVisible(panel)) continue;
+
+            for (const tabsContainer of panel.querySelectorAll('.MuiTabs-flexContainer[role="tablist"]')) {
+                if (!isElementActuallyVisible(tabsContainer)) continue;
+                const hasNativeTab = Array.from(tabsContainer.children).some((tab) => {
+                    const text = tab.textContent || '';
+                    return (
+                        matchesMarketplaceTabLabel(text, 'marketListings') || matchesMarketplaceTabLabel(text, 'myListings')
+                    );
+                });
+                if (hasNativeTab) candidates.add(tabsContainer);
+            }
+        }
+
+        return candidates.size === 1 ? candidates.values().next().value : null;
+    }
+
+    /**
+     * Return true only when the unique selected native tab is Market Listings.
+     * Programmatic/native navigation to My Listings must terminate custom workflows,
+     * even if React temporarily retains the custom tab nodes.
+     * @param {HTMLElement|null} tabContainer
+     * @returns {boolean}
+     */
+    function isMarketplaceMarketListingsSelected(tabContainer = getVisibleMarketplaceTabContainer()) {
+        if (!tabContainer || !isElementActuallyVisible(tabContainer)) return false;
+
+        const selectedNativeTabs = Array.from(tabContainer.children).filter((tab) => {
+            if (tab.getAttribute('role') !== 'tab') return false;
+            if (tab.hasAttribute('data-mwi-custom-tab') || tab.hasAttribute('data-mwi-shrine-tab')) return false;
+            return tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('Mui-selected');
+        });
+
+        return (
+            selectedNativeTabs.length === 1 &&
+            matchesMarketplaceTabLabel(selectedNativeTabs[0].textContent, 'marketListings')
+        );
+    }
+
+    /**
+     * Click the unique visible native Marketplace navigation button.
+     * @returns {boolean} True when a button was found and clicked
+     */
+    function clickMarketplaceNavigationButton() {
+        const icons = Array.from(document.querySelectorAll('svg[aria-label="navigationBar.marketplace"]')).filter(
+            isElementActuallyVisible
+        );
+        const buttons = new Set();
+
+        for (const icon of icons) {
+            const button = icon.closest('[class*="NavigationBar_nav__"]');
+            if (button && isElementActuallyVisible(button)) buttons.add(button);
+        }
+
+        if (buttons.size !== 1) return false;
+        buttons.values().next().value.click();
+        return true;
+    }
+
+    /**
+     * Remove all custom material tabs that belong to a specific owner.
+     * @param {string} owner - MARKETPLACE_OWNER constant
+     */
+    function removeMaterialTabsForOwner(owner) {
+        document.querySelectorAll(`[data-mwi-custom-tab][data-mwi-tab-owner="${owner}"]`).forEach((el) => el.remove());
+    }
+
+    /**
+     * Create a custom material tab for the marketplace
+     * @param {Object} material - Material data object
+     * @param {string} material.itemHrid - Item HRID
+     * @param {string} material.itemName - Display name for the item
+     * @param {number} material.missing - Amount missing (0 if sufficient)
+     * @param {number} [material.queued=0] - Amount reserved by queue
+     * @param {boolean} material.isTradeable - Whether item can be traded
+     * @param {HTMLElement} referenceTab - Tab element to clone structure from
+     * @param {Function} onClickCallback - Callback when tab is clicked, receives (e, material)
+     * @param {string} [owner] - MARKETPLACE_OWNER constant for scoped removal
+     * @returns {HTMLElement} Created tab element
+     */
+    function createMaterialTab(material, referenceTab, onClickCallback, owner) {
+        // Clone reference tab structure
+        const tab = referenceTab.cloneNode(true);
+        const forceActionable = material.forceActionable === true;
+
+        // Mark as custom tab for later identification
+        tab.setAttribute('data-mwi-custom-tab', 'true');
+        // A cloned native tab must not duplicate the native tab/panel identity.
+        tab.removeAttribute('id');
+        tab.removeAttribute('aria-controls');
+        tab.setAttribute('data-item-hrid', material.itemHrid);
+        tab.setAttribute('data-missing-quantity', material.missing.toString());
+        if (forceActionable) tab.setAttribute('data-mwi-force-actionable', 'true');
+        if (owner) tab.setAttribute('data-mwi-tab-owner', owner);
+
+        // Color coding:
+        // - Red: Missing materials (missing > 0)
+        // - Green: Sufficient materials (missing = 0)
+        // - Gray: Not tradeable
+        let statusColor;
+        let statusText;
+
+        if (!material.isTradeable) {
+            statusColor = '#888888'; // Gray - not tradeable
+            statusText = 'Not Tradeable';
+        } else if (material.missing > 0) {
+            statusColor = '#ef4444'; // Red - missing materials
+            // Show queued amount if any materials are reserved by queue
+            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
+            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
+        } else {
+            statusColor = '#4ade80'; // Green - sufficient materials
+            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
+        }
+
+        // Update text content
+        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+        if (badgeSpan) {
+            // Title case: capitalize first letter of each word
+            const titleCaseName = material.itemName
+                .split(' ')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ');
+
+            badgeSpan.innerHTML = `
+            <div style="text-align: center;">
+                <div>${titleCaseName}</div>
+                <div style="font-size: 0.75em; color: ${statusColor};">
+                    ${statusText}
+                </div>
+            </div>
+        `;
+        }
+
+        // Disable non-tradeable and already-complete tabs.
+        if (!material.isTradeable || (material.missing <= 0 && !forceActionable)) {
+            tab.style.opacity = material.isTradeable ? '0.7' : '0.5';
+            tab.style.cursor = 'not-allowed';
+            tab.setAttribute('aria-disabled', 'true');
+        } else {
+            tab.style.opacity = '1';
+            tab.style.cursor = 'pointer';
+            tab.setAttribute('aria-disabled', 'false');
+        }
+
+        // Remove selected state
+        tab.classList.remove('Mui-selected');
+        tab.setAttribute('aria-selected', 'false');
+        tab.setAttribute('tabindex', '-1');
+
+        // Add click handler
+        tab.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const currentMissing = Number.parseInt(tab.getAttribute('data-missing-quantity') || '0', 10);
+            if (!material.isTradeable || (!forceActionable && (!Number.isFinite(currentMissing) || currentMissing <= 0))) {
+                return;
+            }
+
+            if (onClickCallback) onClickCallback(e, material);
+        });
+
+        return tab;
+    }
+
+    /**
+     * Setup marketplace cleanup observer.
+     * Uses MutationObserver for prompt close/remount detection, with polling as a fallback.
+     *
+     * Accepts either the legacy call signature:
+     *   setupMarketplaceCleanupObserver(onCleanup, tabsArray)
+     *
+     * Or a new single-object signature:
+     *   setupMarketplaceCleanupObserver({ owner, onTabsGone, invalidStateGraceMs })
+     *   where onTabsGone is called when the owner's tabs are missing from the current
+     *   unique visible Marketplace tablist or the marketplace panel becomes hidden.
+     *   invalidStateGraceMs optionally tolerates a brief React remount gap.
+     *
+     * @param {Function|Object} onCleanupOrOpts
+     * @param {Array} [tabsArray]
+     * @returns {Function} Unregister function
+     */
+    function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
+        let owner = null;
+        let onTabsGone = null;
+        let legacyTabsArray = null;
+        let invalidStateGraceMs = 0;
+
+        if (typeof onCleanupOrOpts === 'function') {
+            // Legacy signature
+            onTabsGone = onCleanupOrOpts;
+            legacyTabsArray = tabsArray;
+        } else {
+            owner = onCleanupOrOpts?.owner || null;
+            onTabsGone = onCleanupOrOpts?.onTabsGone || null;
+            invalidStateGraceMs = Math.max(0, Number(onCleanupOrOpts?.invalidStateGraceMs) || 0);
+        }
+
+        let pollInterval = null;
+        let mutationObserver = null;
+        let invalidStateTimer = null;
+        let isStopped = false;
+        let invalidStateNotified = false;
+
+        function hasValidState() {
+            const visibleContainer = getVisibleMarketplaceTabContainer();
+            if (!visibleContainer) return false;
+
+            if (owner) {
+                if (!isMarketplaceMarketListingsSelected(visibleContainer)) return false;
+                // Only tabs inside the CURRENT unique visible Marketplace tablist count.
+                // Hidden retained panels must not mask a React remount that wiped the live tabs.
+                const ownerTabs = Array.from(
+                    visibleContainer.querySelectorAll(`[data-mwi-custom-tab][data-mwi-tab-owner="${owner}"][role="tab"]`)
+                );
+                return ownerTabs.some((tab) => tab.isConnected && isElementActuallyVisible(tab));
+            }
+
+            if (legacyTabsArray) {
+                if (legacyTabsArray.length === 0) return true;
+                return legacyTabsArray.some((tab) => document.body.contains(tab));
+            }
+
+            return true;
+        }
+
+        function clearInvalidStateTimer() {
+            if (!invalidStateTimer) return;
+            clearTimeout(invalidStateTimer);
+            invalidStateTimer = null;
+        }
+
+        function notifyInvalidState() {
+            if (invalidStateNotified || invalidStateTimer || !onTabsGone) return;
+
+            if (invalidStateGraceMs <= 0) {
+                invalidStateNotified = true;
+                onTabsGone();
+                return;
+            }
+
+            invalidStateTimer = setTimeout(() => {
+                invalidStateTimer = null;
+                if (isStopped || invalidStateNotified || hasValidState()) return;
+                invalidStateNotified = true;
+                onTabsGone();
+            }, invalidStateGraceMs);
+        }
+
+        function poll() {
+            if (isStopped) return;
+
+            if (!hasValidState()) {
+                notifyInvalidState();
+                return;
+            }
+
+            clearInvalidStateTimer();
+            invalidStateNotified = false;
+        }
+
+        if (document.body && typeof MutationObserver === 'function') {
+            mutationObserver = new MutationObserver(poll);
+            mutationObserver.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                // React changes native tab selection through aria-selected/class without
+                // necessarily mutating children. Observe both so native-tab exits are prompt
+                // even when navigation was triggered programmatically rather than by a click.
+                attributeFilter: ['style', 'hidden', 'aria-hidden', 'aria-selected', 'class'],
+            });
+        }
+
+        pollInterval = setInterval(poll, 1000);
+
+        return () => {
+            isStopped = true;
+            clearInvalidStateTimer();
+            if (mutationObserver) {
+                mutationObserver.disconnect();
+                mutationObserver = null;
+            }
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        };
+    }
+
+    /**
+     * Get game object via React fiber
+     * @returns {Object|null} Game component instance
+     */
+    function getGameObject() {
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
+
+        const stack = [rootFiber];
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (typeof fiber?.stateNode?.handleGoToMarketplace === 'function') return fiber.stateNode;
+            if (fiber?.sibling) stack.push(fiber.sibling);
+            if (fiber?.child) stack.push(fiber.child);
+        }
+        return null;
+    }
+
+    /**
+     * Watch for a native Marketplace tab click and call onExit when it occurs.
+     * Uses a delegated click listener — does not fire on initial aria-selected DOM state.
+     *
+     * Resolves nested click targets (e.g. a span or icon inside the tab) via closest('[role="tab"]').
+     * Only fires when the resolved tab belongs to tabContainer and is not a Toolasha custom tab.
+     *
+     * @param {HTMLElement} tabContainer - The MuiTabs-flexContainer[role="tablist"] element
+     * @param {Function} onExit - Called when a native tab is clicked
+     * @returns {Function} Cleanup function that removes the exact delegated listener
+     */
+    function watchNativeTabExit(tabContainer, onExit) {
+        function handleClick(e) {
+            const origin = typeof e.target?.closest === 'function' ? e.target : e.target?.parentElement;
+            const target = origin?.closest('[role="tab"]');
+            if (!target || !tabContainer.contains(target)) return;
+            if (target.hasAttribute('data-mwi-custom-tab') || target.hasAttribute('data-mwi-shrine-tab')) return;
+            onExit();
+        }
+        tabContainer.addEventListener('click', handleClick, { capture: true });
+        return () => tabContainer.removeEventListener('click', handleClick, { capture: true });
+    }
+
+    /**
+     * Navigate to marketplace for a specific item
+     * @param {string} itemHrid - Item HRID to navigate to
+     * @param {number} enhancementLevel - Enhancement level (default 0)
+     * @returns {boolean} True when the native Marketplace handler was invoked
+     */
+    function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
+        const game = getGameObject();
+        if (game?.handleGoToMarketplace) {
+            game.handleGoToMarketplace(itemHrid, enhancementLevel);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Labyrinth Missing Supplies Button
+     * Adds a button next to the Labyrinth entry screen's "Supplies" label that opens the
+     * marketplace with tabs for whichever Torch/Shroud/Beacon tier is short of its carry cap.
+     */
+
+
+    // Mirrors the game client's labyrinthTorchHrid/ShroudHrid/BeaconHrid (characterSetting) and
+    // labyrinthTorchCap/ShroudCap/BeaconCap (characterInfo, falling back to the client's base caps
+    // of 100/4/5 when a character has no cap override yet).
+    const SUPPLY_CATEGORIES = [
+        { settingKey: 'labyrinthTorchHrid', capKey: 'labyrinthTorchCap', baseCap: 100 },
+        { settingKey: 'labyrinthShroudHrid', capKey: 'labyrinthShroudCap', baseCap: 4 },
+        { settingKey: 'labyrinthBeaconHrid', capKey: 'labyrinthBeaconCap', baseCap: 5 },
+    ];
+
+    const BUTTON_CLASS$2 = 'mwi-labyrinth-missing-supplies-button';
+
+    let domObserverUnregister = null;
+    let cleanupObserver = null;
+    let nativeTabExitCleanup = null;
+    let inventoryUpdateHandler = null;
+    let activeSessionId = null;
+    let activeMaterials = null;
+    const currentTabs = [];
+    const timerRegistry$2 = timerRegistry_js.createTimerRegistry();
+    const autofillManager = createAutofillManager('LabyrinthMissingSupplies');
+
+    function initialize$3() {
+        if (!config.getSetting('labyrinthMissingSuppliesButton')) {
+            return;
+        }
+
+        autofillManager.initialize();
+
+        domObserverUnregister = domObserver.onClass('LabyrinthMissingSupplies', 'LabyrinthPanel_suppliesGrid', (grid) =>
+            injectButton(grid)
+        );
+
+        document.querySelectorAll('[class*="LabyrinthPanel_suppliesGrid"]').forEach((grid) => injectButton(grid));
+    }
+
+    function cleanup$1() {
+        const sessionIdToEnd = activeSessionId;
+        if (sessionIdToEnd !== null && marketplaceSession_js.marketplaceSession.isActive(sessionIdToEnd)) {
+            marketplaceSession_js.marketplaceSession.end(sessionIdToEnd);
+        } else {
+            teardownSession();
+        }
+
+        if (domObserverUnregister) {
+            domObserverUnregister();
+            domObserverUnregister = null;
+        }
+
+        autofillManager.cleanup();
+        document.querySelectorAll(`.${BUTTON_CLASS$2}`).forEach((el) => el.remove());
+        timerRegistry$2.clearAll();
+    }
+
+    /**
+     * Inject the button next to the "Supplies" label, once per rendered panel instance.
+     * @param {Element} grid - The LabyrinthPanel_suppliesGrid element.
+     */
+    function injectButton(grid) {
+        const wrapper = grid.parentElement;
+        if (!wrapper || wrapper.querySelector(`.${BUTTON_CLASS$2}`)) {
+            return;
+        }
+
+        const label = wrapper.querySelector('[class*="LabyrinthPanel_label"]');
+        if (!label) {
+            return;
+        }
+
+        label.insertAdjacentElement('afterend', createButton());
+    }
+
+    function createButton() {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = BUTTON_CLASS$2;
+        button.textContent = i18n_js.t('labyrinthMissingSupplies.buttonLabel');
+        button.style.cssText = `
+        margin: 4px 0 8px 0;
+        padding: 4px 10px;
+        background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
+        color: #ffffff;
+        border: 1px solid rgba(91, 141, 239, 0.4);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+    `;
+
+        button.addEventListener('click', async () => {
+            try {
+                await handleClick();
+            } catch (error) {
+                console.error('[LabyrinthMissingSupplies] Workflow failed:', error);
+                if (activeSessionId !== null && marketplaceSession_js.marketplaceSession.isActive(activeSessionId)) {
+                    marketplaceSession_js.marketplaceSession.end(activeSessionId);
+                }
+            }
+        });
+
+        return button;
+    }
+
+    /**
+     * Owned count of an unenhanced stack (torches/shrouds/beacons have no enhancement levels).
+     * @param {string} itemHrid
+     * @returns {number}
+     */
+    function getOwnedCount(itemHrid) {
+        const inventory = dataManager.getInventory() || [];
+        const stack = inventory.find((item) => item.itemHrid === itemHrid && item.enhancementLevel === 0);
+        return stack?.count || 0;
+    }
+
+    /**
+     * Compute missing = cap - owned (clamped at 0) for each currently-selected supply tier.
+     * @returns {Array<{itemHrid: string, itemName: string, missing: number, queued: number, isTradeable: boolean, required: number}>}
+     */
+    function calculateMissingSupplies() {
+        const characterSetting = dataManager.characterData?.characterSetting || {};
+        const characterInfo = dataManager.characterData?.characterInfo || {};
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+
+        const materials = [];
+        for (const category of SUPPLY_CATEGORIES) {
+            const itemHrid = characterSetting[category.settingKey];
+            if (!itemHrid) {
+                continue;
+            }
+
+            const cap = characterInfo[category.capKey] ?? category.baseCap;
+            const owned = getOwnedCount(itemHrid);
+            const missing = Math.max(0, cap - owned);
+            if (missing <= 0) {
+                continue;
+            }
+
+            const itemDetails = itemDetailMap[itemHrid];
+            materials.push({
+                itemHrid,
+                itemName: itemDetails?.name || itemHrid.split('/').pop(),
+                missing,
+                queued: 0,
+                isTradeable: itemDetails?.isTradable === true,
+                required: cap,
+            });
+        }
+        return materials;
+    }
+
+    async function handleClick() {
+        const upfrontMaterials = calculateMissingSupplies();
+        if (upfrontMaterials.length === 0) {
+            return;
+        }
+
+        const capturedSessionId = marketplaceSession_js.marketplaceSession.start({
+            owner: marketplaceSession_js.MARKETPLACE_OWNER.LABYRINTH_SUPPLIES,
+            onEnd: teardownSession,
+        });
+        activeSessionId = capturedSessionId;
+
+        if (!clickMarketplaceNavigationButton()) {
+            console.error('[LabyrinthMissingSupplies] Marketplace navbar button not found');
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        const opened = await waitForMarketplace(capturedSessionId);
+        if (!opened || !marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        // Recalculate fresh - inventory/selection may have changed since the button was rendered.
+        const materials = calculateMissingSupplies();
+        if (materials.length === 0) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        activeMaterials = materials;
+        autofillManager.startSession({ sessionId: capturedSessionId, quantityProvider: null });
+
+        if (!createTabs(materials, capturedSessionId)) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        const first = materials.find((m) => m.isTradeable !== false);
+        if (!first) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        const armed = autofillManager.arm({
+            sessionId: capturedSessionId,
+            itemHrid: first.itemHrid,
+            enhancementLevel: 0,
+            modalMode: 'buy',
+            quantityProvider: () => activeMaterials?.find((m) => m.itemHrid === first.itemHrid)?.missing ?? 0,
+        });
+        if (!armed || !navigateToMarketplace(first.itemHrid, 0)) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        setupCleanupObserver(capturedSessionId);
+        setupInventoryListener();
+    }
+
+    async function waitForMarketplace(sessionId) {
+        const maxAttempts = 50;
+        const delayMs = 100;
+
+        for (let i = 0; i < maxAttempts; i++) {
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                return false;
+            }
+            if (getVisibleMarketplaceTabContainer()) {
+                return true;
+            }
+
+            await new Promise((resolve) => {
+                const delayTimeout = setTimeout(resolve, delayMs);
+                timerRegistry$2.registerTimeout(delayTimeout);
+            });
+        }
+
+        console.error('[LabyrinthMissingSupplies] Marketplace did not open within timeout');
+        return false;
+    }
+
+    function makeMaterialClickHandler(tabRef, sessionId) {
+        return (_e, mat) => {
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                return;
+            }
+            const liveMissing = parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
+            if (!Number.isFinite(liveMissing) || liveMissing <= 0 || mat.isTradeable === false) {
+                return;
+            }
+
+            const armed = autofillManager.arm({
+                sessionId,
+                itemHrid: mat.itemHrid,
+                enhancementLevel: 0,
+                modalMode: 'buy',
+                quantityProvider: () => activeMaterials?.find((entry) => entry.itemHrid === mat.itemHrid)?.missing ?? 0,
+            });
+            if (!armed || !navigateToMarketplace(mat.itemHrid, 0)) {
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+            }
+        };
+    }
+
+    function createTabs(materials, sessionId, tabContainer = null) {
+        const tabsContainer = tabContainer || getVisibleMarketplaceTabContainer();
+        if (!tabsContainer || !marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+            console.error('[LabyrinthMissingSupplies] Visible Marketplace tabs container not found');
+            return false;
+        }
+
+        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.LABYRINTH_SUPPLIES);
+        currentTabs.length = 0;
+
+        // The My Listings tab label is localized by the game (zh: 我的挂牌), so match
+        // both the English and translated text.
+        const myListingsLabel = translateGameName('marketplacePanel', 'myListings', 'My Listings');
+        const referenceTab = Array.from(tabsContainer.children).find(
+            (btn) => btn.textContent.includes('My Listings') || btn.textContent.includes(myListingsLabel)
+        );
+        if (!referenceTab) {
+            console.error('[LabyrinthMissingSupplies] Reference tab not found');
+            return false;
+        }
+
+        tabsContainer.style.flexWrap = 'wrap';
+
+        nativeTabExitCleanup?.();
+        nativeTabExitCleanup = watchNativeTabExit(tabsContainer, () => {
+            marketplaceSession_js.marketplaceSession.end(sessionId);
+        });
+
+        for (const material of materials) {
+            const tabRef = { tab: null };
+            const handler = makeMaterialClickHandler(tabRef, sessionId);
+            const tab = createMaterialTab(material, referenceTab, handler, marketplaceSession_js.MARKETPLACE_OWNER.LABYRINTH_SUPPLIES);
+            tabRef.tab = tab;
+            tabsContainer.appendChild(tab);
+            currentTabs.push(tab);
+        }
+
+        return true;
+    }
+
+    function setupCleanupObserver(sessionId) {
+        if (cleanupObserver) {
+            cleanupObserver();
+            cleanupObserver = null;
+        }
+        cleanupObserver = setupMarketplaceCleanupObserver({
+            owner: marketplaceSession_js.MARKETPLACE_OWNER.LABYRINTH_SUPPLIES,
+            invalidStateGraceMs: MARKETPLACE_REMOUNT_GRACE_MS,
+            onTabsGone: () => {
+                if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                    return;
+                }
+                const tabContainer = getVisibleMarketplaceTabContainer();
+                if (
+                    tabContainer &&
+                    isMarketplaceMarketListingsSelected(tabContainer) &&
+                    activeMaterials &&
+                    createTabs(activeMaterials, sessionId, tabContainer)
+                ) {
+                    return;
+                }
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+            },
+        });
+    }
+
+    function setupInventoryListener() {
+        if (inventoryUpdateHandler) {
+            dataManager.off('items_updated', inventoryUpdateHandler);
+        }
+
+        inventoryUpdateHandler = () => {
+            if (!activeMaterials || !marketplaceSession_js.marketplaceSession.isActive(activeSessionId)) {
+                return;
+            }
+            const updated = calculateMissingSupplies();
+            const updatedByHrid = new Map(updated.map((material) => [material.itemHrid, material]));
+
+            for (const entry of activeMaterials) {
+                const fresh = updatedByHrid.get(entry.itemHrid);
+                entry.missing = fresh?.missing ?? 0;
+                const tab = currentTabs.find((t) => t.getAttribute('data-item-hrid') === entry.itemHrid);
+                if (tab) {
+                    tab.setAttribute('data-missing-quantity', entry.missing.toString());
+                }
+            }
+        };
+
+        dataManager.on('items_updated', inventoryUpdateHandler);
+    }
+
+    function teardownSession() {
+        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.LABYRINTH_SUPPLIES);
+        currentTabs.length = 0;
+
+        if (inventoryUpdateHandler) {
+            dataManager.off('items_updated', inventoryUpdateHandler);
+            inventoryUpdateHandler = null;
+        }
+
+        if (cleanupObserver) {
+            cleanupObserver();
+            cleanupObserver = null;
+        }
+
+        if (nativeTabExitCleanup) {
+            nativeTabExitCleanup();
+            nativeTabExitCleanup = null;
+        }
+
+        autofillManager.exitSession(activeSessionId);
+        activeSessionId = null;
+        activeMaterials = null;
+    }
+
+    var labyrinthMissingSupplies = {
+        initialize: initialize$3,
+        cleanup: cleanup$1,
+    };
 
     /**
      * Combat Simulator Export Module
@@ -17558,7 +19469,10 @@
                 // Enhancement upgrade: next breakpoint
                 const nextBP = getNextBreakpoint(currentLevel, slot, currentHrid);
                 if (nextBP) {
-                    const itemName = gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop();
+                    const itemName = getItemName(
+                        currentHrid,
+                        gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop()
+                    );
                     candidates.push({
                         slot,
                         currentHrid,
@@ -17584,8 +19498,8 @@
                             const upgradeRole = getItemRole(upgradeItem.equipmentDetail?.combatStats);
                             if (upgradeRole !== 'defensive') continue;
 
-                            const upgradeName = upgradeItem.name || upgradeHrid.split('/').pop();
-                            const currentName = itemDetails?.name || currentHrid.split('/').pop();
+                            const upgradeName = getItemName(upgradeHrid, upgradeItem.name || upgradeHrid.split('/').pop());
+                            const currentName = getItemName(currentHrid, itemDetails?.name || currentHrid.split('/').pop());
                             candidates.push({
                                 slot,
                                 currentHrid,
@@ -17601,13 +19515,16 @@
                     // Offensive items: keep existing role-based tier progression
                     const slotKey = `${slot}|${role}`;
                     const slotItems = tierProgression[slotKey];
-                    const offensiveCurrentName = itemDetails?.name || currentHrid.split('/').pop();
+                    const offensiveCurrentName = getItemName(
+                        currentHrid,
+                        itemDetails?.name || currentHrid.split('/').pop()
+                    );
                     const offensiveCandidateHrids = new Set();
                     if (slotItems) {
                         const currentIdx = slotItems.findIndex((item) => item.hrid === currentHrid);
                         if (currentIdx >= 0 && currentIdx < slotItems.length - 1) {
                             const nextTier = slotItems[currentIdx + 1];
-                            const nextName = nextTier.name || nextTier.hrid.split('/').pop();
+                            const nextName = getItemName(nextTier.hrid, nextTier.name || nextTier.hrid.split('/').pop());
                             candidates.push({
                                 slot,
                                 currentHrid,
@@ -17639,7 +19556,10 @@
                                     highestNonRefined.hrid !== nextTier.hrid &&
                                     highestNonRefined.itemLevel > currentItemLevel
                                 ) {
-                                    const highestName = highestNonRefined.name || highestNonRefined.hrid.split('/').pop();
+                                    const highestName = getItemName(
+                                        highestNonRefined.hrid,
+                                        highestNonRefined.name || highestNonRefined.hrid.split('/').pop()
+                                    );
                                     candidates.push({
                                         slot,
                                         currentHrid,
@@ -17671,7 +19591,7 @@
                             const upgradeRole = getItemRole(upgradeItem.equipmentDetail?.combatStats);
                             if (upgradeRole !== role) continue;
 
-                            const upgradeName = upgradeItem.name || upgradeHrid.split('/').pop();
+                            const upgradeName = getItemName(upgradeHrid, upgradeItem.name || upgradeHrid.split('/').pop());
                             candidates.push({
                                 slot,
                                 currentHrid,
@@ -17717,12 +19637,15 @@
                         const offHandCandidates = findBestOffHand(gameData, damageStyle, item.itemLevel || 999);
                         if (!offHandCandidates.length) continue;
 
-                        const mainName = item.name || itemHrid.split('/').pop();
-                        const currentName = twoHandItem?.name || twoHandEquip.hrid.split('/').pop();
+                        const mainName = getItemName(itemHrid, item.name || itemHrid.split('/').pop());
+                        const currentName = getItemName(
+                            twoHandEquip.hrid,
+                            twoHandItem?.name || twoHandEquip.hrid.split('/').pop()
+                        );
 
                         for (const bestOH of offHandCandidates) {
                             const ohItem = gameData.itemDetailMap[bestOH.hrid];
-                            const ohName = ohItem?.name || bestOH.hrid.split('/').pop();
+                            const ohName = getItemName(bestOH.hrid, ohItem?.name || bestOH.hrid.split('/').pop());
 
                             candidates.push({
                                 slot: '/equipment_types/two_hand',
@@ -17762,8 +19685,11 @@
                         if (style !== damageStyle) continue;
                         if (getItemRole(eq.combatStats) === 'defensive') continue;
 
-                        const twoHandName = item.name || itemHrid.split('/').pop();
-                        const currentName = mainHandItem?.name || mainHandEquip.hrid.split('/').pop();
+                        const twoHandName = getItemName(itemHrid, item.name || itemHrid.split('/').pop());
+                        const currentName = getItemName(
+                            mainHandEquip.hrid,
+                            mainHandItem?.name || mainHandEquip.hrid.split('/').pop()
+                        );
 
                         const clearedSlots = ['/equipment_types/main_hand'];
                         if (offHandEquip) clearedSlots.push('/equipment_types/off_hand');
@@ -17794,7 +19720,7 @@
 
                 const abilityDetail = gameData.abilityDetailMap[ability.hrid];
                 if (!abilityDetail) continue;
-                const abilityName = abilityDetail.name || ability.hrid.split('/').pop();
+                const abilityName = getAbilityName(ability.hrid, abilityDetail.name || ability.hrid.split('/').pop());
 
                 if (mode === 'ability_level') {
                     // Level upgrade candidate
@@ -17844,7 +19770,7 @@
                         const abStyle = getAbilityCombatStyle(abDetail);
                         if (!isAbilityCompatible(abStyle, playerStyle)) continue;
 
-                        const swapName = abDetail.name || abHrid.split('/').pop();
+                        const swapName = getAbilityName(abHrid, abDetail.name || abHrid.split('/').pop());
                         candidates.push({
                             slot: `ability_${slotIdx}`,
                             currentHrid: ability.hrid,
@@ -17865,7 +19791,7 @@
                 if (currentLevel >= HOUSE_ROOM_MAX_LEVEL) continue;
 
                 const targetLevel = currentLevel + 1;
-                const roomName = room.name || hrid.split('/').pop();
+                const roomName = getHouseRoomName(hrid, room.name || hrid.split('/').pop());
                 candidates.push({
                     slot: `house_${hrid}`,
                     currentHrid: hrid,
@@ -18101,7 +20027,7 @@
         let current = 0;
 
         // Run baseline sim
-        onProgress?.({ current: 0, total, description: 'Running baseline...' });
+        onProgress?.({ current: 0, total, description: i18n_js.t('combatSimUi.statusRunningBaseline') });
         const baselineResult = await runSimulation(
             { gameData, playerDTOs, zoneHrid, difficultyTier, hours, communityBuffs },
             null
@@ -18110,7 +20036,7 @@
 
         if (abortSignal?.()) return { baseline: null, results: [] };
 
-        onProgress?.({ current, total, description: 'Baseline complete' });
+        onProgress?.({ current, total, description: i18n_js.t('combatSimUi.statusBaselineComplete') });
 
         // Calculate baseline metrics
         const baselineMetrics = computeMetrics(baselineResult, gameData, playerHrid, hours);
@@ -18120,7 +20046,11 @@
         for (const candidate of filteredCandidatesWithCost) {
             if (abortSignal?.()) break;
 
-            onProgress?.({ current, total, description: `Simulating: ${candidate.description}` });
+            onProgress?.({
+                current,
+                total,
+                description: i18n_js.t('combatSimUi.statusSimulatingUpgrade', { name: candidate.description }),
+            });
 
             // Clone playerDTOs and apply candidate upgrade
             const modifiedDTOs = JSON.parse(JSON.stringify(playerDTOs));
@@ -18477,7 +20407,7 @@
         let current = 0;
 
         // Run baseline labyrinth sim
-        onProgress?.({ current: 0, total, description: 'Running baseline...' });
+        onProgress?.({ current: 0, total, description: i18n_js.t('combatSimUi.statusRunningBaseline') });
         const baselineResult = await runLabyrinthSimulation({
             gameData,
             playerDTOs: [playerDTOs[playerIndex]],
@@ -18497,7 +20427,11 @@
         const baselineEncounters = baselineResult.encounters || 0;
         const baselineWinRate = baselineEncounters / baselineAttempts;
 
-        onProgress?.({ current, total, description: `Baseline: ${(baselineWinRate * 100).toFixed(1)}%` });
+        onProgress?.({
+            current,
+            total,
+            description: i18n_js.t('combatSimUi.statusBaselineWinRate', { winRate: (baselineWinRate * 100).toFixed(1) }),
+        });
 
         const results = [];
 
@@ -18505,7 +20439,11 @@
         for (const candidate of candidatesWithCost) {
             if (abortSignal?.()) break;
 
-            onProgress?.({ current, total, description: `Simulating: ${candidate.description}` });
+            onProgress?.({
+                current,
+                total,
+                description: i18n_js.t('combatSimUi.statusSimulatingUpgrade', { name: candidate.description }),
+            });
 
             const modifiedDTO = JSON.parse(JSON.stringify(playerDTOs[playerIndex]));
             applyCandidateToDTO(modifiedDTO, candidate);
@@ -18546,7 +20484,11 @@
         for (const buffCandidate of combatBuffCandidates) {
             if (abortSignal?.()) break;
 
-            onProgress?.({ current, total, description: `Simulating: ${buffCandidate.description}` });
+            onProgress?.({
+                current,
+                total,
+                description: i18n_js.t('combatSimUi.statusSimulatingUpgrade', { name: buffCandidate.description }),
+            });
 
             const modifiedBuffs = buildModifiedCombatBuffs(labyrinthCombatBuffs, buffCandidate);
             const simResult = await runLabyrinthSimulation({
@@ -18810,7 +20752,7 @@
                 const nextBP = getNextBreakpoint(currentLevel, slot, equip.hrid);
                 if (!nextBP) continue;
 
-                const itemName = itemDetails.name || equip.hrid.split('/').pop();
+                const itemName = getItemName(equip.hrid, itemDetails.name || equip.hrid.split('/').pop());
                 const candidate = {
                     slot,
                     currentHrid: equip.hrid,
@@ -18856,7 +20798,7 @@
         const total = buffCandidates.length + equipCandidates.length + 1;
         let current = 0;
 
-        onProgress?.({ current: 0, total, description: 'Computing baseline...' });
+        onProgress?.({ current: 0, total, description: i18n_js.t('combatSimUi.statusComputingBaseline') });
         const baselineClearRate = computeAverageSkillingClearRateFromEditor(
             roomLevel,
             editorDTO,
@@ -18868,14 +20810,22 @@
 
         if (abortSignal?.()) return { baseline: null, results: [] };
 
-        onProgress?.({ current, total, description: `Baseline: ${(baselineClearRate * 100).toFixed(1)}%` });
+        onProgress?.({
+            current,
+            total,
+            description: i18n_js.t('combatSimUi.statusBaselineClearRate', { clearRate: (baselineClearRate * 100).toFixed(1) }),
+        });
 
         const results = [];
 
         for (const buffCandidate of buffCandidates) {
             if (abortSignal?.()) break;
 
-            onProgress?.({ current, total, description: `Evaluating: ${buffCandidate.description}` });
+            onProgress?.({
+                current,
+                total,
+                description: i18n_js.t('combatSimUi.statusEvaluating', { name: buffCandidate.description }),
+            });
 
             const modifiedDTO = JSON.parse(JSON.stringify(editorDTO));
             modifiedDTO.tokenUpgrades[buffCandidate.editorKey] = buffCandidate.currentLevel + 1;
@@ -18904,7 +20854,11 @@
         for (const candidate of equipCandidates) {
             if (abortSignal?.()) break;
 
-            onProgress?.({ current, total, description: `Evaluating: ${candidate.description}` });
+            onProgress?.({
+                current,
+                total,
+                description: i18n_js.t('combatSimUi.statusEvaluating', { name: candidate.description }),
+            });
 
             const modifiedDTO = JSON.parse(JSON.stringify(editorDTO));
             const modifiedSkillEquipMap = JSON.parse(JSON.stringify(skillEquipmentMap));
@@ -19472,7 +21426,7 @@
                 }
 
                 const item = itemDetailMap[equip.hrid];
-                const name = item?.name || equip.hrid.split('/').pop();
+                const name = getItemName(equip.hrid, item?.name || equip.hrid.split('/').pop());
 
                 html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
                 html += `<span style="color:#888; width:70px; flex-shrink:0;">${label}</span>`;
@@ -19519,7 +21473,7 @@
                 }
 
                 const detail = abilityDetailMap[ability.hrid];
-                const name = detail?.name || ability.hrid.split('/').pop();
+                const name = getAbilityName(ability.hrid, detail?.name || ability.hrid.split('/').pop());
 
                 html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
                 html += `<span style="color:#888; width:50px; flex-shrink:0;">${slotLabel}</span>`;
@@ -19558,7 +21512,7 @@
             for (let i = 0; i < 3; i++) {
                 const item = dto.food[i];
                 const name = item
-                    ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop()
+                    ? getItemName(item.hrid, itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop())
                     : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
                 const nameColor = item ? '#e0e0e0' : '#555';
                 html += '<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">';
@@ -19585,7 +21539,7 @@
             for (let i = 0; i < 3; i++) {
                 const item = dto.drinks[i];
                 const name = item
-                    ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop()
+                    ? getItemName(item.hrid, itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop())
                     : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
                 const nameColor = item ? '#e0e0e0' : '#555';
                 html += '<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">';
@@ -19719,7 +21673,10 @@
                 const lower = query.toLowerCase();
                 const filtered = query
                     ? items.filter(
-                          (i) => i.name.toLowerCase().includes(lower) || i.categoryLabel.toLowerCase().includes(lower)
+                          (i) =>
+                              i.name.toLowerCase().includes(lower) ||
+                              getItemName(i.hrid, i.name).toLowerCase().includes(lower) ||
+                              i.categoryLabel.toLowerCase().includes(lower)
                       )
                     : items;
 
@@ -19749,7 +21706,7 @@
                     if (item.conflict) {
                         html +=
                             '<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-bottom:1px solid #1a1a2e; color:#555; cursor:default;">' +
-                            item.name +
+                            getItemName(item.hrid, item.name) +
                             ' <span style="font-size:10px; color:#664;">' +
                             i18n_js.t('simEditor.inUseLabel') +
                             '</span>' +
@@ -19765,7 +21722,7 @@
                             color +
                             ';"' +
                             ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
-                            item.name +
+                            getItemName(item.hrid, item.name) +
                             indicator +
                             lvlTag +
                             '</div>';
@@ -19890,7 +21847,13 @@
 
             const renderList = (query) => {
                 const lower = query.toLowerCase();
-                const filtered = query ? items.filter((i) => i.name.toLowerCase().includes(lower)) : items;
+                const filtered = query
+                    ? items.filter(
+                          (i) =>
+                              i.name.toLowerCase().includes(lower) ||
+                              getItemName(i.hrid, i.name).toLowerCase().includes(lower)
+                      )
+                    : items;
 
                 let html =
                     '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
@@ -19913,7 +21876,7 @@
                     html +=
                         `<div data-pick-hrid="${item.hrid}" style="display:flex; align-items:center; gap:8px; padding:3px 4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:${color};"` +
                         ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
-                        item.name +
+                        getItemName(item.hrid, item.name) +
                         indicator +
                         lvlTag +
                         '</div>';
@@ -20041,7 +22004,13 @@
 
             const renderList = (query) => {
                 const lower = query.toLowerCase();
-                const filtered = query ? items.filter((i) => i.name.toLowerCase().includes(lower)) : items;
+                const filtered = query
+                    ? items.filter(
+                          (i) =>
+                              i.name.toLowerCase().includes(lower) ||
+                              getAbilityName(i.hrid, i.name).toLowerCase().includes(lower)
+                      )
+                    : items;
 
                 let html =
                     '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
@@ -20059,7 +22028,7 @@
                     if (item.conflict) {
                         html +=
                             '<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-bottom:1px solid #1a1a2e; color:#555; cursor:default;">' +
-                            item.name +
+                            getAbilityName(item.hrid, item.name) +
                             ' <span style="font-size:10px; color:#664;">' +
                             i18n_js.t('simEditor.inUseLabel') +
                             '</span></div>';
@@ -20070,7 +22039,7 @@
                         html +=
                             `<div data-pick-hrid="${item.hrid}" style="display:flex; align-items:center; gap:8px; padding:3px 4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:${color};"` +
                             ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
-                            item.name +
+                            getAbilityName(item.hrid, item.name) +
                             indicator +
                             '</div>';
                     }
@@ -20190,7 +22159,7 @@
 
             for (const hrid of roomHrids) {
                 const room = houseRoomDetailMap[hrid];
-                const name = room.name || hrid.split('/').pop();
+                const name = getHouseRoomName(hrid, room.name || hrid.split('/').pop());
                 const level = dto.houseRooms[hrid] || 0;
                 html += `<div style="display:flex; align-items:center; gap:6px; font-size:12px;">`;
                 html += `<span style="color:#888; width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${name}">${name}</span>`;
@@ -20221,7 +22190,7 @@
 
             for (const hrid of shrineHrids) {
                 const shrine = guildShrineDetailMap[hrid];
-                const name = shrine.name || hrid.split('/').pop();
+                const name = getGuildShrineName(hrid, shrine.name || hrid.split('/').pop());
                 const maxLevel = shrine.maxLevel || 20;
                 const level = dto.shrineLevels?.[hrid] || 0;
                 html += `<div style="display:flex; align-items:center; gap:6px; font-size:12px;">`;
@@ -20294,7 +22263,7 @@
                         for (const member of tier.members) {
                             const checked = completedHrids.has(member.hrid) ? ' checked' : '';
                             html += `<label style="display:flex; align-items:center; gap:6px; padding:1px 0; font-size:12px; color:#bbb; cursor:pointer;">`;
-                            html += `<input type="checkbox" data-achievement-hrid="${member.hrid}"${checked}> ${member.name}`;
+                            html += `<input type="checkbox" data-achievement-hrid="${member.hrid}"${checked}> ${getAchievementName(member.hrid, member.name)}`;
                             html += '</label>';
                         }
                         html += '</div></div>';
@@ -20655,14 +22624,18 @@
                 if (!origEquip && !editEquip) continue;
 
                 if (origEquip?.hrid !== editEquip?.hrid) {
-                    const origName =
+                    const origName = getItemName(
+                        origEquip?.hrid,
                         itemDetailMap[origEquip?.hrid]?.name ||
-                        origEquip?.hrid?.split('/').pop() ||
-                        i18n_js.t('skillingOptimizer.emptySlotCapitalized');
-                    const editName =
+                            origEquip?.hrid?.split('/').pop() ||
+                            i18n_js.t('skillingOptimizer.emptySlotCapitalized')
+                    );
+                    const editName = getItemName(
+                        editEquip?.hrid,
                         itemDetailMap[editEquip?.hrid]?.name ||
-                        editEquip?.hrid?.split('/').pop() ||
-                        i18n_js.t('skillingOptimizer.emptySlotCapitalized');
+                            editEquip?.hrid?.split('/').pop() ||
+                            i18n_js.t('skillingOptimizer.emptySlotCapitalized')
+                    );
                     changes.push(i18n_js.t('simEditor.itemSwapLabel', { from: origName, to: editName }));
                 } else if (origEquip?.enhancementLevel !== editEquip?.enhancementLevel) {
                     const label = this._equipmentSlotLabel(slot);
@@ -20682,13 +22655,20 @@
                 if (!origAb && !editAb) continue;
 
                 if (origAb?.hrid !== editAb?.hrid) {
-                    const origName =
-                        abilityDetailMap[origAb?.hrid]?.name || origAb?.hrid?.split('/').pop() || i18n_js.t('simEditor.noneLabel');
-                    const editName =
-                        abilityDetailMap[editAb?.hrid]?.name || editAb?.hrid?.split('/').pop() || i18n_js.t('simEditor.noneLabel');
+                    const origName = getAbilityName(
+                        origAb?.hrid,
+                        abilityDetailMap[origAb?.hrid]?.name || origAb?.hrid?.split('/').pop() || i18n_js.t('simEditor.noneLabel')
+                    );
+                    const editName = getAbilityName(
+                        editAb?.hrid,
+                        abilityDetailMap[editAb?.hrid]?.name || editAb?.hrid?.split('/').pop() || i18n_js.t('simEditor.noneLabel')
+                    );
                     changes.push(i18n_js.t('simEditor.itemSwapLabel', { from: origName, to: editName }));
                 } else if (origAb && editAb && origAb.level !== editAb.level) {
-                    const name = abilityDetailMap[editAb.hrid]?.name || editAb.hrid.split('/').pop();
+                    const name = getAbilityName(
+                        editAb.hrid,
+                        abilityDetailMap[editAb.hrid]?.name || editAb.hrid.split('/').pop()
+                    );
                     changes.push(i18n_js.t('simEditor.abilityLevelChangeLabel', { name, from: origAb.level, to: editAb.level }));
                 }
             }
@@ -20724,12 +22704,18 @@
                     const origHrid = original[slotType]?.[i]?.hrid;
                     const editHrid = edited[slotType]?.[i]?.hrid;
                     if (origHrid !== editHrid) {
-                        const origName = origHrid
-                            ? itemDetailMap[origHrid]?.name || origHrid.split('/').pop()
-                            : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
-                        const editName = editHrid
-                            ? itemDetailMap[editHrid]?.name || editHrid.split('/').pop()
-                            : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
+                        const origName = getItemName(
+                            origHrid,
+                            itemDetailMap[origHrid]?.name ||
+                                origHrid?.split('/').pop() ||
+                                i18n_js.t('skillingOptimizer.emptySlotCapitalized')
+                        );
+                        const editName = getItemName(
+                            editHrid,
+                            itemDetailMap[editHrid]?.name ||
+                                editHrid?.split('/').pop() ||
+                                i18n_js.t('skillingOptimizer.emptySlotCapitalized')
+                        );
                         changes.push(
                             i18n_js.t('simEditor.consumableChangeLabel', { prefix, index: i + 1, from: origName, to: editName })
                         );
@@ -21598,7 +23584,10 @@
             for (const zone of zones) {
                 const option = document.createElement('option');
                 option.value = zone.hrid;
-                option.textContent = zone.isDungeon ? i18n_js.t('combatSimUi.dungeonZonePrefix', { name: zone.name }) : zone.name;
+                const localizedZoneName = getActionName(zone.hrid, zone.name);
+                option.textContent = zone.isDungeon
+                    ? i18n_js.t('combatSimUi.dungeonZonePrefix', { name: localizedZoneName })
+                    : localizedZoneName;
                 zoneSelect.appendChild(option);
             }
 
@@ -21719,7 +23708,7 @@
                 const label = document.createElement('label');
                 label.style.cssText =
                     'display:flex; align-items:center; gap:4px; color:#ccc; font-size:11px; padding:1px 0; cursor:pointer;';
-                label.innerHTML = `<input type="checkbox" class="mwi-csim-zone-cb" data-hrid="${zone.hrid}" checked style="margin:0; cursor:pointer;"> ${zone.name}`;
+                label.innerHTML = `<input type="checkbox" class="mwi-csim-zone-cb" data-hrid="${zone.hrid}" checked style="margin:0; cursor:pointer;"> ${getActionName(zone.hrid, zone.name)}`;
                 checklist.appendChild(label);
             }
 
@@ -21808,7 +23797,7 @@
                     const encounters = (sim.encounters || 0) / simHours;
 
                     return {
-                        zone: r.zone.name,
+                        zone: getActionName(r.zone.zoneHrid, r.zone.name),
                         tier: r.zone.difficultyTier,
                         encounters,
                         deaths: playerDeaths,
@@ -22003,7 +23992,12 @@
                 return;
             }
 
-            const matches = this._seekItems.filter((item) => item.name.toLowerCase().includes(q)).slice(0, 20);
+            const matches = this._seekItems
+                .filter((item) => {
+                    const localizedName = getItemName(item.itemHrid, item.name).toLowerCase();
+                    return item.name.toLowerCase().includes(q) || localizedName.includes(q);
+                })
+                .slice(0, 20);
 
             if (!matches.length) {
                 container.style.display = 'none';
@@ -22015,11 +24009,11 @@
                 const el = document.createElement('div');
                 el.style.cssText =
                     'padding:3px 0; font-size:12px; color:#ccc; cursor:pointer; border-bottom:1px solid #1a1a2e;';
-                el.textContent = item.name;
+                el.textContent = getItemName(item.itemHrid, item.name);
                 el.addEventListener('mousedown', () => {
                     this._seekSelectedItem = item;
                     const input = this.panel.querySelector('#mwi-csim-seek-input');
-                    if (input) input.value = item.name;
+                    if (input) input.value = getItemName(item.itemHrid, item.name);
                     container.style.display = 'none';
                 });
                 container.appendChild(el);
@@ -22035,9 +24029,17 @@
             const input = this.panel?.querySelector('#mwi-csim-seek-input');
             const queryText = input?.value?.trim() || '';
 
-            // Resolve selected item — either from prior click or by exact name match
-            if (!this._seekSelectedItem || this._seekSelectedItem.name !== queryText) {
-                const match = this._seekItems.find((i) => i.name.toLowerCase() === queryText.toLowerCase());
+            // Resolve selected item — either from prior click or by exact name match.
+            // The input shows the localized name, so match against both English and localized.
+            const selectedDisplayName = this._seekSelectedItem
+                ? getItemName(this._seekSelectedItem.itemHrid, this._seekSelectedItem.name)
+                : null;
+            if (!this._seekSelectedItem || selectedDisplayName !== queryText) {
+                const lowerQuery = queryText.toLowerCase();
+                const match = this._seekItems.find(
+                    (i) =>
+                        i.name.toLowerCase() === lowerQuery || getItemName(i.itemHrid, i.name).toLowerCase() === lowerQuery
+                );
                 if (match) {
                     this._seekSelectedItem = match;
                 } else {
@@ -22046,7 +24048,8 @@
                 }
             }
 
-            const { itemHrid, name: itemName } = this._seekSelectedItem;
+            const { itemHrid, name } = this._seekSelectedItem;
+            const itemName = getItemName(itemHrid, name);
 
             const gameData = buildGameDataPayload();
             if (!gameData) {
@@ -22249,7 +24252,7 @@
                             const cellStyle = 'padding:2px 4px; font-size:10px; white-space:nowrap;';
 
                             if (col.key === 'zone') {
-                                display = row.zone.name;
+                                display = getActionName(row.zone.zoneHrid, row.zone.name);
                             } else if (col.key === 'tier') {
                                 display = String(row.zone.difficultyTier);
                             } else if (col.key === 'itemsPerHour') {
@@ -23012,7 +25015,7 @@
                     for (const drop of dropData) {
                         const perHr = drop.total / hours;
                         const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-                        const name = itemDetails?.name || drop.itemHrid.split('/').pop();
+                        const name = getItemName(drop.itemHrid, itemDetails?.name || drop.itemHrid.split('/').pop());
 
                         const perHrStr = perHr >= 1 ? formatters_js.formatWithSeparator(Math.round(perHr)) : perHr.toFixed(2);
                         const perDay = perHr * 24;
@@ -23107,7 +25110,7 @@
                 for (const cons of consumableEntries) {
                     const perHr = cons.total / hours;
                     const itemDetails = dataManager.getItemDetails(cons.itemHrid);
-                    const name = itemDetails?.name || cons.itemHrid.split('/').pop();
+                    const name = getItemName(cons.itemHrid, itemDetails?.name || cons.itemHrid.split('/').pop());
 
                     const perHrStr = formatters_js.formatWithSeparator(Math.round(perHr));
                     const perDayStr = formatters_js.formatWithSeparator(Math.round(perHr * 24));
@@ -23192,7 +25195,7 @@
                     const cColor = key.unitCost > 0 ? costColor : '#444';
 
                     html += `<div style="${costRowStyle}">`;
-                    html += `<span style="${labelStyle} flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${key.name}</span>`;
+                    html += `<span style="${labelStyle} flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${getItemName(key.itemHrid, key.name)}</span>`;
                     html += `<span style="${valueStyle} ${colNum}">${perHrStr}</span>`;
                     html += `<span style="${valueStyle} ${colNum}">${perDayStr}</span>`;
                     html += `<span style="color:${cColor}; font-weight:600; ${colGold}">${costHrStr}</span>`;
@@ -25199,7 +27202,7 @@
             for (const monster of monsters) {
                 const option = document.createElement('option');
                 option.value = monster.hrid;
-                option.textContent = monster.name;
+                option.textContent = getMonsterName(monster.hrid, monster.name);
                 select.appendChild(option);
             }
             if (previousMonsterHrid && monsters.some((monster) => monster.hrid === previousMonsterHrid)) {
@@ -27735,495 +29738,6 @@
     const combatStatsDataCollector = new CombatStatsDataCollector();
 
     /**
-     * Marketplace Buy Modal Autofill Utility
-     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
-     * an instance, then drives it with startSession / arm / exitSession.
-     *
-     * Exported helpers:
-     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
-     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
-     *   createAutofillManager(observerId)
-     */
-
-
-    const MARKETPLACE_PANEL_SELECTOR = '[class*="MarketplacePanel_marketplacePanel"]';
-    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
-    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
-    const MAX_REACT_TREE_FIBERS = 50000;
-    const MAX_REACT_OWNER_DEPTH = 256;
-
-    function hasMarketplaceStateSignature(state) {
-        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
-    }
-
-    function isElementVisible(element) {
-        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
-
-        for (let current = element; current; current = current.parentElement) {
-            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
-            const style = window.getComputedStyle(current);
-            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    function getReactRootFiber() {
-        const rootElement = document.getElementById('root');
-        const rootContainer = rootElement?._reactRootContainer;
-        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
-    }
-
-    function findReactFiberFromRoot(element) {
-        const rootFiber = getReactRootFiber();
-        if (!rootFiber || !element) return null;
-
-        const stack = [rootFiber];
-        const visited = new Set();
-        let matchedFiber = null;
-
-        while (stack.length > 0) {
-            const fiber = stack.pop();
-            if (!fiber || visited.has(fiber)) continue;
-            visited.add(fiber);
-
-            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
-
-            if (fiber.stateNode === element) {
-                if (matchedFiber && matchedFiber !== fiber) return null;
-                matchedFiber = fiber;
-            }
-
-            if (fiber.sibling) stack.push(fiber.sibling);
-            if (fiber.child) stack.push(fiber.child);
-        }
-
-        return matchedFiber;
-    }
-
-    function getReactFiberFromElement(element) {
-        if (!element) return null;
-
-        const directFibers = new Set(
-            Object.getOwnPropertyNames(element)
-                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
-                .map((key) => element[key])
-                .filter(Boolean)
-        );
-        if (directFibers.size > 1) return null;
-        if (directFibers.size === 1) return directFibers.values().next().value;
-
-        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
-        // Resolve the exact host fiber from the public React root instead.
-        return findReactFiberFromRoot(element);
-    }
-
-    function normalizeMarketplaceState(state) {
-        if (!hasMarketplaceStateSignature(state)) return null;
-        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
-        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
-        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
-        if (typeof state.isSell !== 'boolean') return null;
-        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
-        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
-        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
-        if (
-            state.enhancementLevelInput !== undefined &&
-            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
-        ) {
-            return null;
-        }
-
-        return {
-            marketTabKey: state.marketTabKey,
-            marketListingsView: state.marketListingsView,
-            itemHrid: state.itemHrid,
-            enhancementLevel: state.enhancementLevel,
-            enhancementLevelInput: state.enhancementLevelInput,
-            isSell: state.isSell,
-            showPostListing: state.showPostListing,
-            isPostNewListing: state.isPostNewListing,
-            isInstantOrder: state.isInstantOrder,
-            quantityInput: state.quantityInput,
-            priceInput: state.priceInput,
-        };
-    }
-
-    /**
-     * Read the live Marketplace React component state from the unique visible Marketplace panel.
-     * The selected component must be on that panel host fiber's bounded return ancestry.
-     *
-     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
-     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
-     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
-     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
-     */
-    function getMarketplaceRuntimeComponentFromElement(element) {
-        let fiber = getReactFiberFromElement(element);
-        let depth = 0;
-        const candidates = [];
-        const seen = new Set();
-
-        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
-            const stateNode = fiber.stateNode;
-            if (
-                stateNode &&
-                !seen.has(stateNode) &&
-                typeof stateNode.setState === 'function' &&
-                typeof stateNode.handleQuantityInputChanged === 'function' &&
-                hasMarketplaceStateSignature(stateNode.state)
-            ) {
-                seen.add(stateNode);
-                candidates.push(stateNode);
-            }
-            fiber = fiber.return;
-            depth += 1;
-        }
-
-        // Fail closed when the ancestry is unexpectedly deeper than the bound or
-        // contains more than one Marketplace-like owner. The quantity input must
-        // identify one exact live component before we write to a controlled input.
-        if (fiber || candidates.length !== 1) return null;
-        return candidates[0];
-    }
-
-    /**
-     * Read Marketplace state from the exact DOM element that belongs to the live component.
-     * @param {HTMLElement} element
-     * @returns {ReturnType<typeof normalizeMarketplaceState>}
-     */
-    function readMarketplaceRuntimeStateFromElement(element) {
-        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
-    }
-
-    function readMarketplaceRuntimeState() {
-        const visiblePanels = Array.from(document.querySelectorAll(MARKETPLACE_PANEL_SELECTOR)).filter(isElementVisible);
-        if (visiblePanels.length !== 1) return null;
-        return readMarketplaceRuntimeStateFromElement(visiblePanels[0]);
-    }
-
-    /**
-     * Create an autofill manager instance for one marketplace workflow owner.
-     *
-     * Lifecycle:
-     *   initialize()      — call once at feature startup; installs the buy-modal observer
-     *   startSession(opts) — claim a session slot by sessionId
-     *   arm(opts)         — atomically set target; only 'buy' modalMode is accepted
-     *   setItem()         — @deprecated, use arm()
-     *   setQuantityProvider() — @deprecated, use arm()
-     *   exitSession(sessionId) — disarm without ending the marketplace session token
-     *   cleanup()         — call on feature disable; removes observer
-     *
-     * @param {string} observerId
-     * @returns {Object}
-     */
-    function createAutofillManager(observerId) {
-        let observerUnregister = null;
-        let activeSessionId = null;
-        let targetGeneration = 0;
-        let activeTarget = null;
-        let legacyDraft = null;
-        const modalRetryTimers = new Set();
-        const filledModalGenerations = new WeakMap();
-
-        function clearRetryTimers() {
-            for (const timer of modalRetryTimers) clearTimeout(timer);
-            modalRetryTimers.clear();
-        }
-
-        function invalidateTarget() {
-            clearRetryTimers();
-            targetGeneration += 1;
-            activeTarget = null;
-            legacyDraft = null;
-        }
-
-        function isValidItemHrid(itemHrid) {
-            return typeof itemHrid === 'string' && itemHrid.startsWith('/items/') && itemHrid.length > 7;
-        }
-
-        function isValidEnhancementLevel(enhancementLevel) {
-            return Number.isInteger(enhancementLevel) && enhancementLevel >= 0;
-        }
-
-        function startSession({
-            itemHrid = null,
-            enhancementLevel = 0,
-            sessionId = null,
-            quantityProvider = null,
-            modalMode = 'buy',
-        } = {}) {
-            activeSessionId = marketplaceSession_js.marketplaceSession.isActive(sessionId) ? sessionId : null;
-            invalidateTarget();
-
-            if (activeSessionId !== null && (itemHrid !== null || quantityProvider !== null)) {
-                arm({ sessionId, itemHrid, enhancementLevel, modalMode, quantityProvider });
-            }
-        }
-
-        function arm(opts = {}) {
-            const { sessionId, itemHrid = null, enhancementLevel = 0, modalMode = 'buy', quantityProvider } = opts || {};
-
-            if (sessionId !== activeSessionId) return false;
-            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
-                activeSessionId = null;
-                invalidateTarget();
-                return false;
-            }
-
-            if (
-                modalMode !== 'buy' ||
-                !isValidItemHrid(itemHrid) ||
-                !isValidEnhancementLevel(enhancementLevel) ||
-                typeof quantityProvider !== 'function'
-            ) {
-                invalidateTarget();
-                return false;
-            }
-
-            activeTarget = Object.freeze({
-                generation: ++targetGeneration,
-                sessionId,
-                itemHrid,
-                enhancementLevel,
-                modalMode,
-                quantityProvider,
-            });
-            legacyDraft = null;
-            return true;
-        }
-
-        /** @deprecated Use arm(). */
-        function setItem(itemHrid, enhancementLevel = 0, sessionId) {
-            if (sessionId === undefined) {
-                invalidateTarget();
-                return false;
-            }
-            if (sessionId !== activeSessionId) return false;
-            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
-                activeSessionId = null;
-                invalidateTarget();
-                return false;
-            }
-            if (!isValidItemHrid(itemHrid) || !isValidEnhancementLevel(enhancementLevel)) {
-                invalidateTarget();
-                return false;
-            }
-
-            invalidateTarget();
-            legacyDraft = Object.freeze({ sessionId, itemHrid, enhancementLevel });
-            return true;
-        }
-
-        /** @deprecated Use arm(). */
-        function setQuantityProvider(quantityProvider, sessionId) {
-            if (sessionId === undefined) {
-                invalidateTarget();
-                return false;
-            }
-            if (sessionId !== activeSessionId) return false;
-            if (!legacyDraft || legacyDraft.sessionId !== sessionId) {
-                invalidateTarget();
-                return false;
-            }
-
-            return arm({
-                sessionId,
-                itemHrid: legacyDraft.itemHrid,
-                enhancementLevel: legacyDraft.enhancementLevel,
-                modalMode: 'buy',
-                quantityProvider,
-            });
-        }
-
-        function exitSession(sessionId) {
-            if (sessionId !== undefined && sessionId !== activeSessionId) return;
-            activeSessionId = null;
-            invalidateTarget();
-        }
-
-        function findWorkingQuantityInput(modal) {
-            // The marketplace update switched this field from a native number input to a text
-            // input (to support typed compact values like "5k"), so match both types.
-            const structuralInputs = Array.from(
-                modal.querySelectorAll(
-                    '[class*="MarketplacePanel_quantityInputs"] input[type="number"], ' +
-                        '[class*="MarketplacePanel_quantityInputs"] input[type="text"]'
-                )
-            );
-            if (structuralInputs.length === 1) return structuralInputs[0];
-            if (structuralInputs.length > 1) return null;
-
-            const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
-            if (allInputs.length === 1) return allInputs[0];
-
-            const labeled = allInputs.filter((input) => {
-                let parent = input.parentElement;
-                for (let depth = 0; parent && depth < 4; depth += 1) {
-                    const text = parent.textContent || '';
-                    if (text.includes('Enhancement Level') && !text.includes('Quantity')) return false;
-                    if (text.includes('Quantity') && !text.includes('Enhancement Level')) return true;
-                    parent = parent.parentElement;
-                }
-                return false;
-            });
-            return labeled.length === 1 ? labeled[0] : null;
-        }
-
-        function isVisibleBuyModal(modal) {
-            if (!modal || !modal.isConnected || !isElementVisible(modal)) return false;
-            const header = modal.querySelector('[class*="MarketplacePanel_header"]');
-            if (!header) return false;
-            const text = header.textContent?.trim() || '';
-            return text.includes('Buy Now') || text.includes('Buy Listing');
-        }
-
-        function resolveQuantity(target) {
-            try {
-                const quantity = target.quantityProvider();
-                return typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? Math.trunc(quantity) : 0;
-            } catch (error) {
-                console.error('[MarketplaceAutofill] quantityProvider failed:', error);
-                return 0;
-            }
-        }
-
-        function targetMatchesInput(target, quantityInput) {
-            const state = readMarketplaceRuntimeStateFromElement(quantityInput);
-            // MWI uses two exact buy forms: an instant order from an existing ask and
-            // a patient New Buy Listing. Reject mixed flag states rather than widening
-            // the verified write path to every post-listing modal.
-            const isInstantBuy = state?.isPostNewListing === false && state?.isInstantOrder === true;
-            const isNewBuyListing = state?.isPostNewListing === true && state?.isInstantOrder === false;
-
-            return (
-                state?.marketTabKey === 'MarketListings' &&
-                state?.marketListingsView === 'OrderBook' &&
-                state?.showPostListing === true &&
-                state?.isSell === false &&
-                (isInstantBuy || isNewBuyListing) &&
-                state?.itemHrid === target.itemHrid &&
-                state?.enhancementLevel === target.enhancementLevel &&
-                state?.enhancementLevelInput === target.enhancementLevel
-            );
-        }
-
-        function fillVerifiedModal(modal, target) {
-            if (!target || activeTarget !== target) return false;
-            if (activeSessionId !== target.sessionId || !marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) return false;
-            if (!isVisibleBuyModal(modal)) return false;
-            const quantityInput = findWorkingQuantityInput(modal);
-            if (!quantityInput || !targetMatchesInput(target, quantityInput)) return false;
-
-            const quantity = resolveQuantity(target);
-            if (quantity <= 0) return false;
-
-            const previousFill = filledModalGenerations.get(modal);
-            if (
-                previousFill?.generation === target.generation &&
-                previousFill.input === quantityInput &&
-                previousFill.quantity === quantity &&
-                Number(quantityInput.value) === quantity
-            ) {
-                return true;
-            }
-
-            // Re-check ownership after the provider call, immediately before the proven write path.
-            if (activeTarget !== target || activeSessionId !== target.sessionId) return false;
-            if (!marketplaceSession_js.marketplaceSession.isActive(target.sessionId) || !targetMatchesInput(target, quantityInput)) return false;
-
-            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-            if (typeof nativeInputValueSetter !== 'function') return false;
-
-            nativeInputValueSetter.call(quantityInput, quantity.toString());
-            quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
-            filledModalGenerations.set(modal, { generation: target.generation, input: quantityInput, quantity });
-            marketplaceSession_js.marketplaceSession.consume(target.sessionId);
-            return true;
-        }
-
-        function handleObservedModal(modal) {
-            const target = activeTarget;
-            if (!target || !modal) return;
-
-            // The Marketplace modal can mount before its owning React component has
-            // converged on the selected item. Retry this observed modal for a bounded
-            // 1.5-second window, but keep the verified workflow target armed afterward
-            // so an unrelated or retained modal cannot destroy the next exact Buy fill.
-            const delays = [0, 25, 75, 150, 300, 500, 750, 1000, 1500];
-            delays.forEach((delay) => {
-                const timer = setTimeout(() => {
-                    modalRetryTimers.delete(timer);
-                    if (!activeTarget || activeTarget.generation !== target.generation) return;
-                    if (fillVerifiedModal(modal, target)) {
-                        clearRetryTimers();
-                    }
-                    // Keep the verified target armed after a bounded miss. A retained or unrelated
-                    // modal must not destroy the workflow; the next exact Buy modal can still fill.
-                }, delay);
-                modalRetryTimers.add(timer);
-            });
-        }
-
-        return {
-            initialize() {
-                if (observerUnregister) observerUnregister();
-                observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', handleObservedModal);
-            },
-            startSession,
-            arm,
-            setItem,
-            setQuantityProvider,
-            exitSession,
-            cleanup() {
-                if (observerUnregister) {
-                    observerUnregister();
-                    observerUnregister = null;
-                }
-                activeSessionId = null;
-                invalidateTarget();
-            },
-        };
-    }
-
-    /**
-     * Game Data Lookup Utilities
-     *
-     * Centralized functions for resolving display names to HRIDs, plus locale-independent
-     * resolution via icon sprite references (see below) - prefer the sprite-based functions
-     * over the name-based ones wherever a `<use>` element is reachable, since display names are
-     * translated client-side and the name-based functions below only ever match the client's
-     * English-language data, silently failing on any other game locale.
-     */
-
-
-    /**
-     * Get the coin cost of an item from the in-game shop.
-     * Returns 0 if the item is not available in the shop or not purchasable with coins.
-     * @param {string} itemHrid - Item HRID
-     * @returns {number} Coin cost, or 0 if not available in shop
-     */
-    function getShopCoinCost(itemHrid) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.shopItemDetailMap) return 0;
-
-        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
-            if (shopItem.itemHrid === itemHrid) {
-                if (shopItem.costs && shopItem.costs.length > 0) {
-                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
-                    if (coinCost) {
-                        return coinCost.count;
-                    }
-                }
-            }
-        }
-
-        return 0;
-    }
-
-    /**
      * Crafting Plan Calculator
      * Computes the optimal buy-vs-craft plan for a target item by recursively
      * comparing market price against crafting cost at each material tier.
@@ -29316,6 +30830,7 @@
                 existing.isOutlier = existing.isOutlier || node.isOutlier;
             } else {
                 buyItems.set(node.itemHrid, {
+                    itemHrid: node.itemHrid,
                     itemName: node.itemName,
                     quantity: node.quantity,
                     unitCost: node.unitCost,
@@ -29344,6 +30859,7 @@
 
         if (node.strategy === 'craft' && node.actionHrid) {
             craftSteps.push({
+                itemHrid: node.itemHrid,
                 itemName: node.itemName,
                 quantity: Math.ceil(node.quantity),
                 actionsNeeded: node.actionsNeeded,
@@ -29485,9 +31001,13 @@
                 const unit = formatters_js.formatWithSeparator(Math.round(item.unitCost));
                 const outlierSuffix = item.isOutlier ? ' ⚠' : '';
                 shoppingListContainer.appendChild(
-                    createRow(`${item.itemName} x${formatters_js.formatWithSeparator(qty)}${outlierSuffix}`, `${cost} (${unit}/ea)`, {
-                        title: item.isOutlier ? i18n_js.t('marketData.outlierPriceWarningTooltip') : undefined,
-                    })
+                    createRow(
+                        `${getItemName(item.itemHrid, item.itemName)} x${formatters_js.formatWithSeparator(qty)}${outlierSuffix}`,
+                        `${cost} (${unit}/ea)`,
+                        {
+                            title: item.isOutlier ? i18n_js.t('marketData.outlierPriceWarningTooltip') : undefined,
+                        }
+                    )
                 );
             }
 
@@ -29539,7 +31059,9 @@
                 } else if (xpStr) {
                     timeStr = ` (${xpStr.slice(3)})`;
                 }
-                container.appendChild(createRow(`${i + 1}. ${step.itemName}`, `x${qty}${timeStr}`));
+                container.appendChild(
+                    createRow(`${i + 1}. ${getItemName(step.itemHrid, step.itemName)}`, `x${qty}${timeStr}`)
+                );
             }
 
             if (craftMetrics.totalCraftSeconds > 0) {
@@ -30286,7 +31808,7 @@
                 {
                     label: i18n_js.t('combatStatsUi.lowestRunwayLabel'),
                     value: stats.firstToRunOut
-                        ? `${stats.firstToRunOut.itemName} · ${formatRunway(stats.firstToRunOut.timeToZeroSeconds)}`
+                        ? `${getItemName(stats.firstToRunOut.itemHrid, stats.firstToRunOut.itemName)} · ${formatRunway(stats.firstToRunOut.timeToZeroSeconds)}`
                         : i18n_js.t('combatStatsUi.runwayNoUsage'),
                     color: stats.firstToRunOut ? getRunwayColor(stats.firstToRunOut.timeToZeroSeconds) : undefined,
                     title: stats.firstToRunOut ? formatRunwayExact(stats.firstToRunOut.timeToZeroSeconds) : undefined,
@@ -30509,7 +32031,7 @@
                                 `;
                                     const deltaColor = item.valueDelta >= 0 ? '#51cf66' : '#ff6b6b';
                                     itemRow.innerHTML = `
-                                    <span>${item.itemName}</span>
+                                    <span>${getItemName(item.itemHrid, item.itemName)}</span>
                                     <span style="text-align: right;">${formatQuantity(item.actualCount, formatNum)}</span>
                                     <span style="text-align: right;">${formatQuantity(item.expectedCount, formatNum)}</span>
                                     <span style="text-align: right; color: ${deltaColor};">${formatNum(item.valueDelta)}</span>
@@ -30581,7 +32103,7 @@
                                     let chestBreakdownDiv = null;
 
                                     const nameCell = document.createElement('span');
-                                    nameCell.textContent = `▶ ${chest.itemName}`;
+                                    nameCell.textContent = `▶ ${getItemName(chest.itemHrid, chest.itemName)}`;
                                     const countCell = document.createElement('span');
                                     countCell.style.textAlign = 'right';
                                     countCell.textContent = formatNum(chest.count);
@@ -30600,7 +32122,7 @@
                                     chestRow.onclick = (e) => {
                                         e.stopPropagation();
                                         chestExpanded = !chestExpanded;
-                                        nameCell.textContent = `${chestExpanded ? '▼' : '▶'} ${chest.itemName}`;
+                                        nameCell.textContent = `${chestExpanded ? '▼' : '▶'} ${getItemName(chest.itemHrid, chest.itemName)}`;
                                         if (chestExpanded) {
                                             chestBreakdownDiv = document.createElement('div');
                                             chestBreakdownDiv.style.cssText = `
@@ -30640,7 +32162,7 @@
                                                 margin-bottom: 2px;
                                             `;
                                                 dropRow.innerHTML = `
-                                                <span>${drop.itemName}</span>
+                                                <span>${getItemName(drop.itemHrid, drop.itemName)}</span>
                                                 <span style="text-align: right;">${formatters_js.formatPercentage(drop.dropRate, 1)}</span>
                                                 <span style="text-align: right;">${drop.avgCount.toFixed(2)}</span>
                                                 <span style="text-align: right;">${drop.hasPriceData ? formatNum(drop.priceEach) : '—'}</span>
@@ -30759,7 +32281,7 @@
                                         : item.totalCost;
 
                                     itemRow.innerHTML = `
-                                    <span>${item.itemName}</span>
+                                    <span>${getItemName(item.itemHrid, item.itemName)}</span>
                                     <span style="text-align: right;">${formatQuantity(displayQty, formatNum)}</span>
                                     <span style="text-align: right;">${formatNum(displayPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier)}</span>
                                     <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
@@ -30962,7 +32484,7 @@
                     // Create text content with KMB formatting
                     const textSpan = document.createElement('span');
                     const rarityColor = this.getRarityColor(item.rarity);
-                    textSpan.innerHTML = `<span style="color: ${textColor};">${formatNum(item.count)}</span> <span style="color: ${rarityColor};">× ${item.itemName}</span>`;
+                    textSpan.innerHTML = `<span style="color: ${textColor};">${formatNum(item.count)}</span> <span style="color: ${rarityColor};">× ${getItemName(item.itemHrid, item.itemName)}</span>`;
                     itemDiv.appendChild(textSpan);
 
                     // Attach EV tooltip for openable containers (chests, crates, etc.)
@@ -31361,111 +32883,6 @@
         initialize: () => combatConsumableTimer.initialize(),
         cleanup: () => combatConsumableTimer.cleanup(),
     };
-
-    /**
-     * Marketplace Custom Tabs Utility
-     * Provides shared functionality for creating and managing custom marketplace tabs
-     * Used by missing materials features (actions, houses, etc.)
-     */
-
-
-    /**
-     * Return true only when an element and all element ancestors are actually visible.
-     * @param {HTMLElement} element
-     * @returns {boolean}
-     */
-    function isElementActuallyVisible(element) {
-        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
-
-        for (let current = element; current; current = current.parentElement) {
-            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
-            const style = window.getComputedStyle(current);
-            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * Get the unique visible Marketplace native tab container.
-     * Hidden retained panels and ambiguous duplicate visible panels fail closed.
-     * @returns {HTMLElement|null}
-     */
-    function getVisibleMarketplaceTabContainer() {
-        const candidates = new Set();
-
-        for (const panel of document.querySelectorAll('[class*="MarketplacePanel_marketplacePanel"]')) {
-            if (!isElementActuallyVisible(panel)) continue;
-
-            for (const tabsContainer of panel.querySelectorAll('.MuiTabs-flexContainer[role="tablist"]')) {
-                if (!isElementActuallyVisible(tabsContainer)) continue;
-                const hasNativeTab = Array.from(tabsContainer.children).some((tab) => {
-                    const text = tab.textContent || '';
-                    return text.includes('Market Listings') || text.includes('My Listings');
-                });
-                if (hasNativeTab) candidates.add(tabsContainer);
-            }
-        }
-
-        return candidates.size === 1 ? candidates.values().next().value : null;
-    }
-
-    /**
-     * Get game object via React fiber
-     * @returns {Object|null} Game component instance
-     */
-    function getGameObject() {
-        const rootEl = document.getElementById('root');
-        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
-        if (!rootFiber) return null;
-
-        const stack = [rootFiber];
-        while (stack.length > 0) {
-            const fiber = stack.pop();
-            if (typeof fiber?.stateNode?.handleGoToMarketplace === 'function') return fiber.stateNode;
-            if (fiber?.sibling) stack.push(fiber.sibling);
-            if (fiber?.child) stack.push(fiber.child);
-        }
-        return null;
-    }
-
-    /**
-     * Watch for a native Marketplace tab click and call onExit when it occurs.
-     * Uses a delegated click listener — does not fire on initial aria-selected DOM state.
-     *
-     * Resolves nested click targets (e.g. a span or icon inside the tab) via closest('[role="tab"]').
-     * Only fires when the resolved tab belongs to tabContainer and is not a Toolasha custom tab.
-     *
-     * @param {HTMLElement} tabContainer - The MuiTabs-flexContainer[role="tablist"] element
-     * @param {Function} onExit - Called when a native tab is clicked
-     * @returns {Function} Cleanup function that removes the exact delegated listener
-     */
-    function watchNativeTabExit(tabContainer, onExit) {
-        function handleClick(e) {
-            const origin = typeof e.target?.closest === 'function' ? e.target : e.target?.parentElement;
-            const target = origin?.closest('[role="tab"]');
-            if (!target || !tabContainer.contains(target)) return;
-            if (target.hasAttribute('data-mwi-custom-tab') || target.hasAttribute('data-mwi-shrine-tab')) return;
-            onExit();
-        }
-        tabContainer.addEventListener('click', handleClick, { capture: true });
-        return () => tabContainer.removeEventListener('click', handleClick, { capture: true });
-    }
-
-    /**
-     * Navigate to marketplace for a specific item
-     * @param {string} itemHrid - Item HRID to navigate to
-     * @param {number} enhancementLevel - Enhancement level (default 0)
-     * @returns {boolean} True when the native Marketplace handler was invoked
-     */
-    function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
-        const game = getGameObject();
-        if (game?.handleGoToMarketplace) {
-            game.handleGoToMarketplace(itemHrid, enhancementLevel);
-            return true;
-        }
-        return false;
-    }
 
     /**
      * Ability Book Calculator
@@ -32352,6 +33769,13 @@
     function calculateHouseScore(profileData) {
         const characterHouseRooms = profileData.profile?.characterHouseRoomMap || {};
 
+        // calculateHousesCostByDomain() returns English room names without HRIDs, so rebuild a
+        // name -> HRID index to localize each breakdown leaf at this display boundary.
+        const houseRoomDetailMap = dataManager.getInitClientData()?.houseRoomDetailMap || {};
+        const roomHridByEnglishName = new Map(
+            Object.entries(houseRoomDetailMap).map(([hrid, detail]) => [detail.name, hrid])
+        );
+
         const combat = emptyCategory();
         const skiller = emptyCategory();
 
@@ -32361,8 +33785,9 @@
         ]) {
             const { complete, breakdown } = houseCostCalculator_js.calculateHousesCostByDomain(characterHouseRooms, domain);
             for (const house of breakdown) {
+                const roomHrid = roomHridByEnglishName.get(house.name) || null;
                 attribute(category, {
-                    name: `${house.name} ${house.level}`,
+                    name: `${getHouseRoomName(roomHrid, house.name)} ${house.level}`,
                     cost: house.cost,
                     complete: house.complete,
                     isOutlier: house.isOutlier,
@@ -32391,6 +33816,7 @@
     function calculateAbilityScore(profileData) {
         // Use equippedAbilities (not characterAbilities) to match MCS behavior.
         const equippedAbilities = profileData.profile?.equippedAbilities || [];
+        const abilityDetailMap = dataManager.getInitClientData()?.abilityDetailMap || {};
 
         const category = emptyCategory();
 
@@ -32399,11 +33825,15 @@
 
             const { cost, complete, isOutlier } = abilityCostCalculator_js.calculateAbilityBookCostDataDriven(ability.abilityHrid, ability.level);
 
-            const abilityName = ability.abilityHrid
+            const hridFallbackName = ability.abilityHrid
                 .replace('/abilities/', '')
                 .split('_')
                 .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
                 .join(' ');
+            const abilityName = getAbilityName(
+                ability.abilityHrid,
+                abilityDetailMap[ability.abilityHrid]?.name || hridFallbackName
+            );
 
             attribute(category, { name: `${abilityName} ${ability.level}`, cost, complete, isOutlier });
         }
@@ -33538,7 +34968,7 @@ self.onmessage = function (e) {
             const itemDetails = itemDetailMap[itemData.itemHrid];
             if (!itemDetails) continue;
 
-            const itemName = itemDetails.name || itemData.itemHrid.replace('/items/', '');
+            const itemName = getItemName(itemData.itemHrid, itemDetails.name || itemData.itemHrid.replace('/items/', ''));
             const displayName = enhancementLevel > 0 ? `${itemName} +${enhancementLevel}` : itemName;
             const classification = classifyEquipmentItem(itemDetails.equipmentDetail);
 
@@ -33658,6 +35088,16 @@ self.onmessage = function (e) {
         }
         return rows.sort((a, b) => b.goldPerToken - a.goldPerToken);
     }
+
+    /**
+     * Task Profit Calculator
+     * Calculates total profit for gathering and production tasks
+     * Includes task rewards (coins, task tokens, Purple's Gift) + action profit
+     */
+
+
+    new Set(profitConstants_js.GATHERING_TYPES);
+    new Set(profitConstants_js.PRODUCTION_TYPES);
 
     /**
      * Networth Calculator
@@ -36698,6 +38138,7 @@ self.onmessage = function (e) {
         labyrinthBestLevel,
         labyrinthShopPrices,
         labyrinthClearRate,
+        labyrinthMissingSupplies,
         combatSimIntegration,
         combatSimIntegrationMetz,
         combatSimExport: {
@@ -36722,4 +38163,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.experienceCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.experienceCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);

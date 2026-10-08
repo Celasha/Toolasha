@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.6.3
+ * Version: 3.7.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -26,6 +26,83 @@
     }
 
     var dom__namespace = /*#__PURE__*/_interopNamespaceDefault(dom);
+
+    /**
+     * Game i18n Bridge
+     *
+     * Obtains the game's i18next instance from the React fiber tree and provides
+     * locale-independent translation of game data names (items, actions, monsters,
+     * skills, etc.). Falls back to the English name when the i18n instance is
+     * unavailable or the key is missing.
+     */
+
+    let cachedI18n = null;
+
+    /**
+     * Walk the React fiber tree from #root to find the i18next instance.
+     * @returns {import('i18next').i18n | null}
+     */
+    function getGameI18n() {
+        if (cachedI18n) return cachedI18n;
+        if (typeof document === 'undefined') return null;
+
+        const root = document.getElementById('root');
+        const fiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+        if (!fiber) return null;
+
+        const stack = [fiber];
+        while (stack.length > 0) {
+            const f = stack.pop();
+            if (!f) continue;
+            try {
+                const props = f.memoizedProps || {};
+                if (props.i18n && typeof props.i18n.t === 'function') {
+                    cachedI18n = props.i18n;
+                    return cachedI18n;
+                }
+                if (props.value?.i18n && typeof props.value.i18n.t === 'function') {
+                    cachedI18n = props.value.i18n;
+                    return cachedI18n;
+                }
+            } catch (error) {
+                console.error('[GameI18n] Fiber access error during tree walk:', error);
+            }
+            if (f.sibling) stack.push(f.sibling);
+            if (f.child) stack.push(f.child);
+        }
+        return null;
+    }
+
+    /**
+     * Translate a game data name via the game's i18next instance.
+     * @param {string} namespace - i18n namespace (e.g. 'itemNames')
+     * @param {string} hrid - Game data HRID (e.g. '/items/abyssal_essence')
+     * @param {string} [fallback=''] - English name to fall back to
+     * @returns {string} Translated name or fallback
+     */
+    function translateGameName(namespace, hrid, fallback = '') {
+        if (!hrid) return fallback;
+        const i18n = getGameI18n();
+        if (!i18n) return fallback;
+
+        const key = `${namespace}.${hrid}`;
+        try {
+            const translated = i18n.t(key);
+            // i18next returns the key itself when no translation exists
+            if (translated === key) return fallback;
+            return translated;
+        } catch (error) {
+            console.error('[GameI18n] i18n.t() failed for key:', key, error);
+            return fallback;
+        }
+    }
+
+    const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);
+    const getActionName = (hrid, fallback = '') => translateGameName('actionNames', hrid, fallback);
+    const getActionTypeName = (hrid, fallback = '') => translateGameName('actionTypeNames', hrid, fallback);
+    const getAbilityName = (hrid, fallback = '') => translateGameName('abilityNames', hrid, fallback);
+    const getItemCategoryName = (hrid, fallback = '') => translateGameName('itemCategoryNames', hrid, fallback);
+    const getHouseRoomName = (hrid, fallback = '') => translateGameName('houseRoomNames', hrid, fallback);
 
     /**
      * Number Parser Utility
@@ -230,8 +307,71 @@
         // Like Enhancelator lines 456-465
         const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
         let mirrorStartLevel = null;
+        let refinedFodder = null;
 
-        if (mirrorPrice > 0) {
+        // Refined items (e.g. "Furious Spear (R)") can never be produced via Mirror combination --
+        // the game only lets Transmute create a refined copy. Per the live client's
+        // getPhilosophersMirrorCost formula, Mirror-protecting a refined item's enhancement always
+        // consumes one NON-refined copy of its base item at (currentLevel - 1); the refined item itself
+        // is never "rebuilt" from two lower copies the way ordinary (fungible) items are. That means the
+        // Fibonacci multi-level cascade below -- which assumes both combine components can themselves be
+        // products of earlier combines -- doesn't apply to refined items. Only the single final step
+        // (fodder at targetLevel-2, primary already at targetLevel-1) is modeled here.
+        const isRefined = itemHrid.includes('_refined');
+        const baseItemHrid = isRefined ? itemDetails.baseItemHrids?.[0] : null;
+
+        if (mirrorPrice > 0 && isRefined && baseItemHrid) {
+            const fodderLevel = currentEnhancementLevel - 2;
+            if (fodderLevel >= 0) {
+                const baseItemDetails = gameData.itemDetailMap[baseItemHrid];
+                const baseItemLevel = baseItemDetails?.itemLevel || itemLevel;
+
+                let fodderCost, fodderTime, fodderAttempts;
+                if (fodderLevel === 0) {
+                    fodderCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+                        ? Math.min(
+                              getProductionCost(baseItemHrid) || Infinity,
+                              marketData_js.getItemPrices(baseItemHrid, 0)?.ask || Infinity
+                          ) || getRealisticBaseItemPrice(baseItemHrid)
+                        : getRealisticBaseItemPrice(baseItemHrid);
+                    fodderTime = 0;
+                    fodderAttempts = 0;
+                } else {
+                    const fodderResults = [];
+                    const neverProtect = calculateCostForStrategy(baseItemHrid, fodderLevel, 0, baseItemLevel, config);
+                    if (neverProtect) fodderResults.push({ protectFrom: 0, ...neverProtect });
+                    for (let protectFrom = 2; protectFrom <= fodderLevel; protectFrom++) {
+                        const result = calculateCostForStrategy(
+                            baseItemHrid,
+                            fodderLevel,
+                            protectFrom,
+                            baseItemLevel,
+                            config
+                        );
+                        if (result) fodderResults.push({ protectFrom, ...result });
+                    }
+                    if (fodderResults.length > 0) {
+                        const bestFodder = fodderResults.reduce((best, curr) =>
+                            curr.totalCost < best.totalCost ? curr : best
+                        );
+                        fodderCost = bestFodder.totalCost;
+                        fodderTime = bestFodder.totalTime;
+                        fodderAttempts = bestFodder.expectedAttempts;
+                    }
+                }
+
+                if (typeof fodderCost === 'number') {
+                    const traditionalCost = targetCosts[currentEnhancementLevel];
+                    const mirrorCost = targetCosts[currentEnhancementLevel - 1] + fodderCost + mirrorPrice;
+
+                    if (mirrorCost < traditionalCost) {
+                        mirrorStartLevel = currentEnhancementLevel;
+                        targetCosts[currentEnhancementLevel] = mirrorCost;
+                        refinedFodder = { hrid: baseItemHrid, level: fodderLevel, fodderCost, fodderTime, fodderAttempts };
+                    }
+                }
+            }
+        } else if (mirrorPrice > 0 && !isRefined) {
             for (let level = 3; level <= currentEnhancementLevel; level++) {
                 const traditionalCost = targetCosts[level];
                 const mirrorCost = targetCosts[level - 2] + targetCosts[level - 1] + mirrorPrice;
@@ -256,7 +396,20 @@
 
         let optimalStrategy;
 
-        if (mirrorStartLevel !== null) {
+        if (refinedFodder !== null) {
+            // Refined item, single-step Mirror protection: one non-refined fodder copy consumed,
+            // no Fibonacci cascade (see comment above where refinedFodder is computed).
+            optimalStrategy = buildRefinedMirrorResult(
+                itemHrid,
+                currentEnhancementLevel,
+                targetCosts,
+                targetTimes,
+                targetAttempts,
+                refinedFodder,
+                optimalTraditional,
+                mirrorPrice
+            );
+        } else if (mirrorStartLevel !== null) {
             // Mirror was used - build mirror-optimized result
             optimalStrategy = buildMirrorOptimizedResult(
                 itemHrid,
@@ -381,6 +534,71 @@
             console.error('[Enhancement Tooltip] Strategy calculation error:', error);
             return null;
         }
+    }
+
+    /**
+     * Build mirror-optimized result for a refined item's single protected step.
+     * A refined item is a unique owned instance -- it's never "rebuilt" by combining two lower
+     * copies, so (unlike buildMirrorOptimizedResult) there is no Fibonacci cascade here: exactly one
+     * non-refined fodder copy is consumed, at (targetLevel - 2), while the refined item's own climb to
+     * (targetLevel - 1) is shown as its own row in its own (refined) species.
+     * @private
+     */
+    function buildRefinedMirrorResult(
+        itemHrid,
+        targetLevel,
+        targetCosts,
+        targetTimes,
+        targetAttempts,
+        refinedFodder,
+        optimalTraditional,
+        mirrorPrice
+    ) {
+        const { hrid: fodderHrid, level: fodderLevel, fodderCost, fodderTime, fodderAttempts } = refinedFodder;
+
+        const upperLevel = targetLevel - 1;
+        const upperCost = targetCosts[upperLevel];
+        const upperTime = targetTimes[upperLevel];
+        const upperAttempts = targetAttempts[upperLevel];
+
+        return {
+            protectFrom: optimalTraditional.protectFrom,
+            label:
+                optimalTraditional.protectFrom === 0
+                    ? i18n_js.t('tooltipEnhancement.neverProtectionLabel')
+                    : i18n_js.t('tooltipEnhancement.fromLevelLabel', { level: optimalTraditional.protectFrom }),
+            expectedAttempts: upperAttempts + fodderAttempts,
+            totalTime: upperTime + fodderTime,
+            baseCost: 0, // Not applicable for mirror phase
+            materialCost: 0, // Not applicable for mirror phase
+            protectionCost: 0, // Not applicable for mirror phase
+            protectionItemHrid: null,
+            protectionCount: 0,
+            consumedItemsCost: upperCost + fodderCost,
+            philosopherMirrorCost: mirrorPrice,
+            totalCost: targetCosts[targetLevel],
+            mirrorStartLevel: targetLevel,
+            usedMirror: true,
+            traditionalCost: optimalTraditional.totalCost,
+            consumedItems: [
+                {
+                    hrid: itemHrid,
+                    level: upperLevel,
+                    quantity: 1,
+                    costEach: upperCost,
+                    totalCost: upperCost,
+                },
+                {
+                    hrid: fodderHrid,
+                    level: fodderLevel,
+                    quantity: 1,
+                    costEach: fodderCost,
+                    totalCost: fodderCost,
+                },
+            ],
+            mirrorCount: 1,
+            consumedItemHrid: itemHrid,
+        };
     }
 
     /**
@@ -951,8 +1169,10 @@
         }
 
         // Look up the localized item name instead of hardcoding the English string
-        const mirrorItemName =
-            dataManager.getInitClientData()?.itemDetailMap?.['/items/philosophers_mirror']?.name || "Philosopher's Mirror";
+        const mirrorItemName = getItemName(
+            '/items/philosophers_mirror',
+            dataManager.getInitClientData()?.itemDetailMap?.['/items/philosophers_mirror']?.name || "Philosopher's Mirror"
+        );
 
         // Show Philosopher's Mirror usage if applicable
         if (optimalStrategy.usedMirror && optimalStrategy.mirrorStartLevel) {
@@ -996,12 +1216,13 @@
                 .sort((a, b) => b.level - a.level);
 
             const gameData = dataManager.getInitClientData();
-            const consumedHrid = optimalStrategy.consumedItemHrid ?? itemHrid;
-            const baseItemDetails = gameData?.itemDetailMap[consumedHrid];
-            const baseItemName = baseItemDetails?.name || consumedHrid;
+            const fallbackHrid = optimalStrategy.consumedItemHrid ?? itemHrid;
 
             const consumedRows = sortedConsumed.map((item) => {
-                const prices = marketData_js.getItemPrices(consumedHrid, item.level);
+                const rowHrid = item.hrid ?? fallbackHrid;
+                const rowItemDetails = gameData?.itemDetailMap[rowHrid];
+                const rowItemName = getItemName(rowHrid, rowItemDetails?.name || rowHrid);
+                const prices = marketData_js.getItemPrices(rowHrid, item.level);
                 const askPrice = prices?.ask > 0 ? prices.ask : item.costEach;
                 const bidPrice = prices?.bid > 0 ? prices.bid : item.costEach;
                 totalAsk += askPrice * item.quantity;
@@ -1009,7 +1230,7 @@
                 const askOutlier = prices?.ask > 0 ? prices.askOutlier : false;
                 const bidOutlier = prices?.bid > 0 ? prices.bidOutlier : false;
                 return {
-                    name: baseItemName + ' +' + item.level,
+                    name: rowItemName + ' +' + item.level,
                     count: item.quantity,
                     askPrice,
                     bidPrice,
@@ -1103,7 +1324,7 @@
                     totalAsk += askPrice * count;
                     totalBid += bidPrice * count;
                     rows.push({
-                        name: mat.name,
+                        name: getItemName(mat.itemHrid, mat.name),
                         count,
                         askPrice,
                         bidPrice,
@@ -1128,7 +1349,7 @@
                     const gameData = dataManager.getInitClientData();
                     const protDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
                     if (protDetails?.name) {
-                        protName = protDetails.name;
+                        protName = getItemName(optimalStrategy.protectionItemHrid, protDetails.name);
                     }
                 }
                 rows.push({ name: protName, count, askPrice, bidPrice, bidOutlier: optimalStrategy.protectionBidOutlier });
@@ -1565,7 +1786,7 @@
             const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
 
             return {
-                itemName: itemDetails.name,
+                itemName: getItemName(itemHrid, itemDetails.name),
                 itemHrid,
                 actionTime: effectiveActionTime,
                 actionsPerHour,
@@ -1709,7 +1930,7 @@
 
                     costs.push({
                         itemHrid: actionDetails.upgradeItemHrid,
-                        itemName: itemDetails.name,
+                        itemName: getItemName(actionDetails.upgradeItemHrid, itemDetails.name),
                         baseAmount: 1,
                         amount: reducedAmount,
                         askPrice: resolved.price,
@@ -1747,7 +1968,7 @@
 
                     costs.push({
                         itemHrid: input.itemHrid,
-                        itemName: itemDetails.name,
+                        itemName: getItemName(input.itemHrid, itemDetails.name),
                         baseAmount: baseAmount,
                         amount: reducedAmount,
                         askPrice: resolved.price,
@@ -2667,7 +2888,7 @@ self.onmessage = function (e) {
             const expectedReturn = drops.reduce((sum, drop) => sum + drop.expectedValue, 0);
 
             return {
-                itemName: itemDetails.name,
+                itemName: getItemName(itemHrid, itemDetails.name),
                 itemHrid,
                 expectedValue: expectedReturn,
                 drops,
@@ -2742,7 +2963,7 @@ self.onmessage = function (e) {
 
                 drops.push({
                     itemHrid,
-                    itemName: itemDetails.name,
+                    itemName: getItemName(itemHrid, itemDetails.name),
                     dropRate,
                     avgCount,
                     priceEach: price || 0,
@@ -3250,6 +3471,7 @@ self.onmessage = function (e) {
                     tea: 0, // TODO: Add tea speed bonuses when tea-parser supports it
                     equipmentDetails: relevantSpeeds.map((item) => ({
                         name: item.itemName,
+                        itemHrid: item.itemHrid,
                         enhancementLevel: item.enhancementLevel,
                         speedBonus: item.scaledBonus,
                     })),
@@ -3503,6 +3725,7 @@ self.onmessage = function (e) {
                     tea: teaSpeed,
                     equipmentDetails: relevantSpeeds.map((item) => ({
                         name: item.itemName,
+                        itemHrid: item.itemHrid,
                         enhancementLevel: item.enhancementLevel,
                         speedBonus: item.scaledBonus,
                     })),
@@ -3791,6 +4014,7 @@ self.onmessage = function (e) {
                     tea: teaSpeed,
                     equipmentDetails: relevantSpeeds.map((item) => ({
                         name: item.itemName,
+                        itemHrid: item.itemHrid,
                         enhancementLevel: item.enhancementLevel,
                         speedBonus: item.scaledBonus,
                     })),
@@ -4207,6 +4431,7 @@ self.onmessage = function (e) {
                     tea: teaSpeed,
                     equipmentDetails: relevantSpeeds.map((item) => ({
                         name: item.itemName,
+                        itemHrid: item.itemHrid,
                         enhancementLevel: item.enhancementLevel,
                         speedBonus: item.scaledBonus,
                     })),
@@ -4548,6 +4773,7 @@ self.onmessage = function (e) {
                     tea: teaSpeed,
                     equipmentDetails: relevantSpeeds.map((item) => ({
                         name: item.itemName,
+                        itemHrid: item.itemHrid,
                         enhancementLevel: item.enhancementLevel,
                         speedBonus: item.scaledBonus,
                     })),
@@ -4995,6 +5221,7 @@ self.onmessage = function (e) {
         });
         const drinkCostPerHour = teaCostData.totalCostPerHour;
         const drinkCosts = teaCostData.costs.map((tea) => ({
+            hrid: tea.itemHrid,
             name: tea.itemName,
             priceEach: tea.pricePerDrink,
             drinksPerHour: tea.drinksPerHour,
@@ -5037,7 +5264,7 @@ self.onmessage = function (e) {
             let rawPerAction = 0;
             let processedPerAction = 0;
 
-            const rawItemName = gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown';
+            const rawItemName = getItemName(drop.itemHrid, gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown');
             const baseItemsPerHour = actionsPerHour * drop.dropRate * avgAmountPerAction * efficiencyMultiplier;
             const baseItemsPerAction = drop.dropRate * avgAmountPerAction;
             const baseRevenuePerAction = baseItemsPerAction * resolvedRawPrice;
@@ -5085,7 +5312,10 @@ self.onmessage = function (e) {
                 const processedItemsPerAction = drop.dropRate * processedPerAction;
 
                 // Track processing details
-                const processedItemName = gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown';
+                const processedItemName = getItemName(
+                    processedItemHrid,
+                    gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown'
+                );
 
                 // Value gain per conversion = cheese value - cost of milk used
                 const costOfMilkUsed = conversionRatio * resolvedRawPrice;
@@ -5434,9 +5664,10 @@ self.onmessage = function (e) {
             return null;
         }
 
-        // Try exact match first
+        // Try exact match first (English or translated)
         for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            if (detail.name === actionName) {
+            const displayName = getActionName(hrid, detail.name);
+            if (displayName === actionName || detail.name === actionName) {
                 return hrid;
             }
         }
@@ -5444,7 +5675,8 @@ self.onmessage = function (e) {
         // Try ★ ↔ (R) variants for refined items
         for (const variant of getRefinedNameVariants(actionName)) {
             for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-                if (detail.name === variant) {
+                const displayName = getActionName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
                     return hrid;
                 }
             }
@@ -6244,7 +6476,7 @@ self.onmessage = function (e) {
                             evData,
                             isCollectionTooltip,
                             keyPrice,
-                            keyDetails?.name,
+                            getItemName(chestKeyHrid, keyDetails?.name),
                             keyPriceOutlier
                         );
                     } else {
@@ -6721,7 +6953,9 @@ self.onmessage = function (e) {
                 bidPrice = (craftBid || craftAsk) - deeperBid;
                 return [
                     {
-                        itemName: i18n_js.t('tooltipPrices.craftItemName', { itemName: upgradeDetails.name }),
+                        itemName: i18n_js.t('tooltipPrices.craftItemName', {
+                            itemName: getItemName(upgradeHrid, upgradeDetails.name),
+                        }),
                         amount: 1,
                         askPrice,
                         bidPrice,
@@ -6734,7 +6968,7 @@ self.onmessage = function (e) {
             if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
             return [
                 {
-                    itemName: i18n_js.t('tooltipPrices.buyItemName', { itemName: upgradeDetails.name }),
+                    itemName: i18n_js.t('tooltipPrices.buyItemName', { itemName: getItemName(upgradeHrid, upgradeDetails.name) }),
                     amount: 1,
                     askPrice,
                     bidPrice,
@@ -7030,7 +7264,7 @@ self.onmessage = function (e) {
                 if (foundInDrop || isSolo) {
                     const actionData = {
                         actionHrid,
-                        actionName: action.name,
+                        actionName: getActionName(actionHrid, action.name),
                         dropRate,
                     };
 
@@ -8626,6 +8860,17 @@ self.onmessage = function (e) {
      */
 
 
+    // The real game i18n keys for these labels are templated strings with an embedded
+    // <bestPrice/> component placeholder, e.g. "Price (Best Buy Offer: <bestPrice/>)".
+    // Plain i18next t() returns that placeholder as literal text, so strip everything
+    // from the placeholder onward to get a stable, locale-correct prefix to match against.
+    function bestOfferPrefix(key, englishTemplate) {
+        const template = translateGameName('marketplacePanel', key, englishTemplate);
+        const placeholderIndex = template.indexOf('<bestPrice');
+        const prefix = placeholderIndex >= 0 ? template.slice(0, placeholderIndex) : template;
+        return prefix.trim().toLowerCase();
+    }
+
     class AutoFillPrice {
         constructor() {
             this.isActive = false;
@@ -8668,8 +8913,16 @@ self.onmessage = function (e) {
 
                 const headerText = header.textContent.trim();
 
-                // Skip instant buy/sell modals (contain "Now" in title)
-                if (headerText.includes(' Now')) {
+                // Skip instant buy/sell modals (contain "Now" in title).
+                // The game localizes the "Buy Now"/"Sell Now" titles, so match the
+                // translated " Now" suffix as well.
+                const buyNowTranslated = translateGameName('marketplacePanel', 'buyNow', 'Buy Now');
+                const sellNowTranslated = translateGameName('marketplacePanel', 'sellNow', 'Sell Now');
+                if (
+                    headerText.includes(' Now') ||
+                    (buyNowTranslated && headerText.includes(buyNowTranslated)) ||
+                    (sellNowTranslated && headerText.includes(sellNowTranslated))
+                ) {
                     return;
                 }
 
@@ -8697,12 +8950,17 @@ self.onmessage = function (e) {
                 return;
             }
 
-            // Determine if this is a buy or sell order
+            // Determine if this is a buy or sell order.
+            // The game renders "Price (Best Buy Offer: ...)" / "Price (Best Sell Offer: ...)" in
+            // its locale, so match both the English prefix and the game-translated prefix.
             const labelParent = bestPriceLabel.parentElement;
             const labelText = labelParent.textContent.toLowerCase();
 
-            const isBuyOrder = labelText.includes('best buy');
-            const isSellOrder = labelText.includes('best sell');
+            const bestBuyPrefix = bestOfferPrefix('priceBestBuyOffer', 'Price (Best Buy Offer: <bestPrice/>)');
+            const bestSellPrefix = bestOfferPrefix('priceBestSellOffer', 'Price (Best Sell Offer: <bestPrice/>)');
+
+            const isBuyOrder = labelText.includes('best buy') || (bestBuyPrefix && labelText.includes(bestBuyPrefix));
+            const isSellOrder = labelText.includes('best sell') || (bestSellPrefix && labelText.includes(bestSellPrefix));
 
             if (!isBuyOrder && !isSellOrder) {
                 return;
@@ -8839,14 +9097,32 @@ self.onmessage = function (e) {
 
             const headerText = header.textContent;
 
-            // Skip all buy modals (Buy Listing, Buy Now)
-            if (headerText.includes('Buy')) {
-                return;
-            }
+            // Primary signal: the live Marketplace component state is locale-independent.
+            // isSell=true is a Sell Now / Sell Listing modal; false is a Buy modal.
+            const marketState = readMarketplaceRuntimeStateFromElement(modal);
+            if (marketState) {
+                if (marketState.isSell !== true) {
+                    return;
+                }
+            } else {
+                // Fallback when the React state cannot be read: match English header text
+                // plus the game's current-language labels (zh: Buy Now 立即购买 / Buy Listing
+                // 购买挂牌, Sell Now 立即出售 / Sell Listing 出售挂牌).
+                const isBuyHeader =
+                    headerText.includes('Buy') ||
+                    headerText.includes(translateGameName('marketplacePanel', 'buyNow', 'Buy Now')) ||
+                    headerText.includes(translateGameName('marketplacePanel', 'buyListing', 'Buy Listing'));
+                if (isBuyHeader) {
+                    return;
+                }
 
-            // Only process sell modals (Sell Listing, Sell Now)
-            if (!headerText.includes('Sell')) {
-                return;
+                const isSellHeader =
+                    headerText.includes('Sell') ||
+                    headerText.includes(translateGameName('marketplacePanel', 'sellNow', 'Sell Now')) ||
+                    headerText.includes(translateGameName('marketplacePanel', 'sellListing', 'Sell Listing'));
+                if (!isSellHeader) {
+                    return;
+                }
             }
 
             // Mark as processed
@@ -8872,12 +9148,16 @@ self.onmessage = function (e) {
             const quantityContainer = modal.querySelector('div[class*="MarketplacePanel_quantityInputs"]');
             const searchRoot = quantityContainer || modal;
 
-            // Find Max button (Sell Listing) or All button (Sell Now)
+            // Find Max button (Sell Listing) or All button (Sell Now). Labels are localized
+            // by the game (zh: Max 最多 / All 全部), so match the translated labels too.
+            const maxLabels = new Set([
+                'Max',
+                'All',
+                translateGameName('marketplacePanel', 'max', 'Max'),
+                translateGameName('marketplacePanel', 'all', 'All'),
+            ]);
             const allButtons = searchRoot.querySelectorAll('button');
-            const maxButton = Array.from(allButtons).find((btn) => {
-                const text = btn.textContent.trim();
-                return text === 'Max' || text === 'All';
-            });
+            const maxButton = Array.from(allButtons).find((btn) => maxLabels.has(btn.textContent.trim()));
 
             if (!maxButton) {
                 return;
@@ -9118,6 +9398,26 @@ self.onmessage = function (e) {
      * - Displays estimated ages on the main Market Listings (order book) tab
      */
 
+
+    // Own listings render a Cancel action that other players' rows never have.
+    // Order book rows render it as a warning-styled button (Button_warning); the
+    // My Listings table wraps it in MarketplacePanel_cancelButtonContainer.
+    const OWN_LISTING_CANCEL_SELECTOR =
+        '[class*="MarketplacePanel_cancelButtonContainer"], button[class*="Button_warning"]';
+
+    /**
+     * Detect whether an order-book table row belongs to the player's own listing.
+     * Locale-independent control classes first; localized "Cancel" label last
+     * (English kept; zh: 取消).
+     * @param {HTMLElement} row - Table row element
+     * @returns {boolean}
+     */
+    function rowHasOwnListingCancelControl(row) {
+        if (!row) return false;
+        if (row.querySelector(OWN_LISTING_CANCEL_SELECTOR)) return true;
+        const text = row.textContent || '';
+        return text.includes('Cancel') || text.includes(translateGameName('marketplacePanel', 'cancel', 'Cancel'));
+    }
 
     class EstimatedListingAge {
         constructor() {
@@ -9585,12 +9885,17 @@ self.onmessage = function (e) {
 
                     const statusText = statusCell.textContent.trim();
 
-                    if (statusText !== 'Expired') continue;
+                    if (
+                        statusText !== 'Expired' &&
+                        statusText !== translateGameName('marketplacePanel', 'expired', 'Expired')
+                    )
+                        continue;
 
-                    // Extract Type (Buy/Sell)
+                    // Extract Type (Buy/Sell). Match both English and game-translated label.
                     const typeCell = allCells[1];
                     const typeText = typeCell?.textContent.trim();
-                    const isSell = typeText === 'Sell';
+                    const isSell =
+                        typeText === 'Sell' || typeText === translateGameName('marketplacePanel', 'sell', 'Sell');
 
                     // Extract Progress (e.g., "0 / 1")
                     // The cell has multiple nested divs. The progress text is in the LAST div overall.
@@ -9796,7 +10101,7 @@ self.onmessage = function (e) {
                     cell.style.fontSize = '0.9em';
                 } else {
                     // Beyond top 20 - YOUR listings only
-                    const hasCancel = row.textContent.includes('Cancel');
+                    const hasCancel = rowHasOwnListingCancelControl(row);
                     if (hasCancel) {
                         // Extract price and quantity for matching
                         const priceText = row.querySelector('[class*="price"]')?.textContent || '';
@@ -9878,7 +10183,7 @@ self.onmessage = function (e) {
             for (const table of tables) {
                 const rows = table.querySelectorAll('tbody tr');
                 for (const row of rows) {
-                    const hasCancel = row.textContent.includes('Cancel');
+                    const hasCancel = rowHasOwnListingCancelControl(row);
                     if (hasCancel) {
                         const priceText = row.querySelector('[class*="price"]')?.textContent || '';
                         const quantityText = row.children[0]?.textContent || '';
@@ -10544,6 +10849,20 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Build a lowercased skip set for non-sortable columns, including the game's
+         * translated labels so Chinese (or other locale) headers are also skipped.
+         * @returns {Set<string>}
+         */
+        _buildSkipCols() {
+            const skip = new Set(['chat link', 'cancel']);
+            const chatLinkTranslated = translateGameName('marketplacePanel', 'chatLink', 'chat link').toLowerCase();
+            const cancelTranslated = translateGameName('marketplacePanel', 'cancel', 'cancel').toLowerCase();
+            if (chatLinkTranslated && chatLinkTranslated !== 'chat link') skip.add(chatLinkTranslated);
+            if (cancelTranslated && cancelTranslated !== 'cancel') skip.add(cancelTranslated);
+            return skip;
+        }
+
+        /**
          * Wire click-to-sort on all sortable table headers
          * @param {HTMLElement} tableNode - The listings table
          */
@@ -10551,7 +10870,7 @@ self.onmessage = function (e) {
             const thead = tableNode.querySelector('thead tr');
             if (!thead) return;
 
-            const SKIP_COLS = new Set(['chat link', 'cancel']);
+            const skipCols = this._buildSkipCols();
 
             for (const th of thead.querySelectorAll('th')) {
                 const rawText = th.textContent
@@ -10559,7 +10878,7 @@ self.onmessage = function (e) {
                     .toLowerCase()
                     .replace(/\s*[▲▼#]$/, '')
                     .trim();
-                if (SKIP_COLS.has(rawText)) continue;
+                if (skipCols.has(rawText)) continue;
 
                 const colKey = this._textToColKey(rawText);
                 if (!colKey) continue;
@@ -10578,20 +10897,55 @@ self.onmessage = function (e) {
             }
         }
 
+        /**
+         * Build a bidirectional lowercased text → colKey map that includes both the
+         * English labels and the translated labels so localized headers are
+         * recognized in any locale. Real game columns are translated via the game's
+         * own i18n; "top order price/age", "total price", and "listed" are headers
+         * Toolasha injects itself, so they're translated via Toolasha's own locale
+         * (the exact same t() call addTableHeaders() uses to render them) rather
+         * than the game's — the game has no i18n key for a header it never renders.
+         * @returns {Object<string, string>}
+         */
+        _buildColKeyMap() {
+            const gameColumns = [
+                ['status', 'status'],
+                ['type', 'type'],
+                ['progress', 'progress'],
+                ['price', 'price'],
+                ['collect', 'collect'],
+            ];
+            const injectedColumns = [
+                ['topOrderPrice', 'top order price', i18n_js.t('listingPriceDisplay.topOrderPriceHeader')],
+                ['topOrderAge', 'top order age', i18n_js.t('listingPriceDisplay.topOrderAgeHeader')],
+                ['totalPrice', 'total price', i18n_js.t('listingPriceDisplay.totalPriceHeader')],
+                ['listed', 'listed', i18n_js.t('listingPriceDisplay.listedHeader')],
+            ];
+
+            const map = {};
+            for (const [colKey, english] of gameColumns) {
+                map[english] = colKey;
+                const translated = translateGameName('marketplacePanel', colKey, english).toLowerCase();
+                if (translated && translated !== english) {
+                    map[translated] = colKey;
+                }
+            }
+            for (const [colKey, english, toolashaLabel] of injectedColumns) {
+                map[english] = colKey;
+                const translated = (toolashaLabel || '').trim().toLowerCase();
+                if (translated && translated !== english) {
+                    map[translated] = colKey;
+                }
+            }
+            return map;
+        }
+
         /** @returns {string|null} */
         _textToColKey(text) {
-            const map = {
-                status: 'status',
-                type: 'type',
-                progress: 'progress',
-                price: 'price',
-                'top order price': 'topOrderPrice',
-                'top order age': 'topOrderAge',
-                'total price': 'totalPrice',
-                listed: 'listed',
-                collect: 'collect',
-            };
-            return map[text] ?? null;
+            if (!this._colKeyMap) {
+                this._colKeyMap = this._buildColKeyMap();
+            }
+            return this._colKeyMap[text] ?? null;
         }
 
         /** @returns {string} */
@@ -10859,14 +11213,19 @@ self.onmessage = function (e) {
                 }
             }
 
-            // Detect isSell from type cell (2nd cell)
+            // Detect isSell from type cell (2nd cell).
+            // The game renders Buy/Sell labels in its locale, so match both the
+            // English text and the game-translated text.
             let isSell = null;
             const typeCell = row.children[1];
             if (typeCell) {
-                const text = (typeCell.textContent || '').toLowerCase();
-                if (text.includes('sell')) {
+                const raw = typeCell.textContent || '';
+                const lower = raw.toLowerCase();
+                const sellTranslated = translateGameName('marketplacePanel', 'sell', 'Sell').toLowerCase();
+                const buyTranslated = translateGameName('marketplacePanel', 'buy', 'Buy').toLowerCase();
+                if (lower.includes('sell') || (sellTranslated && lower.includes(sellTranslated))) {
                     isSell = true;
-                } else if (text.includes('buy')) {
+                } else if (lower.includes('buy') || (buyTranslated && lower.includes(buyTranslated))) {
                     isSell = false;
                 }
             }
@@ -11464,7 +11823,10 @@ self.onmessage = function (e) {
          * @returns {boolean}
          */
         _isRowCollectable(row) {
-            return Array.from(row.querySelectorAll('button')).some((btn) => btn.textContent.trim() === 'Collect');
+            // The Collect button label is localized by the game (zh: 收集), so match the
+            // translated label too.
+            const collectLabels = new Set(['Collect', translateGameName('marketplacePanel', 'collect', 'Collect')]);
+            return Array.from(row.querySelectorAll('button')).some((btn) => collectLabels.has(btn.textContent.trim()));
         }
 
         /**
@@ -13036,7 +13398,7 @@ self.onmessage = function (e) {
 
             if (mode === 'chest') {
                 const options = CHEST_HRIDS.map((hrid) => {
-                    const name = dataManager.getItemDetails(hrid)?.name || hrid;
+                    const name = getItemName(hrid, dataManager.getItemDetails(hrid)?.name || hrid);
                     return `<option value="${hrid}">${name}</option>`;
                 }).join('');
                 container.innerHTML = `
@@ -13085,13 +13447,13 @@ self.onmessage = function (e) {
             for (const [hrid, details] of Object.entries(gameData.itemDetailMap)) {
                 if (details.alchemyDetail?.transmuteDropTable?.length) {
                     const option = document.createElement('option');
-                    option.value = details.name;
+                    option.value = getItemName(hrid, details.name);
                     option.dataset.hrid = hrid;
                     transmuteList.appendChild(option);
                 }
                 if (details.enhancementCosts?.length) {
                     const option = document.createElement('option');
-                    option.value = details.name;
+                    option.value = getItemName(hrid, details.name);
                     option.dataset.hrid = hrid;
                     enhanceList.appendChild(option);
                 }
@@ -13313,7 +13675,7 @@ self.onmessage = function (e) {
                         items: [{ itemHrid: hrid, quantityPerAction: 1 }],
                     };
                 } else {
-                    detailInfo.untradeableOutput = itemDetails.name || hrid.split('/').pop();
+                    detailInfo.untradeableOutput = getItemName(hrid, itemDetails.name || hrid.split('/').pop());
                 }
             }
 
@@ -13374,7 +13736,8 @@ self.onmessage = function (e) {
             const untracked = [];
             for (const drop of rawTable) {
                 if (!(drop.dropRate > 0) || drop.itemHrid === hrid || trackedHrids.has(drop.itemHrid)) continue;
-                untracked.push(dataManager.getItemDetails(drop.itemHrid)?.name || drop.itemHrid.split('/').pop());
+                const fallback = dataManager.getItemDetails(drop.itemHrid)?.name || drop.itemHrid.split('/').pop();
+                untracked.push(getItemName(drop.itemHrid, fallback));
             }
             return untracked;
         }
@@ -13421,8 +13784,8 @@ self.onmessage = function (e) {
             let html = '';
 
             if (ctx?.items?.length) {
-                const names = ctx.items.map(
-                    (i) => dataManager.getItemDetails(i.itemHrid)?.name || i.itemHrid.split('/').pop()
+                const names = ctx.items.map((i) =>
+                    getItemName(i.itemHrid, dataManager.getItemDetails(i.itemHrid)?.name || i.itemHrid.split('/').pop())
                 );
                 html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
                 ${i18n_js.t('riskOfRuinUi.trackingSellDepthNote', { names: names.join(', ') })}
@@ -13528,7 +13891,7 @@ self.onmessage = function (e) {
             if (costBreakdown.entryKey) {
                 rows.push(
                     `<div>${i18n_js.t('riskOfRuinUi.entryKeyLine', {
-                    name: costBreakdown.entryKey.name,
+                    name: getItemName(costBreakdown.entryKey.hrid, costBreakdown.entryKey.name),
                     price:
                         fmtGold(costBreakdown.entryKey.price) +
                         warningIcon_js.buildOutlierPriceWarningIcon(costBreakdown.entryKey.isOutlier),
@@ -13538,7 +13901,7 @@ self.onmessage = function (e) {
             if (costBreakdown.chestKey) {
                 rows.push(
                     `<div>${i18n_js.t('riskOfRuinUi.chestKeyLine', {
-                    name: costBreakdown.chestKey.name,
+                    name: getItemName(costBreakdown.chestKey.hrid, costBreakdown.chestKey.name),
                     price:
                         fmtGold(costBreakdown.chestKey.price) +
                         warningIcon_js.buildOutlierPriceWarningIcon(costBreakdown.chestKey.isOutlier),
@@ -13597,7 +13960,9 @@ self.onmessage = function (e) {
         }
 
         _alchemyDetailsHTML({ breakdown }, startingBalance, maxSinglePossibleLoss, minActions) {
-            const catalystName = breakdown.catalystHrid ? dataManager.getItemDetails(breakdown.catalystHrid)?.name : null;
+            const catalystName = breakdown.catalystHrid
+                ? getItemName(breakdown.catalystHrid, dataManager.getItemDetails(breakdown.catalystHrid)?.name)
+                : null;
 
             const rows = [
                 `<div>${i18n_js.t('riskOfRuinUi.successRateLine', { rate: formatters_js.formatPercentage(breakdown.successRate, 2) })}</div>`,
@@ -13623,7 +13988,10 @@ self.onmessage = function (e) {
 
             const mainRows = breakdown.mainBranches
                 .map((branch) => {
-                    const itemName = dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid;
+                    const itemName = getItemName(
+                        branch.itemHrid,
+                        dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid
+                    );
                     return `<tr>
                         <td style="padding:2px 6px;">${
                             branch.isSelfReturn ? i18n_js.t('riskOfRuinUi.selfReturnLabel', { itemName }) : itemName
@@ -13645,14 +14013,17 @@ self.onmessage = function (e) {
                     : '';
 
             const bonusRows = breakdown.bonusDrops
-                .map(
-                    (bonus) =>
-                        `<tr>
-                        <td style="padding:2px 6px;">${dataManager.getItemDetails(bonus.itemHrid)?.name || bonus.itemHrid}</td>
+                .map((bonus) => {
+                    const itemName = getItemName(
+                        bonus.itemHrid,
+                        dataManager.getItemDetails(bonus.itemHrid)?.name || bonus.itemHrid
+                    );
+                    return `<tr>
+                        <td style="padding:2px 6px;">${itemName}</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(bonus.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(bonus.payout)}${warningIcon_js.buildOutlierPriceWarningIcon(bonus.isOutlier)}</td>
-                    </tr>`
-                )
+                    </tr>`;
+                })
                 .join('');
             const bonusSection = breakdown.bonusDrops.length
                 ? this._wrapDetails(
@@ -14269,6 +14640,29 @@ self.onmessage = function (e) {
      */
 
 
+    /**
+     * Check whether rendered game UI text matches an English label or its in-game translation
+     * (tab/cell labels are localized by the game, e.g. zh: Market Listings 商品列表).
+     * @param {string} text - Rendered textContent
+     * @param {string} english - English label
+     * @param {string} key - Game i18n key within the marketplacePanel namespace
+     * @returns {boolean}
+     */
+    function matchesMarketplaceLabel(text, english, key) {
+        return text.includes(english) || text.includes(translateGameName('marketplacePanel', key, english));
+    }
+
+    /**
+     * Check whether trimmed rendered game UI text equals an English label or its translation.
+     * @param {string} text - Trimmed rendered textContent
+     * @param {string} english - English label
+     * @param {string} key - Game i18n key within the marketplacePanel namespace
+     * @returns {boolean}
+     */
+    function equalsMarketplaceLabel(text, english, key) {
+        return text === english || text === translateGameName('marketplacePanel', key, english);
+    }
+
     class MarketHistoryViewer {
         constructor() {
             this.isInitialized = false;
@@ -14392,7 +14786,7 @@ self.onmessage = function (e) {
 
                 // Verify this is the marketplace tabs (check for Market Listings tab)
                 const hasMarketListingsTab = Array.from(tabsContainer.children).some((btn) =>
-                    btn.textContent.includes('Market Listings')
+                    matchesMarketplaceLabel(btn.textContent, 'Market Listings', 'marketListings')
                 );
                 if (!hasMarketListingsTab) return;
 
@@ -14403,7 +14797,7 @@ self.onmessage = function (e) {
 
                 // Get reference tab (My Listings) to clone structure
                 const referenceTab = Array.from(tabsContainer.children).find((btn) =>
-                    btn.textContent.includes('My Listings')
+                    matchesMarketplaceLabel(btn.textContent, 'My Listings', 'myListings')
                 );
                 if (!referenceTab) return;
 
@@ -14467,7 +14861,7 @@ self.onmessage = function (e) {
 
                         // Check if this is still the marketplace (Market Listings tab exists)
                         const hasMarketListingsTab = Array.from(tabsContainer.children).some((btn) =>
-                            btn.textContent.includes('Market Listings')
+                            matchesMarketplaceLabel(btn.textContent, 'Market Listings', 'marketListings')
                         );
 
                         if (!hasMarketListingsTab) {
@@ -14563,7 +14957,8 @@ self.onmessage = function (e) {
 
                     const statusText = statusCell.textContent.trim();
 
-                    if (statusText !== 'Expired') continue;
+                    // Status labels are localized by the game (zh: Expired 已过期)
+                    if (!equalsMarketplaceLabel(statusText, 'Expired', 'expired')) continue;
 
                     // This row is expired - now match it to our stored listings
                     // Extract identifying information from the row
@@ -14577,7 +14972,8 @@ self.onmessage = function (e) {
                         continue;
                     }
 
-                    const isSell = typeCell.textContent.trim() === 'Sell';
+                    // Type labels are localized by the game (zh: Sell 出售)
+                    const isSell = equalsMarketplaceLabel(typeCell.textContent.trim(), 'Sell', 'sell');
                     const priceText = priceCell.textContent.trim();
                     const price = this.parsePrice(priceText);
                     const progressText = progressCell.textContent.trim();
@@ -14860,7 +15256,8 @@ self.onmessage = function (e) {
 
             // Get item name and cache it
             const itemDetails = dataManager.getItemDetails(itemHrid);
-            const name = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+            const fallback = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+            const name = getItemName(itemHrid, fallback);
             this.itemNameCache.set(itemHrid, name);
             return name;
         }
@@ -17182,6 +17579,19 @@ self.onmessage = function (e) {
     const MARKETPLACE_REMOUNT_GRACE_MS = 350;
 
     /**
+     * Check whether a rendered tab label matches a native Marketplace tab name.
+     * Tab labels are localized by the game (zh: Market Listings 商品列表 /
+     * My Listings 我的挂牌), so match both the English and translated text.
+     * @param {string} text - Rendered tab text
+     * @param {'marketListings'|'myListings'} key - marketplacePanel i18n key
+     * @returns {boolean}
+     */
+    function matchesMarketplaceTabLabel(text, key) {
+        const fallback = key === 'marketListings' ? 'Market Listings' : 'My Listings';
+        return text.includes(fallback) || text.includes(translateGameName('marketplacePanel', key, fallback));
+    }
+
+    /**
      * Return true only when an element and all element ancestors are actually visible.
      * @param {HTMLElement} element
      * @returns {boolean}
@@ -17213,7 +17623,9 @@ self.onmessage = function (e) {
                 if (!isElementActuallyVisible(tabsContainer)) continue;
                 const hasNativeTab = Array.from(tabsContainer.children).some((tab) => {
                     const text = tab.textContent || '';
-                    return text.includes('Market Listings') || text.includes('My Listings');
+                    return (
+                        matchesMarketplaceTabLabel(text, 'marketListings') || matchesMarketplaceTabLabel(text, 'myListings')
+                    );
                 });
                 if (hasNativeTab) candidates.add(tabsContainer);
             }
@@ -17238,7 +17650,10 @@ self.onmessage = function (e) {
             return tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('Mui-selected');
         });
 
-        return selectedNativeTabs.length === 1 && selectedNativeTabs[0].textContent.includes('Market Listings');
+        return (
+            selectedNativeTabs.length === 1 &&
+            matchesMarketplaceTabLabel(selectedNativeTabs[0].textContent, 'marketListings')
+        );
     }
 
     /**
@@ -17558,7 +17973,7 @@ self.onmessage = function (e) {
         const tab = Array.from(tabContainer.children).find((el) => {
             if (el.getAttribute('role') !== 'tab') return false;
             if (el.hasAttribute('data-mwi-custom-tab') || el.hasAttribute('data-mwi-shrine-tab')) return false;
-            return el.textContent.includes('My Listings');
+            return matchesMarketplaceTabLabel(el.textContent, 'myListings');
         });
 
         if (!tab) return false;
@@ -17621,8 +18036,14 @@ self.onmessage = function (e) {
                 btn.textContent = i18n_js.t('listingRefreshNavigator.refreshButtonLabel');
                 btn.addEventListener('click', () => this._startSession());
 
+                // The Upgrade Capacity button label is localized by the game (zh: 升级容量),
+                // so match the translated label too.
+                const upgradeLabels = [
+                    'Upgrade Capacity',
+                    translateGameName('marketplacePanel', 'upgradeCapacity', 'Upgrade Capacity'),
+                ];
                 const upgradeBtn = Array.from(countContainer.querySelectorAll('button')).find((b) =>
-                    b.textContent.includes('Upgrade Capacity')
+                    upgradeLabels.some((label) => b.textContent.includes(label))
                 );
 
                 if (upgradeBtn) {
@@ -17822,8 +18243,11 @@ self.onmessage = function (e) {
             }
 
             if (!this.nativeRefreshBtn) {
+                // The Refresh button label is localized by the game (zh: 刷新), so match the
+                // translated label too.
+                const refreshLabels = new Set(['Refresh', translateGameName('marketplacePanel', 'refresh', 'Refresh')]);
                 const found = Array.from(container.querySelectorAll('button')).find(
-                    (b) => b.id !== NEXT_BTN_ID && b.textContent.trim() === 'Refresh'
+                    (b) => b.id !== NEXT_BTN_ID && refreshLabels.has(b.textContent.trim())
                 );
                 if (found) {
                     found.style.display = 'none';
@@ -18003,7 +18427,8 @@ self.onmessage = function (e) {
         getItemName(itemHrid) {
             const initData = dataManager.getInitClientData();
             const itemData = initData?.itemDetailMap?.[itemHrid];
-            return itemData?.name || itemHrid.replace('/items/', '').replaceAll('_', ' ');
+            const fallback = itemData?.name || itemHrid.replace('/items/', '').replaceAll('_', ' ');
+            return getItemName(itemHrid, fallback);
         }
 
         /**
@@ -19493,6 +19918,18 @@ self.onmessage = function (e) {
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
 
     /**
+     * Marketplace modal title spec per shortcut action: English title plus the
+     * game's i18n key (namespace: marketplacePanel). Modal titles are localized
+     * (zh: 立即购买 / 出售挂牌 ...), so both variants must be accepted.
+     */
+    const MARKETPLACE_MODAL_TITLES = {
+        buy: { english: 'Buy Now', key: 'buyNow' },
+        sell: { english: 'Sell Now', key: 'sellNow' },
+        'buy-listing': { english: 'Buy Listing', key: 'buyListing' },
+        'sell-listing': { english: 'Sell Listing', key: 'sellListing' },
+    };
+
+    /**
      * MarketplaceShortcuts class manages the dropdown in item submenus
      */
     class MarketplaceShortcuts {
@@ -19588,8 +20025,12 @@ self.onmessage = function (e) {
             const itemDetails = gameData.itemDetailMap[itemHrid];
             if (!itemDetails?.isTradable) return;
 
-            // Find "View Marketplace" button
-            const viewMarketplaceBtn = this.findButtonByText(actionMenu, 'View Marketplace');
+            // Find "View Marketplace" button. The game renders this item-action-menu
+            // button through the same generic full-width button component as every
+            // other menu entry (no stable class/href), so match its localized label
+            // (game key: item.viewMarketplace) with English as fallback.
+            const viewMarketplaceLabel = translateGameName('item', 'viewMarketplace', 'View Marketplace');
+            const viewMarketplaceBtn = this.findButtonByText(actionMenu, 'View Marketplace', viewMarketplaceLabel);
             if (!viewMarketplaceBtn) return;
 
             // Build and insert dropdown
@@ -19813,23 +20254,50 @@ self.onmessage = function (e) {
          * @returns {Object|null}
          */
         getPendingAutofillMode(actionType) {
-            return (
-                {
-                    buy: { header: 'Buy Now', isSell: false, isPostNewListing: false, isInstantOrder: true },
-                    sell: { header: 'Sell Now', isSell: true, isPostNewListing: false, isInstantOrder: true },
-                    'buy-listing': {
-                        header: 'Buy Listing',
-                        isSell: false,
-                        isPostNewListing: true,
-                        isInstantOrder: false,
-                    },
-                    'sell-listing': {
-                        header: 'Sell Listing',
-                        isSell: true,
-                        isPostNewListing: true,
-                        isInstantOrder: false,
-                    },
-                }[actionType] || null
+            const titleSpec = MARKETPLACE_MODAL_TITLES[actionType];
+            if (!titleSpec) return null;
+            const flags = {
+                buy: { isSell: false, isPostNewListing: false, isInstantOrder: true },
+                sell: { isSell: true, isPostNewListing: false, isInstantOrder: true },
+                'buy-listing': { isSell: false, isPostNewListing: true, isInstantOrder: false },
+                'sell-listing': { isSell: true, isPostNewListing: true, isInstantOrder: false },
+            }[actionType];
+            return { header: titleSpec.english, ...flags };
+        }
+
+        /**
+         * Get every accepted modal header text for a shortcut action: the English
+         * title plus the game's current-language translation.
+         * @param {string} actionType
+         * @returns {string[]}
+         */
+        getModalHeaderLabels(actionType) {
+            const spec = MARKETPLACE_MODAL_TITLES[actionType];
+            if (!spec) return [];
+            const translated = translateGameName('marketplacePanel', spec.key, spec.english);
+            return translated === spec.english ? [spec.english] : [spec.english, translated];
+        }
+
+        /**
+         * Whether a live modal header corresponds to the given shortcut action,
+         * matching either the English title or its localized translation.
+         * @param {string} headerText
+         * @param {string} actionType
+         * @returns {boolean}
+         */
+        modalHeaderMatches(headerText, actionType) {
+            return this.getModalHeaderLabels(actionType).some((label) => headerText.includes(label));
+        }
+
+        /**
+         * Whether a modal header is any marketplace order/listing dialog
+         * (Buy/Sell Now, Buy/Sell Listing), in English or the game language.
+         * @param {string} headerText
+         * @returns {boolean}
+         */
+        isMarketplaceModalHeader(headerText) {
+            return Object.keys(MARKETPLACE_MODAL_TITLES).some((actionType) =>
+                this.modalHeaderMatches(headerText, actionType)
             );
         }
 
@@ -19845,7 +20313,7 @@ self.onmessage = function (e) {
             if (!expected || !modal?.isConnected || !quantityInput?.isConnected) return false;
 
             const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
-            if (headerText !== expected.header) return false;
+            if (!this.modalHeaderMatches(headerText, target.actionType)) return false;
 
             const state = readMarketplaceRuntimeStateFromElement(quantityInput);
             if (!state) return false;
@@ -19928,19 +20396,23 @@ self.onmessage = function (e) {
         /**
          * Find and click an instant action button (Sell/Buy) on the marketplace order book.
          * These buttons have text inside MarketplacePanel_actionButtonText divs.
-         * @param {string} buttonText - 'Sell' or 'Buy'
+         * The label is localized by the game (zh: marketplacePanel.sell 出售 / buy 购买);
+         * the English label stays as a fallback.
+         * @param {string} buttonText - 'Sell' or 'Buy' (English label / i18n key)
          * @param {number} timeout - Max wait time in ms (default 3000)
          * @returns {Promise<void>}
          */
         async clickInstantActionButton(buttonText, timeout = 3000) {
             const start = Date.now();
+            const translatedLabel = translateGameName('marketplacePanel', buttonText.toLowerCase(), buttonText);
+            const acceptedLabels = translatedLabel === buttonText ? [buttonText] : [buttonText, translatedLabel];
 
             return new Promise((resolve, reject) => {
                 const interval = setInterval(() => {
                     const actionTexts = document.querySelectorAll('[class*="MarketplacePanel_actionButtonText"]');
                     for (const div of actionTexts) {
                         // Skip entries with SVGs (those are icon-only buttons)
-                        if (!div.querySelector('svg') && div.textContent.trim() === buttonText) {
+                        if (!div.querySelector('svg') && acceptedLabels.includes(div.textContent.trim())) {
                             const parentBtn = div.closest('button');
                             if (parentBtn) {
                                 clearInterval(interval);
@@ -19964,19 +20436,33 @@ self.onmessage = function (e) {
         /**
          * Find and click a new listing button (+ New Sell Listing / + New Buy Listing).
          * These buttons use game's Button_sell or Button_buy CSS classes.
-         * @param {string} buttonText - Full button text to match
+         * The label is localized (zh: marketplacePanel.newSellListing 新出售挂牌 /
+         * newBuyListing 新购买挂牌); the rendered label may keep a leading '+', so a
+         * leading '+' and whitespace are stripped from both sides before comparing.
+         * The English label stays as a fallback.
+         * @param {string} buttonText - Full English button text to match
          * @param {string} partialClass - Partial CSS class to match (e.g. 'Button_sell')
          * @param {number} timeout - Max wait time in ms (default 3000)
          * @returns {Promise<void>}
          */
         async clickListingButton(buttonText, partialClass, timeout = 3000) {
             const start = Date.now();
+            const i18nKey = partialClass.includes('sell') ? 'newSellListing' : 'newBuyListing';
+            const translatedLabel = translateGameName('marketplacePanel', i18nKey, buttonText);
+            const acceptedLabels = translatedLabel === buttonText ? [buttonText] : [buttonText, translatedLabel];
+            // Normalize a possible leading '+' / whitespace from rendered labels
+            const normalizeLabel = (text) =>
+                text
+                    .trim()
+                    .replace(/^[+\s]+/, '')
+                    .trim();
 
             return new Promise((resolve, reject) => {
                 const interval = setInterval(() => {
                     const candidates = document.querySelectorAll(`[class*="${partialClass}"]`);
                     for (const btn of candidates) {
-                        if (btn.textContent.trim() === buttonText) {
+                        const candidateLabel = normalizeLabel(btn.textContent);
+                        if (acceptedLabels.some((label) => normalizeLabel(label) === candidateLabel)) {
                             clearInterval(interval);
                             btn.click();
                             resolve();
@@ -20009,7 +20495,7 @@ self.onmessage = function (e) {
 
             const expected = this.getPendingAutofillMode(target.actionType);
             const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
-            if (!expected || headerText !== expected.header) return;
+            if (!expected || !this.modalHeaderMatches(headerText, target.actionType)) return;
 
             // Prefer the newest matching modal if React replaces the modal during convergence.
             for (const timer of this.pendingAutofillWriteTimers) clearTimeout(timer);
@@ -20047,11 +20533,13 @@ self.onmessage = function (e) {
             if (!header) return;
 
             const headerText = header.textContent.trim();
+            // Buy-side modals only (Buy Now / Buy Listing), in English or the game language.
             if (
-                !headerText.includes('Buy Now') &&
-                !headerText.includes('Buy Listing')
-                // !headerText.includes('Sell Now') &&
-                // !headerText.includes('Sell Listing')
+                !this.modalHeaderMatches(headerText, 'buy') &&
+                !this.modalHeaderMatches(headerText, 'buy-listing')
+                // Sell-side headers intentionally excluded for now:
+                // !this.modalHeaderMatches(headerText, 'sell')
+                // !this.modalHeaderMatches(headerText, 'sell-listing')
             ) {
                 return;
             }
@@ -20079,12 +20567,7 @@ self.onmessage = function (e) {
             if (!header) return;
 
             const headerText = header.textContent.trim();
-            const isMarketplaceModal =
-                headerText.includes('Buy Now') ||
-                headerText.includes('Buy Listing') ||
-                headerText.includes('Sell Now') ||
-                headerText.includes('Sell Listing');
-            if (!isMarketplaceModal) return;
+            if (!this.isMarketplaceModalHeader(headerText)) return;
 
             // Delay to let the modal fully render
             setTimeout(() => {
@@ -20199,7 +20682,9 @@ self.onmessage = function (e) {
             if (!header) return;
 
             const headerText = header.textContent.trim();
-            if (!headerText.includes('Buy Now') && !headerText.includes('Buy Listing')) return;
+            if (!this.modalHeaderMatches(headerText, 'buy') && !this.modalHeaderMatches(headerText, 'buy-listing')) {
+                return;
+            }
 
             setTimeout(() => {
                 if (modal.querySelector('.mwi-owned-count')) return;
@@ -20216,11 +20701,14 @@ self.onmessage = function (e) {
 
                 // Determine enhancement level from modal (if present). Same type="text"
                 // staleness as the quantity field elsewhere in this file - match both types.
+                // The label is localized (zh: 强化等级); match both languages.
+                const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
                 let enhancementLevel = 0;
                 const allInputs = modal.querySelectorAll('input[type="number"], input[type="text"]');
                 for (const input of allInputs) {
                     const parent = input.closest('div');
-                    if (parent?.textContent?.includes('Enhancement Level')) {
+                    const parentText = parent?.textContent || '';
+                    if (parentText.includes('Enhancement Level') || parentText.includes(enhancementLabel)) {
                         enhancementLevel = parseInt(input.value) || 0;
                         break;
                     }
@@ -20265,10 +20753,28 @@ self.onmessage = function (e) {
         findQuantityInput(modal) {
             // The marketplace update switched this field from type="number" to type="text"
             // (to support typed compact values like "5k"), so match both types.
+
+            // Structural first: the quantity field lives in MarketplacePanel_quantityInputs,
+            // which is locale-independent (the enhancement level input is in a separate row).
+            const structuralInputs = Array.from(
+                modal.querySelectorAll(
+                    '[class*="MarketplacePanel_quantityInputs"] input[type="number"], ' +
+                        '[class*="MarketplacePanel_quantityInputs"] input[type="text"]'
+                )
+            );
+            if (structuralInputs.length === 1) return structuralInputs[0];
+
             const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
 
             if (allInputs.length === 0) return null;
             if (allInputs.length === 1) return allInputs[0];
+
+            // Localized labels (English kept; zh: Quantity 数量 / Enhancement Level 强化等级)
+            const quantityLabel = translateGameName('marketplacePanel', 'quantity', 'Quantity');
+            const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
+            const textNamesQuantity = (text) =>
+                (text.includes('Quantity') || text.includes(quantityLabel)) &&
+                !(text.includes('Enhancement Level') || text.includes(enhancementLabel));
 
             // Multiple inputs — find the one near "Quantity" text, not "Enhancement Level"
             for (let level = 0; level < 4; level++) {
@@ -20279,8 +20785,7 @@ self.onmessage = function (e) {
                     }
                     if (!parent) continue;
 
-                    const text = parent.textContent;
-                    if (text.includes('Quantity') && !text.includes('Enhancement Level')) {
+                    if (textNamesQuantity(parent.textContent)) {
                         return input;
                     }
                 }
@@ -20290,15 +20795,17 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Find a button by its text content
+         * Find a button by its text content. Every passed candidate is accepted
+         * (used to match both the English label and its localized translation).
          * @param {HTMLElement} container - Container to search in
-         * @param {string} text - Button text to find
+         * @param {...string} texts - Button texts to find
          * @returns {HTMLElement|null} Button element or null
          */
-        findButtonByText(container, text) {
+        findButtonByText(container, ...texts) {
+            const acceptedTexts = new Set(texts.filter(Boolean));
             const buttons = container.querySelectorAll('button');
             for (const btn of buttons) {
-                if (btn.textContent.trim() === text) return btn;
+                if (acceptedTexts.has(btn.textContent.trim())) return btn;
             }
             return null;
         }
@@ -20336,12 +20843,7 @@ self.onmessage = function (e) {
             if (!header) return;
 
             const headerText = header.textContent.trim();
-            const isMarketplaceModal =
-                headerText.includes('Buy Now') ||
-                headerText.includes('Buy Listing') ||
-                headerText.includes('Sell Now') ||
-                headerText.includes('Sell Listing');
-            if (!isMarketplaceModal) return;
+            if (!this.isMarketplaceModalHeader(headerText)) return;
 
             setTimeout(() => {
                 if (modal.querySelector('.mwi-mp-multiplier')) return;
@@ -20495,7 +20997,12 @@ self.onmessage = function (e) {
         removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE);
         currentTabs.length = 0;
 
-        const referenceTab = Array.from(tabsContainer.children).find((tab) => tab.textContent.includes('My Listings'));
+        // The My Listings tab label is localized by the game (zh: 我的挂牌), so match the
+        // translated label too.
+        const myListingsLabels = ['My Listings', translateGameName('marketplacePanel', 'myListings', 'My Listings')];
+        const referenceTab = Array.from(tabsContainer.children).find((tab) =>
+            myListingsLabels.some((label) => tab.textContent.includes(label))
+        );
         if (!referenceTab) return false;
         tabsContainer.style.flexWrap = 'wrap';
 
@@ -20793,7 +21300,7 @@ self.onmessage = function (e) {
             if (!itemDetails?.isTradable) return;
 
             try {
-                await addToQueue(currentItemHrid, itemDetails.name);
+                await addToQueue(currentItemHrid, getItemName(currentItemHrid, itemDetails.name));
             } catch (error) {
                 console.error('[SellQueue] Failed to add item to the Marketplace queue:', error);
                 if (sellQueueSessionId !== null) marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
@@ -21005,6 +21512,9 @@ self.onmessage = function (e) {
      * Includes task rewards (coins, task tokens, Purple's Gift) + action profit
      */
 
+
+    new Set(profitConstants_js.GATHERING_TYPES);
+    new Set(profitConstants_js.PRODUCTION_TYPES);
 
     /**
      * Calculate Task Token value from Task Shop items
@@ -22246,7 +22756,10 @@ self.onmessage = function (e) {
 
             // Get human-readable name
             const houseDetail = houseRoomDetailMap[houseRoomHrid];
-            const houseName = houseDetail?.name || houseRoomHrid.replace('/house_rooms/', '');
+            const houseName = getHouseRoomName(
+                houseRoomHrid,
+                houseDetail?.name || houseRoomHrid.replace('/house_rooms/', '')
+            );
 
             breakdown.push({
                 hrid: houseRoomHrid,
@@ -22297,9 +22810,12 @@ self.onmessage = function (e) {
             const { cost, isOutlier } = abilityCostCalculator_js.calculateAbilityCost(ability.abilityHrid, ability.level);
             totalCost += cost;
 
-            // Use the already-localized ability name (mirrors the lookup pattern in
-            // networth-exclusion-popup.js's getExclusionDisplayName for exc.type === 'ability')
-            const abilityName = gameData?.abilityDetailMap?.[ability.abilityHrid]?.name ?? ability.abilityHrid;
+            // Localized ability name, mirroring the lookup pattern in
+            // networth-exclusion-popup.js's getExclusionDisplayName for exc.type === 'ability'
+            const abilityName = getAbilityName(
+                ability.abilityHrid,
+                gameData?.abilityDetailMap?.[ability.abilityHrid]?.name ?? ability.abilityHrid
+            );
 
             const abilityData = {
                 hrid: ability.abilityHrid,
@@ -22641,7 +23157,7 @@ self.onmessage = function (e) {
             const value = equippedValues[i];
 
             const itemDetails = gameData.itemDetailMap[item.itemHrid];
-            const itemName = itemDetails?.name || item.itemHrid.replace('/items/', '');
+            const itemName = getItemName(item.itemHrid, itemDetails?.name || item.itemHrid.replace('/items/', ''));
             const displayName = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
 
             // Check exclusions in priority order: assetType > item > loadout
@@ -22700,7 +23216,7 @@ self.onmessage = function (e) {
 
             // Add to breakdown
             const itemDetails = gameData.itemDetailMap[item.itemHrid];
-            const itemName = itemDetails?.name || item.itemHrid.replace('/items/', '');
+            const itemName = getItemName(item.itemHrid, itemDetails?.name || item.itemHrid.replace('/items/', ''));
             const displayName = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
 
             const itemData = {
@@ -22734,9 +23250,11 @@ self.onmessage = function (e) {
                 continue;
             }
             if (isExcluded('category', categoryHrid)) {
-                const categoryName =
+                const categoryName = getItemCategoryName(
+                    categoryHrid,
                     gameData.itemCategoryDetailMap?.[categoryHrid]?.name ||
-                    i18n_js.t('networthCalculator.otherCategoryFallbackLabel');
+                        i18n_js.t('networthCalculator.otherCategoryFallbackLabel')
+                );
                 trackExcluded(
                     'category',
                     categoryHrid,
@@ -22761,9 +23279,11 @@ self.onmessage = function (e) {
 
                 // Coin is always listed individually — never bucketed into a category
                 if (item.itemHrid !== '/items/coin') {
-                    const categoryName =
+                    const categoryName = getItemCategoryName(
+                        categoryHrid,
                         gameData.itemCategoryDetailMap?.[categoryHrid]?.name ||
-                        i18n_js.t('networthCalculator.otherCategoryFallbackLabel');
+                            i18n_js.t('networthCalculator.otherCategoryFallbackLabel')
+                    );
 
                     if (!inventoryByCategory[categoryName]) {
                         inventoryByCategory[categoryName] = {
@@ -22795,7 +23315,10 @@ self.onmessage = function (e) {
         for (const listing of marketListings) {
             const quantity = listing.orderQuantity - listing.filledQuantity;
             const enhancementLevel = listing.enhancementLevel || 0;
-            const itemName = clientData?.itemDetailMap?.[listing.itemHrid]?.name || listing.itemHrid;
+            const itemName = getItemName(
+                listing.itemHrid,
+                clientData?.itemDetailMap?.[listing.itemHrid]?.name || listing.itemHrid
+            );
 
             if (listing.isSell) {
                 // Selling: value is locked in listing + unclaimed coins
@@ -24529,7 +25052,7 @@ self.onmessage = function (e) {
                         const itemHrid = parts[2];
                         const enhLevel = parts[3];
                         const details = gameData?.itemDetailMap?.[itemHrid];
-                        const baseName = details?.name || itemHrid.replace('/items/', '');
+                        const baseName = getItemName(itemHrid, details?.name || itemHrid.replace('/items/', ''));
                         name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
                     }
                     const listingLabel = key.startsWith('listing:sell:')
@@ -24543,10 +25066,27 @@ self.onmessage = function (e) {
                 // Resolve display name
                 let name = curr.name;
                 if (!name) {
-                    const [itemHrid, enhLevel] = key.split(':');
-                    const details = gameData?.itemDetailMap?.[itemHrid];
-                    const baseName = details?.name || itemHrid.replace('/items/', '');
-                    name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
+                    if (key.startsWith('house:')) {
+                        const houseRoomHrid = key.slice('house:'.length);
+                        name = getHouseRoomName(
+                            houseRoomHrid,
+                            gameData?.houseRoomDetailMap?.[houseRoomHrid]?.name || houseRoomHrid
+                        );
+                    } else if (key.startsWith('ability:')) {
+                        const abilityHrid = key.slice('ability:'.length);
+                        name = getAbilityName(abilityHrid, gameData?.abilityDetailMap?.[abilityHrid]?.name || abilityHrid);
+                    } else if (key.startsWith('abilitybook:')) {
+                        const bookHrid = key.slice('abilitybook:'.length);
+                        name = getItemName(
+                            bookHrid,
+                            gameData?.itemDetailMap?.[bookHrid]?.name || bookHrid.replace('/items/', '')
+                        );
+                    } else {
+                        const [itemHrid, enhLevel] = key.split(':');
+                        const details = gameData?.itemDetailMap?.[itemHrid];
+                        const baseName = getItemName(itemHrid, details?.name || itemHrid.replace('/items/', ''));
+                        name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
+                    }
                 }
 
                 // Fixed assets (house, ability, abilitybook) → Activity only (no market movement)
@@ -25442,7 +25982,7 @@ self.onmessage = function (e) {
                     const loadoutItems = [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])];
                     return loadoutItems.map((eq) => {
                         const details = dataManager.getItemDetails(eq.itemHrid);
-                        const name = details?.name || eq.itemHrid.replace('/items/', '');
+                        const name = getItemName(eq.itemHrid, details?.name || eq.itemHrid.replace('/items/', ''));
                         const priceInfo = marketData_js.getItemPriceOutlierInfo(eq.itemHrid, { mode: 'ask' });
                         return { name, value: priceInfo.value ?? 0, isOutlier: priceInfo.isOutlier };
                     });
@@ -25618,12 +26158,18 @@ self.onmessage = function (e) {
             if (!gd) return exc.value;
 
             if (exc.type === 'category') {
-                const name = gd.itemCategoryDetailMap?.[exc.value]?.name;
-                return name ? `${name} (category)` : exc.value;
+                const name = getItemCategoryName(exc.value, gd.itemCategoryDetailMap?.[exc.value]?.name);
+                return name ? i18n_js.t('networthExclusionPopup.categoryNameSuffix', { name }) : exc.value;
             }
-            if (exc.type === 'item') return gd.itemDetailMap?.[exc.value]?.name ?? exc.value;
-            if (exc.type === 'houseRoom') return gd.houseRoomDetailMap?.[exc.value]?.name ?? exc.value;
-            if (exc.type === 'ability') return gd.abilityDetailMap?.[exc.value]?.name ?? exc.value;
+            if (exc.type === 'item') {
+                return getItemName(exc.value, gd.itemDetailMap?.[exc.value]?.name ?? exc.value);
+            }
+            if (exc.type === 'houseRoom') {
+                return getHouseRoomName(exc.value, gd.houseRoomDetailMap?.[exc.value]?.name ?? exc.value);
+            }
+            if (exc.type === 'ability') {
+                return getAbilityName(exc.value, gd.abilityDetailMap?.[exc.value]?.name ?? exc.value);
+            }
             if (exc.type === 'guildBuff') {
                 const buff = gd.guildBuffDetailMap?.[exc.value];
                 return buff ? buildGuildBuffDisplayName(exc.value, buff) : exc.value;
@@ -26713,7 +27259,7 @@ self.onmessage = function (e) {
                     const keyPriceInfo = getKeyPriceInfo(chestKeyHrid);
                     keyPrice = keyPriceInfo.price ?? 0;
                     keyPriceOutlier = keyPriceInfo.isOutlier;
-                    keyName = dataManager.getItemDetails(chestKeyHrid)?.name;
+                    keyName = getItemName(chestKeyHrid, dataManager.getItemDetails(chestKeyHrid)?.name);
                 }
                 detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName, keyPriceOutlier);
             }
@@ -26750,7 +27296,7 @@ self.onmessage = function (e) {
                 html += '<div style="margin-top: 3px;">';
                 for (const drop of pricedDrops) {
                     const pct = (drop.dropRate * 100).toFixed(1);
-                    html += `<div>\u2022 ${drop.itemName} (${pct}%): ${formatters_js.networthFormatter(Math.round(drop.expectedValue))}${warningIcon_js.buildOutlierPriceWarningIcon(drop.isOutlier)}</div>`;
+                    html += `<div>\u2022 ${getItemName(drop.itemHrid, drop.itemName)} (${pct}%): ${formatters_js.networthFormatter(Math.round(drop.expectedValue))}${warningIcon_js.buildOutlierPriceWarningIcon(drop.isOutlier)}</div>`;
                 }
                 html += '</div>';
             }
@@ -27521,7 +28067,7 @@ self.onmessage = function (e) {
         if (economics.isPartial) {
             const names = economics.unvaluedItems.map((item) => {
                 const details = dataManager.getItemDetails(item.itemHrid);
-                return details?.name || item.itemHrid.split('/').pop();
+                return getItemName(item.itemHrid, details?.name || item.itemHrid.split('/').pop());
             });
             const count = economics.unvaluedItems.length;
             tooltip += i18n_js.t('offlineProgressEconomics.partialValuationNote', { count, names: names.join(', ') });
@@ -27606,7 +28152,7 @@ self.onmessage = function (e) {
      */
     function getItemDisplayName(itemHrid) {
         const details = dataManager.getItemDetails(itemHrid);
-        return details?.name || itemHrid.split('/').pop();
+        return getItemName(itemHrid, details?.name || itemHrid.split('/').pop());
     }
 
     /**
@@ -28349,6 +28895,27 @@ self.onmessage = function (e) {
      */
 
 
+    // Locale-aware sets of category labels. The English label is always included;
+    // if the game's i18n returns a translated label we include that too.
+    let equipmentLabels = null;
+    let lootsLabels = null;
+    function isEquipmentCategoryName(name) {
+        if (!equipmentLabels) {
+            const en = 'Equipment';
+            const translated = getItemCategoryName('/item_categories/equipment', en);
+            equipmentLabels = new Set([en, translated]);
+        }
+        return equipmentLabels.has(name);
+    }
+    function isLootsCategoryName(name) {
+        if (!lootsLabels) {
+            const en = 'Loots';
+            const translated = getItemCategoryName('/item_categories/loots', en);
+            lootsLabels = new Set([en, translated]);
+        }
+        return lootsLabels.has(name);
+    }
+
     /**
      * InventorySort class manages inventory sorting and price badges
      */
@@ -28698,8 +29265,8 @@ self.onmessage = function (e) {
 
                 // Equipment category: check setting for whether to enable sorting
                 // Loots category: always disable sorting (but allow badges)
-                const isEquipmentCategory = categoryName === 'Equipment';
-                const isLootsCategory = categoryName === 'Loots';
+                const isEquipmentCategory = isEquipmentCategoryName(categoryName);
+                const isLootsCategory = isLootsCategoryName(categoryName);
                 const shouldSort = isLootsCategory
                     ? false
                     : isEquipmentCategory
@@ -29484,7 +30051,7 @@ self.onmessage = function (e) {
                     if (!askPrice || askPrice <= 0) return null;
 
                     return {
-                        name: itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback'),
+                        name: getItemName(shopItem.itemHrid, itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback')),
                         cost: tokenCost,
                         askPrice,
                         goldPerToken: askPrice / tokenCost,
@@ -29537,7 +30104,7 @@ self.onmessage = function (e) {
                     if (itemValue <= 0) return null;
 
                     return {
-                        name: itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback'),
+                        name: getItemName(shopItem.itemHrid, itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback')),
                         cost: tokenCost,
                         askPrice: itemValue,
                         goldPerToken: itemValue / tokenCost,
@@ -29575,7 +30142,7 @@ self.onmessage = function (e) {
                     const totalValue = askPrice * outputCount;
 
                     return {
-                        name: itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback'),
+                        name: getItemName(shopItem.itemHrid, itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback')),
                         cost: tokenCost,
                         askPrice: totalValue,
                         goldPerToken: totalValue / tokenCost,
@@ -29601,7 +30168,10 @@ self.onmessage = function (e) {
             const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell, sellOutlier);
 
             return creditRows.map((row) => ({
-                name: gameData.itemDetailMap[row.creditItemHrid]?.name || row.creditItemHrid.split('/').pop(),
+                name: getItemName(
+                    row.creditItemHrid,
+                    gameData.itemDetailMap[row.creditItemHrid]?.name || row.creditItemHrid.split('/').pop()
+                ),
                 cost: row.itemCount,
                 askPrice: row.creditCount * sell[row.creditItemHrid],
                 goldPerToken: row.goldPerToken,
@@ -29833,8 +30403,11 @@ self.onmessage = function (e) {
         clickAllButton(container) {
             const buttons = container.querySelectorAll('button');
 
+            // The button label is localized by the game (zh: 全部), so match both.
+            const allLabels = new Set(['All', translateGameName('item', 'all', 'All')]);
+
             for (const button of buttons) {
-                if (button.textContent.trim() === 'All' && !button.disabled) {
+                if (allLabels.has(button.textContent.trim()) && !button.disabled) {
                     button.click();
                     break;
                 }
@@ -29848,12 +30421,14 @@ self.onmessage = function (e) {
          * @returns {string|null} Item HRID or null if not found
          */
         findItemHrid(itemName, gameData) {
-            // Build cache on first use
+            // Build cache on first use. Index both the English data name and the
+            // game's translated display name so the lookup works in any locale.
             if (!this.itemNameToHridCache) {
                 this.itemNameToHridCache = new Map();
                 for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
                     if (item.name) {
                         this.itemNameToHridCache.set(item.name, hrid);
+                        this.itemNameToHridCache.set(getItemName(hrid, item.name), hrid);
                     }
                 }
             }
@@ -29889,6 +30464,19 @@ self.onmessage = function (e) {
      * has already populated dataset.askValue / dataset.bidValue on every item element.
      */
 
+
+    // Locale-aware set of labels that mean the "Currencies" category. The English
+    // label is always included; if the game's i18n returns a translated label we
+    // include that too so non-English clients skip it as intended.
+    let currenciesLabels = null;
+    function isCurrenciesLabel(text) {
+        if (!currenciesLabels) {
+            const en = 'Currencies';
+            const translated = getItemCategoryName('/item_categories/currencies', en);
+            currenciesLabels = new Set([en.toLowerCase(), translated.toLowerCase()]);
+        }
+        return currenciesLabels.has(text.toLowerCase());
+    }
 
     const CSS_ID = 'mwi-inv-category-totals';
     const SPAN_ATTR = 'data-mwi-category-total';
@@ -29987,7 +30575,7 @@ self.onmessage = function (e) {
                     ? labelEl.textContent.replace(existingSpan.textContent, '').trim()
                     : labelEl.textContent.trim();
 
-                if (labelText.toLowerCase() === 'currencies') {
+                if (isCurrenciesLabel(labelText)) {
                     continue;
                 }
 
@@ -31274,9 +31862,12 @@ self.onmessage = function (e) {
 
         _findCharacterTabList() {
             const allTabLists = document.querySelectorAll('[role="tablist"]');
+            // The Inventory tab label is localized by the game (zh: 库存), so match both.
+            const inventoryLabel = translateGameName('characterManagement', 'inventory', 'Inventory');
             for (const tl of allTabLists) {
                 for (const tab of tl.querySelectorAll('[role="tab"]')) {
-                    if (tab.textContent.trim() === 'Inventory') return tl;
+                    const text = tab.textContent.trim();
+                    if (text === 'Inventory' || text === inventoryLabel) return tl;
                 }
             }
             return null;
@@ -31301,9 +31892,12 @@ self.onmessage = function (e) {
                     this._activatePanel();
                 });
 
-                const inventoryTab = [...tabList.querySelectorAll('[role="tab"]')].find(
-                    (t) => t.textContent.trim() === 'Inventory'
-                );
+                // The Inventory tab label is localized by the game (zh: 库存), so match both.
+                const inventoryLabel = translateGameName('characterManagement', 'inventory', 'Inventory');
+                const inventoryTab = [...tabList.querySelectorAll('[role="tab"]')].find((t) => {
+                    const text = t.textContent.trim();
+                    return text === 'Inventory' || text === inventoryLabel;
+                });
                 if (inventoryTab) this._inventoryTabEl = inventoryTab;
                 if (inventoryTab?.nextSibling) {
                     tabList.insertBefore(btn, inventoryTab.nextSibling);
@@ -32180,6 +32774,12 @@ self.onmessage = function (e) {
                     for (const [hrid, details] of Object.entries(initData.itemDetailMap)) {
                         if (details.name) {
                             this._nameHridCache.set(details.name, hrid);
+                            // Also index by the game's translated name so non-English
+                            // clients (where aria-label/Item_name is localized) resolve.
+                            const translated = getItemName(hrid, details.name);
+                            if (translated && translated !== details.name) {
+                                this._nameHridCache.set(translated, hrid);
+                            }
                             // Add ★ ↔ (R) variants so both display formats resolve
                             if (details.name.includes('(R)')) {
                                 this._nameHridCache.set(details.name.replace(/\s*\(R\)/, ' ★'), hrid);
@@ -33084,7 +33684,9 @@ self.onmessage = function (e) {
                         // Collapse header row
                         const headerRow = document.createElement('div');
                         headerRow.className = 'toolasha-ct-search-result toolasha-ct-search-group-header';
-                        headerRow.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(details.name)}</span><span class="toolasha-ct-expand-btn">▲</span>`;
+                        headerRow.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(
+                        getItemName(hrid, details.name)
+                    )}</span><span class="toolasha-ct-expand-btn">▲</span>`;
                         headerRow.addEventListener('click', () => {
                             this._expandedSearchHrids.delete(hrid);
                             this._renderSearchResults(container, query, tabId, categoryFilter);
@@ -33122,7 +33724,8 @@ self.onmessage = function (e) {
                             const owned = ownedLevels?.has(level);
                             const levelRow = document.createElement('div');
                             levelRow.className = 'toolasha-ct-search-result toolasha-ct-search-level-row';
-                            const displayName = level === 0 ? details.name : `${details.name} +${level}`;
+                            const itemName = getItemName(hrid, details.name);
+                            const displayName = level === 0 ? itemName : `${itemName} +${level}`;
                             const ownedDot = owned
                                 ? `<span style="color:#7dcea0;margin-left:4px;" title="${this._escHtml(i18n_js.t('customTabsUi.inInventoryTooltip'))}">●</span>`
                                 : '';
@@ -33150,7 +33753,9 @@ self.onmessage = function (e) {
 
                         const row = document.createElement('div');
                         row.className = 'toolasha-ct-search-result toolasha-ct-search-group-header';
-                        row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(details.name)}</span>${ownedBadges ? `<span class="toolasha-ct-level-badges">${this._escHtml(ownedBadges)}</span>` : ''}<span class="toolasha-ct-expand-btn">▶</span>`;
+                        row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(
+                        getItemName(hrid, details.name)
+                    )}</span>${ownedBadges ? `<span class="toolasha-ct-level-badges">${this._escHtml(ownedBadges)}</span>` : ''}<span class="toolasha-ct-expand-btn">▶</span>`;
                         // Clicking the expand button expands the group
                         row.querySelector('.toolasha-ct-expand-btn').addEventListener('click', (e) => {
                             e.stopPropagation();
@@ -33175,7 +33780,9 @@ self.onmessage = function (e) {
                     // Flat row — no enhanced variants in inventory
                     const row = document.createElement('div');
                     row.className = 'toolasha-ct-search-result';
-                    row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(details.name)}</span>`;
+                    row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(
+                    getItemName(hrid, details.name)
+                )}</span>`;
                     row.addEventListener('click', () => {
                         this._config = addItem(this._config, tabId, hrid);
                         this._save();
@@ -33235,7 +33842,7 @@ self.onmessage = function (e) {
                     const baseHrid = enhanceMatch ? hrid.slice(0, hrid.length - enhanceMatch[0].length) : hrid;
                     const level = enhanceMatch ? parseInt(enhanceMatch[1], 10) : 0;
                     const details = dataManager.getItemDetails(baseHrid);
-                    const baseName = details?.name || baseHrid;
+                    const baseName = getItemName(baseHrid, details?.name || baseHrid);
                     const name = level > 0 ? `${baseName} +${level}` : baseName;
                     const iconId = baseHrid.replace('/items/', '');
                     const spriteUrl = getSpriteBaseUrl();
@@ -33394,12 +34001,13 @@ self.onmessage = function (e) {
                 if (catItems.length === 0) continue;
 
                 const allAlreadyAdded = catItems.every((hrid) => currentItems.has(hrid));
+                const catDisplayName = getItemCategoryName(cat.hrid, cat.name);
                 const btn = document.createElement('button');
                 btn.className = 'toolasha-ct-cat-btn' + (allAlreadyAdded ? ' toolasha-ct-cat-btn--added' : '');
-                btn.textContent = cat.name;
+                btn.textContent = catDisplayName;
                 btn.title = allAlreadyAdded
-                    ? i18n_js.t('customTabsUi.removeCategoryTooltip', { count: catItems.length, categoryName: cat.name })
-                    : i18n_js.t('customTabsUi.addCategoryTooltip', { count: catItems.length, categoryName: cat.name });
+                    ? i18n_js.t('customTabsUi.removeCategoryTooltip', { count: catItems.length, categoryName: catDisplayName })
+                    : i18n_js.t('customTabsUi.addCategoryTooltip', { count: catItems.length, categoryName: catDisplayName });
 
                 if (allAlreadyAdded) {
                     btn.addEventListener('click', () => {
@@ -33539,12 +34147,15 @@ self.onmessage = function (e) {
             entries.sort((a, b) => a.name.localeCompare(b.name));
 
             for (const snapshot of entries) {
-                const skillLabel = snapshot.actionTypeHrid
+                const fallbackSkillLabel = snapshot.actionTypeHrid
                     ? snapshot.actionTypeHrid
                           .split('/')
                           .pop()
                           .replace(/_/g, ' ')
                           .replace(/\b\w/g, (c) => c.toUpperCase())
+                    : '';
+                const skillLabel = snapshot.actionTypeHrid
+                    ? getActionTypeName(snapshot.actionTypeHrid, fallbackSkillLabel)
                     : i18n_js.t('labSim.allSkillsOption');
                 const hasUnavailableEquipment = (snapshot.unavailableEquipment || []).length > 0;
 
@@ -33616,7 +34227,7 @@ self.onmessage = function (e) {
             for (const cat of this._getCategories()) {
                 const opt = document.createElement('option');
                 opt.value = cat.hrid;
-                opt.textContent = cat.name;
+                opt.textContent = getItemCategoryName(cat.hrid, cat.name);
                 select.appendChild(opt);
             }
         }
@@ -35520,12 +36131,12 @@ self.onmessage = function (e) {
         try {
             parsed = JSON.parse(rawText);
         } catch {
-            return invalidResult('Could not parse the pasted/uploaded text as JSON.');
+            return invalidResult(i18n_js.t('openableAnalytics.importJsonParseFailed'));
         }
 
         const chests = parsed?.chests;
         if (!isPlainObject(chests)) {
-            return invalidResult('No "chests" data found in this export.');
+            return invalidResult(i18n_js.t('openableAnalytics.importNoChestsData'));
         }
 
         const ownerName = typeof parsed?.player === 'string' ? parsed.player : null;
@@ -35619,12 +36230,12 @@ self.onmessage = function (e) {
         try {
             parsed = JSON.parse(rawText);
         } catch {
-            return invalidResult('Could not parse the pasted text as JSON.');
+            return invalidResult(i18n_js.t('openableAnalytics.importJsonParseFailed'));
         }
 
         const chestOpenData = parsed?.Chest_Open_Data;
         if (!isPlainObject(chestOpenData)) {
-            return invalidResult('No "Chest_Open_Data" found in this Edible Tools data.');
+            return invalidResult(i18n_js.t('openableAnalytics.importNoChestOpenData'));
         }
 
         const players = Object.entries(chestOpenData).map(([id, playerData]) => ({
@@ -35634,7 +36245,7 @@ self.onmessage = function (e) {
 
         if (!playerId) {
             if (players.length === 0) {
-                return invalidResult('No player data found in this Edible Tools data.');
+                return invalidResult(i18n_js.t('openableAnalytics.importNoPlayerData'));
             }
             if (players.length === 1) {
                 playerId = players[0].id;
@@ -35662,7 +36273,9 @@ self.onmessage = function (e) {
         const playerData = chestOpenData[playerId];
         const chestData = playerData?.['开箱数据'];
         if (!isPlainObject(chestData)) {
-            return invalidResult(`No chest data found for ${playerData?.['玩家昵称'] || playerId}.`);
+            return invalidResult(
+                i18n_js.t('openableAnalytics.importNoChestDataForPlayer', { name: playerData?.['玩家昵称'] || playerId })
+            );
         }
 
         // Same ownership preflight contract as parseCombatSuiteExport: the strongest available
@@ -35755,7 +36368,7 @@ self.onmessage = function (e) {
         // Edible is name-keyed/localized. If nothing at all could be resolved, this isn't legitimate
         // valid-empty history - it's a locale/format the current item list can't match against.
         if (!anyChestNameResolved && Object.keys(chestData).length > 0) {
-            return { ...invalidResult('None of the chest names in this export could be matched to a known item.') };
+            return { ...invalidResult(i18n_js.t('openableAnalytics.importNoChestNamesMatched')) };
         }
 
         if (containers.length === 0) {
@@ -35772,7 +36385,7 @@ self.onmessage = function (e) {
     function emptyResult() {
         return {
             status: 'empty',
-            message: 'No opening history found in this export. Existing import was not changed.',
+            message: i18n_js.t('openableAnalytics.importEmptyHistory'),
             containers: [],
             warnings: [],
         };
@@ -35827,7 +36440,7 @@ self.onmessage = function (e) {
 
     function containerLabel(containerHrid) {
         const details = dataManager.getItemDetails(containerHrid);
-        return details?.name || containerHrid;
+        return getItemName(containerHrid, details?.name || containerHrid);
     }
 
     function containerSortIndex(containerHrid) {
@@ -35836,7 +36449,7 @@ self.onmessage = function (e) {
 
     function itemLabel(itemHrid) {
         const details = dataManager.getItemDetails(itemHrid);
-        return details?.name || itemHrid;
+        return getItemName(itemHrid, details?.name || itemHrid);
     }
 
     /** Signed large-number formatting for Luck: explicit `+` on positive, native `-` on negative, neutral on exactly zero. */
@@ -37358,7 +37971,8 @@ self.onmessage = function (e) {
 
         const rows = record.actualValueBreakdown
             .map((item) => {
-                const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
+                const itemDetails = dataManager.getItemDetails(item.itemHrid);
+                const name = getItemName(item.itemHrid, itemDetails?.name || item.itemHrid);
                 const priceNote = item.resolved
                     ? ''
                     : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${i18n_js.t('openableAnalytics.noPriceYetNote')}</span>`;
@@ -37404,7 +38018,8 @@ self.onmessage = function (e) {
 
         const rows = shown
             .map((item) => {
-                const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
+                const itemDetails = dataManager.getItemDetails(item.itemHrid);
+                const name = getItemName(item.itemHrid, itemDetails?.name || item.itemHrid);
                 const priceNote = item.resolved
                     ? ''
                     : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${i18n_js.t('openableAnalytics.noPriceYetNote')}</span>`;
