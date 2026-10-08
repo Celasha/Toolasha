@@ -62,6 +62,24 @@ class CoinifyHistoryTracker {
         webSocketHook.on('action_completed', this.handlers.actionCompleted);
         webSocketHook.on('init_character_data', this.handlers.initCharacterData);
         dataManager.on('character_switched', this.handlers.characterSwitched);
+
+        this.pruneEmptySessions();
+    }
+
+    /**
+     * One-time cleanup of 0-attempt sessions persisted by a prior bug
+     * (queue reorders were mistaken for action changes, creating empty session rows)
+     */
+    async pruneEmptySessions() {
+        try {
+            const sessions = await this.loadSessions();
+            const pruned = sessions.filter((s) => s.totalAttempts > 0);
+            if (pruned.length !== sessions.length) {
+                await storage.setJSON(this.getStorageKey(), pruned, STORAGE_STORE, true);
+            }
+        } catch (error) {
+            console.error('[CoinifyHistoryTracker] Failed to prune empty sessions:', error);
+        }
     }
 
     /**
@@ -87,7 +105,11 @@ class CoinifyHistoryTracker {
      */
     async handleActionsUpdated(data) {
         const actions = data.endCharacterActions || [];
-        const coinifyAction = actions.find((a) => a.actionHrid === COINIFY_ACTION_HRID);
+        // Queue reordering can reshuffle array order without anything actually starting —
+        // only the lowest-ordinal match is the active/front action.
+        const coinifyAction = actions
+            .filter((a) => a.actionHrid === COINIFY_ACTION_HRID)
+            .reduce((front, a) => (!front || a.ordinal < front.ordinal ? a : front), null);
 
         if (coinifyAction) {
             const inputItemHrid = this.extractItemHrid(coinifyAction.primaryItemHash);
@@ -192,6 +214,7 @@ class CoinifyHistoryTracker {
             await this.endSession();
         }
         this.characterId = data.newId || null;
+        await this.pruneEmptySessions();
     }
 
     /**

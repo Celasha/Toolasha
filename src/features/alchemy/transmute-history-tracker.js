@@ -61,6 +61,24 @@ class TransmuteHistoryTracker {
         webSocketHook.on('action_completed', this.handlers.actionCompleted);
         webSocketHook.on('init_character_data', this.handlers.initCharacterData);
         dataManager.on('character_switched', this.handlers.characterSwitched);
+
+        this.pruneEmptySessions();
+    }
+
+    /**
+     * One-time cleanup of 0-attempt sessions persisted by a prior bug
+     * (queue reorders were mistaken for action changes, creating empty session rows)
+     */
+    async pruneEmptySessions() {
+        try {
+            const sessions = await this.loadSessions();
+            const pruned = sessions.filter((s) => s.totalAttempts > 0);
+            if (pruned.length !== sessions.length) {
+                await storage.setJSON(this.getStorageKey(), pruned, STORAGE_STORE, true);
+            }
+        } catch (error) {
+            console.error('[TransmuteHistoryTracker] Failed to prune empty sessions:', error);
+        }
     }
 
     /**
@@ -86,7 +104,11 @@ class TransmuteHistoryTracker {
      */
     async handleActionsUpdated(data) {
         const actions = data.endCharacterActions || [];
-        const transmuteAction = actions.find((a) => a.actionHrid === TRANSMUTE_ACTION_HRID);
+        // Queue reordering can reshuffle array order without anything actually starting —
+        // only the lowest-ordinal match is the active/front action.
+        const transmuteAction = actions
+            .filter((a) => a.actionHrid === TRANSMUTE_ACTION_HRID)
+            .reduce((front, a) => (!front || a.ordinal < front.ordinal ? a : front), null);
 
         if (transmuteAction) {
             const inputItemHrid = this.extractItemHrid(transmuteAction.primaryItemHash);
@@ -229,6 +251,7 @@ class TransmuteHistoryTracker {
             await this.endSession();
         }
         this.characterId = data.newId || null;
+        await this.pruneEmptySessions();
     }
 
     /**
@@ -246,8 +269,6 @@ class TransmuteHistoryTracker {
             results: {},
         };
         this.lastCurrentCount = null;
-
-        await this.saveActiveSession();
     }
 
     /**
@@ -263,10 +284,11 @@ class TransmuteHistoryTracker {
     }
 
     /**
-     * Save the active session to storage (upsert by id)
+     * Save the active session to storage (upsert by id).
+     * Skips persist if no attempts recorded yet (avoids empty sessions from queue changes).
      */
     async saveActiveSession() {
-        if (!this.activeSession) {
+        if (!this.activeSession || this.activeSession.totalAttempts === 0) {
             return;
         }
 
