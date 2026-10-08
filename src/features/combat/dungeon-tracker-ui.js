@@ -108,6 +108,7 @@ class DungeonTrackerUI {
 
         // Add HTML structure
         this.container.innerHTML = `
+            <div id="mwi-dt-inner" style="overflow: hidden; border-radius: 6px;">
             <div id="mwi-dt-header" style="
                 background: #2d3748;
                 border-radius: 6px 6px 0 0;
@@ -131,8 +132,8 @@ class DungeonTrackerUI {
                             00:00
                         </span>
                     </div>
-                    <div style="flex: 1; display: flex; gap: 8px; align-items: center; justify-content: flex-end;">
-                        <span id="mwi-dt-wave-counter" style="font-size: 13px; color: #aaa;">
+                    <div style="flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center; justify-content: flex-end; overflow: hidden;">
+                        <span id="mwi-dt-wave-counter" style="font-size: 13px; color: #aaa; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                             ${t('dungeonTrackerUi.waveCounter', { current: 1, max: 50 })}
                         </span>
                         <button id="mwi-dt-collapse-btn" style="
@@ -143,6 +144,7 @@ class DungeonTrackerUI {
                             font-size: 16px;
                             padding: 0 4px;
                             line-height: 1;
+                            flex-shrink: 0;
                         " title="${t('dungeonTrackerUi.collapseExpandTooltip')}">▼</button>
                     </div>
                 </div>
@@ -159,12 +161,9 @@ class DungeonTrackerUI {
                     gap: 12px;
                 ">
                     <span>${t('dungeonTrackerUi.headerLastRunLabel')}<span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
-                    <span>|</span>
-                    <span>${t('dungeonTrackerUi.headerAvgClearLabel')}<span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
-                    <span>|</span>
-                    <span>${t('dungeonTrackerUi.headerRunsLabel')}<span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
-                    <span>|</span>
-                    <span>${t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>| ${t('dungeonTrackerUi.headerAvgClearLabel')}<span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
+                    <span>| ${t('dungeonTrackerUi.headerRunsLabel')}<span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>| ${t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
                 </div>
             </div>
 
@@ -392,6 +391,27 @@ class DungeonTrackerUI {
                         <canvas id="mwi-dt-chart-canvas"></canvas>
                     </div>
                 </div>
+            </div>
+            </div>
+
+            <div id="mwi-dt-resize-handle" style="
+                position: absolute;
+                bottom: 0;
+                right: 0;
+                width: 16px;
+                height: 16px;
+                cursor: ew-resize;
+                z-index: 1;
+                display: flex;
+                align-items: flex-end;
+                justify-content: flex-end;
+                padding: 2px;
+                box-sizing: border-box;
+                border-radius: 0 0 6px 0;
+            " title="${t('dungeonTrackerUi.resizeHandleTooltip')}">
+                <svg width="10" height="10" viewBox="0 0 10 10" style="pointer-events: none; opacity: 0.6;">
+                    <path d="M9 1 L1 9 M9 5 L5 9" stroke="#4a9eff" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                </svg>
             </div>
         `;
 

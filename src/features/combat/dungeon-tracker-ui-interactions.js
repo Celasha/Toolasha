@@ -18,10 +18,16 @@ class DungeonTrackerUIInteractions {
         this.history = historyRef;
         this.isDragging = false;
         this.dragOffset = { x: 0, y: 0 };
+        this.isResizing = false;
+        this.resizeStartX = 0;
+        this.resizeStartWidth = 0;
+        this.resizeWidthMultiplier = 1;
         this.timerRegistry = createTimerRegistry();
         // Store drag handlers for cleanup
         this.dragMoveHandler = null;
         this.dragUpHandler = null;
+        this.resizeMoveHandler = null;
+        this.resizeUpHandler = null;
         this.keyboardShortcutHandler = null;
     }
 
@@ -35,6 +41,7 @@ class DungeonTrackerUIInteractions {
         this.callbacks = callbacks;
 
         this.setupDragging();
+        this.setupResizing();
         this.setupCollapseButton();
         this.setupKeysToggle();
         this.setupRunHistoryToggle();
@@ -114,6 +121,67 @@ class DungeonTrackerUIInteractions {
 
         document.addEventListener('mousemove', this.dragMoveHandler);
         document.addEventListener('mouseup', this.dragUpHandler);
+    }
+
+    /**
+     * Setup resize handle (width-only, bottom-right corner grip)
+     */
+    setupResizing() {
+        const handle = this.container.querySelector('#mwi-dt-resize-handle');
+        if (!handle) return;
+
+        const MIN_WIDTH = 200;
+
+        handle.addEventListener('mouseenter', () => {
+            handle.style.background = 'rgba(74, 158, 255, 0.4)';
+        });
+        handle.addEventListener('mouseleave', () => {
+            if (!this.isResizing) handle.style.background = 'transparent';
+        });
+
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation(); // Don't let this bubble into the header's drag handler
+
+            bringPanelToFront(this.container);
+            this.isResizing = true;
+            this.resizeStartX = e.clientX;
+            this.resizeStartWidth = this.container.getBoundingClientRect().width;
+            // Centered (no custom position) panels grow from their midpoint, so the right edge
+            // only moves half as far as the cursor — double the delta to keep edge-tracking 1:1.
+            this.resizeWidthMultiplier = this.state.position ? 1 : 2;
+        });
+
+        // Remove old handlers if they exist
+        if (this.resizeMoveHandler) {
+            document.removeEventListener('mousemove', this.resizeMoveHandler);
+        }
+        if (this.resizeUpHandler) {
+            document.removeEventListener('mouseup', this.resizeUpHandler);
+        }
+
+        this.resizeMoveHandler = (e) => {
+            if (!this.isResizing) return;
+
+            const delta = (e.clientX - this.resizeStartX) * this.resizeWidthMultiplier;
+            let newWidth = this.resizeStartWidth + delta;
+            newWidth = Math.max(MIN_WIDTH, newWidth);
+            newWidth = Math.min(newWidth, window.innerWidth - 20);
+
+            this.container.style.width = `${newWidth}px`;
+        };
+
+        this.resizeUpHandler = () => {
+            if (this.isResizing) {
+                this.isResizing = false;
+                handle.style.background = 'transparent';
+                this.state.width = Math.round(this.container.getBoundingClientRect().width);
+                this.state.save();
+            }
+        };
+
+        document.addEventListener('mousemove', this.resizeMoveHandler);
+        document.addEventListener('mouseup', this.resizeUpHandler);
     }
 
     /**
@@ -309,13 +377,10 @@ class DungeonTrackerUIInteractions {
             this.applyExpandedState();
         }
 
-        // If no custom position, update to new default position
-        if (!this.state.position) {
-            this.state.updatePosition(this.container);
-        } else {
-            // Just update width for custom positions
-            this.container.style.minWidth = this.state.isCollapsed ? '250px' : '480px';
-        }
+        // Recompute width/position for the new state — handles both default-centered and
+        // custom-dragged positions, and collapsed always uses the fixed compact width
+        // regardless of any custom resize width saved while expanded.
+        this.state.updatePosition(this.container);
 
         this.state.save();
     }
@@ -490,8 +555,8 @@ class DungeonTrackerUIInteractions {
     }
 
     /**
-     * Setup keyboard shortcut for resetting position
-     * Ctrl+Shift+D to reset dungeon tracker to default position
+     * Setup keyboard shortcut for resetting position and size
+     * Ctrl+Shift+D to reset dungeon tracker to default position and size
      */
     setupKeyboardShortcut() {
         if (this.keyboardShortcutHandler) {
@@ -499,7 +564,7 @@ class DungeonTrackerUIInteractions {
         }
 
         this.keyboardShortcutHandler = (e) => {
-            // Ctrl+Shift+D - Reset dungeon tracker position
+            // Ctrl+Shift+D - Reset dungeon tracker position and size
             if (e.ctrlKey && e.shiftKey && e.key === 'D') {
                 e.preventDefault();
                 this.resetPosition();
@@ -509,11 +574,12 @@ class DungeonTrackerUIInteractions {
     }
 
     /**
-     * Reset dungeon tracker position to default (center)
+     * Reset dungeon tracker position and size to default (centered, default width)
      */
     resetPosition() {
-        // Clear saved position (re-enables default centering)
+        // Clear saved position and custom width (re-enables default centering/sizing)
         this.state.position = null;
+        this.state.width = null;
 
         // Re-apply position styling
         this.state.updatePosition(this.container);

@@ -17,6 +17,9 @@ class DungeonTrackerUIState {
         // Position state
         this.position = null; // { x, y } or null for default
 
+        // Size state (custom width in px, only honored while expanded; null = default)
+        this.width = null;
+
         // Grouping and filtering state
         this.groupBy = 'team'; // 'team' or 'dungeon'
         this.filterDungeon = 'all'; // 'all' or specific dungeon name
@@ -36,6 +39,7 @@ class DungeonTrackerUIState {
             this.isKeysExpanded = savedState.isKeysExpanded || false;
             this.isRunHistoryExpanded = savedState.isRunHistoryExpanded || false;
             this.position = savedState.position || null;
+            this.width = savedState.width || null;
 
             // Load grouping/filtering state
             this.groupBy = savedState.groupBy || 'team';
@@ -55,6 +59,7 @@ class DungeonTrackerUIState {
                 isKeysExpanded: this.isKeysExpanded,
                 isRunHistoryExpanded: this.isRunHistoryExpanded,
                 position: this.position,
+                width: this.width,
                 groupBy: this.groupBy,
                 filterDungeon: this.filterDungeon,
                 filterTeam: this.filterTeam,
@@ -82,13 +87,19 @@ class DungeonTrackerUIState {
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
         `;
 
+        // Custom width applies in both collapsed and expanded modes (shared with position,
+        // which is likewise unified across modes rather than tracked separately per mode).
+        const defaultWidth = this.isCollapsed ? 250 : 480;
+        const targetWidth = this.width || defaultWidth;
+        const widthStyle = `width: min(${targetWidth}px, calc(100vw - 20px));`;
+
         if (this.position) {
             // Custom position (user dragged it)
             container.style.cssText = `
                 ${baseStyle}
                 top: ${this.position.y}px;
                 left: ${this.position.x}px;
-                width: min(${this.isCollapsed ? '250px' : '480px'}, calc(100vw - 20px));
+                ${widthStyle}
             `;
         } else if (this.isCollapsed) {
             // Collapsed: top-left (near action time display)
@@ -96,7 +107,7 @@ class DungeonTrackerUIState {
                 ${baseStyle}
                 top: 10px;
                 left: 10px;
-                width: min(250px, calc(100vw - 20px));
+                ${widthStyle}
             `;
         } else {
             // Expanded: top-center
@@ -105,7 +116,7 @@ class DungeonTrackerUIState {
                 top: 10px;
                 left: 50%;
                 transform: translateX(-50%);
-                width: min(480px, calc(100vw - 20px));
+                ${widthStyle}
             `;
         }
     }
