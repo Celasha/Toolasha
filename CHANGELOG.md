@@ -2,26 +2,23 @@
 
 ## [3.7.0](https://github.com/Celasha/Toolasha/compare/v3.6.3...v3.7.0) (2026-10-08)
 
-
 ### Features
 
-* add 24-hour chat timestamp reformatting ([b00a82c](https://github.com/Celasha/Toolasha/commit/b00a82c843c6f277b6f551122d59fb0253ec5a21))
-* add Buy Missing Labyrinth Supplies button ([21d7c4b](https://github.com/Celasha/Toolasha/commit/21d7c4bfb0f39f2d1c6745f1c9e65a8c4d54ecfe))
-* add resizable width to dungeon tracker panel ([e2d8452](https://github.com/Celasha/Toolasha/commit/e2d8452ba0b9838ac78f756db452b51348e171a4))
-* **i18n:** add Chinese localization and fix 23 zh-client bugs ([24b738e](https://github.com/Celasha/Toolasha/commit/24b738e25f6584523ad9b63a7801e1da0cc729d0))
-
+- add 24-hour chat timestamp reformatting ([b00a82c](https://github.com/Celasha/Toolasha/commit/b00a82c843c6f277b6f551122d59fb0253ec5a21))
+- add Buy Missing Labyrinth Supplies button ([21d7c4b](https://github.com/Celasha/Toolasha/commit/21d7c4bfb0f39f2d1c6745f1c9e65a8c4d54ecfe))
+- add resizable width to dungeon tracker panel ([e2d8452](https://github.com/Celasha/Toolasha/commit/e2d8452ba0b9838ac78f756db452b51348e171a4))
+- **i18n:** add Chinese localization and fix 23 zh-client bugs ([24b738e](https://github.com/Celasha/Toolasha/commit/24b738e25f6584523ad9b63a7801e1da0cc729d0))
 
 ### Bug Fixes
 
-* correct 6 real bugs in merged Chinese localization (PR [#742](https://github.com/Celasha/Toolasha/issues/742)) ([112f410](https://github.com/Celasha/Toolasha/commit/112f410ce8a7b74640497c77c4ff550d60c84bee))
-* stop alchemy history trackers from creating empty sessions on queue reorder ([9c0706f](https://github.com/Celasha/Toolasha/commit/9c0706f92ad67184231204122754944edba9b049))
-* stop dungeon tracker panel from overflowing narrow mobile viewports ([8a98494](https://github.com/Celasha/Toolasha/commit/8a98494cf40508cb44a8410d53f1e76924821bcd))
-* use non-refined fodder for refined item Philosopher's Mirror path ([a7db4d9](https://github.com/Celasha/Toolasha/commit/a7db4d92535df0baeca85156b22f0ccae44fe099))
-
+- correct 6 real bugs in merged Chinese localization (PR [#742](https://github.com/Celasha/Toolasha/issues/742)) ([112f410](https://github.com/Celasha/Toolasha/commit/112f410ce8a7b74640497c77c4ff550d60c84bee))
+- stop alchemy history trackers from creating empty sessions on queue reorder ([9c0706f](https://github.com/Celasha/Toolasha/commit/9c0706f92ad67184231204122754944edba9b049))
+- stop dungeon tracker panel from overflowing narrow mobile viewports ([8a98494](https://github.com/Celasha/Toolasha/commit/8a98494cf40508cb44a8410d53f1e76924821bcd))
+- use non-refined fodder for refined item Philosopher's Mirror path ([a7db4d9](https://github.com/Celasha/Toolasha/commit/a7db4d92535df0baeca85156b22f0ccae44fe099))
 
 ### Miscellaneous Chores
 
-* remove dead findExchangeConversion from guild-credit-value ([4e29051](https://github.com/Celasha/Toolasha/commit/4e29051bd6735856893cc6febbc230f926d22582))
+- remove dead findExchangeConversion from guild-credit-value ([4e29051](https://github.com/Celasha/Toolasha/commit/4e29051bd6735856893cc6febbc230f926d22582))
 
 ## [3.6.3](https://github.com/Celasha/Toolasha/compare/v3.6.2...v3.6.3) (2026-10-07)
 
