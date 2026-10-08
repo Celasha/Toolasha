@@ -5,6 +5,8 @@
 import { describe, test, expect } from 'vitest';
 import {
     getEntryDurationMs,
+    buildEntryIdentityKey,
+    isMoreCompleteEntry,
     mergeCurrentAndHistoricalEntries,
     buildActionGroupKey,
     aggregatePivotRows,
@@ -34,29 +36,101 @@ describe('getEntryDurationMs', () => {
     });
 });
 
+describe('buildEntryIdentityKey', () => {
+    test('two entries sharing actionHrid/startTime but different characterActionId produce the same key', () => {
+        const a = { characterActionId: 1, actionHrid: '/actions/labyrinth/explore', startTime: '2026-08-01T00:00:00Z' };
+        const b = { characterActionId: 2, actionHrid: '/actions/labyrinth/explore', startTime: '2026-08-01T00:00:00Z' };
+        expect(buildEntryIdentityKey(a)).toBe(buildEntryIdentityKey(b));
+    });
+
+    test('different startTime, difficultyTier, item hashes, or partyId produce distinct keys', () => {
+        const base = { actionHrid: '/actions/combat/dungeon', startTime: '2026-08-01T00:00:00Z' };
+        const key = buildEntryIdentityKey(base);
+        expect(buildEntryIdentityKey({ ...base, startTime: '2026-08-02T00:00:00Z' })).not.toBe(key);
+        expect(buildEntryIdentityKey({ ...base, difficultyTier: 1 })).not.toBe(key);
+        expect(buildEntryIdentityKey({ ...base, primaryItemHash: 'abc' })).not.toBe(key);
+        expect(buildEntryIdentityKey({ ...base, secondaryItemHash: 'abc' })).not.toBe(key);
+        expect(buildEntryIdentityKey({ ...base, partyId: 'party-1' })).not.toBe(key);
+    });
+});
+
+describe('isMoreCompleteEntry', () => {
+    test('anything is more complete than nothing stored yet', () => {
+        expect(isMoreCompleteEntry({ actionCount: 1 }, undefined)).toBe(true);
+    });
+
+    test('higher actionCount wins regardless of endTime', () => {
+        const existing = { actionCount: 100, endTime: '2026-08-01T05:00:00Z' };
+        const candidate = { actionCount: 150, endTime: '2026-08-01T01:00:00Z' };
+        expect(isMoreCompleteEntry(candidate, existing)).toBe(true);
+        expect(isMoreCompleteEntry(existing, candidate)).toBe(false);
+    });
+
+    test('ties on actionCount break on the later endTime', () => {
+        const existing = { actionCount: 100, endTime: '2026-08-01T01:00:00Z' };
+        const candidate = { actionCount: 100, endTime: '2026-08-01T02:00:00Z' };
+        expect(isMoreCompleteEntry(candidate, existing)).toBe(true);
+        expect(isMoreCompleteEntry(existing, candidate)).toBe(false);
+    });
+});
+
 describe('mergeCurrentAndHistoricalEntries', () => {
-    test('dedupes by characterActionId, preferring the current-session copy on overlap', () => {
-        const historical = [{ characterActionId: 1, actionCount: 10 }];
+    test('dedupes by entry identity (not characterActionId), preferring the more complete copy on overlap', () => {
+        const historical = [
+            { characterActionId: 1, actionHrid: '/actions/woodcutting/oak', startTime: 't1', actionCount: 10 },
+        ];
         const current = [
-            { characterActionId: 1, actionCount: 15 },
-            { characterActionId: 2, actionCount: 5 },
+            { characterActionId: 1, actionHrid: '/actions/woodcutting/oak', startTime: 't1', actionCount: 15 },
+            { characterActionId: 2, actionHrid: '/actions/fishing/carp', startTime: 't2', actionCount: 5 },
         ];
 
         const merged = mergeCurrentAndHistoricalEntries(current, historical);
 
         expect(merged).toHaveLength(2);
-        expect(merged.find((e) => e.characterActionId === 1).actionCount).toBe(15);
-        expect(merged.find((e) => e.characterActionId === 2).actionCount).toBe(5);
+        expect(merged.find((e) => e.actionHrid === '/actions/woodcutting/oak').actionCount).toBe(15);
+        expect(merged.find((e) => e.actionHrid === '/actions/fishing/carp').actionCount).toBe(5);
     });
 
-    test('entries without a characterActionId are silently dropped rather than colliding under undefined', () => {
+    test('a labyrinth run reissued under a different characterActionId mid-session merges into one entry, keeping the more complete copy', () => {
+        // Regression: a single continuous labyrinth run previously got stored as several
+        // separate, incomplete entries because characterActionId changed mid-session while
+        // startTime (and actionHrid) stayed the same.
+        const historical = [
+            {
+                characterActionId: 123,
+                actionHrid: '/actions/labyrinth/explore',
+                startTime: '2026-10-07T07:50:12.000Z',
+                actionCount: 123,
+                drops: { '/items/labyrinth_token::0': 182 },
+            },
+        ];
+        const current = [
+            {
+                characterActionId: 148,
+                actionHrid: '/actions/labyrinth/explore',
+                startTime: '2026-10-07T07:50:12.000Z',
+                actionCount: 148,
+                drops: { '/items/labyrinth_token::0': 289 },
+            },
+        ];
+
+        const merged = mergeCurrentAndHistoricalEntries(current, historical);
+
+        expect(merged).toHaveLength(1);
+        expect(merged[0].actionCount).toBe(148);
+        expect(merged[0].drops['/items/labyrinth_token::0']).toBe(289);
+    });
+
+    test('entries missing actionHrid/startTime still merge on their shared (empty-string) identity rather than throwing', () => {
         const merged = mergeCurrentAndHistoricalEntries([{ actionCount: 1 }], [{ actionCount: 2 }]);
-        expect(merged).toHaveLength(0);
+        expect(merged).toHaveLength(1);
     });
 
     test('handles missing/empty arrays on either side', () => {
-        expect(mergeCurrentAndHistoricalEntries(null, [{ characterActionId: 1 }])).toHaveLength(1);
-        expect(mergeCurrentAndHistoricalEntries([{ characterActionId: 1 }], undefined)).toHaveLength(1);
+        expect(mergeCurrentAndHistoricalEntries(null, [{ actionHrid: '/actions/x', startTime: 't1' }])).toHaveLength(1);
+        expect(
+            mergeCurrentAndHistoricalEntries([{ actionHrid: '/actions/x', startTime: 't1' }], undefined)
+        ).toHaveLength(1);
         expect(mergeCurrentAndHistoricalEntries(null, null)).toHaveLength(0);
     });
 });

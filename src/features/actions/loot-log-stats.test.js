@@ -49,7 +49,12 @@ vi.mock('../market/expected-value-calculator.js', () => ({
 }));
 
 vi.mock('./loot-log-history.js', () => ({
-    default: { mergeAndSave: vi.fn(), getHistoricalEntries: vi.fn(async () => []), _load: vi.fn(async () => []) },
+    default: {
+        mergeAndSave: vi.fn(),
+        getHistoricalEntries: vi.fn(async () => []),
+        dedupeStoredEntries: vi.fn(async () => 0),
+        _load: vi.fn(async () => []),
+    },
 }));
 
 const { default: lootLogStatsFeature } = await import('./loot-log-stats.js');

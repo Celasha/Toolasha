@@ -15,7 +15,12 @@ import { parseItemCount } from '../../utils/number-parser.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import lootLogHistory from './loot-log-history.js';
-import { mergeCurrentAndHistoricalEntries, aggregatePivotRows, EXCLUDED_XP_SKILL_HRID } from './loot-log-analytics.js';
+import {
+    mergeCurrentAndHistoricalEntries,
+    aggregatePivotRows,
+    buildEntryIdentityKey,
+    EXCLUDED_XP_SKILL_HRID,
+} from './loot-log-analytics.js';
 import { getItemName, getActionName, getSkillName, translateGameName } from '../../utils/game-i18n.js';
 
 class LootLogStats {
@@ -79,6 +84,13 @@ class LootLogStats {
                 () => this.renderHistoricalEntries()
             );
             this.unregisterHandlers.push(unregisterHistoryObserver);
+
+            // One-time self-heal: collapse any entries stored before the identity-key dedup fix
+            // (keyed on the unstable characterActionId) that split a single continuous action,
+            // like an interrupted/resumed labyrinth run, into several incomplete duplicates.
+            lootLogHistory.dedupeStoredEntries().catch((error) => {
+                console.error('[LootLogStats] Failed to dedupe stored history:', error);
+            });
         }
 
         this.initialized = true;
@@ -655,11 +667,13 @@ class LootLogStats {
 
         if (!this.currentLootLogData) return;
 
-        // Build set of current IDs
-        const currentIds = new Set(this.currentLootLogData.map((e) => e.characterActionId));
+        // Build set of current entry identity keys (not characterActionId - see
+        // buildEntryIdentityKey for why that field is unreliable across an interrupted/resumed
+        // action like a labyrinth run)
+        const currentKeys = new Set(this.currentLootLogData.map((e) => buildEntryIdentityKey(e)));
 
         // Get historical entries not in current set
-        const historicalEntries = await lootLogHistory.getHistoricalEntries(currentIds);
+        const historicalEntries = await lootLogHistory.getHistoricalEntries(currentKeys);
         if (historicalEntries.length === 0) return;
 
         // Create separator
@@ -776,7 +790,7 @@ class LootLogStats {
             deleteBtn.style.background = 'none';
         });
         deleteBtn.addEventListener('click', async () => {
-            await this.deleteHistoricalEntry(entry.characterActionId);
+            await this.deleteHistoricalEntry(entry);
             entryEl.remove();
             // Update separator count
             const wrapper = document.querySelector('.mwi-loot-log-history');
@@ -875,14 +889,15 @@ class LootLogStats {
     }
 
     /**
-     * Delete a single historical entry by characterActionId
-     * @param {number} characterActionId
+     * Delete a single historical entry by identity (see buildEntryIdentityKey).
+     * @param {Object} entry - The entry to delete, as rendered (from storage)
      */
-    async deleteHistoricalEntry(characterActionId) {
+    async deleteHistoricalEntry(entry) {
         const key = lootLogHistory._getKey();
         if (!key) return;
+        const targetKey = buildEntryIdentityKey(entry);
         const entries = await lootLogHistory._load();
-        const filtered = entries.filter((e) => e.characterActionId !== characterActionId);
+        const filtered = entries.filter((e) => buildEntryIdentityKey(e) !== targetKey);
         await lootLogHistory._save(filtered);
     }
 
