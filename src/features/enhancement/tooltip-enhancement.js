@@ -126,8 +126,71 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     // Like Enhancelator lines 456-465
     const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
     let mirrorStartLevel = null;
+    let refinedFodder = null;
 
-    if (mirrorPrice > 0) {
+    // Refined items (e.g. "Furious Spear (R)") can never be produced via Mirror combination --
+    // the game only lets Transmute create a refined copy. Per the live client's
+    // getPhilosophersMirrorCost formula, Mirror-protecting a refined item's enhancement always
+    // consumes one NON-refined copy of its base item at (currentLevel - 1); the refined item itself
+    // is never "rebuilt" from two lower copies the way ordinary (fungible) items are. That means the
+    // Fibonacci multi-level cascade below -- which assumes both combine components can themselves be
+    // products of earlier combines -- doesn't apply to refined items. Only the single final step
+    // (fodder at targetLevel-2, primary already at targetLevel-1) is modeled here.
+    const isRefined = itemHrid.includes('_refined');
+    const baseItemHrid = isRefined ? itemDetails.baseItemHrids?.[0] : null;
+
+    if (mirrorPrice > 0 && isRefined && baseItemHrid) {
+        const fodderLevel = currentEnhancementLevel - 2;
+        if (fodderLevel >= 0) {
+            const baseItemDetails = gameData.itemDetailMap[baseItemHrid];
+            const baseItemLevel = baseItemDetails?.itemLevel || itemLevel;
+
+            let fodderCost, fodderTime, fodderAttempts;
+            if (fodderLevel === 0) {
+                fodderCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+                    ? Math.min(
+                          getProductionCost(baseItemHrid) || Infinity,
+                          getItemPrices(baseItemHrid, 0)?.ask || Infinity
+                      ) || getRealisticBaseItemPrice(baseItemHrid)
+                    : getRealisticBaseItemPrice(baseItemHrid);
+                fodderTime = 0;
+                fodderAttempts = 0;
+            } else {
+                const fodderResults = [];
+                const neverProtect = calculateCostForStrategy(baseItemHrid, fodderLevel, 0, baseItemLevel, config);
+                if (neverProtect) fodderResults.push({ protectFrom: 0, ...neverProtect });
+                for (let protectFrom = 2; protectFrom <= fodderLevel; protectFrom++) {
+                    const result = calculateCostForStrategy(
+                        baseItemHrid,
+                        fodderLevel,
+                        protectFrom,
+                        baseItemLevel,
+                        config
+                    );
+                    if (result) fodderResults.push({ protectFrom, ...result });
+                }
+                if (fodderResults.length > 0) {
+                    const bestFodder = fodderResults.reduce((best, curr) =>
+                        curr.totalCost < best.totalCost ? curr : best
+                    );
+                    fodderCost = bestFodder.totalCost;
+                    fodderTime = bestFodder.totalTime;
+                    fodderAttempts = bestFodder.expectedAttempts;
+                }
+            }
+
+            if (typeof fodderCost === 'number') {
+                const traditionalCost = targetCosts[currentEnhancementLevel];
+                const mirrorCost = targetCosts[currentEnhancementLevel - 1] + fodderCost + mirrorPrice;
+
+                if (mirrorCost < traditionalCost) {
+                    mirrorStartLevel = currentEnhancementLevel;
+                    targetCosts[currentEnhancementLevel] = mirrorCost;
+                    refinedFodder = { hrid: baseItemHrid, level: fodderLevel, fodderCost, fodderTime, fodderAttempts };
+                }
+            }
+        }
+    } else if (mirrorPrice > 0 && !isRefined) {
         for (let level = 3; level <= currentEnhancementLevel; level++) {
             const traditionalCost = targetCosts[level];
             const mirrorCost = targetCosts[level - 2] + targetCosts[level - 1] + mirrorPrice;
@@ -152,7 +215,20 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
 
     let optimalStrategy;
 
-    if (mirrorStartLevel !== null) {
+    if (refinedFodder !== null) {
+        // Refined item, single-step Mirror protection: one non-refined fodder copy consumed,
+        // no Fibonacci cascade (see comment above where refinedFodder is computed).
+        optimalStrategy = buildRefinedMirrorResult(
+            itemHrid,
+            currentEnhancementLevel,
+            targetCosts,
+            targetTimes,
+            targetAttempts,
+            refinedFodder,
+            optimalTraditional,
+            mirrorPrice
+        );
+    } else if (mirrorStartLevel !== null) {
         // Mirror was used - build mirror-optimized result
         optimalStrategy = buildMirrorOptimizedResult(
             itemHrid,
@@ -279,6 +355,71 @@ function calculateCostForStrategy(itemHrid, targetLevel, protectFrom, itemLevel,
         console.error('[Enhancement Tooltip] Strategy calculation error:', error);
         return null;
     }
+}
+
+/**
+ * Build mirror-optimized result for a refined item's single protected step.
+ * A refined item is a unique owned instance -- it's never "rebuilt" by combining two lower
+ * copies, so (unlike buildMirrorOptimizedResult) there is no Fibonacci cascade here: exactly one
+ * non-refined fodder copy is consumed, at (targetLevel - 2), while the refined item's own climb to
+ * (targetLevel - 1) is shown as its own row in its own (refined) species.
+ * @private
+ */
+function buildRefinedMirrorResult(
+    itemHrid,
+    targetLevel,
+    targetCosts,
+    targetTimes,
+    targetAttempts,
+    refinedFodder,
+    optimalTraditional,
+    mirrorPrice
+) {
+    const { hrid: fodderHrid, level: fodderLevel, fodderCost, fodderTime, fodderAttempts } = refinedFodder;
+
+    const upperLevel = targetLevel - 1;
+    const upperCost = targetCosts[upperLevel];
+    const upperTime = targetTimes[upperLevel];
+    const upperAttempts = targetAttempts[upperLevel];
+
+    return {
+        protectFrom: optimalTraditional.protectFrom,
+        label:
+            optimalTraditional.protectFrom === 0
+                ? t('tooltipEnhancement.neverProtectionLabel')
+                : t('tooltipEnhancement.fromLevelLabel', { level: optimalTraditional.protectFrom }),
+        expectedAttempts: upperAttempts + fodderAttempts,
+        totalTime: upperTime + fodderTime,
+        baseCost: 0, // Not applicable for mirror phase
+        materialCost: 0, // Not applicable for mirror phase
+        protectionCost: 0, // Not applicable for mirror phase
+        protectionItemHrid: null,
+        protectionCount: 0,
+        consumedItemsCost: upperCost + fodderCost,
+        philosopherMirrorCost: mirrorPrice,
+        totalCost: targetCosts[targetLevel],
+        mirrorStartLevel: targetLevel,
+        usedMirror: true,
+        traditionalCost: optimalTraditional.totalCost,
+        consumedItems: [
+            {
+                hrid: itemHrid,
+                level: upperLevel,
+                quantity: 1,
+                costEach: upperCost,
+                totalCost: upperCost,
+            },
+            {
+                hrid: fodderHrid,
+                level: fodderLevel,
+                quantity: 1,
+                costEach: fodderCost,
+                totalCost: fodderCost,
+            },
+        ],
+        mirrorCount: 1,
+        consumedItemHrid: itemHrid,
+    };
 }
 
 /**
@@ -970,12 +1111,13 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             .sort((a, b) => b.level - a.level);
 
         const gameData = dataManager.getInitClientData();
-        const consumedHrid = optimalStrategy.consumedItemHrid ?? itemHrid;
-        const baseItemDetails = gameData?.itemDetailMap[consumedHrid];
-        const baseItemName = getItemName(consumedHrid, baseItemDetails?.name || consumedHrid);
+        const fallbackHrid = optimalStrategy.consumedItemHrid ?? itemHrid;
 
         const consumedRows = sortedConsumed.map((item) => {
-            const prices = getItemPrices(consumedHrid, item.level);
+            const rowHrid = item.hrid ?? fallbackHrid;
+            const rowItemDetails = gameData?.itemDetailMap[rowHrid];
+            const rowItemName = getItemName(rowHrid, rowItemDetails?.name || rowHrid);
+            const prices = getItemPrices(rowHrid, item.level);
             const askPrice = prices?.ask > 0 ? prices.ask : item.costEach;
             const bidPrice = prices?.bid > 0 ? prices.bid : item.costEach;
             totalAsk += askPrice * item.quantity;
@@ -983,7 +1125,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             const askOutlier = prices?.ask > 0 ? prices.askOutlier : false;
             const bidOutlier = prices?.bid > 0 ? prices.bidOutlier : false;
             return {
-                name: baseItemName + ' +' + item.level,
+                name: rowItemName + ' +' + item.level,
                 count: item.quantity,
                 askPrice,
                 bidPrice,

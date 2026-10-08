@@ -30,7 +30,7 @@ vi.mock('../../core/config.js', () => ({
 
 const itemDetailMap = {};
 vi.mock('../../core/data-manager.js', () => ({
-    default: { getInitClientData: () => ({ itemDetailMap }) },
+    default: { getInitClientData: () => ({ itemDetailMap, actionDetailMap: {} }) },
 }));
 
 const marketPrices = {};
@@ -60,6 +60,7 @@ const {
     calculateMinimumSellPrice,
     calculatePerAttemptMaterialCost,
     calculateDirectEnhancementCost,
+    calculateEnhancementPath,
     getRealisticBaseItemPrice,
 } = await import('./tooltip-enhancement.js');
 
@@ -385,6 +386,86 @@ describe('getRealisticBaseItemPrice - reference market value fallback', () => {
         referenceValues['/items/liquid_item'] = 99999;
 
         expect(getRealisticBaseItemPrice('/items/liquid_item')).toBe(500);
+    });
+});
+
+describe("calculateEnhancementPath - refined item Philosopher's Mirror fodder species (regression)", () => {
+    const calcPath = calculateEnhancementPath;
+
+    const enhancingConfig = {
+        enhancingLevel: 300,
+        houseLevel: 8,
+        toolBonus: 0,
+        speedBonus: 0,
+        teas: { blessed: false },
+        guzzlingBonus: 1,
+    };
+
+    beforeEach(() => {
+        for (const key of Object.keys(itemDetailMap)) delete itemDetailMap[key];
+        for (const key of Object.keys(marketPrices)) delete marketPrices[key];
+
+        itemDetailMap['/items/furious_spear'] = {
+            name: 'Furious Spear',
+            itemLevel: 95,
+            enhancementCosts: [{ itemHrid: '/items/coin', count: 100 }],
+        };
+        itemDetailMap['/items/furious_spear_refined'] = {
+            name: 'Furious Spear (R)',
+            itemLevel: 95,
+            enhancementCosts: [{ itemHrid: '/items/coin', count: 100 }],
+            baseItemHrids: ['/items/furious_spear'],
+        };
+        itemDetailMap['/items/philosophers_mirror'] = { name: "Philosopher's Mirror" };
+
+        // Non-refined spear is cheap; refined spear's own copies are far pricier - this price gap
+        // is what should make the Mirror strategy prefer non-refined fodder over refined fodder.
+        marketPrices['/items/furious_spear'] = {};
+        marketPrices['/items/furious_spear_refined'] = {};
+        marketPrices['/items/philosophers_mirror'] = { ask: 10_000_000, bid: 9_000_000 };
+
+        getItemPrices.mockImplementation((hrid, level) => {
+            if (hrid === '/items/furious_spear') {
+                return level === 0 ? { ask: 1_000_000, bid: 900_000 } : null;
+            }
+            if (hrid === '/items/furious_spear_refined') {
+                return level === 0 ? { ask: 50_000_000, bid: 48_000_000 } : null;
+            }
+            if (hrid === '/items/philosophers_mirror') {
+                return { ask: 10_000_000, bid: 9_000_000 };
+            }
+            return { ask: 400_000_000, bid: 390_000_000 };
+        });
+    });
+
+    test('a refined item mirror-protected at the final step consumes NON-refined fodder, not a refined copy', () => {
+        const result = calcPath('/items/furious_spear_refined', 15, enhancingConfig);
+
+        expect(result).not.toBeNull();
+        expect(result.optimalStrategy.usedMirror).toBe(true);
+
+        const fodderRow = result.optimalStrategy.consumedItems.find((item) => item.level === 13);
+        expect(fodderRow).toBeDefined();
+        expect(fodderRow.hrid).toBe('/items/furious_spear'); // non-refined, not furious_spear_refined
+
+        const primaryRow = result.optimalStrategy.consumedItems.find((item) => item.level === 14);
+        expect(primaryRow).toBeDefined();
+        expect(primaryRow.hrid).toBe('/items/furious_spear_refined'); // the item actually being enhanced
+    });
+
+    test('the rendered materials table prices the fodder row off the non-refined market, not the refined one', () => {
+        const pathResult = calcPath('/items/furious_spear_refined', 15, enhancingConfig);
+        const html = buildEnhancementTooltipHTML({
+            itemHrid: '/items/furious_spear_refined',
+            targetLevel: 15,
+            optimalStrategy: pathResult.optimalStrategy,
+            xpPerHour: null,
+            totalExpectedXP: null,
+        });
+
+        // Non-refined fodder's own market price (1,000,000 -> "1.00M"), not the refined item's (50,000,000).
+        expect(html).toContain('Furious Spear +13');
+        expect(html).toContain('Furious Spear (R) +14');
     });
 });
 
