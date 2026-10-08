@@ -18,6 +18,7 @@ import expectedValueCalculator from '../../market/expected-value-calculator.js';
 import assetManifest from '../../../utils/asset-manifest.js';
 import { createMutationWatcher } from '../../../utils/dom-observer-helpers.js';
 import { coinFormatter, formatWithSeparator } from '../../../utils/formatters.js';
+import { getItemName } from '../../../utils/game-i18n.js';
 import { buildOutlierPriceWarningIcon } from '../../../utils/warning-icon.js';
 
 const PANEL_GAP = 8;
@@ -262,7 +263,8 @@ function buildCurrentIncomeBreakdownContent(record, spriteUrl) {
 
     const rows = record.actualValueBreakdown
         .map((item) => {
-            const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
+            const itemDetails = dataManager.getItemDetails(item.itemHrid);
+            const name = getItemName(item.itemHrid, itemDetails?.name || item.itemHrid);
             const priceNote = item.resolved
                 ? ''
                 : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${t('openableAnalytics.noPriceYetNote')}</span>`;
@@ -308,7 +310,8 @@ function buildHistoryIncomeBreakdownContent(aggregate, spriteUrl) {
 
     const rows = shown
         .map((item) => {
-            const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
+            const itemDetails = dataManager.getItemDetails(item.itemHrid);
+            const name = getItemName(item.itemHrid, itemDetails?.name || item.itemHrid);
             const priceNote = item.resolved
                 ? ''
                 : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${t('openableAnalytics.noPriceYetNote')}</span>`;

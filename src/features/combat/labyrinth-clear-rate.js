@@ -13,6 +13,7 @@ import { runLabyrinthSimulation } from '../combat-sim/combat-sim-runner.js';
 import { typeIntoReactInput } from '../../utils/react-input.js';
 import loadoutState from '../../core/loadout-state.js';
 import { addStyles, removeStyles } from '../../utils/dom.js';
+import { getMonsterName, translateGameName } from '../../utils/game-i18n.js';
 
 const ROOM_DURATION = 120;
 const BASE_SKILLING_TIME = 10;
@@ -997,7 +998,10 @@ class LabyrinthClearRate {
 
             const gameDataLocal = dataManager.getInitClientData();
             const monsterDetail = gameDataLocal?.combatMonsterDetailMap?.[monsterHrid];
-            const monsterName = monsterDetail?.name || monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
+            const monsterName = getMonsterName(
+                monsterHrid,
+                monsterDetail?.name || monsterHrid.replace('/monsters/', '').replace(/_/g, ' ')
+            );
 
             const snapshot = loadoutState.getUsableSnapshotById(loadoutId);
             const loadoutName = snapshot?.name || t('labyrinthClearRate.loadoutFallbackName', { id: loadoutId });
@@ -1397,10 +1401,17 @@ class LabyrinthClearRate {
         if (!next) return;
 
         const { cell, roomHrid, isSkill, recommendedThreshold } = next;
-        const findButton = (label) =>
-            Array.from(cell.querySelectorAll('button')).find((b) => b.textContent.trim() === label);
+        // Match both English and the game-translated button label so the
+        // automation works in any client locale.
+        const findButton = (english, key) => {
+            const translated = translateGameName('labyrinthPanel', key, english);
+            return Array.from(cell.querySelectorAll('button')).find((b) => {
+                const txt = b.textContent.trim();
+                return txt === english || txt === translated;
+            });
+        };
 
-        const editButton = findButton('Edit');
+        const editButton = findButton('Edit', 'edit');
         if (!editButton) {
             console.warn('[Toolasha] Apply Skip: Edit button not found for room', roomHrid);
             return;
@@ -1414,7 +1425,7 @@ class LabyrinthClearRate {
         }
         typeIntoReactInput(input, recommendedThreshold);
 
-        const saveButton = findButton('Save');
+        const saveButton = findButton('Save', 'save');
         if (!saveButton) {
             console.warn('[Toolasha] Apply Skip: Save button not found for room', roomHrid);
             return;

@@ -11,6 +11,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 const STORAGE_KEY_PREFIX = 'tabOrder';
 
@@ -29,9 +30,12 @@ function getStorageKey() {
  */
 function findCharacterTabList() {
     const allTabLists = document.querySelectorAll('[role="tablist"]');
+    // The tab label is localized by the game (zh: 库存), so match both languages.
+    const inventoryLabel = translateGameName('characterManagement', 'inventory', 'Inventory');
     for (const tl of allTabLists) {
         for (const tab of tl.querySelectorAll('[role="tab"]')) {
-            if (tab.textContent.trim() === 'Inventory') return tl;
+            const tabText = tab.textContent.trim();
+            if (tabText === 'Inventory' || tabText === inventoryLabel) return tl;
         }
     }
     return null;

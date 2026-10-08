@@ -40,6 +40,7 @@ import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { getOrCreateProductionToolsBlock, normalizeProductionToolsBlock } from './production-tools-layout.js';
+import { getActionName, getItemName, translateGameName } from '../../utils/game-i18n.js';
 
 /**
  * Module-level state
@@ -464,9 +465,13 @@ function getEnhancingLoadoutValueFromUI(panel) {
     const root = panel?.closest('[class*="SkillActionDetail_skillActionDetail"]') || panel;
     if (!root) return 0;
     const selects = Array.from(root.querySelectorAll('select'));
+    // The "Loadout" label is localized by the game (zh: 配装), so match both languages.
+    const loadoutLabel = translateGameName('skillActionDetail', 'loadout', 'Loadout');
     const loadoutSelect = selects.find((select) => {
         const contextText = select.parentElement?.parentElement?.textContent || select.parentElement?.textContent || '';
-        return /Loadout/i.test(contextText) && select.id !== 'enhancementDropdown';
+        return (
+            (/Loadout/i.test(contextText) || contextText.includes(loadoutLabel)) && select.id !== 'enhancementDropdown'
+        );
     });
     return loadoutSelect?.value ?? null;
 }
@@ -555,8 +560,10 @@ function getCurrentEnhancementLevel(panel) {
  * @returns {number} Repeat count (defaults to 1 if not found)
  */
 function getRepeatCountFromUI(panel) {
+    // The label is localized by the game (zh: 重复), so match both languages.
+    const repeatLabels = new Set(['Repeat', translateGameName('skillActionDetail', 'repeat', 'Repeat')]);
     const labels = Array.from(panel.querySelectorAll('*')).filter(
-        (el) => el.textContent.trim() === 'Repeat' && el.children.length === 0
+        (el) => repeatLabels.has(el.textContent.trim()) && el.children.length === 0
     );
 
     if (labels.length > 0) {
@@ -573,8 +580,13 @@ function getRepeatCountFromUI(panel) {
 }
 
 function getTargetLevelFromUI(panel) {
+    // The label is localized by the game (zh: 目标等级), so match both languages.
+    const targetLevelLabels = new Set([
+        'Target Level',
+        translateGameName('skillActionDetail', 'targetLevel', 'Target Level'),
+    ]);
     const labels = Array.from(panel.querySelectorAll('*')).filter(
-        (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+        (el) => targetLevelLabels.has(el.textContent.trim()) && el.children.length === 0
     );
 
     if (labels.length > 0) {
@@ -1247,11 +1259,14 @@ function createReturnTab(referenceTab, returnContext) {
 
     if (returnContext?.actionHrid) {
         const details = dataManager.getActionDetails(returnContext.actionHrid);
-        displayName = details?.name || returnContext.actionHrid.split('/').pop();
+        displayName = getActionName(
+            returnContext.actionHrid,
+            details?.name || returnContext.actionHrid.split('/').pop()
+        );
         if (returnContext.numActions > 0) displayName += ` (\u00d7${formatWithSeparator(returnContext.numActions)})`;
     } else if (returnContext?.enhancementContext) {
         const ctx = returnContext.enhancementContext;
-        const itemName = dataManager.getItemDetails(ctx.itemHrid)?.name || '...';
+        const itemName = getItemName(ctx.itemHrid, dataManager.getItemDetails(ctx.itemHrid)?.name || '...');
         displayName = `${itemName} +${ctx.startLevel}\u2192+${ctx.targetLevel}`;
     } else {
         return null;
@@ -1556,7 +1571,11 @@ function createMissingMaterialTabs(missingMaterials, strategyInfo = null, sessio
     removeMaterialTabsForOwner(MARKETPLACE_OWNER.ACTIONS);
     currentMaterialsTabs.length = 0;
 
-    const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+    // The native tab label is localized by the game (zh: 我的挂牌), so match both languages.
+    const myListingsLabel = translateGameName('marketplacePanel', 'myListings', 'My Listings');
+    const referenceTab = Array.from(tabsContainer.children).find(
+        (btn) => btn.textContent.includes('My Listings') || btn.textContent.includes(myListingsLabel)
+    );
     if (!referenceTab) {
         console.error('[MissingMats] Reference tab not found');
         return false;

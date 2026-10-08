@@ -6,8 +6,10 @@
  * leaf (LB-04/LB-05) rather than only at the aggregate category level.
  */
 
+import dataManager from '../../../core/data-manager.js';
 import { calculateHousesCostByDomain } from '../../../utils/house-cost-calculator.js';
 import { emptyCategory, attribute } from './score-result.js';
+import { getHouseRoomName } from '../../../utils/game-i18n.js';
 
 /**
  * @param {Object} profileData - Profile data from game
@@ -15,6 +17,13 @@ import { emptyCategory, attribute } from './score-result.js';
  */
 export function calculateHouseScore(profileData) {
     const characterHouseRooms = profileData.profile?.characterHouseRoomMap || {};
+
+    // calculateHousesCostByDomain() returns English room names without HRIDs, so rebuild a
+    // name -> HRID index to localize each breakdown leaf at this display boundary.
+    const houseRoomDetailMap = dataManager.getInitClientData()?.houseRoomDetailMap || {};
+    const roomHridByEnglishName = new Map(
+        Object.entries(houseRoomDetailMap).map(([hrid, detail]) => [detail.name, hrid])
+    );
 
     const combat = emptyCategory();
     const skiller = emptyCategory();
@@ -25,8 +34,9 @@ export function calculateHouseScore(profileData) {
     ]) {
         const { complete, breakdown } = calculateHousesCostByDomain(characterHouseRooms, domain);
         for (const house of breakdown) {
+            const roomHrid = roomHridByEnglishName.get(house.name) || null;
             attribute(category, {
-                name: `${house.name} ${house.level}`,
+                name: `${getHouseRoomName(roomHrid, house.name)} ${house.level}`,
                 cost: house.cost,
                 complete: house.complete,
                 isOutlier: house.isOutlier,

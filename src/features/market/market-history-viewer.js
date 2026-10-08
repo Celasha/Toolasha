@@ -17,6 +17,30 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import estimatedListingAge from './estimated-listing-age.js';
 import { t } from '../../core/i18n.js';
+import { getItemName as getLocalizedItemName, translateGameName } from '../../utils/game-i18n.js';
+
+/**
+ * Check whether rendered game UI text matches an English label or its in-game translation
+ * (tab/cell labels are localized by the game, e.g. zh: Market Listings 商品列表).
+ * @param {string} text - Rendered textContent
+ * @param {string} english - English label
+ * @param {string} key - Game i18n key within the marketplacePanel namespace
+ * @returns {boolean}
+ */
+function matchesMarketplaceLabel(text, english, key) {
+    return text.includes(english) || text.includes(translateGameName('marketplacePanel', key, english));
+}
+
+/**
+ * Check whether trimmed rendered game UI text equals an English label or its translation.
+ * @param {string} text - Trimmed rendered textContent
+ * @param {string} english - English label
+ * @param {string} key - Game i18n key within the marketplacePanel namespace
+ * @returns {boolean}
+ */
+function equalsMarketplaceLabel(text, english, key) {
+    return text === english || text === translateGameName('marketplacePanel', key, english);
+}
 
 class MarketHistoryViewer {
     constructor() {
@@ -141,7 +165,7 @@ class MarketHistoryViewer {
 
             // Verify this is the marketplace tabs (check for Market Listings tab)
             const hasMarketListingsTab = Array.from(tabsContainer.children).some((btn) =>
-                btn.textContent.includes('Market Listings')
+                matchesMarketplaceLabel(btn.textContent, 'Market Listings', 'marketListings')
             );
             if (!hasMarketListingsTab) return;
 
@@ -152,7 +176,7 @@ class MarketHistoryViewer {
 
             // Get reference tab (My Listings) to clone structure
             const referenceTab = Array.from(tabsContainer.children).find((btn) =>
-                btn.textContent.includes('My Listings')
+                matchesMarketplaceLabel(btn.textContent, 'My Listings', 'myListings')
             );
             if (!referenceTab) return;
 
@@ -216,7 +240,7 @@ class MarketHistoryViewer {
 
                     // Check if this is still the marketplace (Market Listings tab exists)
                     const hasMarketListingsTab = Array.from(tabsContainer.children).some((btn) =>
-                        btn.textContent.includes('Market Listings')
+                        matchesMarketplaceLabel(btn.textContent, 'Market Listings', 'marketListings')
                     );
 
                     if (!hasMarketListingsTab) {
@@ -312,7 +336,8 @@ class MarketHistoryViewer {
 
                 const statusText = statusCell.textContent.trim();
 
-                if (statusText !== 'Expired') continue;
+                // Status labels are localized by the game (zh: Expired 已过期)
+                if (!equalsMarketplaceLabel(statusText, 'Expired', 'expired')) continue;
 
                 // This row is expired - now match it to our stored listings
                 // Extract identifying information from the row
@@ -326,7 +351,8 @@ class MarketHistoryViewer {
                     continue;
                 }
 
-                const isSell = typeCell.textContent.trim() === 'Sell';
+                // Type labels are localized by the game (zh: Sell 出售)
+                const isSell = equalsMarketplaceLabel(typeCell.textContent.trim(), 'Sell', 'sell');
                 const priceText = priceCell.textContent.trim();
                 const price = this.parsePrice(priceText);
                 const progressText = progressCell.textContent.trim();
@@ -609,7 +635,8 @@ class MarketHistoryViewer {
 
         // Get item name and cache it
         const itemDetails = dataManager.getItemDetails(itemHrid);
-        const name = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        const fallback = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        const name = getLocalizedItemName(itemHrid, fallback);
         this.itemNameCache.set(itemHrid, name);
         return name;
     }

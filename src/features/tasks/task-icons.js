@@ -13,6 +13,7 @@ import taskIconFilters from './task-icon-filters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import assetManifest from '../../utils/asset-manifest.js';
 import { getActionHridFromName, getQuestFromTaskCard } from '../../utils/game-lookups.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 class TaskIcons {
     constructor() {
@@ -25,6 +26,10 @@ class TaskIcons {
         this.actionsByHrid = null;
         this.monstersByHrid = null;
         this.timerRegistry = createTimerRegistry();
+
+        // Cache for localized "Defeat" labels (English + translated) so the
+        // isCombatTask check works under non-English clients.
+        this.defeatLabels = null;
 
         // Sprite URLs resolved from asset manifest
         this.manifestUrls = {};
@@ -342,6 +347,24 @@ class TaskIcons {
     }
 
     /**
+     * Build a set of localized "Defeat" labels (English + translated) for the
+     * isCombatTask check. The game's i18next template may be "Defeat {{count}}"
+     * or a translated equivalent; we strip the {{...}} placeholder so the
+     * prefix matches the task card's "Defeat - MonsterName" prefix.
+     * @returns {Set<string>}
+     */
+    _getDefeatLabels() {
+        if (this.defeatLabels) return this.defeatLabels;
+        const template = translateGameName('randomTask', 'defeat', 'Defeat');
+        const placeholderIndex = template.indexOf('{{');
+        const translated = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex))
+            .replace(/[-\s]+$/, '')
+            .trim();
+        this.defeatLabels = new Set(['Defeat', translated || 'Defeat']);
+        return this.defeatLabels;
+    }
+
+    /**
      * Parse task card to extract task information
      */
     parseTaskCard(taskCard) {
@@ -364,7 +387,7 @@ class TaskIcons {
             skillType: skillType.trim(),
             taskName: taskName.trim(),
             fullText,
-            isCombatTask: skillType.trim() === 'Defeat',
+            isCombatTask: this._getDefeatLabels().has(skillType.trim()),
         };
 
         return taskInfo;

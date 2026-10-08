@@ -16,6 +16,25 @@ import dataManager from '../../core/data-manager.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
+import { getItemCategoryName } from '../../utils/game-i18n.js';
+
+// Locale-aware set of substrings that identify an "essences" drop table.
+// The English label is always included; if the game's i18n returns a translated
+// label we include that too so non-English clients still detect essences.
+let essenceLabels = null;
+export function getEssenceLabels() {
+    if (essenceLabels) return essenceLabels;
+    const en = 'essence';
+    const translated = getItemCategoryName('/item_categories/essences', 'Essences').toLowerCase();
+    essenceLabels = [en, translated].filter(Boolean);
+    return essenceLabels;
+}
+
+export function textIncludesEssence(text) {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    return getEssenceLabels().some((label) => lower.includes(label));
+}
 
 class OutputTotals {
     constructor() {
@@ -155,8 +174,8 @@ class OutputTotals {
                 return;
             }
 
-            // Check for essences
-            if (container.innerText.toLowerCase().includes('essence')) {
+            // Check for essences (locale-aware)
+            if (textIncludesEssence(container.innerText)) {
                 this.processDropContainer(container, amount, isIndeterminate, placeholderLabel);
                 processedContainers.add(container);
                 return;

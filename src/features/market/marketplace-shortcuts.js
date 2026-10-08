@@ -15,9 +15,22 @@ import { setReactInputValue } from '../../utils/react-input.js';
 import { readMarketplaceRuntimeStateFromElement } from '../../utils/marketplace-autofill.js';
 import estimatedListingAge from './estimated-listing-age.js';
 import { formatRelativeTime, formatWithSeparator } from '../../utils/formatters.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 /** Native input value setter for triggering React state updates */
 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+
+/**
+ * Marketplace modal title spec per shortcut action: English title plus the
+ * game's i18n key (namespace: marketplacePanel). Modal titles are localized
+ * (zh: 立即购买 / 出售挂牌 ...), so both variants must be accepted.
+ */
+const MARKETPLACE_MODAL_TITLES = {
+    buy: { english: 'Buy Now', key: 'buyNow' },
+    sell: { english: 'Sell Now', key: 'sellNow' },
+    'buy-listing': { english: 'Buy Listing', key: 'buyListing' },
+    'sell-listing': { english: 'Sell Listing', key: 'sellListing' },
+};
 
 /**
  * MarketplaceShortcuts class manages the dropdown in item submenus
@@ -115,8 +128,12 @@ class MarketplaceShortcuts {
         const itemDetails = gameData.itemDetailMap[itemHrid];
         if (!itemDetails?.isTradable) return;
 
-        // Find "View Marketplace" button
-        const viewMarketplaceBtn = this.findButtonByText(actionMenu, 'View Marketplace');
+        // Find "View Marketplace" button. The game renders this item-action-menu
+        // button through the same generic full-width button component as every
+        // other menu entry (no stable class/href), so match its localized label
+        // (game key: item.viewMarketplace) with English as fallback.
+        const viewMarketplaceLabel = translateGameName('item', 'viewMarketplace', 'View Marketplace');
+        const viewMarketplaceBtn = this.findButtonByText(actionMenu, 'View Marketplace', viewMarketplaceLabel);
         if (!viewMarketplaceBtn) return;
 
         // Build and insert dropdown
@@ -340,23 +357,50 @@ class MarketplaceShortcuts {
      * @returns {Object|null}
      */
     getPendingAutofillMode(actionType) {
-        return (
-            {
-                buy: { header: 'Buy Now', isSell: false, isPostNewListing: false, isInstantOrder: true },
-                sell: { header: 'Sell Now', isSell: true, isPostNewListing: false, isInstantOrder: true },
-                'buy-listing': {
-                    header: 'Buy Listing',
-                    isSell: false,
-                    isPostNewListing: true,
-                    isInstantOrder: false,
-                },
-                'sell-listing': {
-                    header: 'Sell Listing',
-                    isSell: true,
-                    isPostNewListing: true,
-                    isInstantOrder: false,
-                },
-            }[actionType] || null
+        const titleSpec = MARKETPLACE_MODAL_TITLES[actionType];
+        if (!titleSpec) return null;
+        const flags = {
+            buy: { isSell: false, isPostNewListing: false, isInstantOrder: true },
+            sell: { isSell: true, isPostNewListing: false, isInstantOrder: true },
+            'buy-listing': { isSell: false, isPostNewListing: true, isInstantOrder: false },
+            'sell-listing': { isSell: true, isPostNewListing: true, isInstantOrder: false },
+        }[actionType];
+        return { header: titleSpec.english, ...flags };
+    }
+
+    /**
+     * Get every accepted modal header text for a shortcut action: the English
+     * title plus the game's current-language translation.
+     * @param {string} actionType
+     * @returns {string[]}
+     */
+    getModalHeaderLabels(actionType) {
+        const spec = MARKETPLACE_MODAL_TITLES[actionType];
+        if (!spec) return [];
+        const translated = translateGameName('marketplacePanel', spec.key, spec.english);
+        return translated === spec.english ? [spec.english] : [spec.english, translated];
+    }
+
+    /**
+     * Whether a live modal header corresponds to the given shortcut action,
+     * matching either the English title or its localized translation.
+     * @param {string} headerText
+     * @param {string} actionType
+     * @returns {boolean}
+     */
+    modalHeaderMatches(headerText, actionType) {
+        return this.getModalHeaderLabels(actionType).some((label) => headerText.includes(label));
+    }
+
+    /**
+     * Whether a modal header is any marketplace order/listing dialog
+     * (Buy/Sell Now, Buy/Sell Listing), in English or the game language.
+     * @param {string} headerText
+     * @returns {boolean}
+     */
+    isMarketplaceModalHeader(headerText) {
+        return Object.keys(MARKETPLACE_MODAL_TITLES).some((actionType) =>
+            this.modalHeaderMatches(headerText, actionType)
         );
     }
 
@@ -372,7 +416,7 @@ class MarketplaceShortcuts {
         if (!expected || !modal?.isConnected || !quantityInput?.isConnected) return false;
 
         const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
-        if (headerText !== expected.header) return false;
+        if (!this.modalHeaderMatches(headerText, target.actionType)) return false;
 
         const state = readMarketplaceRuntimeStateFromElement(quantityInput);
         if (!state) return false;
@@ -455,19 +499,23 @@ class MarketplaceShortcuts {
     /**
      * Find and click an instant action button (Sell/Buy) on the marketplace order book.
      * These buttons have text inside MarketplacePanel_actionButtonText divs.
-     * @param {string} buttonText - 'Sell' or 'Buy'
+     * The label is localized by the game (zh: marketplacePanel.sell 出售 / buy 购买);
+     * the English label stays as a fallback.
+     * @param {string} buttonText - 'Sell' or 'Buy' (English label / i18n key)
      * @param {number} timeout - Max wait time in ms (default 3000)
      * @returns {Promise<void>}
      */
     async clickInstantActionButton(buttonText, timeout = 3000) {
         const start = Date.now();
+        const translatedLabel = translateGameName('marketplacePanel', buttonText.toLowerCase(), buttonText);
+        const acceptedLabels = translatedLabel === buttonText ? [buttonText] : [buttonText, translatedLabel];
 
         return new Promise((resolve, reject) => {
             const interval = setInterval(() => {
                 const actionTexts = document.querySelectorAll('[class*="MarketplacePanel_actionButtonText"]');
                 for (const div of actionTexts) {
                     // Skip entries with SVGs (those are icon-only buttons)
-                    if (!div.querySelector('svg') && div.textContent.trim() === buttonText) {
+                    if (!div.querySelector('svg') && acceptedLabels.includes(div.textContent.trim())) {
                         const parentBtn = div.closest('button');
                         if (parentBtn) {
                             clearInterval(interval);
@@ -491,19 +539,33 @@ class MarketplaceShortcuts {
     /**
      * Find and click a new listing button (+ New Sell Listing / + New Buy Listing).
      * These buttons use game's Button_sell or Button_buy CSS classes.
-     * @param {string} buttonText - Full button text to match
+     * The label is localized (zh: marketplacePanel.newSellListing 新出售挂牌 /
+     * newBuyListing 新购买挂牌); the rendered label may keep a leading '+', so a
+     * leading '+' and whitespace are stripped from both sides before comparing.
+     * The English label stays as a fallback.
+     * @param {string} buttonText - Full English button text to match
      * @param {string} partialClass - Partial CSS class to match (e.g. 'Button_sell')
      * @param {number} timeout - Max wait time in ms (default 3000)
      * @returns {Promise<void>}
      */
     async clickListingButton(buttonText, partialClass, timeout = 3000) {
         const start = Date.now();
+        const i18nKey = partialClass.includes('sell') ? 'newSellListing' : 'newBuyListing';
+        const translatedLabel = translateGameName('marketplacePanel', i18nKey, buttonText);
+        const acceptedLabels = translatedLabel === buttonText ? [buttonText] : [buttonText, translatedLabel];
+        // Normalize a possible leading '+' / whitespace from rendered labels
+        const normalizeLabel = (text) =>
+            text
+                .trim()
+                .replace(/^[+\s]+/, '')
+                .trim();
 
         return new Promise((resolve, reject) => {
             const interval = setInterval(() => {
                 const candidates = document.querySelectorAll(`[class*="${partialClass}"]`);
                 for (const btn of candidates) {
-                    if (btn.textContent.trim() === buttonText) {
+                    const candidateLabel = normalizeLabel(btn.textContent);
+                    if (acceptedLabels.some((label) => normalizeLabel(label) === candidateLabel)) {
                         clearInterval(interval);
                         btn.click();
                         resolve();
@@ -536,7 +598,7 @@ class MarketplaceShortcuts {
 
         const expected = this.getPendingAutofillMode(target.actionType);
         const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
-        if (!expected || headerText !== expected.header) return;
+        if (!expected || !this.modalHeaderMatches(headerText, target.actionType)) return;
 
         // Prefer the newest matching modal if React replaces the modal during convergence.
         for (const timer of this.pendingAutofillWriteTimers) clearTimeout(timer);
@@ -574,11 +636,13 @@ class MarketplaceShortcuts {
         if (!header) return;
 
         const headerText = header.textContent.trim();
+        // Buy-side modals only (Buy Now / Buy Listing), in English or the game language.
         if (
-            !headerText.includes('Buy Now') &&
-            !headerText.includes('Buy Listing')
-            // !headerText.includes('Sell Now') &&
-            // !headerText.includes('Sell Listing')
+            !this.modalHeaderMatches(headerText, 'buy') &&
+            !this.modalHeaderMatches(headerText, 'buy-listing')
+            // Sell-side headers intentionally excluded for now:
+            // !this.modalHeaderMatches(headerText, 'sell')
+            // !this.modalHeaderMatches(headerText, 'sell-listing')
         ) {
             return;
         }
@@ -606,12 +670,7 @@ class MarketplaceShortcuts {
         if (!header) return;
 
         const headerText = header.textContent.trim();
-        const isMarketplaceModal =
-            headerText.includes('Buy Now') ||
-            headerText.includes('Buy Listing') ||
-            headerText.includes('Sell Now') ||
-            headerText.includes('Sell Listing');
-        if (!isMarketplaceModal) return;
+        if (!this.isMarketplaceModalHeader(headerText)) return;
 
         // Delay to let the modal fully render
         setTimeout(() => {
@@ -726,7 +785,9 @@ class MarketplaceShortcuts {
         if (!header) return;
 
         const headerText = header.textContent.trim();
-        if (!headerText.includes('Buy Now') && !headerText.includes('Buy Listing')) return;
+        if (!this.modalHeaderMatches(headerText, 'buy') && !this.modalHeaderMatches(headerText, 'buy-listing')) {
+            return;
+        }
 
         setTimeout(() => {
             if (modal.querySelector('.mwi-owned-count')) return;
@@ -743,11 +804,14 @@ class MarketplaceShortcuts {
 
             // Determine enhancement level from modal (if present). Same type="text"
             // staleness as the quantity field elsewhere in this file - match both types.
+            // The label is localized (zh: 强化等级); match both languages.
+            const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
             let enhancementLevel = 0;
             const allInputs = modal.querySelectorAll('input[type="number"], input[type="text"]');
             for (const input of allInputs) {
                 const parent = input.closest('div');
-                if (parent?.textContent?.includes('Enhancement Level')) {
+                const parentText = parent?.textContent || '';
+                if (parentText.includes('Enhancement Level') || parentText.includes(enhancementLabel)) {
                     enhancementLevel = parseInt(input.value) || 0;
                     break;
                 }
@@ -792,10 +856,28 @@ class MarketplaceShortcuts {
     findQuantityInput(modal) {
         // The marketplace update switched this field from type="number" to type="text"
         // (to support typed compact values like "5k"), so match both types.
+
+        // Structural first: the quantity field lives in MarketplacePanel_quantityInputs,
+        // which is locale-independent (the enhancement level input is in a separate row).
+        const structuralInputs = Array.from(
+            modal.querySelectorAll(
+                '[class*="MarketplacePanel_quantityInputs"] input[type="number"], ' +
+                    '[class*="MarketplacePanel_quantityInputs"] input[type="text"]'
+            )
+        );
+        if (structuralInputs.length === 1) return structuralInputs[0];
+
         const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
 
         if (allInputs.length === 0) return null;
         if (allInputs.length === 1) return allInputs[0];
+
+        // Localized labels (English kept; zh: Quantity 数量 / Enhancement Level 强化等级)
+        const quantityLabel = translateGameName('marketplacePanel', 'quantity', 'Quantity');
+        const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
+        const textNamesQuantity = (text) =>
+            (text.includes('Quantity') || text.includes(quantityLabel)) &&
+            !(text.includes('Enhancement Level') || text.includes(enhancementLabel));
 
         // Multiple inputs — find the one near "Quantity" text, not "Enhancement Level"
         for (let level = 0; level < 4; level++) {
@@ -806,8 +888,7 @@ class MarketplaceShortcuts {
                 }
                 if (!parent) continue;
 
-                const text = parent.textContent;
-                if (text.includes('Quantity') && !text.includes('Enhancement Level')) {
+                if (textNamesQuantity(parent.textContent)) {
                     return input;
                 }
             }
@@ -817,15 +898,17 @@ class MarketplaceShortcuts {
     }
 
     /**
-     * Find a button by its text content
+     * Find a button by its text content. Every passed candidate is accepted
+     * (used to match both the English label and its localized translation).
      * @param {HTMLElement} container - Container to search in
-     * @param {string} text - Button text to find
+     * @param {...string} texts - Button texts to find
      * @returns {HTMLElement|null} Button element or null
      */
-    findButtonByText(container, text) {
+    findButtonByText(container, ...texts) {
+        const acceptedTexts = new Set(texts.filter(Boolean));
         const buttons = container.querySelectorAll('button');
         for (const btn of buttons) {
-            if (btn.textContent.trim() === text) return btn;
+            if (acceptedTexts.has(btn.textContent.trim())) return btn;
         }
         return null;
     }
@@ -863,12 +946,7 @@ class MarketplaceShortcuts {
         if (!header) return;
 
         const headerText = header.textContent.trim();
-        const isMarketplaceModal =
-            headerText.includes('Buy Now') ||
-            headerText.includes('Buy Listing') ||
-            headerText.includes('Sell Now') ||
-            headerText.includes('Sell Listing');
-        if (!isMarketplaceModal) return;
+        if (!this.isMarketplaceModalHeader(headerText)) return;
 
         setTimeout(() => {
             if (modal.querySelector('.mwi-mp-multiplier')) return;

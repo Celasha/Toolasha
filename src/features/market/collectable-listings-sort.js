@@ -13,6 +13,7 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 const TABLE_CLASS = 'MarketplacePanel_myListingsTable';
 const SORT_INDICATOR_PATTERN = /[▲▼#]/;
@@ -90,7 +91,10 @@ class CollectableListingsSort {
      * @returns {boolean}
      */
     _isRowCollectable(row) {
-        return Array.from(row.querySelectorAll('button')).some((btn) => btn.textContent.trim() === 'Collect');
+        // The Collect button label is localized by the game (zh: 收集), so match the
+        // translated label too.
+        const collectLabels = new Set(['Collect', translateGameName('marketplacePanel', 'collect', 'Collect')]);
+        return Array.from(row.querySelectorAll('button')).some((btn) => collectLabels.has(btn.textContent.trim()));
     }
 
     /**

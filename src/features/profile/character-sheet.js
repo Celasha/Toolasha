@@ -8,7 +8,55 @@
  *   const url = buildCharacterSheetLink(); // assumes modal is open in DOM
  */
 
+import { translateGameName, getHouseRoomName } from '../../utils/game-i18n.js';
+
 const CLASS_COLORS_BLOCKLIST = ['_name__', '_characterName__', '_xlarge__', '_large__', '_medium__', '_small__'];
+
+// Build locale-aware label sets so the parser still finds the right rows when
+// the game client is set to a non-English language. Each set includes the
+// English label and the game-i18n translated label (which falls back to the
+// English when the i18n instance is unavailable or the key is missing).
+let combatLevelLabelSet = null;
+export function getCombatLevelLabels() {
+    if (combatLevelLabelSet) return combatLevelLabelSet;
+    const en = 'Combat Level';
+    const translated = translateGameName('sharableProfile', 'combatLevel', en);
+    combatLevelLabelSet = new Set([en.toLowerCase(), translated.toLowerCase()]);
+    return combatLevelLabelSet;
+}
+
+let housingKeyByName = null;
+export function getHousingKeyByName() {
+    if (housingKeyByName) return housingKeyByName;
+    housingKeyByName = new Map();
+    for (const [enName, key] of Object.entries(HOUSE_KEY_BY_NAME)) {
+        housingKeyByName.set(enName, key);
+        const hrid = HOUSE_HRID_BY_KEY[key];
+        if (hrid) {
+            const translated = getHouseRoomName(hrid, enName);
+            if (translated && translated !== enName) {
+                housingKeyByName.set(translated, key);
+            }
+        }
+    }
+    return housingKeyByName;
+}
+
+let achTierNameToOrder = null;
+export function getAchTierNameToOrder() {
+    if (achTierNameToOrder) return achTierNameToOrder;
+    achTierNameToOrder = new Map();
+    for (let i = 0; i < ACH_ORDER.length; i++) {
+        const en = ACH_ORDER[i];
+        achTierNameToOrder.set(en, i);
+        const hrid = `/achievement_tiers/${en.toLowerCase()}`;
+        const translated = translateGameName('achievementTierNames', hrid, en);
+        if (translated && translated !== en) {
+            achTierNameToOrder.set(translated, i);
+        }
+    }
+    return achTierNameToOrder;
+}
 
 const _SKILL_ORDER = ['combat', 'stamina', 'intelligence', 'attack', 'defense', 'melee', 'ranged', 'magic'];
 const EQUIPMENT_ORDER = [
@@ -57,6 +105,16 @@ const HOUSE_KEY_BY_NAME = {
     'Mystical Study': 'mystical_study',
 };
 
+const HOUSE_HRID_BY_KEY = {
+    dining_room: '/house_rooms/dining_room',
+    library: '/house_rooms/library',
+    dojo: '/house_rooms/dojo',
+    armory: '/house_rooms/armory',
+    gym: '/house_rooms/gym',
+    archery_range: '/house_rooms/archery_range',
+    mystical_study: '/house_rooms/mystical_study',
+};
+
 const getId = (useEl) => {
     const href = useEl?.getAttribute('href') || useEl?.getAttribute('xlink:href') || '';
     return href.split('#')[1] || '';
@@ -91,7 +149,12 @@ const _extractGeneral = (modal) => {
 
 const _extractSkills = (modal) => {
     const statRows = [...modal.querySelectorAll('.SharableProfile_statRow__2bT8_')];
-    const combat = getNum(statRows.find((r) => r.textContent?.toLowerCase().includes('combat level'))?.textContent);
+    const combat = getNum(
+        statRows.find((r) => {
+            const text = (r.textContent || '').toLowerCase();
+            return [...getCombatLevelLabels()].some((label) => text.includes(label));
+        })?.textContent
+    );
     const skillMap = {};
     modal.querySelectorAll('.SharableProfile_skillGrid__3vIqO .Skill_skill__3MrMc').forEach((el) => {
         const id = getId(el.querySelector('use'));
@@ -151,7 +214,7 @@ const _extractHousing = (modal) => {
     const housing = {};
     modal.querySelectorAll('.SharableProfile_houseRooms__3QGPc .SharableProfile_houseRoom__2FW_d').forEach((room) => {
         const nameText = room.querySelector('.SharableProfile_name__1RDS1')?.textContent?.trim();
-        const key = HOUSE_KEY_BY_NAME[nameText];
+        const key = getHousingKeyByName().get(nameText);
         if (!key) return;
         housing[key] = getNum(room.querySelector('.SharableProfile_level__1vQoc')?.textContent);
     });
@@ -160,17 +223,20 @@ const _extractHousing = (modal) => {
 
 const _extractAchievements = (modal) => {
     const achievements = {};
+    const tierNameToOrder = getAchTierNameToOrder();
     modal.querySelectorAll('.SharableProfile_achievementTier__2izCL').forEach((tier) => {
         const header = tier.querySelector('.SharableProfile_tierHeader__1iNyx');
         if (!header) return;
         const name = header.querySelector('.SharableProfile_tierName__3pBrY')?.textContent?.trim();
+        const idx = tierNameToOrder.get(name);
+        if (idx === undefined) return;
         const counts = header.querySelector('.SharableProfile_tierCount__3mJd2')?.textContent || '';
         const match = counts.match(/(\d+)\s*\/\s*(\d+)/);
         const have = match ? parseInt(match[1], 10) : 0;
         const total = match ? parseInt(match[2], 10) : 0;
-        achievements[name] = have && total && have === total ? '1' : '0';
+        achievements[idx] = have && total && have === total ? '1' : '0';
     });
-    return ACH_ORDER.map((n) => achievements[n] || '0').join('');
+    return ACH_ORDER.map((_, i) => achievements[i] || '0').join('');
 };
 
 /**

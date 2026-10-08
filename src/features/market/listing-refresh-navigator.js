@@ -13,6 +13,7 @@ import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 const LISTING_COUNT_SEL = '[class*="MarketplacePanel_listingCount"]';
 const TABLE_SEL = '[class*="MarketplacePanel_myListingsTable"]';
@@ -57,8 +58,14 @@ class ListingRefreshNavigator {
             btn.textContent = t('listingRefreshNavigator.refreshButtonLabel');
             btn.addEventListener('click', () => this._startSession());
 
+            // The Upgrade Capacity button label is localized by the game (zh: 升级容量),
+            // so match the translated label too.
+            const upgradeLabels = [
+                'Upgrade Capacity',
+                translateGameName('marketplacePanel', 'upgradeCapacity', 'Upgrade Capacity'),
+            ];
             const upgradeBtn = Array.from(countContainer.querySelectorAll('button')).find((b) =>
-                b.textContent.includes('Upgrade Capacity')
+                upgradeLabels.some((label) => b.textContent.includes(label))
             );
 
             if (upgradeBtn) {

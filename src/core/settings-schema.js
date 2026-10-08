@@ -1860,6 +1860,8 @@ export const settingsGroups = {
                               .getAllSnapshots()
                               .filter((s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat')
                         : [];
+                    // Labels are translated in settings-ui.js: '' resolves via the options._empty
+                    // locale key and the ' (Unavailable)' suffix via settingsSchema.selectUnavailableSuffix.
                     return [
                         { value: '', label: 'Current Gear' },
                         ...loadouts.map((s) => ({

@@ -28,6 +28,7 @@ import {
 } from '../../utils/risk-of-ruin-adapters/dungeon-chest-adapter.js';
 import { buildAlchemyTransmuteModel } from '../../utils/risk-of-ruin-adapters/alchemy-adapter.js';
 import { buildEnhancementModel } from '../../utils/risk-of-ruin-adapters/enhancement-adapter.js';
+import { getItemName } from '../../utils/game-i18n.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 const PANEL_ID = 'mwi-risk-of-ruin-panel';
@@ -243,7 +244,7 @@ class RiskOfRuinUI {
 
         if (mode === 'chest') {
             const options = CHEST_HRIDS.map((hrid) => {
-                const name = dataManager.getItemDetails(hrid)?.name || hrid;
+                const name = getItemName(hrid, dataManager.getItemDetails(hrid)?.name || hrid);
                 return `<option value="${hrid}">${name}</option>`;
             }).join('');
             container.innerHTML = `
@@ -292,13 +293,13 @@ class RiskOfRuinUI {
         for (const [hrid, details] of Object.entries(gameData.itemDetailMap)) {
             if (details.alchemyDetail?.transmuteDropTable?.length) {
                 const option = document.createElement('option');
-                option.value = details.name;
+                option.value = getItemName(hrid, details.name);
                 option.dataset.hrid = hrid;
                 transmuteList.appendChild(option);
             }
             if (details.enhancementCosts?.length) {
                 const option = document.createElement('option');
-                option.value = details.name;
+                option.value = getItemName(hrid, details.name);
                 option.dataset.hrid = hrid;
                 enhanceList.appendChild(option);
             }
@@ -520,7 +521,7 @@ class RiskOfRuinUI {
                     items: [{ itemHrid: hrid, quantityPerAction: 1 }],
                 };
             } else {
-                detailInfo.untradeableOutput = itemDetails.name || hrid.split('/').pop();
+                detailInfo.untradeableOutput = getItemName(hrid, itemDetails.name || hrid.split('/').pop());
             }
         }
 
@@ -581,7 +582,8 @@ class RiskOfRuinUI {
         const untracked = [];
         for (const drop of rawTable) {
             if (!(drop.dropRate > 0) || drop.itemHrid === hrid || trackedHrids.has(drop.itemHrid)) continue;
-            untracked.push(dataManager.getItemDetails(drop.itemHrid)?.name || drop.itemHrid.split('/').pop());
+            const fallback = dataManager.getItemDetails(drop.itemHrid)?.name || drop.itemHrid.split('/').pop();
+            untracked.push(getItemName(drop.itemHrid, fallback));
         }
         return untracked;
     }
@@ -628,8 +630,8 @@ class RiskOfRuinUI {
         let html = '';
 
         if (ctx?.items?.length) {
-            const names = ctx.items.map(
-                (i) => dataManager.getItemDetails(i.itemHrid)?.name || i.itemHrid.split('/').pop()
+            const names = ctx.items.map((i) =>
+                getItemName(i.itemHrid, dataManager.getItemDetails(i.itemHrid)?.name || i.itemHrid.split('/').pop())
             );
             html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
                 ${t('riskOfRuinUi.trackingSellDepthNote', { names: names.join(', ') })}
@@ -735,7 +737,7 @@ class RiskOfRuinUI {
         if (costBreakdown.entryKey) {
             rows.push(
                 `<div>${t('riskOfRuinUi.entryKeyLine', {
-                    name: costBreakdown.entryKey.name,
+                    name: getItemName(costBreakdown.entryKey.hrid, costBreakdown.entryKey.name),
                     price:
                         fmtGold(costBreakdown.entryKey.price) +
                         buildOutlierPriceWarningIcon(costBreakdown.entryKey.isOutlier),
@@ -745,7 +747,7 @@ class RiskOfRuinUI {
         if (costBreakdown.chestKey) {
             rows.push(
                 `<div>${t('riskOfRuinUi.chestKeyLine', {
-                    name: costBreakdown.chestKey.name,
+                    name: getItemName(costBreakdown.chestKey.hrid, costBreakdown.chestKey.name),
                     price:
                         fmtGold(costBreakdown.chestKey.price) +
                         buildOutlierPriceWarningIcon(costBreakdown.chestKey.isOutlier),
@@ -804,7 +806,9 @@ class RiskOfRuinUI {
     }
 
     _alchemyDetailsHTML({ breakdown }, startingBalance, maxSinglePossibleLoss, minActions) {
-        const catalystName = breakdown.catalystHrid ? dataManager.getItemDetails(breakdown.catalystHrid)?.name : null;
+        const catalystName = breakdown.catalystHrid
+            ? getItemName(breakdown.catalystHrid, dataManager.getItemDetails(breakdown.catalystHrid)?.name)
+            : null;
 
         const rows = [
             `<div>${t('riskOfRuinUi.successRateLine', { rate: formatPercentage(breakdown.successRate, 2) })}</div>`,
@@ -830,7 +834,10 @@ class RiskOfRuinUI {
 
         const mainRows = breakdown.mainBranches
             .map((branch) => {
-                const itemName = dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid;
+                const itemName = getItemName(
+                    branch.itemHrid,
+                    dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid
+                );
                 return `<tr>
                         <td style="padding:2px 6px;">${
                             branch.isSelfReturn ? t('riskOfRuinUi.selfReturnLabel', { itemName }) : itemName
@@ -852,14 +859,17 @@ class RiskOfRuinUI {
                 : '';
 
         const bonusRows = breakdown.bonusDrops
-            .map(
-                (bonus) =>
-                    `<tr>
-                        <td style="padding:2px 6px;">${dataManager.getItemDetails(bonus.itemHrid)?.name || bonus.itemHrid}</td>
+            .map((bonus) => {
+                const itemName = getItemName(
+                    bonus.itemHrid,
+                    dataManager.getItemDetails(bonus.itemHrid)?.name || bonus.itemHrid
+                );
+                return `<tr>
+                        <td style="padding:2px 6px;">${itemName}</td>
                         <td style="padding:2px 6px; text-align:right;">${formatPercentage(bonus.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(bonus.payout)}${buildOutlierPriceWarningIcon(bonus.isOutlier)}</td>
-                    </tr>`
-            )
+                    </tr>`;
+            })
             .join('');
         const bonusSection = breakdown.bonusDrops.length
             ? this._wrapDetails(

@@ -40,6 +40,7 @@ export function parseEquipmentWisdom(equipment, itemDetailMap) {
         // Add to breakdown
         breakdown.push({
             name: itemDetails.name,
+            itemHrid: item.itemHrid,
             value: itemWisdom,
             enhancementLevel: enhancementLevel,
         });
@@ -84,6 +85,7 @@ export function parseCharmExperience(equipment, skillHrid, itemDetailMap) {
         // Add to breakdown
         breakdown.push({
             name: itemDetails.name,
+            itemHrid: item.itemHrid,
             value: itemCharmXP,
             enhancementLevel: enhancementLevel,
         });

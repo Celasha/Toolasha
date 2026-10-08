@@ -7,6 +7,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 /**
  * TransmuteRates class manages success rate display in Item Dictionary
@@ -100,15 +101,22 @@ class TransmuteRates {
             return;
         }
 
-        // Build name->HRID cache once for O(1) lookups
+        // Build name->HRID cache once for O(1) lookups. Index both the English data
+        // name and the game's translated display name (the dictionary title and item
+        // rows are localized, e.g. zh), plus ★ ↔ (R) variants of each, so the lookup
+        // works in any locale.
         if (this.nameToHridCache.size === 0) {
             for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-                this.nameToHridCache.set(item.name, hrid);
-                // Add ★ ↔ (R) variants so both display formats resolve
-                if (item.name.includes('(R)')) {
-                    this.nameToHridCache.set(item.name.replace(/\s*\(R\)/, ' ★'), hrid);
-                } else if (item.name.includes('★')) {
-                    this.nameToHridCache.set(item.name.replace(/\s*★/, ' (R)'), hrid);
+                const names = new Set([item.name, getItemName(hrid, item.name)]);
+                for (const name of names) {
+                    if (!name) continue;
+                    this.nameToHridCache.set(name, hrid);
+                    // Add ★ ↔ (R) variants so both display formats resolve
+                    if (name.includes('(R)')) {
+                        this.nameToHridCache.set(name.replace(/\s*\(R\)/, ' ★'), hrid);
+                    } else if (name.includes('★')) {
+                        this.nameToHridCache.set(name.replace(/\s*★/, ' (R)'), hrid);
+                    }
                 }
             }
         }

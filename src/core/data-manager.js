@@ -11,6 +11,7 @@ import connectionState from './connection-state.js';
 import storage from './storage.js';
 import { mergeMarketListings } from '../utils/market-listings.js';
 import { SCROLL_BUFF_VALUES } from '../utils/scroll-buff-values.js';
+import { getMonsterName } from '../utils/game-i18n.js';
 
 class DataManager {
     constructor() {
@@ -1541,9 +1542,10 @@ class DataManager {
             return null;
         }
 
-        // Search for monster by display name
+        // Search for monster by display name (English or translated)
         for (const [hrid, monster] of Object.entries(this.initClientData.combatMonsterDetailMap)) {
-            if (monster.name === monsterName) {
+            const displayName = getMonsterName(hrid, monster.name);
+            if (displayName === monsterName || monster.name === monsterName) {
                 return hrid;
             }
         }

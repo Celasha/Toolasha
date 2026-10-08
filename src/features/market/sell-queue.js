@@ -20,6 +20,7 @@ import {
     isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { getItemName, translateGameName } from '../../utils/game-i18n.js';
 
 const timerRegistry = createTimerRegistry();
 
@@ -83,7 +84,12 @@ function injectTabs(tabsContainer = getVisibleMarketplaceTabContainer(), session
     removeMaterialTabsForOwner(MARKETPLACE_OWNER.SELL_QUEUE);
     currentTabs.length = 0;
 
-    const referenceTab = Array.from(tabsContainer.children).find((tab) => tab.textContent.includes('My Listings'));
+    // The My Listings tab label is localized by the game (zh: 我的挂牌), so match the
+    // translated label too.
+    const myListingsLabels = ['My Listings', translateGameName('marketplacePanel', 'myListings', 'My Listings')];
+    const referenceTab = Array.from(tabsContainer.children).find((tab) =>
+        myListingsLabels.some((label) => tab.textContent.includes(label))
+    );
     if (!referenceTab) return false;
     tabsContainer.style.flexWrap = 'wrap';
 
@@ -381,7 +387,7 @@ function initialize() {
         if (!itemDetails?.isTradable) return;
 
         try {
-            await addToQueue(currentItemHrid, itemDetails.name);
+            await addToQueue(currentItemHrid, getItemName(currentItemHrid, itemDetails.name));
         } catch (error) {
             console.error('[SellQueue] Failed to add item to the Marketplace queue:', error);
             if (sellQueueSessionId !== null) marketplaceSession.end(sellQueueSessionId);

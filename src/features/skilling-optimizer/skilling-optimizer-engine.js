@@ -845,6 +845,7 @@ function runEquipmentSlotRound(
         if (!progression.some((p) => p.itemHrid !== null)) continue;
 
         slots[locationHrid] = {
+            locationHrid,
             name: SLOT_DISPLAY_NAMES[locationHrid] || locationHrid,
             candidateCount: candidates.length,
             progression,

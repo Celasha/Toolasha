@@ -12,7 +12,7 @@ import { t } from '../../core/i18n.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import scrollSimulator from './scroll-simulator.js';
 import loadoutState from '../../core/loadout-state.js';
-import { SCROLL_BUFF_ITEMS, SCROLL_BUFF_LABELS } from '../../utils/scroll-buff-values.js';
+import { SCROLL_BUFF_ITEMS, getScrollBuffLabel } from '../../utils/scroll-buff-values.js';
 
 const BUTTON_ID = 'toolasha-scroll-sim-btn';
 const POPUP_ID = 'toolasha-scroll-sim-popup';
@@ -204,8 +204,8 @@ class ScrollSimPopup {
             line-height: 1.4;
         `;
         note.textContent = this.loadoutName
-            ? 'These scrolls override the defaults when this loadout is active for a skill.'
-            : 'Applied when no loadout matches the current skill (or automatic saved-loadout calculations are disabled).';
+            ? t('scrollSimulatorUi.noteForLoadout')
+            : t('scrollSimulatorUi.noteForDefaults');
         body.appendChild(note);
 
         // Scroll rows
@@ -232,7 +232,7 @@ class ScrollSimPopup {
 
             const label = document.createElement('span');
             label.style.cssText = `font-size: 0.82rem; color: rgba(255,255,255,0.85);`;
-            label.textContent = SCROLL_BUFF_LABELS[buffTypeHrid];
+            label.textContent = getScrollBuffLabel(buffTypeHrid);
 
             row.appendChild(checkbox);
             if (icon) row.appendChild(icon);

@@ -13,6 +13,7 @@ import { guildXPTracker } from './guild-xp-tracker.js';
 import { formatDateTime, timeReadable } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { fNum, rankBadge, addColumn, makeColumnSortable } from '../../utils/table-columns.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 const CSS_PREFIX = 'mwi-guild-xp';
 // Markers on native elements themselves (never the `mwi-guild-xp` class used by removable
@@ -22,6 +23,42 @@ const CSS_PREFIX = 'mwi-guild-xp';
 // grid item (its ancestor that is a direct child of the grid) that visually spans two rows.
 const EXP_CARD_CLASS = `${CSS_PREFIX}__exp-card`;
 const EXP_GRID_ITEM_CLASS = `${CSS_PREFIX}__exp-grid-item`;
+
+// ─── Game-text matching helpers ─────────────────────────────────────────────
+// Rendered guild/leaderboard labels are localized by the game (zh: Guild Exp 公会经验,
+// Role 职位, etc.), so every DOM-text match below checks both the English string and the
+// game's current-language translation.
+
+/**
+ * Check whether trimmed rendered game text equals an English label or its translation.
+ * @param {string} text - Trimmed rendered textContent
+ * @param {string} english - English label
+ * @param {string} namespace - Game i18n namespace
+ * @param {string} key - Game i18n key
+ * @returns {boolean}
+ */
+function matchesGameLabel(text, english, namespace, key) {
+    return text === english || text === translateGameName(namespace, key, english);
+}
+
+/**
+ * Parse the days-inactive value out of a rendered guild Activity cell. The cell text is
+ * the game's daysAgo template (en "{{days}} ago", zh "{{days}}前") filled with a
+ * locale-independent duration ("3d", "1y 2d"), so build a capture regex from both the
+ * English template and the translated one.
+ * @param {string} text - Rendered cell text
+ * @returns {number|null} Days inactive, or null when the cell shows no duration
+ */
+function parseDaysAgo(text) {
+    const templates = new Set(['{{days}} ago', translateGameName('guildPanel', 'daysAgo', '{{days}} ago')]);
+    for (const template of templates) {
+        if (!template.includes('{{days}}')) continue;
+        const source = template.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\{\\{days\\}\\}', '(\\d+)d');
+        const match = text.match(new RegExp(source));
+        if (match) return parseInt(match[1], 10);
+    }
+    return null;
+}
 
 // ─── Formatting helpers ─────────────────────────────────────────────────────
 
@@ -340,11 +377,13 @@ class GuildXPDisplay {
                     ? `<div class="${CSS_PREFIX}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`
                     : '';
             // Find the "Exp to Next Level" data block, expand it to fit this extra content
-            // (native card keeps a fixed height otherwise), and append.
+            // (native card keeps a fixed height otherwise), and append. The label is
+            // localized by the game (zh: 升级所需经验), so match the translated label too.
+            const expToLabel = translateGameName('guildPanel', 'expToLevelUp', 'Exp to Level Up');
             const dataBlocks = dataGridEl.querySelectorAll('.GuildPanel_dataBlock__3qVhK');
             for (const block of dataBlocks) {
                 const label = block.querySelector('.GuildPanel_label__-A63g');
-                if (label && label.textContent.includes('Exp to')) {
+                if (label && (label.textContent.includes('Exp to') || label.textContent.includes(expToLabel))) {
                     this._expandExpCardIfNeeded(block, dataGridEl);
                     block.insertAdjacentHTML('beforeend', ttlHTML + nextSlotHTML);
                     break;
@@ -593,7 +632,9 @@ class GuildXPDisplay {
         if (!theadTr) return;
 
         // Find Activity column index — its presence indicates the Status tab.
-        const activityIndex = Array.from(theadTr.children).findIndex((el) => el.textContent.trim() === 'Activity');
+        const activityIndex = Array.from(theadTr.children).findIndex((el) =>
+            matchesGameLabel(el.textContent.trim(), 'Activity', 'guildPanel', 'activity')
+        );
         const isStatusTab = activityIndex >= 0;
         const insertAfter = theadTr.children.length - 1;
 
@@ -745,7 +786,11 @@ class GuildXPDisplay {
         }
 
         // Guild Exp column
-        const expHeader = Array.from(theadTr.children).find((el) => el.textContent.includes('Guild Exp'));
+        const expHeader = Array.from(theadTr.children).find(
+            (el) =>
+                el.textContent.includes('Guild Exp') ||
+                el.textContent.includes(translateGameName('guildPanel', 'guildExp', 'Guild Exp'))
+        );
         if (expHeader && !expHeader.querySelector('.mwi-col-sort-icon')) {
             makeColumnSortable(expHeader, {
                 sortId: 'xp',
@@ -757,9 +802,16 @@ class GuildXPDisplay {
             });
         }
 
-        // Role column
+        // Role column. Header and role names are localized by the game (zh: Role 职位,
+        // Leader/General/Officer/Member 会长/将军/官员/会员), so match the translated labels too.
         const rolePriority = { Leader: 1, General: 2, Officer: 3, Member: 4 };
-        const roleHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Role');
+        rolePriority[translateGameName('guildCharacterRoleNames', 'leader', 'Leader')] = 1;
+        rolePriority[translateGameName('guildCharacterRoleNames', 'general', 'General')] = 2;
+        rolePriority[translateGameName('guildCharacterRoleNames', 'officer', 'Officer')] = 3;
+        rolePriority[translateGameName('guildCharacterRoleNames', 'member', 'Member')] = 4;
+        const roleHeader = Array.from(theadTr.children).find((el) =>
+            matchesGameLabel(el.textContent.trim(), 'Role', 'guildPanel', 'role')
+        );
         if (roleHeader && !roleHeader.querySelector('.mwi-col-sort-icon')) {
             const roleColIndex = Array.from(theadTr.children).indexOf(roleHeader);
             makeColumnSortable(roleHeader, {
@@ -772,7 +824,9 @@ class GuildXPDisplay {
         }
 
         // Activity column
-        const activityHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Activity');
+        const activityHeader = Array.from(theadTr.children).find((el) =>
+            matchesGameLabel(el.textContent.trim(), 'Activity', 'guildPanel', 'activity')
+        );
         if (activityHeader && !activityHeader.querySelector('.mwi-col-sort-icon')) {
             const activityColIndex = Array.from(theadTr.children).indexOf(activityHeader);
             makeColumnSortable(activityHeader, {
@@ -781,9 +835,9 @@ class GuildXPDisplay {
                     const cell = trEl.children[activityColIndex];
                     if (!cell) return Infinity;
                     const text = cell.textContent?.trim() || '';
-                    // Parse "Xd ago" format
-                    const daysMatch = text.match(/(\d+)d\s*ago/);
-                    if (daysMatch) return parseInt(daysMatch[1], 10) * 1440;
+                    // Parse the game's inactivity text ("3d ago" / zh "3d前")
+                    const days = parseDaysAgo(text);
+                    if (days !== null) return days * 1440;
                     // Active players with SVG activity icons — group by href fragment
                     const useEl = cell.querySelector('use');
                     if (useEl) {
@@ -797,14 +851,16 @@ class GuildXPDisplay {
         }
 
         // Status column
-        const statusHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Status');
+        const statusHeader = Array.from(theadTr.children).find((el) =>
+            matchesGameLabel(el.textContent.trim(), 'Status', 'guildPanel', 'status')
+        );
         if (statusHeader && !statusHeader.querySelector('.mwi-col-sort-icon')) {
             const statusColIndex = Array.from(theadTr.children).indexOf(statusHeader);
             makeColumnSortable(statusHeader, {
                 sortId: 'status',
                 valueGetter: (trEl) => {
                     const text = trEl.children[statusColIndex]?.textContent?.trim() || '';
-                    return text === 'Online' ? 0 : 1;
+                    return matchesGameLabel(text, 'Online', 'guildPanel', 'online') ? 0 : 1;
                 },
             });
         }
@@ -833,7 +889,10 @@ class GuildXPDisplay {
         // Highlight inactive players using whichever Activity column is present
         // (game's on Status tab, or our injected one on Contributions tab)
         const activityHeader =
-            theadTr && Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Activity');
+            theadTr &&
+            Array.from(theadTr.children).find((el) =>
+                matchesGameLabel(el.textContent.trim(), 'Activity', 'guildPanel', 'activity')
+            );
         if (activityHeader) {
             const actColIndex = Array.from(theadTr.children).indexOf(activityHeader);
             for (const row of rows) {
@@ -841,9 +900,8 @@ class GuildXPDisplay {
                 const cell = row.children[actColIndex];
                 if (!cell) continue;
                 const text = cell.textContent?.trim() || '';
-                const daysMatch = text.match(/(\d+)d\s*ago/);
-                if (daysMatch) {
-                    const days = parseInt(daysMatch[1], 10);
+                const days = parseDaysAgo(text);
+                if (days !== null) {
                     row.style.backgroundColor = days >= 10 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(251, 146, 60, 0.12)';
                 }
             }
@@ -1013,7 +1071,9 @@ class GuildXPDisplay {
             sortData: allStats.map((s) => s.lastDayXPH),
         });
 
-        const rankHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Rank');
+        const rankHeader = Array.from(theadTr.children).find((el) =>
+            matchesGameLabel(el.textContent.trim(), 'Rank', 'leaderboardPanel', 'rank')
+        );
         if (rankHeader && !rankHeader.querySelector('.mwi-col-sort-icon')) {
             makeColumnSortable(rankHeader, {
                 sortId: 'rank',

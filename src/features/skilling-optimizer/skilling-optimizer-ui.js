@@ -29,6 +29,14 @@ import { buildOwnedEnhancementLevelMap } from '../../utils/owned-enhancement-map
 import loadoutState from '../../core/loadout-state.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
+import {
+    getItemName,
+    getActionName,
+    getHouseRoomName,
+    getItemLocationName,
+    getSkillName,
+    translateGameName,
+} from '../../utils/game-i18n.js';
 
 const TAB_CLASS = 'toolasha-skilling-opt-tab';
 const PANEL_CLASS = 'toolasha-skilling-opt-panel';
@@ -117,18 +125,54 @@ class SkillingSimulatorUI {
     // Tab injection
     // -------------------------------------------------------------------------
 
-    _findTabList() {
-        for (const tl of document.querySelectorAll('[role="tablist"]')) {
-            for (const tab of tl.querySelectorAll('[role="tab"]')) {
-                if (tab.textContent.trim().startsWith('Loadouts')) return tl;
+    /**
+     * Find the game's native Loadouts tab button in the Character Management tab bar
+     * without relying on its translated label.
+     *
+     * The game mounts every Character Management panel (hidden via CSS when inactive);
+     * the Loadouts panel root carries the LoadoutsPanel_loadoutsPanel class and lives in
+     * a tab panel whose index maps directly to the tab button index inside the same
+     * TabsComponent. Falls back to the game-translated / English "Loadouts" label.
+     * @returns {HTMLElement|null}
+     * @private
+     */
+    _findLoadoutsTab() {
+        // Structural: Loadouts panel content → owning tab panel → same-index tab button
+        const loadoutsPanel = document.querySelector('[class*="LoadoutsPanel_loadoutsPanel"]');
+        if (loadoutsPanel) {
+            const panelsContainer = loadoutsPanel.closest('[class*="TabsComponent_tabPanelsContainer"]');
+            const tabsRoot = panelsContainer?.parentElement;
+            const tabList = tabsRoot?.querySelector('[role="tablist"]');
+            if (panelsContainer && tabsRoot && tabList) {
+                const panelIndex = Array.from(panelsContainer.children).findIndex((panel) =>
+                    panel.contains?.(loadoutsPanel)
+                );
+                const buttons = Array.from(tabList.querySelectorAll('[role="tab"]'));
+                if (panelIndex !== -1 && buttons[panelIndex]) {
+                    return buttons[panelIndex];
+                }
             }
+        }
+
+        // Fallback: game-translated label ("Loadouts"), then the English label.
+        // Never match our own previously-injected tab.
+        const translatedLabel = translateGameName('characterManagement', 'loadouts', 'Loadouts');
+        for (const tab of document.querySelectorAll('[role="tablist"] [role="tab"]')) {
+            if (tab.classList.contains(TAB_CLASS)) continue;
+            const label = tab.textContent.trim();
+            if (label.startsWith(translatedLabel) || label.startsWith('Loadouts')) return tab;
         }
         return null;
     }
 
+    _findTabList() {
+        return this._findLoadoutsTab()?.closest('[role="tablist"]') || null;
+    }
+
     _tryInjectTabButton() {
-        const tabList = this._findTabList();
-        if (!tabList) return;
+        const loadoutsTab = this._findLoadoutsTab();
+        const tabList = loadoutsTab?.closest('[role="tablist"]');
+        if (!tabList || !loadoutsTab) return;
         if (tabList.querySelector(`.${TAB_CLASS}`)) return;
 
         const existingTab = tabList.querySelector('[role="tab"]');
@@ -143,10 +187,7 @@ class SkillingSimulatorUI {
             this._toggleFloatingPanel();
         });
 
-        const loadoutsTab = [...tabList.querySelectorAll('[role="tab"]')].find((t) =>
-            t.textContent.trim().startsWith('Loadouts')
-        );
-        if (loadoutsTab?.nextSibling) tabList.insertBefore(btn, loadoutsTab.nextSibling);
+        if (loadoutsTab.nextSibling) tabList.insertBefore(btn, loadoutsTab.nextSibling);
         else tabList.appendChild(btn);
         this.tabBtn = btn;
 
@@ -755,8 +796,8 @@ class SkillingSimulatorUI {
         skillSelect.style.cssText = inputCss + ' flex: 1; cursor: pointer;';
         for (const s of SKILL_NAMES) {
             const opt = document.createElement('option');
-            opt.value = s;
-            opt.textContent = s;
+            opt.value = s; // internal identity stays English (drives hrid lookup)
+            opt.textContent = getSkillName(`/skills/${s.toLowerCase()}`, s);
             if (s === this.currentSkill) opt.selected = true;
             skillSelect.appendChild(opt);
         }
@@ -1046,7 +1087,7 @@ class SkillingSimulatorUI {
         row.style.cssText = 'display: flex; align-items: center; gap: 6px; padding: 2px 0;';
 
         const label = document.createElement('span');
-        label.textContent = SLOT_DISPLAY_NAMES[locationHrid] || locationHrid;
+        label.textContent = getItemLocationName(locationHrid, SLOT_DISPLAY_NAMES[locationHrid] || locationHrid);
         label.style.cssText =
             'font-size: 10px; color: rgba(255,255,255,0.35); width: 58px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em;';
         row.appendChild(label);
@@ -1320,7 +1361,7 @@ class SkillingSimulatorUI {
         `;
 
         const name = document.createElement('span');
-        name.textContent = item.name;
+        name.textContent = getItemName(item.hrid, item.name);
         row.appendChild(name);
 
         if (item.itemLevel > 0) {
@@ -1453,9 +1494,13 @@ class SkillingSimulatorUI {
             // actions only.
             const isChecked =
                 this.selectedActionHrids === null ? action.available : this.selectedActionHrids.has(action.hrid);
+            const localizedActionName = getActionName(action.hrid, action.name);
             const label = action.available
-                ? action.name
-                : t('skillingOptimizer.actionLockedLabel', { name: action.name, level: action.requiredLevel });
+                ? localizedActionName
+                : t('skillingOptimizer.actionLockedLabel', {
+                      name: localizedActionName,
+                      level: action.requiredLevel,
+                  });
             const { row, cb } = makeRow(label, isChecked, false, (checked) => {
                 if (this.selectedActionHrids === null) {
                     this.selectedActionHrids = new Set(available.map((a) => a.hrid));
@@ -1476,7 +1521,7 @@ class SkillingSimulatorUI {
                 }
                 anchorBtn.textContent = getBtnLabel();
             });
-            itemRows.push({ cb, hrid: action.hrid, row, name: action.name });
+            itemRows.push({ cb, hrid: action.hrid, row, name: `${action.name} ${localizedActionName}` });
             popup.appendChild(row);
         }
 
@@ -1938,7 +1983,7 @@ class SkillingSimulatorUI {
         transition.style.cssText = 'margin-left: 8px;';
         const fromSpan = document.createElement('span');
         fromSpan.style.cssText = 'color: rgba(255,255,255,0.5);';
-        fromSpan.textContent = `${houseRoomCandidate.roomName} +${houseRoomCandidate.currentLevel}`;
+        fromSpan.textContent = `${getHouseRoomName(houseRoomCandidate.houseRoomHrid, houseRoomCandidate.roomName)} +${houseRoomCandidate.currentLevel}`;
         transition.appendChild(fromSpan);
         transition.appendChild(document.createTextNode(' → '));
         const toSpan = document.createElement('span');
@@ -2004,7 +2049,13 @@ class SkillingSimulatorUI {
             tr.style.cssText = topBorder;
             const nameTd = document.createElement('td');
             nameTd.style.cssText = 'padding: 4px 8px;';
-            this._appendSlotLabelWithDiff(nameTd, slotData.name, loadoutItemHrid, optimalItemHrid, loadoutEntry);
+            this._appendSlotLabelWithDiff(
+                nameTd,
+                getItemLocationName(slotData.locationHrid, slotData.name),
+                loadoutItemHrid,
+                optimalItemHrid,
+                loadoutEntry
+            );
 
             if (!suggestedEntry) {
                 const none = document.createElement('span');
@@ -2026,9 +2077,10 @@ class SkillingSimulatorUI {
 
             const fromSpan = document.createElement('span');
             fromSpan.style.cssText = 'color: rgba(255,255,255,0.5);';
+            const suggestedItemName = getItemName(suggestedEntry.itemHrid, suggestedEntry.itemName);
             fromSpan.textContent = loadoutItemHrid
                 ? sameBaseItem
-                    ? `${suggestedEntry.itemName} +${loadoutEntry.enhancementLevel}`
+                    ? `${suggestedItemName} +${loadoutEntry.enhancementLevel}`
                     : `${this._getItemName(loadoutItemHrid) || loadoutItemHrid} +${loadoutEntry.enhancementLevel}`
                 : t('skillingOptimizer.emptySlotCapitalized');
             transition.appendChild(fromSpan);
@@ -2038,7 +2090,7 @@ class SkillingSimulatorUI {
             toSpan.style.cssText = `color: ${config.COLOR_ACCENT}; font-weight: 600;`;
             toSpan.textContent = sameBaseItem
                 ? `+${suggestedEntry.enhancementLevel}`
-                : `${suggestedEntry.itemName} +${suggestedEntry.enhancementLevel}`;
+                : `${suggestedItemName} +${suggestedEntry.enhancementLevel}`;
             this._applyRefinedTooltip(toSpan, suggestedEntry.itemHrid);
             this._applyIncompleteTooltip(toSpan, suggestedEntry.hasMissingPrice, suggestedEntry.isOutlier);
             transition.appendChild(toSpan);
@@ -2062,7 +2114,7 @@ class SkillingSimulatorUI {
                     slotLabel.style.cssText =
                         'font-size: 10px; color: rgba(255,255,255,0.38); text-transform: uppercase; ' +
                         'letter-spacing: 0.04em; margin-right: 8px;';
-                    slotLabel.textContent = slotData.name;
+                    slotLabel.textContent = getItemLocationName(slotData.locationHrid, slotData.name);
                     nameTd.appendChild(slotLabel);
                 }
 
@@ -2074,7 +2126,7 @@ class SkillingSimulatorUI {
 
                 const nameSpan = document.createElement('span');
                 nameSpan.style.cssText = `color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
-                nameSpan.textContent = tier.itemName;
+                nameSpan.textContent = getItemName(tier.itemHrid, tier.itemName);
                 this._applyRefinedTooltip(nameSpan, tier.itemHrid);
                 this._applyIncompleteTooltip(nameSpan, tier.hasMissingPrice, tier.isOutlier);
                 nameTd.appendChild(nameSpan);
@@ -2354,7 +2406,7 @@ class SkillingSimulatorUI {
         for (const tea of teas) {
             const row = document.createElement('div');
             row.style.cssText = 'font-size:12px;color:rgba(255,255,255,0.8);padding:1px 0;';
-            row.textContent = `• ${tea.name}`;
+            row.textContent = `• ${getItemName(tea.hrid, tea.name)}`;
             col.appendChild(row);
         }
         return col;
@@ -2374,7 +2426,8 @@ class SkillingSimulatorUI {
 
     _getItemName(hrid) {
         const gameData = window.Toolasha?.Core?.dataManager?.getInitClientData?.();
-        return gameData?.itemDetailMap?.[hrid]?.name || null;
+        const englishName = gameData?.itemDetailMap?.[hrid]?.name;
+        return englishName ? getItemName(hrid, englishName) : null;
     }
 
     // -------------------------------------------------------------------------

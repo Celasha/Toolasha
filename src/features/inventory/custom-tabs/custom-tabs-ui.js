@@ -21,6 +21,7 @@ import inventoryBadgeManager from '../inventory-badge-manager.js';
 // to the static import for dev single-bundle builds.
 import loadoutState from '../../../core/loadout-state.js';
 import { formatKMB } from '../../../utils/formatters.js';
+import { getItemName, getItemCategoryName, getActionTypeName, translateGameName } from '../../../utils/game-i18n.js';
 import { areInjectedLayoutElementsAttached, mutationTouchesCustomTabsLayout } from './custom-tabs-layout-guards.js';
 import {
     loadConfig,
@@ -687,9 +688,12 @@ export default class CustomTabsUI {
 
     _findCharacterTabList() {
         const allTabLists = document.querySelectorAll('[role="tablist"]');
+        // The Inventory tab label is localized by the game (zh: 库存), so match both.
+        const inventoryLabel = translateGameName('characterManagement', 'inventory', 'Inventory');
         for (const tl of allTabLists) {
             for (const tab of tl.querySelectorAll('[role="tab"]')) {
-                if (tab.textContent.trim() === 'Inventory') return tl;
+                const text = tab.textContent.trim();
+                if (text === 'Inventory' || text === inventoryLabel) return tl;
             }
         }
         return null;
@@ -714,9 +718,12 @@ export default class CustomTabsUI {
                 this._activatePanel();
             });
 
-            const inventoryTab = [...tabList.querySelectorAll('[role="tab"]')].find(
-                (t) => t.textContent.trim() === 'Inventory'
-            );
+            // The Inventory tab label is localized by the game (zh: 库存), so match both.
+            const inventoryLabel = translateGameName('characterManagement', 'inventory', 'Inventory');
+            const inventoryTab = [...tabList.querySelectorAll('[role="tab"]')].find((t) => {
+                const text = t.textContent.trim();
+                return text === 'Inventory' || text === inventoryLabel;
+            });
             if (inventoryTab) this._inventoryTabEl = inventoryTab;
             if (inventoryTab?.nextSibling) {
                 tabList.insertBefore(btn, inventoryTab.nextSibling);
@@ -1595,6 +1602,12 @@ export default class CustomTabsUI {
                 for (const [hrid, details] of Object.entries(initData.itemDetailMap)) {
                     if (details.name) {
                         this._nameHridCache.set(details.name, hrid);
+                        // Also index by the game's translated name so non-English
+                        // clients (where aria-label/Item_name is localized) resolve.
+                        const translated = getItemName(hrid, details.name);
+                        if (translated && translated !== details.name) {
+                            this._nameHridCache.set(translated, hrid);
+                        }
                         // Add ★ ↔ (R) variants so both display formats resolve
                         if (details.name.includes('(R)')) {
                             this._nameHridCache.set(details.name.replace(/\s*\(R\)/, ' ★'), hrid);
@@ -2499,7 +2512,9 @@ export default class CustomTabsUI {
                     // Collapse header row
                     const headerRow = document.createElement('div');
                     headerRow.className = 'toolasha-ct-search-result toolasha-ct-search-group-header';
-                    headerRow.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(details.name)}</span><span class="toolasha-ct-expand-btn">▲</span>`;
+                    headerRow.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(
+                        getItemName(hrid, details.name)
+                    )}</span><span class="toolasha-ct-expand-btn">▲</span>`;
                     headerRow.addEventListener('click', () => {
                         this._expandedSearchHrids.delete(hrid);
                         this._renderSearchResults(container, query, tabId, categoryFilter);
@@ -2537,7 +2552,8 @@ export default class CustomTabsUI {
                         const owned = ownedLevels?.has(level);
                         const levelRow = document.createElement('div');
                         levelRow.className = 'toolasha-ct-search-result toolasha-ct-search-level-row';
-                        const displayName = level === 0 ? details.name : `${details.name} +${level}`;
+                        const itemName = getItemName(hrid, details.name);
+                        const displayName = level === 0 ? itemName : `${itemName} +${level}`;
                         const ownedDot = owned
                             ? `<span style="color:#7dcea0;margin-left:4px;" title="${this._escHtml(t('customTabsUi.inInventoryTooltip'))}">●</span>`
                             : '';
@@ -2565,7 +2581,9 @@ export default class CustomTabsUI {
 
                     const row = document.createElement('div');
                     row.className = 'toolasha-ct-search-result toolasha-ct-search-group-header';
-                    row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(details.name)}</span>${ownedBadges ? `<span class="toolasha-ct-level-badges">${this._escHtml(ownedBadges)}</span>` : ''}<span class="toolasha-ct-expand-btn">▶</span>`;
+                    row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(
+                        getItemName(hrid, details.name)
+                    )}</span>${ownedBadges ? `<span class="toolasha-ct-level-badges">${this._escHtml(ownedBadges)}</span>` : ''}<span class="toolasha-ct-expand-btn">▶</span>`;
                     // Clicking the expand button expands the group
                     row.querySelector('.toolasha-ct-expand-btn').addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -2590,7 +2608,9 @@ export default class CustomTabsUI {
                 // Flat row — no enhanced variants in inventory
                 const row = document.createElement('div');
                 row.className = 'toolasha-ct-search-result';
-                row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(details.name)}</span>`;
+                row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(
+                    getItemName(hrid, details.name)
+                )}</span>`;
                 row.addEventListener('click', () => {
                     this._config = addItem(this._config, tabId, hrid);
                     this._save();
@@ -2650,7 +2670,7 @@ export default class CustomTabsUI {
                 const baseHrid = enhanceMatch ? hrid.slice(0, hrid.length - enhanceMatch[0].length) : hrid;
                 const level = enhanceMatch ? parseInt(enhanceMatch[1], 10) : 0;
                 const details = dataManager.getItemDetails(baseHrid);
-                const baseName = details?.name || baseHrid;
+                const baseName = getItemName(baseHrid, details?.name || baseHrid);
                 const name = level > 0 ? `${baseName} +${level}` : baseName;
                 const iconId = baseHrid.replace('/items/', '');
                 const spriteUrl = getSpriteBaseUrl();
@@ -2809,12 +2829,13 @@ export default class CustomTabsUI {
             if (catItems.length === 0) continue;
 
             const allAlreadyAdded = catItems.every((hrid) => currentItems.has(hrid));
+            const catDisplayName = getItemCategoryName(cat.hrid, cat.name);
             const btn = document.createElement('button');
             btn.className = 'toolasha-ct-cat-btn' + (allAlreadyAdded ? ' toolasha-ct-cat-btn--added' : '');
-            btn.textContent = cat.name;
+            btn.textContent = catDisplayName;
             btn.title = allAlreadyAdded
-                ? t('customTabsUi.removeCategoryTooltip', { count: catItems.length, categoryName: cat.name })
-                : t('customTabsUi.addCategoryTooltip', { count: catItems.length, categoryName: cat.name });
+                ? t('customTabsUi.removeCategoryTooltip', { count: catItems.length, categoryName: catDisplayName })
+                : t('customTabsUi.addCategoryTooltip', { count: catItems.length, categoryName: catDisplayName });
 
             if (allAlreadyAdded) {
                 btn.addEventListener('click', () => {
@@ -2954,12 +2975,15 @@ export default class CustomTabsUI {
         entries.sort((a, b) => a.name.localeCompare(b.name));
 
         for (const snapshot of entries) {
-            const skillLabel = snapshot.actionTypeHrid
+            const fallbackSkillLabel = snapshot.actionTypeHrid
                 ? snapshot.actionTypeHrid
                       .split('/')
                       .pop()
                       .replace(/_/g, ' ')
                       .replace(/\b\w/g, (c) => c.toUpperCase())
+                : '';
+            const skillLabel = snapshot.actionTypeHrid
+                ? getActionTypeName(snapshot.actionTypeHrid, fallbackSkillLabel)
                 : t('labSim.allSkillsOption');
             const hasUnavailableEquipment = (snapshot.unavailableEquipment || []).length > 0;
 
@@ -3031,7 +3055,7 @@ export default class CustomTabsUI {
         for (const cat of this._getCategories()) {
             const opt = document.createElement('option');
             opt.value = cat.hrid;
-            opt.textContent = cat.name;
+            opt.textContent = getItemCategoryName(cat.hrid, cat.name);
             select.appendChild(opt);
         }
     }

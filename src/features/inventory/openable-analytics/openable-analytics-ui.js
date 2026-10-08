@@ -11,6 +11,7 @@ import { t } from '../../../core/i18n.js';
 import dataManager from '../../../core/data-manager.js';
 import domObserver from '../../../core/dom-observer.js';
 import { formatLargeNumber } from '../../../utils/formatters.js';
+import { getItemName } from '../../../utils/game-i18n.js';
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
 import openableAnalyticsModalInjector, { formatLuckPercent, luckColor } from './openable-analytics-modal-injector.js';
 import { detectImportSource, parseEdibleExport, parseCombatSuiteExport } from './openable-analytics-import-parsers.js';
@@ -28,7 +29,7 @@ const IMPORT_SOURCE_LABELS = {
 
 function containerLabel(containerHrid) {
     const details = dataManager.getItemDetails(containerHrid);
-    return details?.name || containerHrid;
+    return getItemName(containerHrid, details?.name || containerHrid);
 }
 
 function containerSortIndex(containerHrid) {
@@ -37,7 +38,7 @@ function containerSortIndex(containerHrid) {
 
 function itemLabel(itemHrid) {
     const details = dataManager.getItemDetails(itemHrid);
-    return details?.name || itemHrid;
+    return getItemName(itemHrid, details?.name || itemHrid);
 }
 
 /** Signed large-number formatting for Luck: explicit `+` on positive, native `-` on negative, neutral on exactly zero. */

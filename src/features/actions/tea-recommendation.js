@@ -13,6 +13,26 @@ import { findOptimalTeas, getTeaBuffDescription, getRelevantTeas } from '../../u
 import { formatKMB } from '../../utils/formatters.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { getItemName, getActionName, translateGameName, getItemCategoryName } from '../../utils/game-i18n.js';
+
+/**
+ * Check if a tab text corresponds to a real action category (i.e., a location tab).
+ * Matches against actionCategoryDetailMap by both the English data name and the
+ * game-localized name, so it works regardless of client language. Special tabs
+ * (Enhance, Current Action, alchemy action tabs) won't match any category.
+ * @param {string} text - Tab text from the game DOM
+ * @returns {boolean}
+ */
+function isLocationCategoryName(text) {
+    const gameData = dataManager.getInitClientData?.();
+    const categoryMap = gameData?.actionCategoryDetailMap;
+    if (!categoryMap) return true; // No data loaded yet — don't filter (preserve old behavior)
+    for (const [categoryHrid, categoryDetail] of Object.entries(categoryMap)) {
+        if (categoryDetail.name === text) return true;
+        if (translateGameName('actionCategoryNames', categoryHrid, categoryDetail.name) === text) return true;
+    }
+    return false;
+}
 
 /**
  * Get the currently selected location tab name
@@ -30,8 +50,9 @@ function getCurrentLocationTab() {
         // Check if this tab is selected
         if (button.getAttribute('aria-selected') === 'true') {
             const text = button.textContent?.trim();
-            // Skip special tabs that aren't locations
-            if (text && !['Enhance', 'Current Action', 'Decompose', 'Transmute'].includes(text)) {
+            // Only return tabs that match a gathering location category. Special tabs
+            // (Enhance, Current Action, alchemy action tabs) won't match any category → null.
+            if (text && isLocationCategoryName(text)) {
                 return text;
             }
         }
@@ -51,11 +72,11 @@ async function getAlchemyContext() {
 
     const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
     const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
-    const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+    const tabText = selectedTab?.textContent?.trim() || '';
 
-    if (tabText.includes('coinify')) actionType = 'coinify';
-    else if (tabText.includes('transmute')) actionType = 'transmute';
-    else if (tabText.includes('decompose')) actionType = 'decompose';
+    if (tabText.includes(getActionName('/actions/alchemy/coinify', 'Coinify'))) actionType = 'coinify';
+    else if (tabText.includes(getActionName('/actions/alchemy/transmute', 'Transmute'))) actionType = 'transmute';
+    else if (tabText.includes(getActionName('/actions/alchemy/decompose', 'Decompose'))) actionType = 'decompose';
 
     if (!actionType) {
         // Fall back to active action in queue
@@ -79,7 +100,7 @@ async function getAlchemyContext() {
 
     const enhancementLevel = requirements[0].enhancementLevel || 0;
     const itemDetails = dataManager.getItemDetails(itemHrid);
-    const itemName = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+    const itemName = getItemName(itemHrid, itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' '));
 
     return { actionType, itemHrid, enhancementLevel, itemName };
 }
@@ -173,8 +194,10 @@ class TeaRecommendation {
      * @param {HTMLElement} labelElement - The label element
      */
     checkAndInjectButtons(labelElement) {
-        // Only inject on "Consumables" label
-        if (labelElement.textContent.trim() !== 'Consumables') {
+        // Only inject on "Consumables" label (game-localized: zh "消耗品")
+        const text = labelElement.textContent.trim();
+        const consumablesLabel = getItemCategoryName('/item_categories/consumables', 'Consumables');
+        if (text !== 'Consumables' && text !== consumablesLabel) {
             return;
         }
 
@@ -435,7 +458,7 @@ class TeaRecommendation {
                 color: #fff;
                 font-weight: 500;
             `;
-                teaName.textContent = tea.name;
+                teaName.textContent = getItemName(tea.hrid, tea.name);
 
                 const teaBuffs = document.createElement('span');
                 teaBuffs.style.cssText = `
@@ -725,7 +748,7 @@ class TeaRecommendation {
                     color: rgba(255, 255, 255, 0.7);
                 `;
                 const cells = [
-                    { text: tea.name, align: 'left' },
+                    { text: getItemName(tea.hrid, tea.name), align: 'left' },
                     { text: tea.unitsPerHour.toFixed(1), align: 'right' },
                     { text: formatKMB(tea.unitPrice), align: 'right' },
                     { text: formatKMB(tea.costPerHour), align: 'right', color: config.COLOR_GOLD },
@@ -842,7 +865,7 @@ class TeaRecommendation {
         for (const hrid of allConstraintTeas) {
             const isPinned = this.pinnedTeas.has(hrid);
             const isBanned = this.bannedTeas.has(hrid);
-            const teaDisplayName = gameData?.itemDetailMap?.[hrid]?.name || hrid;
+            const teaDisplayName = getItemName(hrid, gameData?.itemDetailMap?.[hrid]?.name || hrid);
 
             const row = document.createElement('div');
             row.style.cssText = `
@@ -1021,7 +1044,7 @@ class TeaRecommendation {
                     color: rgba(255, 255, 255, 0.8);
                     padding: 2px 0;
                 `;
-                teaRow.textContent = tea.name;
+                teaRow.textContent = getItemName(tea.hrid, tea.name);
                 xpCol.appendChild(teaRow);
             }
 
@@ -1057,7 +1080,7 @@ class TeaRecommendation {
                     color: rgba(255, 255, 255, 0.8);
                     padding: 2px 0;
                 `;
-                teaRow.textContent = tea.name;
+                teaRow.textContent = getItemName(tea.hrid, tea.name);
                 goldCol.appendChild(teaRow);
             }
 

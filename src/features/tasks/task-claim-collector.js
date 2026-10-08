@@ -10,6 +10,7 @@ import { GAME } from '../../utils/selectors.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 const PROXY_BTN_ID = 'mwi-claim-proxy-btn';
 const CLAIM_BTN_SELECTOR = 'button.Button_button__1Fe9z.Button_buy__3s24l';
@@ -96,8 +97,10 @@ class TaskClaimCollector {
      * Return all enabled Claim Reward buttons in the task list.
      */
     _getClaimableButtons(taskList) {
+        // The button label is localized by the game (zh: 领取奖励), so match both.
+        const claimLabels = new Set(['Claim Reward', translateGameName('randomTask', 'claimReward', 'Claim Reward')]);
         return Array.from(taskList.querySelectorAll(CLAIM_BTN_SELECTOR)).filter(
-            (btn) => btn.textContent.trim() === 'Claim Reward' && !btn.disabled
+            (btn) => claimLabels.has(btn.textContent.trim()) && !btn.disabled
         );
     }
 

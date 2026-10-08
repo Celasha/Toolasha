@@ -13,6 +13,11 @@ import {
     calculateProductionActionTotalsFromBase,
     calculateGatheringActionTotalsFromBase,
 } from '../../utils/profit-helpers.js';
+import { GATHERING_TYPES, PRODUCTION_TYPES } from '../../utils/profit-constants.js';
+import { getActionHridFromName } from '../../utils/game-lookups.js';
+
+const GATHERING_TYPE_SET = new Set(GATHERING_TYPES);
+const PRODUCTION_TYPE_SET = new Set(PRODUCTION_TYPES);
 
 /**
  * Calculate Task Token value from Task Shop items
@@ -110,11 +115,48 @@ export function calculateTaskRewardValue(coinReward, taskTokenReward) {
 }
 
 /**
- * Detect task type from description
+ * Detect task type from locale-independent quest info
+ * @param {Object} questInfo - Quest info { actionHrid, monsterHrid } from the task card's React fiber
+ * @returns {string} Task type: 'gathering', 'production', 'combat', or 'unknown'
+ */
+function detectTaskType(questInfo) {
+    // Combat quests carry a monsterHrid
+    if (questInfo?.monsterHrid) {
+        return 'combat';
+    }
+
+    const actionHrid = questInfo?.actionHrid;
+    if (!actionHrid) {
+        return 'unknown';
+    }
+
+    const actionDetail = dataManager.getInitClientData()?.actionDetailMap?.[actionHrid];
+    const actionTypeHrid = actionDetail?.actionTypeHrid || actionDetail?.type;
+    if (!actionTypeHrid) {
+        return 'unknown';
+    }
+
+    if (actionTypeHrid === '/action_types/combat') {
+        return 'combat';
+    }
+    if (GATHERING_TYPE_SET.has(actionTypeHrid)) {
+        return 'gathering';
+    }
+    if (PRODUCTION_TYPE_SET.has(actionTypeHrid)) {
+        return 'production';
+    }
+
+    return 'unknown';
+}
+
+/**
+ * Detect task type from the English "Skill - Action" description text.
+ * Fallback only - the skill name is translated in non-English clients, so this can only
+ * ever resolve on the English UI; quest-info-based detection is the preferred path.
  * @param {string} taskDescription - Task description text (e.g., "Cheesesmithing - Holy Cheese")
  * @returns {string} Task type: 'gathering', 'production', 'combat', or 'unknown'
  */
-function detectTaskType(taskDescription) {
+function detectTaskTypeFromDescription(taskDescription) {
     // Extract skill from "Skill - Action" format
     const skillMatch = taskDescription.match(/^([^-]+)\s*-/);
     if (!skillMatch) return 'unknown';
@@ -122,12 +164,12 @@ function detectTaskType(taskDescription) {
     const skill = skillMatch[1].trim().toLowerCase();
 
     // Gathering skills
-    if (['foraging', 'woodcutting', 'milking'].includes(skill)) {
+    if (GATHERING_TYPES.some((hrid) => hrid.split('/').pop() === skill)) {
         return 'gathering';
     }
 
     // Production skills
-    if (['cheesesmithing', 'brewing', 'cooking', 'crafting', 'tailoring'].includes(skill)) {
+    if (PRODUCTION_TYPES.some((hrid) => hrid.split('/').pop() === skill)) {
         return 'production';
     }
 
@@ -172,11 +214,11 @@ function parseTaskDescription(taskDescription, taskType, quantity, currentProgre
 
     const actionName = match[1].trim();
 
-    // Find matching action HRID by searching for action name in action details
-    for (const [actionHrid, actionDetail] of Object.entries(actionDetailMap)) {
-        if (actionDetail.name && actionDetail.name.toLowerCase() === actionName.toLowerCase()) {
-            return { actionHrid, quantity, currentProgress, description: taskDescription };
-        }
+    // Find matching action HRID via the locale-aware name lookup (matches translated
+    // display names as well as the client's English data names)
+    const actionHrid = getActionHridFromName(actionName);
+    if (actionHrid) {
+        return { actionHrid, quantity, currentProgress, description: taskDescription };
     }
 
     console.warn('[TaskProfit] parseTaskDescription: no actionHrid found for action name', {
@@ -326,25 +368,58 @@ async function calculateProductionTaskProfit(actionHrid, quantity) {
 /**
  * Calculate complete task profit
  * @param {Object} taskData - Task data {description, coinReward, taskTokenReward}
+ * @param {Object|null} [questInfo=null] - Locale-independent quest info {actionHrid, monsterHrid}
+ * resolved from the task card's React fiber. When provided, description text parsing is skipped.
  * @returns {Promise<Object|null>} Complete profit breakdown or null for combat/unknown tasks
  */
-export async function calculateTaskProfit(taskData) {
-    const taskType = detectTaskType(taskData.description);
+export async function calculateTaskProfit(taskData, questInfo = null) {
+    let taskType;
+    let taskInfo = null;
 
-    // Skip combat tasks entirely
-    if (taskType === 'combat') {
-        return null;
+    if (questInfo) {
+        taskType = detectTaskType(questInfo);
+
+        // Skip combat tasks entirely
+        if (taskType === 'combat') {
+            return null;
+        }
+
+        // HRID known directly from the quest - skip the translated description text parsing
+        if (questInfo.actionHrid && (taskType === 'gathering' || taskType === 'production')) {
+            taskInfo = {
+                actionHrid: questInfo.actionHrid,
+                quantity: taskData.quantity,
+                currentProgress: taskData.currentProgress,
+                description: taskData.description,
+            };
+        }
+    } else {
+        // Fallback path: derive the type from the English "Skill - Action" description text
+        taskType = detectTaskTypeFromDescription(taskData.description);
+
+        // Skip combat tasks entirely
+        if (taskType === 'combat') {
+            return null;
+        }
     }
 
-    // Parse task details
-    const taskInfo = parseTaskDescription(taskData.description, taskType, taskData.quantity, taskData.currentProgress);
+    // Fallback parsing from description text (quest info missing, or type unknown above)
     if (!taskInfo) {
-        // Return error state for UI to display "Unable to calculate"
-        return {
-            type: taskType,
-            error: 'Unable to parse task description',
-            totalProfit: 0,
-        };
+        taskInfo = parseTaskDescription(taskData.description, taskType, taskData.quantity, taskData.currentProgress);
+        if (!taskInfo) {
+            // Return error state for UI to display "Unable to calculate"
+            return {
+                type: taskType,
+                error: 'Unable to parse task description',
+                totalProfit: 0,
+            };
+        }
+
+        // Text parsing resolved the action - re-derive its type from the action HRID so the
+        // correct profit calculator runs even if the description-based guess was 'unknown'
+        if (taskType !== 'gathering' && taskType !== 'production') {
+            taskType = detectTaskType({ actionHrid: taskInfo.actionHrid });
+        }
     }
 
     // Calculate task rewards

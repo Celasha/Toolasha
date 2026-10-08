@@ -5,8 +5,14 @@
 
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { formatKMB } from '../../utils/formatters.js';
+
+// Labyrinth tab bar renders exactly four tabs/panels in this fixed order:
+// Labyrinth (Xp), Room (Zp), Automation (eg), Labyrinth Shop (tg).
+const LABYRINTH_TAB_COUNT = 4;
+const SHOP_TAB_INDEX = 3;
 
 class LabyrinthShopPrices {
     constructor() {
@@ -69,12 +75,54 @@ class LabyrinthShopPrices {
     }
 
     /**
+     * Find the Labyrinth Shop tab button without relying on its translated label.
+     * The game always mounts every panel (hidden via CSS when inactive), and the Shop
+     * panel root carries the LabyrinthPanel_labyrinthShopTab class, so the panel index
+     * maps directly to the tab button index.
+     * @param {Element} container - The LabyrinthPanel_tabsComponentContainer element
+     * @returns {HTMLButtonElement|null}
+     */
+    findShopTabButton(container) {
+        const tabsRoot = container.querySelector(':scope > [class*="TabsComponent_tabsComponent"]');
+        if (tabsRoot) {
+            const panelsContainer = tabsRoot.querySelector(':scope > [class*="TabsComponent_tabPanelsContainer"]');
+            const buttons = Array.from(
+                tabsRoot.querySelectorAll(':scope > [class*="TabsComponent_tabsContainer"] [role="tab"]')
+            );
+            const panels = panelsContainer ? Array.from(panelsContainer.children) : [];
+
+            const panelIndex = panels.findIndex((panel) =>
+                panel.querySelector?.('[class*="LabyrinthPanel_labyrinthShopTab"]')
+            );
+            if (panelIndex !== -1 && buttons[panelIndex]) {
+                return buttons[panelIndex];
+            }
+
+            // The Labyrinth tab bar always has exactly four tabs in a fixed order
+            if (buttons.length === LABYRINTH_TAB_COUNT && buttons[SHOP_TAB_INDEX]) {
+                return buttons[SHOP_TAB_INDEX];
+            }
+        }
+
+        // Fallback: game-translated label ("Labyrinth Shop"), then English labels
+        const fallbackButtons = Array.from(container.querySelectorAll('button[role="tab"]'));
+        const translatedLabel = translateGameName('labyrinthPanel', 'labyrinthShop', 'Labyrinth Shop');
+        return (
+            fallbackButtons.find(
+                (btn) =>
+                    btn.textContent.trim().startsWith(translatedLabel) ||
+                    btn.textContent.trim().startsWith('Labyrinth Shop') ||
+                    btn.textContent.trim().startsWith('Shop')
+            ) || null
+        );
+    }
+
+    /**
      * Find the Shop tab button and attach a click listener to it
      * @param {Element} container - The LabyrinthPanel_tabsComponentContainer element
      */
     attachShopClickListener(container) {
-        const buttons = Array.from(container.querySelectorAll('button[role="tab"]'));
-        const shopBtn = buttons.find((btn) => btn.textContent.trim().startsWith('Shop'));
+        const shopBtn = this.findShopTabButton(container);
 
         if (!shopBtn) {
             return;

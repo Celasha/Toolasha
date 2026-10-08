@@ -8,6 +8,7 @@ import storage from '../../core/storage.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { getSkillHridFromIconHref } from '../../utils/game-lookups.js';
@@ -166,15 +167,15 @@ function formatTimeLeft(ms) {
     const h = Math.floor((ms % d1) / h1);
     const m = Math.ceil((ms % h1) / m1);
 
-    const s = (n) => (n === 1 ? '' : 's');
     const parts = [];
 
-    if (w >= 1) parts.push(`${w} week${s(w)}`);
-    if (d >= 1) parts.push(`${d} day${s(d)}`);
-    if (ms < w1 && h >= 1) parts.push(`${h} hour${s(h)}`);
-    if (ms < 6 * h1 && m >= 1) parts.push(`${m} minute${s(m)}`);
+    if (w >= 1) parts.push(t('xpTracker.timeWeeks', { n: w }));
+    if (d >= 1) parts.push(t('xpTracker.timeDays', { n: d }));
+    if (ms < w1 && h >= 1) parts.push(t('xpTracker.timeHours', { n: h }));
+    if (ms < 6 * h1 && m >= 1) parts.push(t('xpTracker.timeMinutes', { n: m }));
 
-    return parts.join(' ') || '< 1 minute';
+    if (parts.length === 0) return t('xpTracker.lessThanOneMinute');
+    return parts.join(t('xpTracker.timePartSeparator'));
 }
 
 class XPTracker {
@@ -480,7 +481,7 @@ class XPTracker {
         const div = document.createElement('div');
         div.className = 'mwi-xp-time-left';
         div.style.cssText = `font-size: 12px; color: ${config.COLOR_HOURS_TO_LEVEL}; margin-top: 4px;`;
-        div.innerHTML = `<span style="font-weight:700">${timeStr}</span> till next level`;
+        div.innerHTML = `<span style="font-weight:700">${t('xpTracker.tillNextLevel', { time: timeStr })}</span>`;
 
         divs[3].insertAdjacentElement('afterend', div);
     }

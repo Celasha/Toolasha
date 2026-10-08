@@ -36,6 +36,7 @@ import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculato
 import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import { calculateArtisanBonus } from '../../utils/material-calculator.js';
 import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
+import { getItemName, getActionName } from '../../utils/game-i18n.js';
 
 // Compiled regex patterns (created once, reused for performance)
 const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
@@ -296,7 +297,7 @@ class TooltipPrices {
                         evData,
                         isCollectionTooltip,
                         keyPrice,
-                        keyDetails?.name,
+                        getItemName(chestKeyHrid, keyDetails?.name),
                         keyPriceOutlier
                     );
                 } else {
@@ -773,7 +774,9 @@ class TooltipPrices {
             bidPrice = (craftBid || craftAsk) - deeperBid;
             return [
                 {
-                    itemName: t('tooltipPrices.craftItemName', { itemName: upgradeDetails.name }),
+                    itemName: t('tooltipPrices.craftItemName', {
+                        itemName: getItemName(upgradeHrid, upgradeDetails.name),
+                    }),
                     amount: 1,
                     askPrice,
                     bidPrice,
@@ -786,7 +789,7 @@ class TooltipPrices {
         if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
         return [
             {
-                itemName: t('tooltipPrices.buyItemName', { itemName: upgradeDetails.name }),
+                itemName: t('tooltipPrices.buyItemName', { itemName: getItemName(upgradeHrid, upgradeDetails.name) }),
                 amount: 1,
                 askPrice,
                 bidPrice,
@@ -1082,7 +1085,7 @@ class TooltipPrices {
             if (foundInDrop || isSolo) {
                 const actionData = {
                     actionHrid,
-                    actionName: action.name,
+                    actionName: getActionName(actionHrid, action.name),
                     dropRate,
                 };
 

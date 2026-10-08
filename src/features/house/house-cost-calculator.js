@@ -6,6 +6,7 @@
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import { getItemName as getLocalizedItemName, getHouseRoomName } from '../../utils/game-i18n.js';
 
 class HouseCostCalculator {
     constructor() {
@@ -185,13 +186,10 @@ class HouseCostCalculator {
      * @returns {string} Item name
      */
     getItemName(itemHrid) {
-        if (itemHrid === '/items/coin') {
-            return 'Gold';
-        }
-
         const initData = dataManager.getInitClientData();
         const itemData = initData?.itemDetailMap?.[itemHrid];
-        return itemData?.name || 'Unknown Item';
+        const fallback = itemData?.name || (itemHrid === '/items/coin' ? 'Gold' : 'Unknown Item');
+        return getLocalizedItemName(itemHrid, fallback);
     }
 
     /**
@@ -202,7 +200,7 @@ class HouseCostCalculator {
     getRoomName(houseRoomHrid) {
         const initData = dataManager.getInitClientData();
         const roomData = initData?.houseRoomDetailMap?.[houseRoomHrid];
-        return roomData?.name || 'Unknown Room';
+        return getHouseRoomName(houseRoomHrid, roomData?.name || 'Unknown Room');
     }
 }
 

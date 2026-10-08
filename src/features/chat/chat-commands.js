@@ -9,6 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 class ChatCommands {
     constructor() {
@@ -302,10 +303,11 @@ class ChatCommands {
             color: #ffcccc;
         `;
 
-        // Convert lowercase keys to proper item names
+        // Convert lowercase keys to proper item names (localized for the match-list echo;
+        // the English maps above stay untouched since command arguments match English names)
         const properNames = matches.map((lowerName) => {
             const hrid = this.itemData.itemNameToHrid[lowerName];
-            return this.itemData.itemHridToName[hrid];
+            return getItemName(hrid, this.itemData.itemHridToName[hrid]);
         });
 
         const matchList = properNames.slice(0, 5).join(', ') + (properNames.length > 5 ? '...' : '');

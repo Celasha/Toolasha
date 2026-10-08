@@ -13,6 +13,7 @@ import marketAPI from '../../api/marketplace.js';
 import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { formatLargeNumber, formatPercentage, timeReadable } from '../../utils/formatters.js';
 import { getEnhancementMultiplier } from '../../utils/enhancement-multipliers.js';
+import { getItemName as getLocalizedItemName } from '../../utils/game-i18n.js';
 
 const PHILO_HRID = '/items/philosophers_stone';
 const PRIME_CATALYST_HRID = '/items/prime_catalyst';
@@ -131,7 +132,8 @@ class PhiloCalculator {
     getItemName(itemHrid) {
         const initData = dataManager.getInitClientData();
         const itemData = initData?.itemDetailMap?.[itemHrid];
-        return itemData?.name || itemHrid.replace('/items/', '').replaceAll('_', ' ');
+        const fallback = itemData?.name || itemHrid.replace('/items/', '').replaceAll('_', ' ');
+        return getLocalizedItemName(itemHrid, fallback);
     }
 
     /**

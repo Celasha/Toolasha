@@ -12,6 +12,28 @@ import { formatKMB } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
 import inventoryBadgeManager from './inventory-badge-manager.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { getItemCategoryName } from '../../utils/game-i18n.js';
+
+// Locale-aware sets of category labels. The English label is always included;
+// if the game's i18n returns a translated label we include that too.
+let equipmentLabels = null;
+let lootsLabels = null;
+export function isEquipmentCategoryName(name) {
+    if (!equipmentLabels) {
+        const en = 'Equipment';
+        const translated = getItemCategoryName('/item_categories/equipment', en);
+        equipmentLabels = new Set([en, translated]);
+    }
+    return equipmentLabels.has(name);
+}
+export function isLootsCategoryName(name) {
+    if (!lootsLabels) {
+        const en = 'Loots';
+        const translated = getItemCategoryName('/item_categories/loots', en);
+        lootsLabels = new Set([en, translated]);
+    }
+    return lootsLabels.has(name);
+}
 
 /**
  * InventorySort class manages inventory sorting and price badges
@@ -362,8 +384,8 @@ class InventorySort {
 
             // Equipment category: check setting for whether to enable sorting
             // Loots category: always disable sorting (but allow badges)
-            const isEquipmentCategory = categoryName === 'Equipment';
-            const isLootsCategory = categoryName === 'Loots';
+            const isEquipmentCategory = isEquipmentCategoryName(categoryName);
+            const isLootsCategory = isLootsCategoryName(categoryName);
             const shouldSort = isLootsCategory
                 ? false
                 : isEquipmentCategory

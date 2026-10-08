@@ -8,6 +8,12 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
 import labyrinthTracker from './labyrinth-tracker.js';
+import { translateGameName } from '../../utils/game-i18n.js';
+
+// Labyrinth tab bar renders exactly four tabs/panels in this fixed order:
+// Labyrinth (Xp), Room (Zp), Automation (eg), Labyrinth Shop (tg).
+const LABYRINTH_TAB_COUNT = 4;
+const AUTOMATION_TAB_INDEX = 2;
 
 class LabyrinthBestLevel {
     constructor() {
@@ -100,12 +106,53 @@ class LabyrinthBestLevel {
     }
 
     /**
+     * Find the Automation tab button inside the Labyrinth tab bar without relying on its
+     * translated label. The game always mounts every panel (hidden via CSS when inactive),
+     * and the Automation panel root carries the LabyrinthPanel_automationTab class, so the
+     * panel index maps directly to the tab button index.
+     * @param {Element} container - The LabyrinthPanel_tabsComponentContainer element
+     * @returns {HTMLButtonElement|null}
+     */
+    findAutomationTabButton(container) {
+        const tabsRoot = container.querySelector(':scope > [class*="TabsComponent_tabsComponent"]');
+        if (tabsRoot) {
+            const panelsContainer = tabsRoot.querySelector(':scope > [class*="TabsComponent_tabPanelsContainer"]');
+            const buttons = Array.from(
+                tabsRoot.querySelectorAll(':scope > [class*="TabsComponent_tabsContainer"] [role="tab"]')
+            );
+            const panels = panelsContainer ? Array.from(panelsContainer.children) : [];
+
+            const panelIndex = panels.findIndex((panel) =>
+                panel.querySelector?.('[class*="LabyrinthPanel_automationTab"]')
+            );
+            if (panelIndex !== -1 && buttons[panelIndex]) {
+                return buttons[panelIndex];
+            }
+
+            // The Labyrinth tab bar always has exactly four tabs in a fixed order
+            if (buttons.length === LABYRINTH_TAB_COUNT && buttons[AUTOMATION_TAB_INDEX]) {
+                return buttons[AUTOMATION_TAB_INDEX];
+            }
+        }
+
+        // Fallback: game-translated label, then the English label
+        const fallbackButtons = Array.from(container.querySelectorAll('button[role="tab"]'));
+        const translatedLabel = translateGameName('labyrinthPanel', 'automation', 'Automation');
+        return (
+            fallbackButtons.find(
+                (btn) =>
+                    btn.textContent.trim().startsWith(translatedLabel) ||
+                    btn.textContent.trim().startsWith('Automation')
+            ) || null
+        );
+    }
+
+    /**
      * Find the Automation tab button and attach a click listener to it
      * @param {Element} container - The LabyrinthPanel_tabsComponentContainer element
      */
     attachAutomationClickListener(container) {
-        const buttons = Array.from(container.querySelectorAll('button[role="tab"]'));
-        const automationBtn = buttons.find((btn) => btn.textContent.trim().startsWith('Automation'));
+        const automationBtn = this.findAutomationTabButton(container);
 
         if (!automationBtn) {
             return;

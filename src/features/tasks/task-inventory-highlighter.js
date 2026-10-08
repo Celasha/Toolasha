@@ -9,6 +9,8 @@ import { calculateTaskProfit } from './task-profit-calculator.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { GAME } from '../../utils/selectors.js';
 import { parseItemCount } from '../../utils/number-parser.js';
+import { getQuestFromTaskCard } from '../../utils/game-lookups.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 class TaskInventoryHighlighter {
     constructor() {
@@ -144,7 +146,7 @@ class TaskInventoryHighlighter {
             }
 
             // Calculate profit data (which includes material costs)
-            const profitData = await calculateTaskProfit(taskData);
+            const profitData = await calculateTaskProfit(taskData, taskData.questInfo);
 
             if (!profitData || !profitData.action) {
                 continue;
@@ -280,23 +282,40 @@ class TaskInventoryHighlighter {
 
         const description = nameNode.textContent.trim();
 
-        // Check if combat task (contains "Defeat")
-        const isCombat = description.includes('Defeat');
+        // Resolve locale-independent quest info from the task card's React fiber.
+        // taskNode is a descendant task-info node, so normalize to the card element first.
+        const cardEl = taskNode.closest(GAME.TASK_CARD) || taskNode;
+        const quest = getQuestFromTaskCard(cardEl);
+        const questInfo = quest
+            ? { actionHrid: quest.actionHrid || null, monsterHrid: quest.monsterHrid || null }
+            : null;
 
-        // Get quantity from progress (plain div with text "Progress: 0 / 1562")
+        // Check if combat task: the quest's monsterHrid is locale-independent;
+        // fall back to the task name's "Defeat" label (localized by the game, zh: 击败)
+        // when quest data is unavailable.
+        const isCombat = quest ? !!quest.monsterHrid : this._isCombatDescription(description);
+
+        // Get quantity from the progress pair (e.g. "Progress: 0 / 1562" or zh "进度：0/1562").
+        // The localized label varies, so match the language-neutral "current / total" number
+        // pair directly. Pick the shortest matching div to avoid outer wrapper divs that only
+        // contain the pair as a substring.
         let quantity = 0;
         let currentProgress = 0;
         const taskInfoDivs = taskNode.querySelectorAll('div');
+        let progressMatch = null;
+        let progressMatchLength = Infinity;
         for (const div of taskInfoDivs) {
             const text = div.textContent.trim();
-            if (text.startsWith('Progress:')) {
-                const progressMatch = text.match(/(\d+)\s*\/\s*(\d+)/);
-                if (progressMatch) {
-                    currentProgress = parseInt(progressMatch[1], 10);
-                    quantity = parseInt(progressMatch[2], 10);
-                }
-                break;
+            if (!text.includes('/') && !text.includes('／')) continue;
+            const progressPattern = text.match(/(?:^|[^\d])(\d+)\s*[/／]\s*(\d+)(?:[^\d]|$)/);
+            if (progressPattern && text.length < progressMatchLength) {
+                progressMatch = progressPattern;
+                progressMatchLength = text.length;
             }
+        }
+        if (progressMatch) {
+            currentProgress = parseInt(progressMatch[1], 10);
+            quantity = parseInt(progressMatch[2], 10);
         }
 
         // Get rewards
@@ -336,7 +355,25 @@ class TaskInventoryHighlighter {
             quantity,
             currentProgress,
             isCombat,
+            questInfo,
         };
+    }
+
+    /**
+     * Check whether a task card description is a combat ("Defeat - ...") task, matching
+     * both the English label and the game's current-language translation (zh: 击败,
+     * from the randomTask.defeat template "Defeat - {{monsterName}}").
+     * @param {string} description - Task card name text
+     * @returns {boolean}
+     */
+    _isCombatDescription(description) {
+        if (description.includes('Defeat')) return true;
+        const defeatTemplate = translateGameName('randomTask', 'defeat', 'Defeat');
+        const placeholderIndex = defeatTemplate.indexOf('{{');
+        const defeatLabel = (placeholderIndex === -1 ? defeatTemplate : defeatTemplate.slice(0, placeholderIndex))
+            .replace(/[-\s]+$/, '')
+            .trim();
+        return defeatLabel.length > 0 && description.includes(defeatLabel);
     }
 
     /**

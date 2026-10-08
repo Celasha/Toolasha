@@ -11,6 +11,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { formatLargeNumber } from '../../utils/formatters.js';
+import { getItemName } from '../../utils/game-i18n.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 import { getCheapestProtectionPrice } from './tooltip-enhancement.js';
 
@@ -87,7 +88,7 @@ class EnhancementProtectionMarketplace {
         if (!cheapest.itemHrid) return;
 
         const itemDetails = dataManager.getItemDetails(cheapest.itemHrid);
-        const itemName = itemDetails?.name || cheapest.itemHrid;
+        const itemName = getItemName(cheapest.itemHrid, itemDetails?.name || cheapest.itemHrid);
 
         const btn = document.createElement('button');
         btn.className = 'Button_button__1Fe9z Button_fullWidth__17pVU';

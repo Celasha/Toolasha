@@ -14,6 +14,27 @@ import storage from '../../core/storage.js';
 import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import { formatRelativeTime, formatDateTime } from '../../utils/formatters.js';
+import { translateGameName } from '../../utils/game-i18n.js';
+
+// Own listings render a Cancel action that other players' rows never have.
+// Order book rows render it as a warning-styled button (Button_warning); the
+// My Listings table wraps it in MarketplacePanel_cancelButtonContainer.
+const OWN_LISTING_CANCEL_SELECTOR =
+    '[class*="MarketplacePanel_cancelButtonContainer"], button[class*="Button_warning"]';
+
+/**
+ * Detect whether an order-book table row belongs to the player's own listing.
+ * Locale-independent control classes first; localized "Cancel" label last
+ * (English kept; zh: 取消).
+ * @param {HTMLElement} row - Table row element
+ * @returns {boolean}
+ */
+function rowHasOwnListingCancelControl(row) {
+    if (!row) return false;
+    if (row.querySelector(OWN_LISTING_CANCEL_SELECTOR)) return true;
+    const text = row.textContent || '';
+    return text.includes('Cancel') || text.includes(translateGameName('marketplacePanel', 'cancel', 'Cancel'));
+}
 
 class EstimatedListingAge {
     constructor() {
@@ -481,12 +502,17 @@ class EstimatedListingAge {
 
                 const statusText = statusCell.textContent.trim();
 
-                if (statusText !== 'Expired') continue;
+                if (
+                    statusText !== 'Expired' &&
+                    statusText !== translateGameName('marketplacePanel', 'expired', 'Expired')
+                )
+                    continue;
 
-                // Extract Type (Buy/Sell)
+                // Extract Type (Buy/Sell). Match both English and game-translated label.
                 const typeCell = allCells[1];
                 const typeText = typeCell?.textContent.trim();
-                const isSell = typeText === 'Sell';
+                const isSell =
+                    typeText === 'Sell' || typeText === translateGameName('marketplacePanel', 'sell', 'Sell');
 
                 // Extract Progress (e.g., "0 / 1")
                 // The cell has multiple nested divs. The progress text is in the LAST div overall.
@@ -692,7 +718,7 @@ class EstimatedListingAge {
                 cell.style.fontSize = '0.9em';
             } else {
                 // Beyond top 20 - YOUR listings only
-                const hasCancel = row.textContent.includes('Cancel');
+                const hasCancel = rowHasOwnListingCancelControl(row);
                 if (hasCancel) {
                     // Extract price and quantity for matching
                     const priceText = row.querySelector('[class*="price"]')?.textContent || '';
@@ -774,7 +800,7 @@ class EstimatedListingAge {
         for (const table of tables) {
             const rows = table.querySelectorAll('tbody tr');
             for (const row of rows) {
-                const hasCancel = row.textContent.includes('Cancel');
+                const hasCancel = rowHasOwnListingCancelControl(row);
                 if (hasCancel) {
                     const priceText = row.querySelector('[class*="price"]')?.textContent || '';
                     const quantityText = row.children[0]?.textContent || '';

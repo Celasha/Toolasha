@@ -12,6 +12,7 @@ import taskIconFilters from './task-icon-filters.js';
 import taskRerollProtection from './task-reroll-protection.js';
 import domObserver from '../../core/dom-observer.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { getActionTypeName, translateGameName } from '../../utils/game-i18n.js';
 
 class TaskSorter {
     constructor() {
@@ -124,7 +125,52 @@ class TaskSorter {
      */
     isTaskCompleted(taskCard) {
         const claimButton = taskCard.querySelector('button.Button_button__1Fe9z.Button_buy__3s24l');
-        return claimButton && claimButton.textContent.includes('Claim Reward');
+        if (!claimButton) return false;
+        // The button label is localized by the game (zh: 领取奖励), so match both.
+        const text = claimButton.textContent;
+        const translatedLabel = translateGameName('randomTask', 'claimReward', 'Claim Reward');
+        return text.includes('Claim Reward') || text.includes(translatedLabel);
+    }
+
+    /**
+     * Get the sort order for a parsed skill-type label. The label is the game's action
+     * type display name, which is localized (zh: 挤奶, 采摘, ...), so match each English
+     * TASK_ORDER key's translated name as well.
+     * @param {string} skillType - Skill type label parsed from the task card name
+     * @returns {number} Sort order (999 if unknown)
+     */
+    getSkillTypeOrder(skillType) {
+        if (this.TASK_ORDER[skillType] !== undefined) {
+            return this.TASK_ORDER[skillType];
+        }
+        if (!this.localizedSkillTypeOrder) {
+            this.localizedSkillTypeOrder = new Map();
+            for (const [englishName, order] of Object.entries(this.TASK_ORDER)) {
+                if (englishName === 'Defeat') continue; // Combat label handled by isCombatSkillType
+                const translated = getActionTypeName(`/action_types/${englishName.toLowerCase()}`, englishName);
+                this.localizedSkillTypeOrder.set(translated, order);
+            }
+        }
+        return this.localizedSkillTypeOrder.get(skillType) ?? 999;
+    }
+
+    /**
+     * Check whether a parsed skill-type label is the combat "Defeat" label, in English
+     * or the game's current-language translation (zh: 击败, from randomTask.defeat
+     * template "Defeat - {{monsterName}}").
+     * @param {string} skillType - Skill type label parsed from the task card name
+     * @returns {boolean}
+     */
+    isCombatSkillType(skillType) {
+        if (!this.defeatLabels) {
+            const defeatTemplate = translateGameName('randomTask', 'defeat', 'Defeat');
+            const placeholderIndex = defeatTemplate.indexOf('{{');
+            const translated = (placeholderIndex === -1 ? defeatTemplate : defeatTemplate.slice(0, placeholderIndex))
+                .replace(/[-\s]+$/, '')
+                .trim();
+            this.defeatLabels = new Set(['Defeat', translated || 'Defeat']);
+        }
+        return this.defeatLabels.has(skillType);
     }
 
     /**
@@ -136,8 +182,8 @@ class TaskSorter {
             return { skillOrder: 999, taskName: '', isCombat: false, monsterSortIndex: 999, isCompleted: false };
         }
 
-        const skillOrder = this.TASK_ORDER[parsed.skillType] || 999;
-        const isCombat = parsed.skillType === 'Defeat';
+        const isCombat = this.isCombatSkillType(parsed.skillType);
+        const skillOrder = isCombat ? this.TASK_ORDER.Defeat : this.getSkillTypeOrder(parsed.skillType);
         const isCompleted = this.isTaskCompleted(taskCard);
 
         // For combat tasks, get monster sort index from game data

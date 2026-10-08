@@ -96,12 +96,12 @@ export function parseCombatSuiteExport(rawText) {
     try {
         parsed = JSON.parse(rawText);
     } catch {
-        return invalidResult('Could not parse the pasted/uploaded text as JSON.');
+        return invalidResult(t('openableAnalytics.importJsonParseFailed'));
     }
 
     const chests = parsed?.chests;
     if (!isPlainObject(chests)) {
-        return invalidResult('No "chests" data found in this export.');
+        return invalidResult(t('openableAnalytics.importNoChestsData'));
     }
 
     const ownerName = typeof parsed?.player === 'string' ? parsed.player : null;
@@ -195,12 +195,12 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
     try {
         parsed = JSON.parse(rawText);
     } catch {
-        return invalidResult('Could not parse the pasted text as JSON.');
+        return invalidResult(t('openableAnalytics.importJsonParseFailed'));
     }
 
     const chestOpenData = parsed?.Chest_Open_Data;
     if (!isPlainObject(chestOpenData)) {
-        return invalidResult('No "Chest_Open_Data" found in this Edible Tools data.');
+        return invalidResult(t('openableAnalytics.importNoChestOpenData'));
     }
 
     const players = Object.entries(chestOpenData).map(([id, playerData]) => ({
@@ -210,7 +210,7 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
 
     if (!playerId) {
         if (players.length === 0) {
-            return invalidResult('No player data found in this Edible Tools data.');
+            return invalidResult(t('openableAnalytics.importNoPlayerData'));
         }
         if (players.length === 1) {
             playerId = players[0].id;
@@ -238,7 +238,9 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
     const playerData = chestOpenData[playerId];
     const chestData = playerData?.['开箱数据'];
     if (!isPlainObject(chestData)) {
-        return invalidResult(`No chest data found for ${playerData?.['玩家昵称'] || playerId}.`);
+        return invalidResult(
+            t('openableAnalytics.importNoChestDataForPlayer', { name: playerData?.['玩家昵称'] || playerId })
+        );
     }
 
     // Same ownership preflight contract as parseCombatSuiteExport: the strongest available
@@ -331,7 +333,7 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
     // Edible is name-keyed/localized. If nothing at all could be resolved, this isn't legitimate
     // valid-empty history - it's a locale/format the current item list can't match against.
     if (!anyChestNameResolved && Object.keys(chestData).length > 0) {
-        return { ...invalidResult('None of the chest names in this export could be matched to a known item.') };
+        return { ...invalidResult(t('openableAnalytics.importNoChestNamesMatched')) };
     }
 
     if (containers.length === 0) {
@@ -348,7 +350,7 @@ function invalidResult(message) {
 function emptyResult() {
     return {
         status: 'empty',
-        message: 'No opening history found in this export. Existing import was not changed.',
+        message: t('openableAnalytics.importEmptyHistory'),
         containers: [],
         warnings: [],
     };

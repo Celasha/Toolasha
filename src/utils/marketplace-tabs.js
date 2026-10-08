@@ -5,8 +5,22 @@
  */
 
 import { formatWithSeparator } from './formatters.js';
+import { translateGameName } from './game-i18n.js';
 
 export const MARKETPLACE_REMOUNT_GRACE_MS = 350;
+
+/**
+ * Check whether a rendered tab label matches a native Marketplace tab name.
+ * Tab labels are localized by the game (zh: Market Listings 商品列表 /
+ * My Listings 我的挂牌), so match both the English and translated text.
+ * @param {string} text - Rendered tab text
+ * @param {'marketListings'|'myListings'} key - marketplacePanel i18n key
+ * @returns {boolean}
+ */
+function matchesMarketplaceTabLabel(text, key) {
+    const fallback = key === 'marketListings' ? 'Market Listings' : 'My Listings';
+    return text.includes(fallback) || text.includes(translateGameName('marketplacePanel', key, fallback));
+}
 
 /**
  * Return true only when an element and all element ancestors are actually visible.
@@ -40,7 +54,9 @@ export function getVisibleMarketplaceTabContainer() {
             if (!isElementActuallyVisible(tabsContainer)) continue;
             const hasNativeTab = Array.from(tabsContainer.children).some((tab) => {
                 const text = tab.textContent || '';
-                return text.includes('Market Listings') || text.includes('My Listings');
+                return (
+                    matchesMarketplaceTabLabel(text, 'marketListings') || matchesMarketplaceTabLabel(text, 'myListings')
+                );
             });
             if (hasNativeTab) candidates.add(tabsContainer);
         }
@@ -65,7 +81,10 @@ export function isMarketplaceMarketListingsSelected(tabContainer = getVisibleMar
         return tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('Mui-selected');
     });
 
-    return selectedNativeTabs.length === 1 && selectedNativeTabs[0].textContent.includes('Market Listings');
+    return (
+        selectedNativeTabs.length === 1 &&
+        matchesMarketplaceTabLabel(selectedNativeTabs[0].textContent, 'marketListings')
+    );
 }
 
 /**
@@ -460,7 +479,7 @@ export function navigateToMyListings() {
     const tab = Array.from(tabContainer.children).find((el) => {
         if (el.getAttribute('role') !== 'tab') return false;
         if (el.hasAttribute('data-mwi-custom-tab') || el.hasAttribute('data-mwi-shrine-tab')) return false;
-        return el.textContent.includes('My Listings');
+        return matchesMarketplaceTabLabel(el.textContent, 'myListings');
     });
 
     if (!tab) return false;

@@ -19,6 +19,7 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
 import assetManifest from '../../utils/asset-manifest.js';
 import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
+import { getActionName, getItemName } from '../../utils/game-i18n.js';
 
 const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 
@@ -256,11 +257,11 @@ class PinnedActionsPage {
             const details = dataManager.getActionDetails(actionHrid);
             if (!details) continue;
 
-            let displayName = details.name;
+            let displayName = getActionName(actionHrid, details.name);
             if (pinnedItemHrid) {
                 const itemDetails = dataManager.getItemDetails(pinnedItemHrid);
                 if (itemDetails) {
-                    displayName = `${details.name} ${itemDetails.name}`;
+                    displayName = `${getActionName(actionHrid, details.name)} ${getItemName(pinnedItemHrid, itemDetails.name)}`;
                 }
             }
 

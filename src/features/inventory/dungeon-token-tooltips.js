@@ -10,6 +10,7 @@ import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import dom from '../../utils/dom.js';
 import { formatKMB } from '../../utils/formatters.js';
+import { getItemName } from '../../utils/game-i18n.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import {
@@ -307,7 +308,7 @@ class DungeonTokenTooltips {
                 if (!askPrice || askPrice <= 0) return null;
 
                 return {
-                    name: itemDetails?.name || t('enhancementUi.unknownItemFallback'),
+                    name: getItemName(shopItem.itemHrid, itemDetails?.name || t('enhancementUi.unknownItemFallback')),
                     cost: tokenCost,
                     askPrice,
                     goldPerToken: askPrice / tokenCost,
@@ -360,7 +361,7 @@ class DungeonTokenTooltips {
                 if (itemValue <= 0) return null;
 
                 return {
-                    name: itemDetails?.name || t('enhancementUi.unknownItemFallback'),
+                    name: getItemName(shopItem.itemHrid, itemDetails?.name || t('enhancementUi.unknownItemFallback')),
                     cost: tokenCost,
                     askPrice: itemValue,
                     goldPerToken: itemValue / tokenCost,
@@ -398,7 +399,7 @@ class DungeonTokenTooltips {
                 const totalValue = askPrice * outputCount;
 
                 return {
-                    name: itemDetails?.name || t('enhancementUi.unknownItemFallback'),
+                    name: getItemName(shopItem.itemHrid, itemDetails?.name || t('enhancementUi.unknownItemFallback')),
                     cost: tokenCost,
                     askPrice: totalValue,
                     goldPerToken: totalValue / tokenCost,
@@ -424,7 +425,10 @@ class DungeonTokenTooltips {
         const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell, sellOutlier);
 
         return creditRows.map((row) => ({
-            name: gameData.itemDetailMap[row.creditItemHrid]?.name || row.creditItemHrid.split('/').pop(),
+            name: getItemName(
+                row.creditItemHrid,
+                gameData.itemDetailMap[row.creditItemHrid]?.name || row.creditItemHrid.split('/').pop()
+            ),
             cost: row.itemCount,
             askPrice: row.creditCount * sell[row.creditItemHrid],
             goldPerToken: row.goldPerToken,

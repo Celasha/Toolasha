@@ -12,6 +12,7 @@ import { timeReadable } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import queueSnapshot from './queue-snapshot.js';
+import { getActionName } from '../../utils/game-i18n.js';
 
 const PANEL_ID = 'toolasha-queue-monitor';
 const UPDATE_INTERVAL = 30_000; // 30 seconds
@@ -371,7 +372,7 @@ export class QueueMonitorUI {
                     const countStr = action.hasMaxCount ? `${action.currentCount}/${action.maxCount}` : '';
 
                     html += `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;">`;
-                    html += `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${this._escapeHtml(action.actionName)}</span>`;
+                    html += `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${this._escapeHtml(getActionName(action.actionHrid, action.actionName))}</span>`;
                     html += `<span style="white-space:nowrap; color:#777;">${countStr ? countStr + ' · ' : ''}${actionTimeStr}</span>`;
                     html += `</div>`;
                 }

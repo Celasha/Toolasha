@@ -19,6 +19,7 @@ import { t } from '../../core/i18n.js';
 import { GAME } from '../../utils/selectors.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import assetManifest from '../../utils/asset-manifest.js';
+import { getActionName } from '../../utils/game-i18n.js';
 
 const STORAGE_KEYS = {
     migration: 'taskIconsFiltersMigratedV1',
@@ -245,7 +246,7 @@ class TaskIconFilters {
         Object.entries(this.dungeonConfig).forEach(([hrid, dungeon]) => {
             const dungeonIcon = this.createFilterIcon(
                 dungeon.id,
-                dungeon.name,
+                getActionName(hrid, dungeon.name),
                 dungeon.spriteId,
                 () => this.getDungeonFilterEnabled(hrid),
                 'actions'

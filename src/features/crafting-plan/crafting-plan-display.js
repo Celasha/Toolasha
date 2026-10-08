@@ -36,6 +36,7 @@ import {
     isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
+import { getActionName, getItemName, translateGameName } from '../../utils/game-i18n.js';
 import { compactActionPanelSection } from '../actions/production-tools-layout.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
@@ -680,7 +681,10 @@ function getGameObject() {
 
 function createCraftingPlanReturnTab(referenceTab, returnContext, sessionId) {
     const actionDetail = dataManager.getActionDetails(returnContext.actionHrid);
-    const actionName = actionDetail?.name || returnContext.actionHrid.split('/').pop();
+    const actionName = getActionName(
+        returnContext.actionHrid,
+        actionDetail?.name || returnContext.actionHrid.split('/').pop()
+    );
     const displayName = `${actionName} (×${formatWithSeparator(returnContext.numActions)})`;
 
     const tab = referenceTab.cloneNode(true);
@@ -741,7 +745,12 @@ function createCraftingPlanTabs(missingMaterials, tabsContainer = null, sessionI
     removeMaterialTabsForOwner(MARKETPLACE_OWNER.CRAFTING_PLAN);
     craftingPlanTabs.length = 0;
 
-    const referenceTab = Array.from(container.children).find((tab) => tab.textContent.includes('My Listings'));
+    // The My Listings tab label is localized by the game (zh: 我的挂牌), so match the
+    // translated label too.
+    const myListingsLabels = ['My Listings', translateGameName('marketplacePanel', 'myListings', 'My Listings')];
+    const referenceTab = Array.from(container.children).find((tab) =>
+        myListingsLabels.some((label) => tab.textContent.includes(label))
+    );
     if (!referenceTab) return false;
     container.style.flexWrap = 'wrap';
 
@@ -771,7 +780,12 @@ function createCraftingPlanTabs(missingMaterials, tabsContainer = null, sessionI
             });
             if (!armed || !navigateToMarketplace(material.itemHrid, 0)) marketplaceSession.end(sessionId);
         };
-        const tab = createMaterialTab(material, referenceTab, handler, MARKETPLACE_OWNER.CRAFTING_PLAN);
+        const tab = createMaterialTab(
+            { ...material, itemName: getItemName(material.itemHrid, material.itemName) },
+            referenceTab,
+            handler,
+            MARKETPLACE_OWNER.CRAFTING_PLAN
+        );
         tabRef.tab = tab;
         container.appendChild(tab);
         craftingPlanTabs.push(tab);

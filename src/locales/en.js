@@ -82,6 +82,13 @@ export default {
         importFailedAlert: 'Failed to import settings.',
         clearAllOverridesConfirm: 'Remove all custom price overrides?',
     },
+    externalLinks: {
+        combatSim: 'Combat Sim',
+        enhancelator: 'Enhancelator',
+        milkonomy: 'Milkonomy',
+        sockosCombatTracker: "Socko's Combat Tracker",
+        mwilinks: 'mwilinks',
+    },
     dungeonTrackerUi: {
         loadingPlaceholder: 'Loading...',
         elapsedLabel: 'Elapsed: ',
@@ -120,6 +127,7 @@ export default {
         dungeonLoading: 'Dungeon Loading...',
         characterNameFallback: 'You',
         noKeyDataYet: 'No key data yet',
+        keyCounts: 'Key counts: ',
         clearAllRunsConfirm: 'Delete ALL run history data?\n\nThis cannot be undone!',
         clearAllRunsSuccessAlert: 'All run history cleared.',
         clearAllRunsFailedAlert: 'Failed to clear run history. Check console for details.',
@@ -249,6 +257,13 @@ export default {
         profitLabel: 'Profit',
         viewAnalyticsLink: 'View Analytics',
         vsExpectedLabel: 'vs. expected',
+        importJsonParseFailed: 'Could not parse the pasted/uploaded text as JSON.',
+        importNoChestsData: 'No "chests" data found in this export.',
+        importNoChestOpenData: 'No "Chest_Open_Data" found in this Edible Tools data.',
+        importNoPlayerData: 'No player data found in this Edible Tools data.',
+        importNoChestDataForPlayer: (p) => `No chest data found for ${p.name}.`,
+        importNoChestNamesMatched: 'None of the chest names in this export could be matched to a known item.',
+        importEmptyHistory: 'No opening history found in this export. Existing import was not changed.',
     },
     guildCreditValue: {
         returnTabLabel: '↩ Return',
@@ -655,6 +670,13 @@ export default {
         colExpPerHr: 'EXP/hr',
         colDph: 'DPH',
         baselineSummaryLine: 'Baseline: DPS {{dps}} | EXP {{exp}} | Profit {{profit}} | EPH {{eph}} | DPH {{dph}}',
+        statusRunningBaseline: 'Running baseline...',
+        statusBaselineComplete: 'Baseline complete',
+        statusComputingBaseline: 'Computing baseline...',
+        statusSimulatingUpgrade: (p) => `Simulating: ${p.name}`,
+        statusEvaluating: (p) => `Evaluating: ${p.name}`,
+        statusBaselineWinRate: (p) => `Baseline: ${p.winRate}%`,
+        statusBaselineClearRate: (p) => `Baseline: ${p.clearRate}%`,
         tabButtonLabel: 'Combat Sim',
     },
     skillingOptimizer: {
@@ -843,6 +865,9 @@ export default {
         colCost: 'Cost',
         colFailArrow: 'Fail →',
         colProtectionCost: 'Protection cost',
+    },
+    inventoryCountDisplay: {
+        inInventorySuffix: (p) => `(${p.count} in inventory)`,
     },
     profitDisplay: {
         equippedLabel: 'Equipped',
@@ -1157,6 +1182,26 @@ export default {
         budgetInputPlaceholder: 'Budget (e.g. 50m)',
         calculateButton: 'Calculate',
         viewLastBreakdownTooltip: 'View last breakdown',
+    },
+    xpTracker: {
+        tillNextLevel: (p) => `${p.time} till next level`,
+        timeWeeks: (p) => `${p.n} week${p.n === 1 ? '' : 's'}`,
+        timeDays: (p) => `${p.n} day${p.n === 1 ? '' : 's'}`,
+        timeHours: (p) => `${p.n} hour${p.n === 1 ? '' : 's'}`,
+        timeMinutes: (p) => `${p.n} minute${p.n === 1 ? '' : 's'}`,
+        lessThanOneMinute: '< 1 minute',
+        timePartSeparator: ' ',
+    },
+    // Units used by utils/formatters.js timeReadable()
+    timeUnits: {
+        years: (p) => `${p.n} year${p.n === 1 ? '' : 's'}`,
+        months: (p) => `${p.n} month${p.n === 1 ? '' : 's'}`,
+        days: (p) => `${p.n} day${p.n === 1 ? '' : 's'}`,
+        hoursShort: (p) => `${p.n}h`,
+        minutesShort: (p) => `${p.n}m`,
+        secondsShort: (p) => `${p.n}s`,
+        hms: (p) => `${p.h}h ${p.m}m ${p.s}s`,
+        separator: ' ',
     },
     xphCalculator: {
         openButtonLabel: 'XPH Calc',
@@ -2090,6 +2135,9 @@ export default {
     scrollSimulatorUi: {
         headingWithDash: (p) => `Scroll Simulation — ${p.contextLabel}`,
         title: 'Scroll Simulation',
+        noteForLoadout: 'These scrolls override the defaults when this loadout is active for a skill.',
+        noteForDefaults:
+            'Applied when no loadout matches the current skill (or automatic saved-loadout calculations are disabled).',
     },
     actionFilter: {
         modeLabel: (p) => `Mode: ${p.mode}`,
@@ -2187,9 +2235,27 @@ export default {
         partyLinkLabel: 'Party:',
         popoutButtonTooltip: 'Pop out chat',
         verticalLabelText: 'Vertical',
+        filterNoFilter: 'No filter',
+        filterEnhancedBuy: 'Enhanced Buy',
+        filterEnhancedSell: 'Enhanced Sell',
+        filterBuyOnly: 'Buy only',
+        filterSellOnly: 'Sell only',
+        filterCustom: 'Custom…',
     },
     collectionFilters: {
         favoritesLabel: 'Favorites',
+        notDungeon: 'Not dungeon',
+        skillingOutfits: 'Skilling Outfits',
+        uncollectedCharms: 'Uncollected Charms',
+        uncollectedCelestials: 'Uncollected Celestials',
+        alwaysShowFavorites: 'Always Show Favorites',
+        sortLabel: 'Sort:',
+        sortDefault: 'Default',
+        sortItemsToNextTier: 'Items to next tier',
+        sortGoldCostToNextTier: 'Gold cost to next tier',
+        sortTimeToNextTier: 'Time to next tier',
+        collectionDataNotLoaded: 'Collection data not yet loaded — visit Collections page to refresh',
+        collectedUpdatedAgo: (p) => `${p.count} collected — updated ${p.relativeTime} ago`,
     },
     viewActionButton: {
         buttonLabel: 'View Action',
@@ -2646,6 +2712,30 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             colors: { title: 'Color Customization' },
             collectionFilters: { title: 'Collection Filters' },
         },
+        // Shared labels for enhanceGear tier dropdowns (values from settings-schema tiers)
+        tierLabels: {
+            cheese: 'Cheese',
+            verdant: 'Verdant',
+            azure: 'Azure',
+            burble: 'Burble',
+            crimson: 'Crimson',
+            rainbow: 'Rainbow',
+            holy: 'Holy',
+            celestial: 'Celestial',
+            philo: 'Philo',
+            speed: 'Speed',
+            rarefind: 'Rare Find',
+            normal: 'Normal',
+            refined: 'Refined',
+            trainee: 'Trainee',
+            basic: 'Basic',
+            advanced: 'Advanced',
+            expert: 'Expert',
+            master: 'Master',
+            grandmaster: 'Grandmaster',
+        },
+        // Suffix appended to unavailable options in select dropdowns (leading space intentional)
+        selectUnavailableSuffix: ' (Unavailable)',
         settings: {
             ironCow_enabled: {
                 label: 'Iron Cow Mode',
@@ -2704,7 +2794,15 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             actionBar_showQueueCount: { label: 'Action bar: Queue/remaining count' },
             actionBar_showActionDuration: { label: 'Action bar: Time per action (e.g. 14.94s/action)' },
             actionBar_showActionsPerHour: { label: 'Action bar: Actions/hr and items/hr' },
-            actionBar_showTimeRemaining: { label: 'Action bar: Time remaining display' },
+            actionBar_showTimeRemaining: {
+                label: 'Action bar: Time remaining display',
+                options: {
+                    both: 'Time remaining and completion ETA',
+                    relative: 'Time remaining only',
+                    absolute: 'Completion ETA only',
+                    none: 'Neither',
+                },
+            },
             actionBar_showRecycleTime: {
                 label: 'Action bar: Transmute recycle time estimate',
                 help: 'Shows estimated total time accounting for self-return recycling during transmute actions',
@@ -2794,10 +2892,19 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             actionQueue_valueMode: {
                 label: 'Queued actions: Value calculation mode',
                 help: 'Choose how to calculate the total value for queued actions. Profit shows net earnings after materials and drinks. Estimated Value shows gross revenue after market tax (always positive).',
+                options: {
+                    profit: 'Total Profit (revenue - all costs)',
+                    estimated_value: 'Estimated Value (revenue after tax)',
+                },
             },
             actionQueue_completionTimeStyle: {
                 label: 'Queued actions: Completion display',
                 help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
+                options: {
+                    absolute: 'Clock time only (Complete at 14:32)',
+                    relative: 'Cumulative duration only (Complete in 3h 40m)',
+                    both: 'Both',
+                },
             },
             alchemy_profitDisplay: {
                 label: 'Alchemy panel: Show profit calculator',
@@ -2871,6 +2978,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             actions_artisanMaterialMode: {
                 label: 'Missing materials: Artisan requirement mode',
                 help: 'Choose how missing materials accounts for Artisan Tea reductions when suggesting what to buy.',
+                options: {
+                    expected: 'Expected value (average)',
+                    'worst-case': 'Worst-case per action (ceil per craft)',
+                    hybrid: 'Hybrid (ceil below 100 actions, average at 100+)',
+                },
             },
             lootLogStats: {
                 label: 'Loot Log Statistics',
@@ -2911,7 +3023,15 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 help: 'Displays best profit/hr highlighted, with other alternative actions (craft, coinify, decompose, transmute) summarized below',
             },
             itemTooltip_expectedValue: { label: 'Show expected value for openable containers' },
-            expectedValue_showDrops: { label: 'Expected value drop display' },
+            expectedValue_showDrops: {
+                label: 'Expected value drop display',
+                options: {
+                    'Top 5': 'Top 5',
+                    'Top 10': 'Top 10',
+                    All: 'All Drops',
+                    None: 'Summary Only',
+                },
+            },
             expectedValue_respectPricingMode: { label: 'Use pricing mode for expected value calculations' },
             expectedValue_includeCowbells: { label: 'Include cowbell value in expected value calculations' },
             showConsumTips: { label: 'HP/MP consumables: Restore speed, cost performance' },
@@ -3000,7 +3120,16 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             enhanceSim_gear_cape: { label: 'Cape' },
             enhanceSim_gear_guzzling: { label: 'Guzzling' },
             enhanceSim_gear_charm: { label: 'Charm' },
-            enhanceSim_tea: { label: 'Enhancing tea', help: 'Enhancing tea provides skill level bonus' },
+            enhanceSim_tea: {
+                label: 'Enhancing tea',
+                help: 'Enhancing tea provides skill level bonus',
+                options: {
+                    none: 'None',
+                    basic: 'Enhancing Tea (+3)',
+                    super: 'Super Enhancing Tea (+6)',
+                    ultra: 'Ultra Enhancing Tea (+8)',
+                },
+            },
             enhanceSim_blessedTea: {
                 label: 'Blessed Tea active',
                 help: 'Professional enhancers use this to reduce attempts',
@@ -3045,10 +3174,19 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             market_autoFillSellStrategy: {
                 label: 'Auto-fill sell price strategy',
                 help: 'When creating sell listings, choose whether to match or undercut the current best sell price',
+                options: {
+                    match: 'Match best sell price',
+                    undercut: 'Undercut by 1 (best sell - 1)',
+                },
             },
             market_autoFillBuyStrategy: {
                 label: 'Auto-fill buy price strategy',
                 help: 'When creating buy listings, choose whether to outbid, match, or undercut the current best buy price',
+                options: {
+                    outbid: 'Outbid by 1 (best buy + 1)',
+                    match: 'Match best buy price',
+                    undercut: 'Undercut by 1 (best buy - 1)',
+                },
             },
             market_autoClickMax: {
                 label: 'Auto-click Max button on sell listing dialogs',
@@ -3105,6 +3243,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             market_tradeHistoryComparisonMode: {
                 label: 'Market: Trade history comparison mode',
                 help: 'Instant: Compare to instant buy/sell prices. Orders: Compare to buy/sell orders.',
+                options: {
+                    instant: 'Instant',
+                    listing: 'Orders',
+                },
             },
             market_listingPricePrecision: {
                 label: 'Market: Listing price decimal precision',
@@ -3125,14 +3267,26 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             market_listingAgeFormat: {
                 label: 'Market: Listing age display format',
                 help: 'Choose how to display listing creation times',
+                options: {
+                    elapsed: 'Elapsed Time (e.g., "3h 45m")',
+                    datetime: 'Date/Time (e.g., "01-13 14:30")',
+                },
             },
             market_listingTimeFormat: {
                 label: 'Time format for date/time display',
                 help: 'Time format used in marketplace listings, action completion times, and chat timestamps',
+                options: {
+                    '24hour': '24-hour (14:30)',
+                    '12hour': '12-hour (2:30 PM)',
+                },
             },
             market_listingDateFormat: {
                 label: 'Date format for date/time display',
                 help: 'Date format used in marketplace listings, action completion times, and chat timestamps',
+                options: {
+                    'MM-DD': 'MM-DD (01-13)',
+                    'DD-MM': 'DD-MM (13-01)',
+                },
             },
             market_showOrderTotals: {
                 label: 'Market: Show order totals in header',
@@ -3162,7 +3316,15 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Outlier band multiplier',
                 help: 'A live price counts as an outlier when it is more than this many times above or below the reference value (e.g. 3 = outside 1/3x-3x the reference). Only applies to items the reference dataset actually covers.',
             },
-            profitCalc_pricingMode: { label: 'Profit calculation pricing mode' },
+            profitCalc_pricingMode: {
+                label: 'Profit calculation pricing mode',
+                options: {
+                    conservative: 'Buy: Ask / Sell: Bid (Instant Buy / Instant Sell)',
+                    hybrid: 'Buy: Ask / Sell: Ask (Instant Buy / Patient Sell)',
+                    optimistic: 'Buy: Bid / Sell: Ask (Patient Buy / Patient Sell)',
+                    patientBuy: 'Buy: Bid / Sell: Bid (Patient Buy / Instant Sell)',
+                },
+            },
             profitCalc_pricingNaming: {
                 label: 'Pricing mode naming convention',
                 help: 'Show pricing modes as "Instant Buy / Instant Sell" instead of "Buy: Ask / Sell: Bid"',
@@ -3170,6 +3332,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             profitCalc_keyPricingMode: {
                 label: 'Key pricing mode',
                 help: 'How to value dungeon keys in tooltips, networth, and combat income calculations: ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
+                options: {
+                    ask: 'Ask (instant buy)',
+                    bid: 'Bid (patient buy)',
+                    cheapest: 'Cheapest (buy or craft)',
+                },
             },
             profitCalc_customPriceOverrides: {
                 label: 'Custom price overrides',
@@ -3197,7 +3364,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             invSort: { label: 'Sort inventory items by value' },
             invSort_showBadges: { label: 'Show stack value badges when sorting by Ask/Bid' },
-            invSort_badgesOnNone: { label: 'Badge type when "None" sort is selected' },
+            invSort_badgesOnNone: {
+                label: 'Badge type when "None" sort is selected',
+                options: {
+                    None: 'None',
+                    Ask: 'Ask',
+                    Bid: 'Bid',
+                },
+            },
             invSort_netOfTax: { label: 'Show badge values net of market tax' },
             invSort_sortEquipment: { label: 'Enable sorting for Equipment category' },
             invBadgePrices: {
@@ -3211,6 +3385,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             networth_pricingMode: {
                 label: 'Net worth pricing mode',
                 help: 'Ask shows what you could get by listing patiently. Bid shows what you could get by selling instantly.',
+                options: {
+                    ask: 'Ask price (patient sell value)',
+                    bid: 'Bid price (instant liquidation value)',
+                },
             },
             networth_highEnhancementUseCost: {
                 label: 'Use enhancement cost for highly enhanced items',
@@ -3219,6 +3397,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             networth_highEnhancementMinLevel: {
                 label: 'Minimum enhancement level to use cost',
                 help: 'Enhancement level at which to stop trusting market prices',
+                options: {
+                    10: '+10 and above',
+                    11: '+11 and above',
+                    12: '+12 and above',
+                    13: '+13 and above (recommended)',
+                    15: '+15 and above',
+                },
             },
             networth_includeCowbells: {
                 label: 'Include cowbells in net worth',
@@ -3404,6 +3589,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             combatSim_defaultLoadout: {
                 label: 'Combat Simulator: Default loadout',
                 help: 'Loadout to use by default for combat estimates instead of currently equipped gear',
+                options: { _empty: 'Current Gear' },
             },
             combatSim_autoEstimate: {
                 label: 'Combat Simulator: Auto-run estimate on task cards',
@@ -3457,6 +3643,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             taskEfficiencyRatingMode: {
                 label: 'Efficiency algorithm',
                 help: 'Choose whether to rate by task token payout or total profit.',
+                options: {
+                    tokens: 'Task tokens per hour',
+                    gold: 'Task profit per hour',
+                },
             },
             taskEfficiencyGradient: {
                 label: 'Use relative gradient colors',
@@ -3490,6 +3680,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             taskSorter_sortMode: {
                 label: 'Task sort mode',
                 help: 'How tasks are ordered when clicking Sort Tasks. "Time to Completion" sorts fastest tasks first; combat and completed tasks go to the bottom. "Protection" puts unprotected tasks first.',
+                options: {
+                    skill: 'Skill / Zone',
+                    time: 'Time to Completion',
+                    protection: 'Protection (unprotected first)',
+                },
             },
             taskInventoryHighlighter: {
                 label: 'Enable Task Inventory Highlighter button',
@@ -3530,10 +3725,21 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             formatting_useKMBFormat: {
                 label: 'Number format mode',
                 help: 'Controls how large numbers are displayed throughout the UI',
+                options: {
+                    full: 'Full (1,250,000)',
+                    threshold: 'Abbreviate after 4 digits (1,250K)',
+                    compact: 'Always abbreviate (1.25M)',
+                },
             },
             formatting_precision: {
                 label: 'Abbreviation precision (decimal digits)',
                 help: 'Number of decimal places shown when numbers are abbreviated with K/M/B suffixes',
+                options: {
+                    1: '1 digit (1.2M)',
+                    2: '2 digits (1.25M)',
+                    3: '3 digits (1.250M)',
+                    4: '4 digits (1.2500M)',
+                },
             },
             ui_externalLinks: {
                 label: 'Left sidebar: Show external tool links',
@@ -3587,6 +3793,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             guildMembersActivityTab: {
                 label: 'Guild Members: Show Activity column on',
                 help: 'Controls where the Activity column appears. "Contributions tab only" hides the native column on Status and shows it on Contributions instead.',
+                options: {
+                    status: 'Status tab only (native)',
+                    contributions: 'Contributions tab only',
+                    both: 'Both tabs',
+                },
             },
             guildMembersShowGameMode: {
                 label: 'Guild Members: Show Game Mode column',

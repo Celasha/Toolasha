@@ -24,6 +24,7 @@ import { calculateExpPerHour } from '../../utils/experience-calculator.js';
 import { getDrinkConcentration, parseArtisanBonus } from '../../utils/tea-parser.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { getActionHridFromIconHref } from '../../utils/game-lookups.js';
+import { getActionName } from '../../utils/game-i18n.js';
 
 /**
  * Action type constants for classification
@@ -392,21 +393,31 @@ class MaxProduceable {
             .join('')
             .trim();
 
-        // Build reverse lookup cache on first use (name → hrid)
+        // Build reverse lookup cache on first use (name → hrid). The tile renders the
+        // game's translated action name in non-English locales, so index both the
+        // English data name and the translated display name.
         if (!this.actionNameToHridCache) {
             const initData = dataManager.getInitClientData();
             if (!initData) {
                 return null;
             }
 
+            const indexName = (name, hrid) => {
+                this.actionNameToHridCache.set(name, hrid);
+                // Add ★ ↔ (R) variants so both display formats resolve
+                if (name.includes('(R)')) {
+                    this.actionNameToHridCache.set(name.replace(/\s*\(R\)/, ' ★'), hrid);
+                } else if (name.includes('★')) {
+                    this.actionNameToHridCache.set(name.replace(/\s*★/, ' (R)'), hrid);
+                }
+            };
+
             this.actionNameToHridCache = new Map();
             for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
-                this.actionNameToHridCache.set(action.name, hrid);
-                // Add ★ ↔ (R) variants so both display formats resolve
-                if (action.name.includes('(R)')) {
-                    this.actionNameToHridCache.set(action.name.replace(/\s*\(R\)/, ' ★'), hrid);
-                } else if (action.name.includes('★')) {
-                    this.actionNameToHridCache.set(action.name.replace(/\s*★/, ' (R)'), hrid);
+                indexName(action.name, hrid);
+                const translatedName = getActionName(hrid, action.name);
+                if (translatedName !== action.name) {
+                    indexName(translatedName, hrid);
                 }
             }
         }
@@ -773,7 +784,7 @@ class MaxProduceable {
         };
 
         const bestProfitName = bestProfitHrid
-            ? dataManager.getActionDetails(bestProfitHrid)?.name || bestProfitHrid
+            ? getActionName(bestProfitHrid, dataManager.getActionDetails(bestProfitHrid)?.name || bestProfitHrid)
             : null;
 
         for (const [actionPanel, data] of this.actionElements.entries()) {

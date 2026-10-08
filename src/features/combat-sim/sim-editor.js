@@ -13,6 +13,13 @@ import {
 } from './combat-sim-adapter.js';
 import loadoutState from '../../core/loadout-state.js';
 import { t } from '../../core/i18n.js';
+import {
+    getItemName,
+    getAbilityName,
+    getHouseRoomName,
+    getAchievementName,
+    getGuildShrineName,
+} from '../../utils/game-i18n.js';
 
 const ACCENT = '#4a9eff';
 const ACCENT_BG = 'rgba(74, 158, 255, 0.12)';
@@ -527,7 +534,7 @@ export class SimEditor {
             }
 
             const item = itemDetailMap[equip.hrid];
-            const name = item?.name || equip.hrid.split('/').pop();
+            const name = getItemName(equip.hrid, item?.name || equip.hrid.split('/').pop());
 
             html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
             html += `<span style="color:#888; width:70px; flex-shrink:0;">${label}</span>`;
@@ -574,7 +581,7 @@ export class SimEditor {
             }
 
             const detail = abilityDetailMap[ability.hrid];
-            const name = detail?.name || ability.hrid.split('/').pop();
+            const name = getAbilityName(ability.hrid, detail?.name || ability.hrid.split('/').pop());
 
             html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
             html += `<span style="color:#888; width:50px; flex-shrink:0;">${slotLabel}</span>`;
@@ -613,7 +620,7 @@ export class SimEditor {
         for (let i = 0; i < 3; i++) {
             const item = dto.food[i];
             const name = item
-                ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop()
+                ? getItemName(item.hrid, itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop())
                 : t('skillingOptimizer.emptySlotCapitalized');
             const nameColor = item ? '#e0e0e0' : '#555';
             html += '<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">';
@@ -640,7 +647,7 @@ export class SimEditor {
         for (let i = 0; i < 3; i++) {
             const item = dto.drinks[i];
             const name = item
-                ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop()
+                ? getItemName(item.hrid, itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop())
                 : t('skillingOptimizer.emptySlotCapitalized');
             const nameColor = item ? '#e0e0e0' : '#555';
             html += '<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">';
@@ -774,7 +781,10 @@ export class SimEditor {
             const lower = query.toLowerCase();
             const filtered = query
                 ? items.filter(
-                      (i) => i.name.toLowerCase().includes(lower) || i.categoryLabel.toLowerCase().includes(lower)
+                      (i) =>
+                          i.name.toLowerCase().includes(lower) ||
+                          getItemName(i.hrid, i.name).toLowerCase().includes(lower) ||
+                          i.categoryLabel.toLowerCase().includes(lower)
                   )
                 : items;
 
@@ -804,7 +814,7 @@ export class SimEditor {
                 if (item.conflict) {
                     html +=
                         '<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-bottom:1px solid #1a1a2e; color:#555; cursor:default;">' +
-                        item.name +
+                        getItemName(item.hrid, item.name) +
                         ' <span style="font-size:10px; color:#664;">' +
                         t('simEditor.inUseLabel') +
                         '</span>' +
@@ -820,7 +830,7 @@ export class SimEditor {
                         color +
                         ';"' +
                         ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
-                        item.name +
+                        getItemName(item.hrid, item.name) +
                         indicator +
                         lvlTag +
                         '</div>';
@@ -945,7 +955,13 @@ export class SimEditor {
 
         const renderList = (query) => {
             const lower = query.toLowerCase();
-            const filtered = query ? items.filter((i) => i.name.toLowerCase().includes(lower)) : items;
+            const filtered = query
+                ? items.filter(
+                      (i) =>
+                          i.name.toLowerCase().includes(lower) ||
+                          getItemName(i.hrid, i.name).toLowerCase().includes(lower)
+                  )
+                : items;
 
             let html =
                 '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
@@ -968,7 +984,7 @@ export class SimEditor {
                 html +=
                     `<div data-pick-hrid="${item.hrid}" style="display:flex; align-items:center; gap:8px; padding:3px 4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:${color};"` +
                     ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
-                    item.name +
+                    getItemName(item.hrid, item.name) +
                     indicator +
                     lvlTag +
                     '</div>';
@@ -1096,7 +1112,13 @@ export class SimEditor {
 
         const renderList = (query) => {
             const lower = query.toLowerCase();
-            const filtered = query ? items.filter((i) => i.name.toLowerCase().includes(lower)) : items;
+            const filtered = query
+                ? items.filter(
+                      (i) =>
+                          i.name.toLowerCase().includes(lower) ||
+                          getAbilityName(i.hrid, i.name).toLowerCase().includes(lower)
+                  )
+                : items;
 
             let html =
                 '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
@@ -1114,7 +1136,7 @@ export class SimEditor {
                 if (item.conflict) {
                     html +=
                         '<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-bottom:1px solid #1a1a2e; color:#555; cursor:default;">' +
-                        item.name +
+                        getAbilityName(item.hrid, item.name) +
                         ' <span style="font-size:10px; color:#664;">' +
                         t('simEditor.inUseLabel') +
                         '</span></div>';
@@ -1125,7 +1147,7 @@ export class SimEditor {
                     html +=
                         `<div data-pick-hrid="${item.hrid}" style="display:flex; align-items:center; gap:8px; padding:3px 4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:${color};"` +
                         ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
-                        item.name +
+                        getAbilityName(item.hrid, item.name) +
                         indicator +
                         '</div>';
                 }
@@ -1245,7 +1267,7 @@ export class SimEditor {
 
         for (const hrid of roomHrids) {
             const room = houseRoomDetailMap[hrid];
-            const name = room.name || hrid.split('/').pop();
+            const name = getHouseRoomName(hrid, room.name || hrid.split('/').pop());
             const level = dto.houseRooms[hrid] || 0;
             html += `<div style="display:flex; align-items:center; gap:6px; font-size:12px;">`;
             html += `<span style="color:#888; width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${name}">${name}</span>`;
@@ -1276,7 +1298,7 @@ export class SimEditor {
 
         for (const hrid of shrineHrids) {
             const shrine = guildShrineDetailMap[hrid];
-            const name = shrine.name || hrid.split('/').pop();
+            const name = getGuildShrineName(hrid, shrine.name || hrid.split('/').pop());
             const maxLevel = shrine.maxLevel || 20;
             const level = dto.shrineLevels?.[hrid] || 0;
             html += `<div style="display:flex; align-items:center; gap:6px; font-size:12px;">`;
@@ -1349,7 +1371,7 @@ export class SimEditor {
                     for (const member of tier.members) {
                         const checked = completedHrids.has(member.hrid) ? ' checked' : '';
                         html += `<label style="display:flex; align-items:center; gap:6px; padding:1px 0; font-size:12px; color:#bbb; cursor:pointer;">`;
-                        html += `<input type="checkbox" data-achievement-hrid="${member.hrid}"${checked}> ${member.name}`;
+                        html += `<input type="checkbox" data-achievement-hrid="${member.hrid}"${checked}> ${getAchievementName(member.hrid, member.name)}`;
                         html += '</label>';
                     }
                     html += '</div></div>';
@@ -1710,14 +1732,18 @@ export class SimEditor {
             if (!origEquip && !editEquip) continue;
 
             if (origEquip?.hrid !== editEquip?.hrid) {
-                const origName =
+                const origName = getItemName(
+                    origEquip?.hrid,
                     itemDetailMap[origEquip?.hrid]?.name ||
-                    origEquip?.hrid?.split('/').pop() ||
-                    t('skillingOptimizer.emptySlotCapitalized');
-                const editName =
+                        origEquip?.hrid?.split('/').pop() ||
+                        t('skillingOptimizer.emptySlotCapitalized')
+                );
+                const editName = getItemName(
+                    editEquip?.hrid,
                     itemDetailMap[editEquip?.hrid]?.name ||
-                    editEquip?.hrid?.split('/').pop() ||
-                    t('skillingOptimizer.emptySlotCapitalized');
+                        editEquip?.hrid?.split('/').pop() ||
+                        t('skillingOptimizer.emptySlotCapitalized')
+                );
                 changes.push(t('simEditor.itemSwapLabel', { from: origName, to: editName }));
             } else if (origEquip?.enhancementLevel !== editEquip?.enhancementLevel) {
                 const label = this._equipmentSlotLabel(slot);
@@ -1737,13 +1763,20 @@ export class SimEditor {
             if (!origAb && !editAb) continue;
 
             if (origAb?.hrid !== editAb?.hrid) {
-                const origName =
-                    abilityDetailMap[origAb?.hrid]?.name || origAb?.hrid?.split('/').pop() || t('simEditor.noneLabel');
-                const editName =
-                    abilityDetailMap[editAb?.hrid]?.name || editAb?.hrid?.split('/').pop() || t('simEditor.noneLabel');
+                const origName = getAbilityName(
+                    origAb?.hrid,
+                    abilityDetailMap[origAb?.hrid]?.name || origAb?.hrid?.split('/').pop() || t('simEditor.noneLabel')
+                );
+                const editName = getAbilityName(
+                    editAb?.hrid,
+                    abilityDetailMap[editAb?.hrid]?.name || editAb?.hrid?.split('/').pop() || t('simEditor.noneLabel')
+                );
                 changes.push(t('simEditor.itemSwapLabel', { from: origName, to: editName }));
             } else if (origAb && editAb && origAb.level !== editAb.level) {
-                const name = abilityDetailMap[editAb.hrid]?.name || editAb.hrid.split('/').pop();
+                const name = getAbilityName(
+                    editAb.hrid,
+                    abilityDetailMap[editAb.hrid]?.name || editAb.hrid.split('/').pop()
+                );
                 changes.push(t('simEditor.abilityLevelChangeLabel', { name, from: origAb.level, to: editAb.level }));
             }
         }
@@ -1779,12 +1812,18 @@ export class SimEditor {
                 const origHrid = original[slotType]?.[i]?.hrid;
                 const editHrid = edited[slotType]?.[i]?.hrid;
                 if (origHrid !== editHrid) {
-                    const origName = origHrid
-                        ? itemDetailMap[origHrid]?.name || origHrid.split('/').pop()
-                        : t('skillingOptimizer.emptySlotCapitalized');
-                    const editName = editHrid
-                        ? itemDetailMap[editHrid]?.name || editHrid.split('/').pop()
-                        : t('skillingOptimizer.emptySlotCapitalized');
+                    const origName = getItemName(
+                        origHrid,
+                        itemDetailMap[origHrid]?.name ||
+                            origHrid?.split('/').pop() ||
+                            t('skillingOptimizer.emptySlotCapitalized')
+                    );
+                    const editName = getItemName(
+                        editHrid,
+                        itemDetailMap[editHrid]?.name ||
+                            editHrid?.split('/').pop() ||
+                            t('skillingOptimizer.emptySlotCapitalized')
+                    );
                     changes.push(
                         t('simEditor.consumableChangeLabel', { prefix, index: i + 1, from: origName, to: editName })
                     );

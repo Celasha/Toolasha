@@ -12,6 +12,7 @@ import marketAPI from '../../api/marketplace.js';
 import { calculateTaskProfit, calculateTaskTokenValue, calculateTaskRewardValue } from './task-profit-calculator.js';
 import { calculateTaskCompletionSeconds } from './task-profit-display.js';
 import { timeReadable, formatKMB, formatDateTime } from '../../utils/formatters.js';
+import { getActionName, getMonsterName } from '../../utils/game-i18n.js';
 import { TOOLASHA } from '../../utils/selectors.js';
 
 class TaskStatistics {
@@ -244,10 +245,10 @@ class TaskStatistics {
             let taskName = '';
             if (isCombat && monsterHrid) {
                 const monsterDetails = dataManager.getInitClientData()?.combatMonsterDetailMap?.[monsterHrid];
-                taskName = monsterDetails?.name || monsterHrid.split('/').pop();
+                taskName = getMonsterName(monsterHrid, monsterDetails?.name || monsterHrid.split('/').pop());
             } else if (actionHrid) {
                 const actionDetails = dataManager.getInitClientData()?.actionDetailMap?.[actionHrid];
-                taskName = actionDetails?.name || actionHrid.split('/').pop();
+                taskName = getActionName(actionHrid, actionDetails?.name || actionHrid.split('/').pop());
             }
 
             // Calculate action profit for non-combat tasks
@@ -256,10 +257,16 @@ class TaskStatistics {
 
             if (!isCombat && actionHrid) {
                 try {
+                    // Locale-independent quest info straight from the quest data
+                    const questInfo = {
+                        actionHrid: quest.actionHrid || null,
+                        monsterHrid: quest.monsterHrid || null,
+                    };
+
                     // Get action details to build proper task description
                     const actionDetails = dataManager.getInitClientData()?.actionDetailMap?.[actionHrid];
                     if (actionDetails) {
-                        // Build description in format "Skill - Action Name"
+                        // Build description in format "Skill - Action Name" as a text fallback
                         // Extract skill name from type field like '/action_types/foraging'
                         const skillName = actionDetails.type?.split('/').pop() || '';
                         const formattedSkill =
@@ -274,7 +281,7 @@ class TaskStatistics {
                             quantity: quest.goalCount,
                             currentProgress: quest.currentCount || 0,
                         };
-                        const profitData = await calculateTaskProfit(taskData);
+                        const profitData = await calculateTaskProfit(taskData, questInfo);
                         if (profitData && profitData.action) {
                             actionProfit = profitData.action.totalValue || profitData.action.totalProfit || 0;
                             completionSeconds = calculateTaskCompletionSeconds(profitData);

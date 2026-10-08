@@ -9,6 +9,7 @@ import houseCostDisplay from './house-cost-display.js';
 import dataManager from '../../core/data-manager.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
+import { getHouseRoomName } from '../../utils/game-i18n.js';
 
 class HousePanelObserver {
     constructor() {
@@ -111,9 +112,12 @@ class HousePanelObserver {
 
         const roomName = header.textContent.trim();
 
-        // Match against room names in game data
+        // Match against room names in game data.
+        // The game renders the room name in its locale, so compare against both
+        // the English data name and the game-translated name.
         for (const [hrid, roomData] of Object.entries(initData.houseRoomDetailMap)) {
-            if (roomData.name === roomName) {
+            const localized = getHouseRoomName(hrid, roomData.name);
+            if (roomName === roomData.name || roomName === localized) {
                 return hrid;
             }
         }

@@ -22,6 +22,7 @@ import {
     isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 // Mirrors the game client's labyrinthTorchHrid/ShroudHrid/BeaconHrid (characterSetting) and
 // labyrinthTorchCap/ShroudCap/BeaconCap (characterInfo, falling back to the client's base caps
@@ -288,7 +289,12 @@ function createTabs(materials, sessionId, tabContainer = null) {
     removeMaterialTabsForOwner(MARKETPLACE_OWNER.LABYRINTH_SUPPLIES);
     currentTabs.length = 0;
 
-    const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+    // The My Listings tab label is localized by the game (zh: 我的挂牌), so match
+    // both the English and translated text.
+    const myListingsLabel = translateGameName('marketplacePanel', 'myListings', 'My Listings');
+    const referenceTab = Array.from(tabsContainer.children).find(
+        (btn) => btn.textContent.includes('My Listings') || btn.textContent.includes(myListingsLabel)
+    );
     if (!referenceTab) {
         console.error('[LabyrinthMissingSupplies] Reference tab not found');
         return false;

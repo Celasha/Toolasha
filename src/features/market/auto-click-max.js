@@ -5,6 +5,8 @@
 
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { readMarketplaceRuntimeStateFromElement } from '../../utils/marketplace-autofill.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 class AutoClickMax {
     constructor() {
@@ -58,14 +60,32 @@ class AutoClickMax {
 
         const headerText = header.textContent;
 
-        // Skip all buy modals (Buy Listing, Buy Now)
-        if (headerText.includes('Buy')) {
-            return;
-        }
+        // Primary signal: the live Marketplace component state is locale-independent.
+        // isSell=true is a Sell Now / Sell Listing modal; false is a Buy modal.
+        const marketState = readMarketplaceRuntimeStateFromElement(modal);
+        if (marketState) {
+            if (marketState.isSell !== true) {
+                return;
+            }
+        } else {
+            // Fallback when the React state cannot be read: match English header text
+            // plus the game's current-language labels (zh: Buy Now 立即购买 / Buy Listing
+            // 购买挂牌, Sell Now 立即出售 / Sell Listing 出售挂牌).
+            const isBuyHeader =
+                headerText.includes('Buy') ||
+                headerText.includes(translateGameName('marketplacePanel', 'buyNow', 'Buy Now')) ||
+                headerText.includes(translateGameName('marketplacePanel', 'buyListing', 'Buy Listing'));
+            if (isBuyHeader) {
+                return;
+            }
 
-        // Only process sell modals (Sell Listing, Sell Now)
-        if (!headerText.includes('Sell')) {
-            return;
+            const isSellHeader =
+                headerText.includes('Sell') ||
+                headerText.includes(translateGameName('marketplacePanel', 'sellNow', 'Sell Now')) ||
+                headerText.includes(translateGameName('marketplacePanel', 'sellListing', 'Sell Listing'));
+            if (!isSellHeader) {
+                return;
+            }
         }
 
         // Mark as processed
@@ -91,12 +111,16 @@ class AutoClickMax {
         const quantityContainer = modal.querySelector('div[class*="MarketplacePanel_quantityInputs"]');
         const searchRoot = quantityContainer || modal;
 
-        // Find Max button (Sell Listing) or All button (Sell Now)
+        // Find Max button (Sell Listing) or All button (Sell Now). Labels are localized
+        // by the game (zh: Max 最多 / All 全部), so match the translated labels too.
+        const maxLabels = new Set([
+            'Max',
+            'All',
+            translateGameName('marketplacePanel', 'max', 'Max'),
+            translateGameName('marketplacePanel', 'all', 'All'),
+        ]);
         const allButtons = searchRoot.querySelectorAll('button');
-        const maxButton = Array.from(allButtons).find((btn) => {
-            const text = btn.textContent.trim();
-            return text === 'Max' || text === 'All';
-        });
+        const maxButton = Array.from(allButtons).find((btn) => maxLabels.has(btn.textContent.trim()));
 
         if (!maxButton) {
             return;

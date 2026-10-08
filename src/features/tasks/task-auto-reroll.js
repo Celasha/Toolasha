@@ -20,6 +20,7 @@ import {
     countActionsBySkillType,
     getTaskTypeLabel,
 } from './task-skill-groups.js';
+import { getActionName, getMonsterName } from '../../utils/game-i18n.js';
 
 const STORAGE_KEY_PREFIX = 'taskAutoRerollHrids';
 const SKILL_STORAGE_KEY_PREFIX = 'taskAutoRerollSkillTypes';
@@ -237,15 +238,19 @@ class TaskAutoReroll {
                 }
                 if (monsterHrids.size > 1) {
                     zoneMonsters[hrid] = [...monsterHrids];
-                    items.push({ hrid, name: action.name, type: 'zone', isZone: true });
+                    items.push({ hrid, name: getActionName(hrid, action.name), type: 'zone', isZone: true });
                 }
                 continue;
             }
-            items.push({ hrid, name: action.name, type: action.type?.split('/').pop() || 'other' });
+            items.push({
+                hrid,
+                name: getActionName(hrid, action.name),
+                type: action.type?.split('/').pop() || 'other',
+            });
         }
 
         for (const [hrid, monster] of Object.entries(gameData.combatMonsterDetailMap || {})) {
-            items.push({ hrid, name: monster.name, type: 'combat' });
+            items.push({ hrid, name: getMonsterName(hrid, monster.name), type: 'combat' });
         }
 
         items.sort((a, b) => a.name.localeCompare(b.name));

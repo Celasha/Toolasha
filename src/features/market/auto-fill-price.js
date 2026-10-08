@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 
 class AutoFillPrice {
     constructor() {
@@ -49,8 +50,16 @@ class AutoFillPrice {
 
             const headerText = header.textContent.trim();
 
-            // Skip instant buy/sell modals (contain "Now" in title)
-            if (headerText.includes(' Now')) {
+            // Skip instant buy/sell modals (contain "Now" in title).
+            // The game localizes the "Buy Now"/"Sell Now" titles, so match the
+            // translated " Now" suffix as well.
+            const buyNowTranslated = translateGameName('marketplacePanel', 'buyNow', 'Buy Now');
+            const sellNowTranslated = translateGameName('marketplacePanel', 'sellNow', 'Sell Now');
+            if (
+                headerText.includes(' Now') ||
+                (buyNowTranslated && headerText.includes(buyNowTranslated)) ||
+                (sellNowTranslated && headerText.includes(sellNowTranslated))
+            ) {
                 return;
             }
 
@@ -78,12 +87,19 @@ class AutoFillPrice {
             return;
         }
 
-        // Determine if this is a buy or sell order
+        // Determine if this is a buy or sell order.
+        // The game renders "Best Buy"/"Best Sell" labels in its locale, so match
+        // both English and the game-translated text.
         const labelParent = bestPriceLabel.parentElement;
         const labelText = labelParent.textContent.toLowerCase();
 
-        const isBuyOrder = labelText.includes('best buy');
-        const isSellOrder = labelText.includes('best sell');
+        const bestBuyTranslated = translateGameName('marketplacePanel', 'bestBuy', 'Best Buy').toLowerCase();
+        const bestSellTranslated = translateGameName('marketplacePanel', 'bestSell', 'Best Sell').toLowerCase();
+
+        const isBuyOrder =
+            labelText.includes('best buy') || (bestBuyTranslated && labelText.includes(bestBuyTranslated));
+        const isSellOrder =
+            labelText.includes('best sell') || (bestSellTranslated && labelText.includes(bestSellTranslated));
 
         if (!isBuyOrder && !isSellOrder) {
             return;

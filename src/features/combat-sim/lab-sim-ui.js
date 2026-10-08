@@ -25,6 +25,7 @@ import {
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
+import { getMonsterName } from '../../utils/game-i18n.js';
 import { SimEditor } from './sim-editor.js';
 import labyrinthClearRate from '../combat/labyrinth-clear-rate.js';
 import loadoutState from '../../core/loadout-state.js';
@@ -587,7 +588,7 @@ class LabSimUI {
         for (const monster of monsters) {
             const option = document.createElement('option');
             option.value = monster.hrid;
-            option.textContent = monster.name;
+            option.textContent = getMonsterName(monster.hrid, monster.name);
             select.appendChild(option);
         }
         if (previousMonsterHrid && monsters.some((monster) => monster.hrid === previousMonsterHrid)) {

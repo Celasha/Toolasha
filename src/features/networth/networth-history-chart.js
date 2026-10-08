@@ -10,6 +10,7 @@ import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import { t } from '../../core/i18n.js';
 import { networthFormatter, formatDateTime } from '../../utils/formatters.js';
+import { getItemName, getHouseRoomName, getAbilityName } from '../../utils/game-i18n.js';
 
 const RANGE_MS = {
     '24h': 24 * 60 * 60 * 1000,
@@ -1287,7 +1288,7 @@ class NetworthHistoryChart {
                     const itemHrid = parts[2];
                     const enhLevel = parts[3];
                     const details = gameData?.itemDetailMap?.[itemHrid];
-                    const baseName = details?.name || itemHrid.replace('/items/', '');
+                    const baseName = getItemName(itemHrid, details?.name || itemHrid.replace('/items/', ''));
                     name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
                 }
                 const listingLabel = key.startsWith('listing:sell:')
@@ -1301,10 +1302,27 @@ class NetworthHistoryChart {
             // Resolve display name
             let name = curr.name;
             if (!name) {
-                const [itemHrid, enhLevel] = key.split(':');
-                const details = gameData?.itemDetailMap?.[itemHrid];
-                const baseName = details?.name || itemHrid.replace('/items/', '');
-                name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
+                if (key.startsWith('house:')) {
+                    const houseRoomHrid = key.slice('house:'.length);
+                    name = getHouseRoomName(
+                        houseRoomHrid,
+                        gameData?.houseRoomDetailMap?.[houseRoomHrid]?.name || houseRoomHrid
+                    );
+                } else if (key.startsWith('ability:')) {
+                    const abilityHrid = key.slice('ability:'.length);
+                    name = getAbilityName(abilityHrid, gameData?.abilityDetailMap?.[abilityHrid]?.name || abilityHrid);
+                } else if (key.startsWith('abilitybook:')) {
+                    const bookHrid = key.slice('abilitybook:'.length);
+                    name = getItemName(
+                        bookHrid,
+                        gameData?.itemDetailMap?.[bookHrid]?.name || bookHrid.replace('/items/', '')
+                    );
+                } else {
+                    const [itemHrid, enhLevel] = key.split(':');
+                    const details = gameData?.itemDetailMap?.[itemHrid];
+                    const baseName = getItemName(itemHrid, details?.name || itemHrid.replace('/items/', ''));
+                    name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
+                }
             }
 
             // Fixed assets (house, ability, abilitybook) → Activity only (no market movement)

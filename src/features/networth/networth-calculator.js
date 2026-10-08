@@ -31,6 +31,7 @@ import { isExcluded, getExclusions } from './networth-exclusions.js';
 import loadoutState from '../../core/loadout-state.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import { buildCheapestPerCredit } from '../../utils/guild-credit-conversion.js';
+import { getItemName, getAbilityName, getHouseRoomName, getItemCategoryName } from '../../utils/game-i18n.js';
 
 /**
  * Translated display label for a guild shrine hrid, mirroring the labels already
@@ -341,7 +342,10 @@ export function calculateAllHousesCost(characterHouseRooms) {
 
         // Get human-readable name
         const houseDetail = houseRoomDetailMap[houseRoomHrid];
-        const houseName = houseDetail?.name || houseRoomHrid.replace('/house_rooms/', '');
+        const houseName = getHouseRoomName(
+            houseRoomHrid,
+            houseDetail?.name || houseRoomHrid.replace('/house_rooms/', '')
+        );
 
         breakdown.push({
             hrid: houseRoomHrid,
@@ -392,9 +396,12 @@ export function calculateAllAbilitiesCost(characterAbilities, abilityCombatTrigg
         const { cost, isOutlier } = calculateAbilityCost(ability.abilityHrid, ability.level);
         totalCost += cost;
 
-        // Use the already-localized ability name (mirrors the lookup pattern in
-        // networth-exclusion-popup.js's getExclusionDisplayName for exc.type === 'ability')
-        const abilityName = gameData?.abilityDetailMap?.[ability.abilityHrid]?.name ?? ability.abilityHrid;
+        // Localized ability name, mirroring the lookup pattern in
+        // networth-exclusion-popup.js's getExclusionDisplayName for exc.type === 'ability'
+        const abilityName = getAbilityName(
+            ability.abilityHrid,
+            gameData?.abilityDetailMap?.[ability.abilityHrid]?.name ?? ability.abilityHrid
+        );
 
         const abilityData = {
             hrid: ability.abilityHrid,
@@ -736,7 +743,7 @@ export async function calculateNetworth() {
         const value = equippedValues[i];
 
         const itemDetails = gameData.itemDetailMap[item.itemHrid];
-        const itemName = itemDetails?.name || item.itemHrid.replace('/items/', '');
+        const itemName = getItemName(item.itemHrid, itemDetails?.name || item.itemHrid.replace('/items/', ''));
         const displayName = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
 
         // Check exclusions in priority order: assetType > item > loadout
@@ -795,7 +802,7 @@ export async function calculateNetworth() {
 
         // Add to breakdown
         const itemDetails = gameData.itemDetailMap[item.itemHrid];
-        const itemName = itemDetails?.name || item.itemHrid.replace('/items/', '');
+        const itemName = getItemName(item.itemHrid, itemDetails?.name || item.itemHrid.replace('/items/', ''));
         const displayName = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
 
         const itemData = {
@@ -829,9 +836,11 @@ export async function calculateNetworth() {
             continue;
         }
         if (isExcluded('category', categoryHrid)) {
-            const categoryName =
+            const categoryName = getItemCategoryName(
+                categoryHrid,
                 gameData.itemCategoryDetailMap?.[categoryHrid]?.name ||
-                t('networthCalculator.otherCategoryFallbackLabel');
+                    t('networthCalculator.otherCategoryFallbackLabel')
+            );
             trackExcluded(
                 'category',
                 categoryHrid,
@@ -856,9 +865,11 @@ export async function calculateNetworth() {
 
             // Coin is always listed individually — never bucketed into a category
             if (item.itemHrid !== '/items/coin') {
-                const categoryName =
+                const categoryName = getItemCategoryName(
+                    categoryHrid,
                     gameData.itemCategoryDetailMap?.[categoryHrid]?.name ||
-                    t('networthCalculator.otherCategoryFallbackLabel');
+                        t('networthCalculator.otherCategoryFallbackLabel')
+                );
 
                 if (!inventoryByCategory[categoryName]) {
                     inventoryByCategory[categoryName] = {
@@ -890,7 +901,10 @@ export async function calculateNetworth() {
     for (const listing of marketListings) {
         const quantity = listing.orderQuantity - listing.filledQuantity;
         const enhancementLevel = listing.enhancementLevel || 0;
-        const itemName = clientData?.itemDetailMap?.[listing.itemHrid]?.name || listing.itemHrid;
+        const itemName = getItemName(
+            listing.itemHrid,
+            clientData?.itemDetailMap?.[listing.itemHrid]?.name || listing.itemHrid
+        );
 
         if (listing.isSell) {
             // Selling: value is locked in listing + unclaimed coins

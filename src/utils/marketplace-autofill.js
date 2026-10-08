@@ -11,6 +11,7 @@
 
 import domObserver from '../core/dom-observer.js';
 import { marketplaceSession } from '../core/marketplace-session.js';
+import { translateGameName } from './game-i18n.js';
 
 const MARKETPLACE_PANEL_SELECTOR = '[class*="MarketplacePanel_marketplacePanel"]';
 const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
@@ -365,11 +366,17 @@ export function createAutofillManager(observerId) {
         if (allInputs.length === 1) return allInputs[0];
 
         const labeled = allInputs.filter((input) => {
+            // Labels are localized by the game (zh: Quantity 数量 / Enhancement Level 强化等级);
+            // match the translated strings alongside the English ones.
+            const quantityLabel = translateGameName('marketplacePanel', 'quantity', 'Quantity');
+            const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
             let parent = input.parentElement;
             for (let depth = 0; parent && depth < 4; depth += 1) {
                 const text = parent.textContent || '';
-                if (text.includes('Enhancement Level') && !text.includes('Quantity')) return false;
-                if (text.includes('Quantity') && !text.includes('Enhancement Level')) return true;
+                const mentionsEnhancement = text.includes('Enhancement Level') || text.includes(enhancementLabel);
+                const mentionsQuantity = text.includes('Quantity') || text.includes(quantityLabel);
+                if (mentionsEnhancement && !mentionsQuantity) return false;
+                if (mentionsQuantity && !mentionsEnhancement) return true;
                 parent = parent.parentElement;
             }
             return false;
@@ -382,7 +389,14 @@ export function createAutofillManager(observerId) {
         const header = modal.querySelector('[class*="MarketplacePanel_header"]');
         if (!header) return false;
         const text = header.textContent?.trim() || '';
-        return text.includes('Buy Now') || text.includes('Buy Listing');
+        // Header text is localized (zh: Buy Now 立即购买 / Buy Listing 购买挂牌); the React
+        // state check in targetMatchesInput remains the strict ownership verification.
+        return (
+            text.includes('Buy Now') ||
+            text.includes('Buy Listing') ||
+            text.includes(translateGameName('marketplacePanel', 'buyNow', 'Buy Now')) ||
+            text.includes(translateGameName('marketplacePanel', 'buyListing', 'Buy Listing'))
+        );
     }
 
     function resolveQuantity(target) {

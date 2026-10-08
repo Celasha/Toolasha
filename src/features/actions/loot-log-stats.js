@@ -16,6 +16,7 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import lootLogHistory from './loot-log-history.js';
 import { mergeCurrentAndHistoricalEntries, aggregatePivotRows, EXCLUDED_XP_SKILL_HRID } from './loot-log-analytics.js';
+import { getItemName, getActionName, getSkillName, translateGameName } from '../../utils/game-i18n.js';
 
 class LootLogStats {
     constructor() {
@@ -442,7 +443,7 @@ class LootLogStats {
                 bidPerItem = 1;
             } else {
                 const itemDetails = dataManager.getItemDetails(baseHrid);
-                name = itemDetails?.name || baseHrid.split('/').pop().replace(/_/g, ' ');
+                name = getItemName(baseHrid, itemDetails?.name || baseHrid.split('/').pop().replace(/_/g, ' '));
 
                 // Check for openable containers — use expected value
                 if (itemDetails?.isOpenable && expectedValueCalculator.isInitialized) {
@@ -498,7 +499,7 @@ class LootLogStats {
 
             // Item name
             const nameSpan = document.createElement('span');
-            nameSpan.textContent = item.name;
+            nameSpan.textContent = getItemName(item.hrid, item.name);
             nameSpan.style.cssText = `
                 color: #fff;
                 min-width: 0;
@@ -947,8 +948,7 @@ class LootLogStats {
     getActionName(actionHrid) {
         if (!actionHrid) return t('lootLogStats.unknownActionFallback');
         const details = dataManager.getActionDetails(actionHrid);
-        if (details?.name) return details.name;
-        return actionHrid.split('/').pop().replace(/_/g, ' ');
+        return getActionName(actionHrid, details?.name || actionHrid.split('/').pop().replace(/_/g, ' '));
     }
 
     /**
@@ -958,8 +958,10 @@ class LootLogStats {
     injectAnalyticsButton(panelEl) {
         if (panelEl.querySelector('.mwi-loot-log-analytics-btn')) return;
 
+        // The native button label is localized by the game (zh: 刷新), so match both languages.
+        const refreshLabel = translateGameName('lootLogPanel', 'refresh', 'Refresh');
         const refreshBtn = Array.from(panelEl.querySelectorAll('button')).find(
-            (b) => b.textContent.trim() === 'Refresh'
+            (b) => b.textContent.trim() === 'Refresh' || b.textContent.trim() === refreshLabel
         );
         if (!refreshBtn) return;
 
@@ -1464,7 +1466,7 @@ class LootLogStats {
      */
     getSkillName(skillHrid) {
         const details = dataManager.getInitClientData()?.skillDetailMap?.[skillHrid];
-        return details?.name || skillHrid.split('/').pop().replace(/_/g, ' ');
+        return getSkillName(skillHrid, details?.name || skillHrid.split('/').pop().replace(/_/g, ' '));
     }
 
     /**

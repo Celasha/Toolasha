@@ -20,6 +20,7 @@ import {
     countActionsBySkillType,
     getTaskTypeLabel,
 } from './task-skill-groups.js';
+import { getActionName, getMonsterName } from '../../utils/game-i18n.js';
 
 const STORAGE_KEY_PREFIX = 'taskProtectedHrids';
 const SKILL_STORAGE_KEY_PREFIX = 'taskProtectedSkillTypes';
@@ -303,11 +304,15 @@ class TaskRerollProtection {
                     if (btn.classList.contains('Button_success__6d6kU')) return;
                     if (btn.classList.contains('Button_buy__3s24l')) return;
 
-                    // Only intercept actual reroll actions (Pay / Free Reroll), not the initial "Reroll" expand button
+                    // Only intercept actual reroll actions (Pay / Free Reroll), not the initial "Reroll" expand button.
+                    // The game renders all three reroll choices (pay cowbells, pay coins, MooPass free reroll)
+                    // inside RandomTask_rerollOptionsContainer — use that locale-independent container first;
+                    // keep the English text checks as fallback (and for simpler DOM in tests).
                     const btnText = btn.textContent?.trim() || '';
+                    const isRerollOption = !!btn.closest('[class*="RandomTask_rerollOptionsContainer"]');
                     const isPayButton = btnText.startsWith('Pay');
                     const isFreeReroll = btnText.toLowerCase().includes('free');
-                    if (!isPayButton && !isFreeReroll) return;
+                    if (!isRerollOption && !isPayButton && !isFreeReroll) return;
 
                     // Find the parent task card
                     const card = btn.closest('[class*="RandomTask_randomTask"]');
@@ -581,16 +586,20 @@ class TaskRerollProtection {
                 }
                 if (monsterHrids.size > 1) {
                     zoneMonsters[hrid] = [...monsterHrids];
-                    items.push({ hrid, name: action.name, type: 'zone', isZone: true });
+                    items.push({ hrid, name: getActionName(hrid, action.name), type: 'zone', isZone: true });
                 }
                 continue;
             }
-            items.push({ hrid, name: action.name, type: action.type?.split('/').pop() || 'other' });
+            items.push({
+                hrid,
+                name: getActionName(hrid, action.name),
+                type: action.type?.split('/').pop() || 'other',
+            });
         }
 
         // Combat monsters
         for (const [hrid, monster] of Object.entries(gameData.combatMonsterDetailMap || {})) {
-            items.push({ hrid, name: monster.name, type: 'combat' });
+            items.push({ hrid, name: getMonsterName(hrid, monster.name), type: 'combat' });
         }
 
         items.sort((a, b) => a.name.localeCompare(b.name));

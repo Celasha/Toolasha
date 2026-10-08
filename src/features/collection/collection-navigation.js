@@ -10,6 +10,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { navigateToItem } from '../../utils/item-navigation.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 /**
  * Get game object via React fiber tree traversal
@@ -189,7 +190,8 @@ class CollectionNavigation {
         this.dismissPopover();
 
         const itemDetails = dataManager.getItemDetails(itemHrid);
-        const itemName = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        const fallbackName = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        const itemName = getItemName(itemHrid, fallbackName);
 
         const rect = tile.getBoundingClientRect();
 

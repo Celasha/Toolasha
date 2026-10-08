@@ -18,6 +18,7 @@ import {
     MIN_ACTION_TIME_SECONDS,
 } from './profit-constants.js';
 import { getItemPriceOutlierInfo } from './market-data.js';
+import { getItemName } from './game-i18n.js';
 import { getCustomPrice } from '../features/settings/custom-price-overrides.js';
 import { getShopCoinCost } from './game-lookups.js';
 import { getProductionCost } from '../features/enhancement/tooltip-enhancement.js';
@@ -190,7 +191,7 @@ export function calculateTeaCostsPerHour({
         }
 
         const itemDetails = itemDetailMap[drink.itemHrid];
-        const itemName = itemDetails?.name || 'Unknown';
+        const itemName = getItemName(drink.itemHrid, itemDetails?.name || 'Unknown');
         const price =
             typeof getItemPrice === 'function'
                 ? getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' })

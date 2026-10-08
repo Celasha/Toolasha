@@ -13,6 +13,7 @@ import { calculateOfflineEconomics } from '../../utils/offline-economics-calcula
 import { formatPrice } from '../../utils/market-data.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 const UI_ID = 'mwi-offline-economics';
 const MODAL_ANCHOR_CLASS = 'OfflineProgressModal_offlineProgress';
@@ -247,7 +248,7 @@ export function buildHeadingTooltip(economics) {
     if (economics.isPartial) {
         const names = economics.unvaluedItems.map((item) => {
             const details = dataManager.getItemDetails(item.itemHrid);
-            return details?.name || item.itemHrid.split('/').pop();
+            return getItemName(item.itemHrid, details?.name || item.itemHrid.split('/').pop());
         });
         const count = economics.unvaluedItems.length;
         tooltip += t('offlineProgressEconomics.partialValuationNote', { count, names: names.join(', ') });
@@ -332,7 +333,7 @@ export function buildBlock(economics) {
  */
 function getItemDisplayName(itemHrid) {
     const details = dataManager.getItemDetails(itemHrid);
-    return details?.name || itemHrid.split('/').pop();
+    return getItemName(itemHrid, details?.name || itemHrid.split('/').pop());
 }
 
 /**

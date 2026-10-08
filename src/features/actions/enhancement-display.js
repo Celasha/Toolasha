@@ -16,6 +16,35 @@ import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { removeInlineXpRate, renderInlineXpRate } from './inline-xp-rate.js';
+import { getItemName, translateGameName } from '../../utils/game-i18n.js';
+
+/**
+ * Labels of the enhancing panel's "Target Level" input label. The game localizes label
+ * text (zh: 目标等级), so match both English and the translated label.
+ * @returns {Set<string>}
+ */
+function getTargetLevelLabels() {
+    return new Set(['Target Level', translateGameName('skillActionDetail', 'targetLevel', 'Target Level')]);
+}
+
+/**
+ * Labels of the enhancing panel's "Protect From Level" input label (zh: 保护起始等级).
+ * @returns {Set<string>}
+ */
+function getProtectFromLevelLabels() {
+    return new Set([
+        'Protect From Level',
+        translateGameName('skillActionDetail', 'protectFromLevel', 'Protect From Level'),
+    ]);
+}
+
+/**
+ * Labels of the enhancing panel's "Current Action" tab (zh: 当前行动).
+ * @returns {Set<string>}
+ */
+function getCurrentActionTabLabels() {
+    return new Set(['Current Action', translateGameName('enhancingPanel', 'currentActionTab', 'Current Action')]);
+}
 
 /**
  * Format a number with thousands separator and 2 decimal places
@@ -36,10 +65,11 @@ function formatAttempts(num) {
  */
 export function getEnhancementTargetLevelFromUI(panel) {
     const directInput = panel?.querySelector('[class*="enhancingMaxLevelInputContainer"] input');
+    const targetLevelLabels = getTargetLevelLabels();
     const input =
         directInput ||
         Array.from(panel?.querySelectorAll('*') || [])
-            .find((element) => element.children.length === 0 && element.textContent.trim() === 'Target Level')
+            .find((element) => element.children.length === 0 && targetLevelLabels.has(element.textContent.trim()))
             ?.parentElement?.querySelector('input[type="number"], input[type="text"]');
 
     const targetLevel = Number.parseInt(input?.value || '', 10);
@@ -355,7 +385,7 @@ function generateCostsByLevelTable(
                 materialCost += itemCost;
 
                 // Store breakdown by item name with quantity and unit price
-                const itemName = itemDetail?.name || cost.itemHrid;
+                const itemName = getItemName(cost.itemHrid, itemDetail?.name || cost.itemHrid);
                 materialBreakdown[itemName] = {
                     cost: itemCost,
                     quantity: quantity,
@@ -381,7 +411,7 @@ function generateCostsByLevelTable(
             }
 
             protectionCost = calc.protectionCount * protectionPrice;
-            const protectionName = protectionItemDetail?.name || protectionItemHrid;
+            const protectionName = getItemName(protectionItemHrid, protectionItemDetail?.name || protectionItemHrid);
             materialBreakdown[protectionName] = {
                 cost: protectionCost,
                 quantity: calc.protectionCount,
@@ -587,9 +617,10 @@ function generateCostsByLevelTable(
  * @returns {number} Protect from level (0 = never, 1-20)
  */
 export function getProtectFromLevelFromUI(panel) {
-    // Find the "Protect From Level" input
+    // Find the "Protect From Level" input (zh: 保护起始等级)
+    const protectFromLevelLabels = getProtectFromLevelLabels();
     const labels = Array.from(panel.querySelectorAll('*')).filter(
-        (el) => el.textContent.trim() === 'Protect From Level' && el.children.length === 0
+        (el) => protectFromLevelLabels.has(el.textContent.trim()) && el.children.length === 0
     );
 
     if (labels.length > 0) {
@@ -643,7 +674,7 @@ function formatEnhancementDisplay(
 
     // Item info
     lines.push(
-        `<div style="color: #ddd; margin-bottom: 12px; font-weight: bold;">${itemDetails.name} <span style="color: #888;">${t('enhancementDisplay.itemLevelSuffix', { itemLevel: itemDetails.itemLevel })}</span></div>`
+        `<div style="color: #ddd; margin-bottom: 12px; font-weight: bold;">${getItemName(itemDetails.hrid, itemDetails.name)} <span style="color: #888;">${t('enhancementDisplay.itemLevelSuffix', { itemLevel: itemDetails.itemLevel })}</span></div>`
     );
 
     // Current stats section
@@ -664,25 +695,27 @@ function formatEnhancementDisplay(
         `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.houseLabel')}</span> ${t('enhancementDisplay.observatoryLevelValue', { level: params.houseLevel })}</div>`
     );
 
+    const slotName = (slot) => getItemName(slot.itemHrid, slot.name);
+
     // Display each equipment slot
     if (params.toolSlot) {
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.toolLabel')}</span> ${params.toolSlot.name}${params.toolSlot.enhancementLevel > 0 ? ` +${params.toolSlot.enhancementLevel}` : ''}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.toolLabel')}</span> ${slotName(params.toolSlot)}${params.toolSlot.enhancementLevel > 0 ? ` +${params.toolSlot.enhancementLevel}` : ''}</div>`
         );
     }
     if (params.bodySlot) {
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.bodyLabel')}</span> ${params.bodySlot.name}${params.bodySlot.enhancementLevel > 0 ? ` +${params.bodySlot.enhancementLevel}` : ''}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.bodyLabel')}</span> ${slotName(params.bodySlot)}${params.bodySlot.enhancementLevel > 0 ? ` +${params.bodySlot.enhancementLevel}` : ''}</div>`
         );
     }
     if (params.legsSlot) {
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.legsLabel')}</span> ${params.legsSlot.name}${params.legsSlot.enhancementLevel > 0 ? ` +${params.legsSlot.enhancementLevel}` : ''}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.legsLabel')}</span> ${slotName(params.legsSlot)}${params.legsSlot.enhancementLevel > 0 ? ` +${params.legsSlot.enhancementLevel}` : ''}</div>`
         );
     }
     if (params.handsSlot) {
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.handsLabel')}</span> ${params.handsSlot.name}${params.handsSlot.enhancementLevel > 0 ? ` +${params.handsSlot.enhancementLevel}` : ''}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.handsLabel')}</span> ${slotName(params.handsSlot)}${params.handsSlot.enhancementLevel > 0 ? ` +${params.handsSlot.enhancementLevel}` : ''}</div>`
         );
     }
     lines.push('</div>');
@@ -750,7 +783,8 @@ function formatEnhancementDisplay(
             );
             const successSlots = (params.slotBreakdown || []).filter((s) => s.success > 0);
             for (const slot of successSlots) {
-                const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                const label =
+                    slot.enhancementLevel > 0 ? `${slotName(slot)} +${slot.enhancementLevel}` : slotName(slot);
                 lines.push(
                     `<div style="color: #88ff88; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.success.toFixed(2)}%</div>`
                 );
@@ -791,7 +825,8 @@ function formatEnhancementDisplay(
             );
             const speedSlots = (params.slotBreakdown || []).filter((s) => s.speed > 0);
             for (const slot of speedSlots) {
-                const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                const label =
+                    slot.enhancementLevel > 0 ? `${slotName(slot)} +${slot.enhancementLevel}` : slotName(slot);
                 lines.push(
                     `<div style="color: #aaddff; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.speed.toFixed(1)}%</div>`
                 );
@@ -863,7 +898,8 @@ function formatEnhancementDisplay(
             );
             const rfSlots = (params.slotBreakdown || []).filter((s) => s.rareFind > 0);
             for (const slot of rfSlots) {
-                const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                const label =
+                    slot.enhancementLevel > 0 ? `${slotName(slot)} +${slot.enhancementLevel}` : slotName(slot);
                 lines.push(
                     `<div style="color: #ffaa55; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.rareFind.toFixed(1)}%</div>`
                 );
@@ -903,7 +939,8 @@ function formatEnhancementDisplay(
             );
             const expSlots = (params.slotBreakdown || []).filter((s) => s.experience > 0);
             for (const slot of expSlots) {
-                const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                const label =
+                    slot.enhancementLevel > 0 ? `${slotName(slot)} +${slot.enhancementLevel}` : slotName(slot);
                 lines.push(
                     `<div style="color: #ffdd88; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.experience.toFixed(1)}%</div>`
                 );
@@ -962,7 +999,7 @@ function formatEnhancementDisplay(
         // Materials per attempt with pricing
         enhancementCosts.forEach((cost) => {
             const itemDetail = gameData.itemDetailMap[cost.itemHrid];
-            const itemName = itemDetail ? itemDetail.name : cost.itemHrid;
+            const itemName = itemDetail ? getItemName(cost.itemHrid, itemDetail.name) : cost.itemHrid;
 
             // Get price
             let itemPrice = 0;
@@ -992,7 +1029,10 @@ function formatEnhancementDisplay(
         if (protectFromLevel >= 2) {
             if (protectionItemHrid) {
                 const protectionItemDetail = gameData.itemDetailMap[protectionItemHrid];
-                const protectionItemName = protectionItemDetail?.name || protectionItemHrid;
+                const protectionItemName = getItemName(
+                    protectionItemHrid,
+                    protectionItemDetail?.name || protectionItemHrid
+                );
 
                 // Get protection item price
                 let protectionPrice = 0;
@@ -1058,7 +1098,8 @@ function findCurrentActionTab(panel) {
 
     while (current && depth < maxDepth) {
         const buttons = Array.from(current.querySelectorAll('button[role="tab"]'));
-        const currentActionTab = buttons.find((btn) => btn.textContent.trim() === 'Current Action');
+        const currentActionTabLabels = getCurrentActionTabLabels();
+        const currentActionTab = buttons.find((btn) => currentActionTabLabels.has(btn.textContent.trim()));
 
         if (currentActionTab) {
             // Cache it on the panel for future lookups
