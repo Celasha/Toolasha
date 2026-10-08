@@ -68,25 +68,7 @@ const CSS_CLASS = 'mwi-guild-credit-value';
 // main chunk), which caps the exchange modal's displayed "You give (Max: ...)" value.
 const MAX_GUILD_CREDIT_EXCHANGE_BATCH_COUNT = 1_000_000;
 
-/**
- * Find the give-item's conversion rate for the credit type currently open in the exchange
- * modal. Deliberately independent of market price data (unlike `rows` in _render, which
- * skips unpriced items) since filling "ALL" shouldn't depend on the item having a listing.
- * @param {Object} itemDetailMap
- * @param {string} creditHrid
- * @param {string} selectedItemName
- * @returns {{hrid: string, itemCount: number}|null}
- */
-function findExchangeConversion(itemDetailMap, creditHrid, selectedItemName) {
-    for (const [hrid, item] of Object.entries(itemDetailMap)) {
-        if (item.name !== selectedItemName) continue;
-        const conv = (item.guildCreditConversions || []).find((c) => c.creditItemHrid === creditHrid);
-        if (conv) return { hrid, itemCount: conv.itemCount };
-    }
-    return null;
-}
-
-export { findExchangeConversion, MAX_GUILD_CREDIT_EXCHANGE_BATCH_COUNT };
+export { MAX_GUILD_CREDIT_EXCHANGE_BATCH_COUNT };
 
 /**
  * Build the "Gold cost per credit" ranking rows for a single credit type: one row per
