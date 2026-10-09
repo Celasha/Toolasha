@@ -12,6 +12,7 @@ import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
 import domObserver from '../../core/dom-observer.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 /**
  * TooltipConsumables class handles injecting consumable stats into item tooltips
@@ -184,6 +185,10 @@ class TooltipConsumables {
         const map = new Map();
         for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
             map.set(item.name, hrid);
+            const localizedName = getItemName(hrid, item.name);
+            if (localizedName && localizedName !== item.name) {
+                map.set(localizedName, hrid);
+            }
         }
 
         // Only cache if we got actual entries (avoid poisoning with empty map)
