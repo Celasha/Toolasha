@@ -560,13 +560,13 @@ describe('buildEnhancementTooltipHTML - Crafting Cost / Enhancing Cost subtotals
         expect(craftingIndex).toBeGreaterThan(-1);
         expect(enhancingIndex).toBeGreaterThan(-1);
 
-        // Crafting Cost == the base item's own ask/bid price (1.0M / 900.0K).
-        expect(html.slice(craftingIndex, craftingIndex + 200)).toContain('1.0M');
-        expect(html.slice(craftingIndex, craftingIndex + 200)).toContain('900.0K');
+        // Crafting Cost == the base item's own ask/bid price (1.00M / 900.00K).
+        expect(html.slice(craftingIndex, craftingIndex + 200)).toContain('1.00M');
+        expect(html.slice(craftingIndex, craftingIndex + 200)).toContain('900.00K');
 
         // Enhancing Cost == materials only (10 * 200K ask / 10 * 180K bid), excluding the base item.
-        expect(html.slice(enhancingIndex, enhancingIndex + 200)).toContain('2.0M');
-        expect(html.slice(enhancingIndex, enhancingIndex + 200)).toContain('1.8M');
+        expect(html.slice(enhancingIndex, enhancingIndex + 200)).toContain('2.00M');
+        expect(html.slice(enhancingIndex, enhancingIndex + 200)).toContain('1.80M');
     });
 
     test('does not add the subtotal split to the mirror-optimized breakdown (no separate base item there)', () => {

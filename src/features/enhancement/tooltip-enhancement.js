@@ -1224,8 +1224,8 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
         html += `<td style="padding: 2px 4px; font-weight: bold;">${t('tooltipEnhancement.totalLabel')}</td>`;
         html += '<td style="padding: 2px 4px; text-align: center;"></td>';
-        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatKMB(totalAsk)}${buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
-        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatKMB(totalBid)}${buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatLargeNumber(totalAsk)}${buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatLargeNumber(totalBid)}${buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
         html += '</tr>';
 
         // Item rows
@@ -1233,8 +1233,8 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             html += '<tr>';
             html += `<td style="padding: 2px 4px;">${row.name}</td>`;
             html += `<td style="padding: 2px 4px; text-align: center;">${formatKMB(row.count)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.askPrice)}${buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.bidPrice)}${buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(row.askPrice)}${buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(row.bidPrice)}${buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
             html += '</tr>';
         }
     } else {
@@ -1323,8 +1323,8 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
         html += `<td style="padding: 2px 4px; font-weight: bold;">${t('tooltipEnhancement.totalLabel')}</td>`;
         html += `<td style="padding: 2px 4px; text-align: center;">${formatKMB(totalCount)}</td>`;
-        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatKMB(totalAsk)}${buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
-        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatKMB(totalBid)}${buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatLargeNumber(totalAsk)}${buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatLargeNumber(totalBid)}${buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
         html += '</tr>';
 
         // Crafting Cost / Enhancing Cost subtotals - the base item row above is the crafting
@@ -1338,14 +1338,14 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         html += '<tr>';
         html += `<td style="padding: 2px 4px;">${t('tooltipEnhancement.craftingCostSubtotalLabel')}</td>`;
         html += '<td style="padding: 2px 4px; text-align: center;"></td>';
-        html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(craftingCostAsk)}</td>`;
-        html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(craftingCostBid)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(craftingCostAsk)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(craftingCostBid)}</td>`;
         html += '</tr>';
         html += '<tr>';
         html += `<td style="padding: 2px 4px;">${t('tooltipEnhancement.enhancingCostSubtotalLabel')}</td>`;
         html += '<td style="padding: 2px 4px; text-align: center;"></td>';
-        html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(enhancingCostAsk)}</td>`;
-        html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(enhancingCostBid)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(enhancingCostAsk)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(enhancingCostBid)}</td>`;
         html += '</tr>';
 
         // Item rows
@@ -1354,12 +1354,12 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             html += `<td style="padding: 2px 4px;">${row.name}</td>`;
             if (row.isCoin) {
                 html += '<td style="padding: 2px 4px; text-align: center;">—</td>';
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.count)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.count)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(row.count)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(row.count)}</td>`;
             } else {
                 html += `<td style="padding: 2px 4px; text-align: center;">${formatKMB(row.count)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.askPrice)}${buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.bidPrice)}${buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(row.askPrice)}${buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatLargeNumber(row.bidPrice)}${buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
             }
             html += '</tr>';
         }
@@ -1447,9 +1447,10 @@ export function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
 
     const showPrices = config.getSetting('itemTooltip_prices');
     const useKMB = isAbbreviationEnabled();
-    const fmt = (n) => (n != null && n > 0 ? (useKMB ? formatLargeNumber(n, 0) : numberFormatter(Math.round(n))) : '—');
+    const fmtXp = (n) =>
+        n != null && n > 0 ? (useKMB ? formatLargeNumber(n, 0) : numberFormatter(Math.round(n))) : '—';
     const fmtCost = (n) =>
-        n != null && n > 0 ? (useKMB ? formatLargeNumber(n, 1) : numberFormatter(Math.round(n))) : '—';
+        n != null && n > 0 ? (useKMB ? formatLargeNumber(n) : numberFormatter(Math.round(n))) : '—';
 
     const rows = [];
     for (const level of MILESTONE_LEVELS) {
@@ -1460,14 +1461,14 @@ export function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
         const enhanceCost = fmtCost(
             Math.max(0, (data.optimalStrategy.totalCost || 0) - (data.optimalStrategy.baseCost || 0))
         );
-        const xp = data.totalExpectedXP !== null ? fmt(Math.round(data.totalExpectedXP)) : '—';
+        const xp = data.totalExpectedXP !== null ? fmtXp(Math.round(data.totalExpectedXP)) : '—';
 
         let ask = '—';
         let bid = '—';
         if (showPrices) {
             const prices = getItemPrices(itemHrid, level);
-            ask = fmt(prices?.ask) + buildOutlierPriceWarningIcon(prices?.ask > 0 && prices.askOutlier);
-            bid = fmt(prices?.bid) + buildOutlierPriceWarningIcon(prices?.bid > 0 && prices.bidOutlier);
+            ask = fmtCost(prices?.ask) + buildOutlierPriceWarningIcon(prices?.ask > 0 && prices.askOutlier);
+            bid = fmtCost(prices?.bid) + buildOutlierPriceWarningIcon(prices?.bid > 0 && prices.bidOutlier);
         }
 
         rows.push({ level, craftCost, enhanceCost, xp, ask, bid });
