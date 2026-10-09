@@ -43,6 +43,7 @@ import {
 import { calculateEnhancementPredictions } from '../enhancement/enhancement-xp.js';
 import { BASE_SUCCESS_RATES, isMathJsAvailable } from '../../utils/enhancement-calculator.js';
 import { translateGameName, getActionName, getItemName } from '../../utils/game-i18n.js';
+import { getItemHridFromName } from '../../utils/game-lookups.js';
 
 /**
  * Format a completion Date as a clock string, respecting user's time/date format settings.
@@ -2474,13 +2475,20 @@ export class ActionTimeDisplay {
             // The queue renders the game's translated action name in non-English locales,
             // so compare both names plus their ★ ↔ (R) variants (same as main display).
             if (!actionNameMatches(a.actionHrid, actionDetails.name, actionNameFromDiv)) {
-                const itemHridFromDiv = itemNameFromDiv
-                    ? `/items/${itemNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`
-                    : `/items/${actionNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`;
+                // The item part of the label is likewise localized; resolve it through the
+                // dual-name index first and keep the English slug form only as a fallback
+                // for names the index cannot resolve.
+                const itemHridCandidates = new Set();
+                const resolvedItemHrid = itemNameFromDiv ? getItemHridFromName(itemNameFromDiv) : null;
+                if (resolvedItemHrid) {
+                    itemHridCandidates.add(resolvedItemHrid);
+                }
+                const slugSource = itemNameFromDiv || actionNameFromDiv;
+                itemHridCandidates.add(`/items/${slugSource.toLowerCase().replace(/\s+/g, '_')}`);
                 const outputItems = actionDetails.outputItems || [];
                 const dropTable = actionDetails.dropTable || [];
-                const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDiv);
-                const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDiv);
+                const matchesOutput = outputItems.some((item) => itemHridCandidates.has(item.itemHrid));
+                const matchesDrop = dropTable.some((drop) => itemHridCandidates.has(drop.itemHrid));
 
                 if (!matchesOutput && !matchesDrop) {
                     return false;

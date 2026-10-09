@@ -342,6 +342,21 @@ describe('ActionTimeDisplay locale-aware queue/header matching (#28)', () => {
         expect(matched).toBe(cachedActions[0]);
     });
 
+    test('scenario 6 (ZH): output-item fallback resolves localized item names via the dual-name index', () => {
+        // 「Coinify XL」matches neither the English data name nor the translation, so the
+        // actionNameMatches gate fails. The DOM item name 「林中精华」 must resolve through
+        // getItemHridFromName to hit outputItems; the old slug fallback built
+        // '/items/林中精华', which can never match on a zh client.
+        seedChineseTranslations();
+        actionDetailsMap['/actions/alchemy/coinify'].outputItems = [{ itemHrid: '/items/foraging_essence' }];
+        const cachedActions = [{ id: 7, actionHrid: '/actions/alchemy/coinify', primaryItemHash: null }];
+        const div = makeQueueDiv('#7Coinify XL：林中精华');
+
+        const matched = instance.matchActionFromDiv(div, cachedActions);
+
+        expect(matched).toBe(cachedActions[0]);
+    });
+
     test('EN enhancing entry still matches via the slug-built HRID fallback', () => {
         const cachedActions = [
             {
