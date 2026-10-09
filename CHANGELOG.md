@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.8.1](https://github.com/Celasha/Toolasha/compare/v3.8.0...v3.8.1) (2026-10-09)
+
+### Bug Fixes
+
+- stop Toolasha's inventory tab layout from swallowing other userscripts' elements ([9abedce](https://github.com/Celasha/Toolasha/commit/9abedce1f1457beee8414c845f25ada4fb55fca7))
+
 ## [3.8.0](https://github.com/Celasha/Toolasha/compare/v3.7.2...v3.8.0) (2026-10-09)
 
 ### Features
