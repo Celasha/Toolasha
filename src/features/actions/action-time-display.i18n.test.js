@@ -246,7 +246,11 @@ describe('ActionTimeDisplay locale-aware queue/header matching (#28)', () => {
 
     test('scenario 1 (EN baseline): queue entry "Coinify: Foraging Essence" matches via English names', () => {
         const cachedActions = [
-            { id: 1, actionHrid: '/actions/alchemy/coinify', primaryItemHash: '/item_locations/inventory::/items/foraging_essence::0' },
+            {
+                id: 1,
+                actionHrid: '/actions/alchemy/coinify',
+                primaryItemHash: '/item_locations/inventory::/items/foraging_essence::0',
+            },
         ];
         const div = makeQueueDiv('#3Coinify: Foraging Essence');
 
@@ -299,7 +303,11 @@ describe('ActionTimeDisplay locale-aware queue/header matching (#28)', () => {
     test('scenario 3 (ZH full-width colon): queue entry "炼金：林中精华" matches via translated names', () => {
         seedChineseTranslations();
         const cachedActions = [
-            { id: 1, actionHrid: '/actions/alchemy/coinify', primaryItemHash: '/item_locations/inventory::/items/foraging_essence::0' },
+            {
+                id: 1,
+                actionHrid: '/actions/alchemy/coinify',
+                primaryItemHash: '/item_locations/inventory::/items/foraging_essence::0',
+            },
         ];
         const div = makeQueueDiv('#3炼金：林中精华');
 
@@ -321,7 +329,11 @@ describe('ActionTimeDisplay locale-aware queue/header matching (#28)', () => {
     test('scenario 5 (ZH enhancing): queue entry "奶酪剑 +3" matches via primaryItemHash item names', () => {
         seedChineseTranslations();
         const cachedActions = [
-            { id: 3, actionHrid: '/actions/enhancing/enhance', primaryItemHash: '/item_locations/inventory::/items/cheese_sword::3' },
+            {
+                id: 3,
+                actionHrid: '/actions/enhancing/enhance',
+                primaryItemHash: '/item_locations/inventory::/items/cheese_sword::3',
+            },
         ];
         const div = makeQueueDiv('#4奶酪剑 +3', { enhancing: true });
 
@@ -332,7 +344,11 @@ describe('ActionTimeDisplay locale-aware queue/header matching (#28)', () => {
 
     test('EN enhancing entry still matches via the slug-built HRID fallback', () => {
         const cachedActions = [
-            { id: 3, actionHrid: '/actions/enhancing/enhance', primaryItemHash: '/item_locations/inventory::/items/cheese_sword::3' },
+            {
+                id: 3,
+                actionHrid: '/actions/enhancing/enhance',
+                primaryItemHash: '/item_locations/inventory::/items/cheese_sword::3',
+            },
         ];
         const div = makeQueueDiv('#4Cheese Sword +3', { enhancing: true });
 
@@ -343,8 +359,16 @@ describe('ActionTimeDisplay locale-aware queue/header matching (#28)', () => {
 
     test('usedActionIds still prevents the same cached action from matching two divs', () => {
         const cachedActions = [
-            { id: 1, actionHrid: '/actions/alchemy/coinify', primaryItemHash: '/item_locations/inventory::/items/foraging_essence::0' },
-            { id: 5, actionHrid: '/actions/alchemy/coinify', primaryItemHash: '/item_locations/inventory::/items/foraging_essence::0' },
+            {
+                id: 1,
+                actionHrid: '/actions/alchemy/coinify',
+                primaryItemHash: '/item_locations/inventory::/items/foraging_essence::0',
+            },
+            {
+                id: 5,
+                actionHrid: '/actions/alchemy/coinify',
+                primaryItemHash: '/item_locations/inventory::/items/foraging_essence::0',
+            },
         ];
         const divA = makeQueueDiv('#1Coinify: Foraging Essence');
         const divB = makeQueueDiv('#2Coinify: Foraging Essence');
