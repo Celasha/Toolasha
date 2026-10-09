@@ -2,17 +2,15 @@
 
 ## [3.7.1](https://github.com/Celasha/Toolasha/compare/v3.7.0...v3.7.1) (2026-10-09)
 
-
 ### Bug Fixes
 
-* dedupe Loot & XP Log history by entry identity, not characterActionId ([f3608f0](https://github.com/Celasha/Toolasha/commit/f3608f0ddf515d423daf45723e045869bcc77653))
-* **i18n:** strip leaked i18n namespace residue from chat marker prefixes ([#743](https://github.com/Celasha/Toolasha/issues/743)) ([b467e4b](https://github.com/Celasha/Toolasha/commit/b467e4bf612555995c4e7afee3999863474ad529))
-* match trailing space the client bakes into chat timestamp spans ([2787725](https://github.com/Celasha/Toolasha/commit/2787725e85df524387962de54d117181f137444b))
-
+- dedupe Loot & XP Log history by entry identity, not characterActionId ([f3608f0](https://github.com/Celasha/Toolasha/commit/f3608f0ddf515d423daf45723e045869bcc77653))
+- **i18n:** strip leaked i18n namespace residue from chat marker prefixes ([#743](https://github.com/Celasha/Toolasha/issues/743)) ([b467e4b](https://github.com/Celasha/Toolasha/commit/b467e4bf612555995c4e7afee3999863474ad529))
+- match trailing space the client bakes into chat timestamp spans ([2787725](https://github.com/Celasha/Toolasha/commit/2787725e85df524387962de54d117181f137444b))
 
 ### Build System
 
-* dev, build. ([b467e4b](https://github.com/Celasha/Toolasha/commit/b467e4bf612555995c4e7afee3999863474ad529))
+- dev, build. ([b467e4b](https://github.com/Celasha/Toolasha/commit/b467e4bf612555995c4e7afee3999863474ad529))
 
 ## [3.7.0](https://github.com/Celasha/Toolasha/compare/v3.6.3...v3.7.0) (2026-10-08)
 
