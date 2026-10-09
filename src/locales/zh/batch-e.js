@@ -390,6 +390,8 @@ export default {
         progressSuffix: (p) => `（${p.current}/${p.goal}）`,
         totalNonCombatLabel: '合计（非战斗）',
         characterInfoNotAvailable: '角色信息不可用',
+        zoneProgressHeader: '区域任务进度',
+        zoneProgressRowValue: (p) => `约 ${p.fights} 场战斗 | ${p.time}（瓶颈：${p.bottleneckName}）`,
     },
     actionFilter: {
         modeLabel: (p) => `模式：${p.mode}`,

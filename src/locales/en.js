@@ -2127,6 +2127,8 @@ export default {
         progressSuffix: (p) => ` (${p.current}/${p.goal})`,
         totalNonCombatLabel: 'Total (non-combat)',
         characterInfoNotAvailable: 'Character info not available',
+        zoneProgressHeader: 'Zone Task Progress',
+        zoneProgressRowValue: (p) => `~${p.fights} fights | ${p.time} (bottleneck: ${p.bottleneckName})`,
     },
     combatSimIntegrationMetz: {
         noCharacterDataAlert:

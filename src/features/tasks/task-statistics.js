@@ -11,9 +11,29 @@ import domObserver from '../../core/dom-observer.js';
 import marketAPI from '../../api/marketplace.js';
 import { calculateTaskProfit, calculateTaskTokenValue, calculateTaskRewardValue } from './task-profit-calculator.js';
 import { calculateTaskCompletionSeconds } from './task-profit-display.js';
+import { computeAllZoneProgress } from './task-zone-progress.js';
 import { timeReadable, formatKMB, formatDateTime } from '../../utils/formatters.js';
 import { getActionName, getMonsterName } from '../../utils/game-i18n.js';
 import { TOOLASHA } from '../../utils/selectors.js';
+
+/**
+ * Find the game's root React component instance that exposes handleGoToAction, by walking
+ * the fiber tree. Same pattern used by crafting-plan-display.js / pinned-actions-page.js.
+ */
+function getGameObject() {
+    const root = document.getElementById('root');
+    const rootFiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+    if (!rootFiber) return null;
+
+    const stack = [rootFiber];
+    while (stack.length > 0) {
+        const fiber = stack.pop();
+        if (typeof fiber?.stateNode?.handleGoToAction === 'function') return fiber.stateNode;
+        if (fiber?.sibling) stack.push(fiber.sibling);
+        if (fiber?.child) stack.push(fiber.child);
+    }
+    return null;
+}
 
 class TaskStatistics {
     constructor() {
@@ -127,11 +147,13 @@ class TaskStatistics {
         const overflowData = this.calculateOverflowTime();
         const slotStatus = this.calculateSlotStatus();
         const rewardsSummary = await this.calculateRewardsSummary();
+        const zoneProgress = await computeAllZoneProgress();
 
         return {
             overflow: overflowData,
             slots: slotStatus,
             rewards: rewardsSummary,
+            zoneProgress,
         };
     }
 
@@ -409,6 +431,9 @@ class TaskStatistics {
         popup.appendChild(this.createRewardsSection(statsData.rewards, textColor));
         popup.appendChild(this.createActionProfitSection(statsData.rewards));
         popup.appendChild(this.createCompletionTimeSection(statsData.rewards, textColor));
+        if (statsData.zoneProgress.length > 0) {
+            popup.appendChild(this.createZoneProgressSection(statsData.zoneProgress, textColor));
+        }
 
         // Close on overlay click
         overlay.onclick = (e) => {
@@ -694,6 +719,43 @@ class TaskStatistics {
                 : t('combatSimUi.notAvailableLabel');
 
         section.appendChild(this.createRow(t('taskStatistics.totalNonCombatLabel'), totalTimeStr, config.COLOR_INFO));
+
+        return section;
+    }
+
+    /**
+     * Create per-zone combat task progress section: for every zone with at least one active
+     * combat task, shows the total fights needed to clear everything there and the time that
+     * will take. Clicking a row navigates to that zone with the fight count pre-filled.
+     * @param {Array<Object>} zoneProgress - Per-zone progress data from computeAllZoneProgress()
+     * @param {string} textColor - Text color
+     * @returns {HTMLElement} Section element
+     */
+    createZoneProgressSection(zoneProgress, textColor) {
+        const section = this.createSection(t('taskStatistics.zoneProgressHeader'));
+
+        for (const zone of zoneProgress) {
+            const timeStr = Number.isFinite(zone.hoursNeeded)
+                ? timeReadable(Math.round(zone.hoursNeeded * 3600))
+                : '???';
+            const fightsStr = Number.isFinite(zone.fightsNeeded) ? formatKMB(zone.fightsNeeded) : '???';
+            const value = t('taskStatistics.zoneProgressRowValue', {
+                fights: fightsStr,
+                time: timeStr,
+                bottleneckName: zone.bottleneckName,
+            });
+
+            const row = this.createRow(zone.zoneName, value, textColor);
+            row.style.cursor = 'pointer';
+            row.onclick = () => {
+                this.closePopup();
+                const game = getGameObject();
+                if (!game?.handleGoToAction) return;
+                const numActions = Number.isFinite(zone.fightsNeeded) ? Math.round(zone.fightsNeeded) : undefined;
+                game.handleGoToAction(zone.zoneHrid, numActions);
+            };
+            section.appendChild(row);
+        }
 
         return section;
     }

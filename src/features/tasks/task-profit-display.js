@@ -12,6 +12,7 @@ import webSocketHook from '../../core/websocket.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { findActionInput } from '../../utils/action-panel-helper.js';
 import { calculateTaskProfit, calculateTaskRewardValue } from './task-profit-calculator.js';
+import { computeZoneBottleneck } from './task-zone-bottleneck.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { timeReadable, formatPercentage, formatKMB } from '../../utils/formatters.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
@@ -1480,10 +1481,8 @@ class TaskProfitDisplay {
             }
 
             if (zoneTasks.length > 1) {
-                const bottleneck = zoneTasks.reduce((a, b) => (a.hoursNeeded > b.hoursNeeded ? a : b));
+                const bottleneck = computeZoneBottleneck(zoneTasks, simResult);
                 const totalSeconds = Math.round(bottleneck.hoursNeeded * 3600);
-                const totalFightsPerHour = Object.values(simResult.deaths).reduce((s, v) => s + v, 0);
-                const fightsNeeded = Math.round(totalFightsPerHour * bottleneck.hoursNeeded);
 
                 const summary = document.createElement('div');
                 summary.style.cssText =
@@ -1495,9 +1494,9 @@ class TaskProfitDisplay {
                 );
                 summary.textContent = t('taskProfitDisplay.zoneSummaryLine', {
                     zoneName,
-                    fights: formatKMB(fightsNeeded),
+                    fights: formatKMB(bottleneck.fightsNeeded),
                     time: timeReadable(totalSeconds),
-                    bottleneckName: getMonsterName(bottleneck.hrid, bottleneck.name),
+                    bottleneckName: getMonsterName(bottleneck.bottleneckHrid, bottleneck.bottleneckName),
                 });
                 container.appendChild(summary);
             }
