@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.8.1
+ * Version: 3.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, marketplaceSession_js, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
+(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, marketplaceSession_js, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
     'use strict';
 
     /**
@@ -455,7 +455,7 @@
      * Get game object via React fiber tree traversal
      * @returns {Object|null} Game component instance
      */
-    function getGameObject$1() {
+    function getGameObject$2() {
         const rootEl = document.getElementById('root');
         const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
         if (!rootFiber) return null;
@@ -516,7 +516,7 @@
      * @returns {boolean} True if navigation was attempted, false if game API unavailable
      */
     function navigateToItem(itemHrid) {
-        const game = getGameObject$1();
+        const game = getGameObject$2();
         if (!game) {
             return false;
         }
@@ -630,7 +630,7 @@
      * Get game object via React fiber tree traversal
      * @returns {Object|null} Game component instance
      */
-    function getGameObject() {
+    function getGameObject$1() {
         const rootEl = document.getElementById('root');
         const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
         if (!rootFiber) return null;
@@ -844,7 +844,7 @@
             // Item Dictionary button
             const dictBtn = this.createNavButton('Item Dictionary', () => {
                 this.dismissPopover();
-                const game = getGameObject();
+                const game = getGameObject$1();
                 const itemDetails = dataManager.getItemDetails(itemHrid);
                 if (game?.handleOpenItemDictionary && itemDetails) {
                     game.handleOpenItemDictionary(itemHrid);
@@ -947,7 +947,7 @@
             actionMenu.appendChild(viewActionBtn);
 
             const dictBtn = this.createNavButton('Item Dictionary', () => {
-                const game = getGameObject();
+                const game = getGameObject$1();
                 const itemDetails = dataManager.getItemDetails(itemHrid);
                 if (game?.handleOpenItemDictionary && itemDetails) {
                     game.handleOpenItemDictionary(itemHrid);
@@ -992,12 +992,18 @@
             }
 
             if (this.itemNameToHridCache && this.itemNameToHridCacheSource === initData.itemDetailMap) {
-                return this.itemNameToHridCache.get(itemName) || null;
+                return this.lookupItemHridFromCache(this.itemNameToHridCache, itemName);
             }
 
             const map = new Map();
             for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
                 map.set(item.name, hrid);
+                // Also register the localized name so tiles rendered in the game's
+                // non-English locale (e.g. Chinese) can resolve the HRID.
+                const localizedName = getItemName(hrid, item.name);
+                if (localizedName && localizedName !== item.name) {
+                    map.set(localizedName, hrid);
+                }
             }
 
             if (map.size > 0) {
@@ -1005,7 +1011,27 @@
                 this.itemNameToHridCacheSource = initData.itemDetailMap;
             }
 
-            return map.get(itemName) || null;
+            return this.lookupItemHridFromCache(map, itemName);
+        }
+
+        /**
+         * Query the name→HRID cache: exact match first, then a ★ → (R)
+         * substitution for refined items ("Griffin Bulwark ★" → "Griffin Bulwark (R)").
+         * @param {Map<string, string>} map
+         * @param {string} itemName
+         * @returns {string|null}
+         */
+        lookupItemHridFromCache(map, itemName) {
+            if (map.has(itemName)) {
+                return map.get(itemName);
+            }
+            if (itemName.includes('★')) {
+                const refinedVariant = itemName.replace(/\s*★/g, ' (R)').replace(/\s+/g, ' ').trim();
+                if (map.has(refinedVariant)) {
+                    return map.get(refinedVariant);
+                }
+            }
+            return null;
         }
 
         /**
@@ -2628,6 +2654,249 @@ ${starCSS}
     };
 
     /**
+     * Marketplace Buy Modal Autofill Utility
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
+     */
+
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs, plus locale-independent
+     * resolution via icon sprite references (see below) - prefer the sprite-based functions
+     * over the name-based ones wherever a `<use>` element is reachable, since display names are
+     * translated client-side and the name-based functions below only ever match the client's
+     * English-language data, silently failing on any other game locale.
+     */
+
+
+    /**
+     * Extract the last path segment from an hrid, e.g. "/actions/gathering/milking" -> "milking".
+     * This is the fragment MWI's sprite sheets key icons by, for both actions and skills.
+     * @param {string} hrid
+     * @returns {string}
+     */
+    function lastHridSegment(hrid) {
+        return hrid.slice(hrid.lastIndexOf('/') + 1);
+    }
+    let skillFragmentToHridMap = null;
+    let chatChannelNameToHridCache = null;
+    let chatChannelNameToHridCacheSource = null;
+
+    /**
+     * Resolve a skill HRID from its icon sprite `<use>` href (e.g.
+     * ".../skills_sprite.<hash>.svg#milking"), which is locale-independent - the href's fragment is
+     * always the skill's last hrid segment, unlike the nav bar's rendered label text.
+     * @param {string|null|undefined} href
+     * @returns {string|null}
+     */
+    function getSkillHridFromIconHref(href) {
+        if (!href || !href.includes('skills_sprite')) return null;
+        const fragment = href.split('#')[1];
+        if (!fragment) return null;
+
+        if (!skillFragmentToHridMap) {
+            skillFragmentToHridMap = new Map();
+            const gameData = dataManager.getInitClientData();
+            for (const hrid of Object.keys(gameData?.skillDetailMap || {})) {
+                skillFragmentToHridMap.set(lastHridSegment(hrid), hrid);
+            }
+        }
+
+        return skillFragmentToHridMap.get(fragment) || null;
+    }
+
+    /**
+     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
+     * @param {string} name - Original display name
+     * @returns {string[]} Array of alternate names to try (may be empty)
+     */
+    function getRefinedNameVariants(name) {
+        const variants = [];
+        if (name.includes('★')) {
+            variants.push(name.replace(/\s*★/, ' (R)'));
+        }
+        if (name.includes('(R)')) {
+            variants.push(name.replace(/\s*\(R\)/, ' ★'));
+        }
+        return variants;
+    }
+
+    /**
+     * Resolve a task card's underlying quest object (which carries actionHrid/monsterHrid directly)
+     * by walking the React fiber tree from the card's own "Go"/success button up to the component
+     * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
+     * "SkillType - TaskName" text.
+     * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
+     * @returns {Object|null} The characterQuest object, or null if not found.
+     */
+    function getQuestFromTaskCard(taskCard) {
+        const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
+        if (!goBtn) return null;
+
+        let f = getReactFiberFromElement(goBtn)?.return;
+        while (f) {
+            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                return f.memoizedProps.characterQuest;
+            }
+            f = f.return;
+        }
+        return null;
+    }
+
+    /**
+     * Find an action HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} actionName - Display name of the action
+     * @returns {string|null} Action HRID or null if not found
+     */
+    function getActionHridFromName(actionName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) {
+            return null;
+        }
+
+        // Try exact match first (English or translated)
+        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+            const displayName = getActionName(hrid, detail.name);
+            if (displayName === actionName || detail.name === actionName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(actionName)) {
+            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+                const displayName = getActionName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find an item HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} itemName - Display name of the item
+     * @returns {string|null} Item HRID or null if not found
+     */
+    function getItemHridFromName(itemName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) {
+            return null;
+        }
+
+        // Try exact match first (English or translated)
+        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+            const displayName = getItemName(hrid, detail.name);
+            if (displayName === itemName || detail.name === itemName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(itemName)) {
+            for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+                const displayName = getItemName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a chat channel HRID from a tab display name (e.g. "Party", "队伍").
+     * Chat tab labels are rendered by the game via the i18next `chatChannelTypeNames`
+     * namespace (verified against the client bundle), so the cache indexes both the
+     * English data name from `chatChannelTypeDetailMap` and the localized name.
+     * @param {string} name - Tab display name (strip trailing unread-count digits first)
+     * @returns {string|null} Channel HRID or null if not found
+     */
+    function getChatChannelHridFromName(name) {
+        if (!name) return null;
+        const detailMap = dataManager.getInitClientData()?.chatChannelTypeDetailMap;
+        if (!detailMap) return null;
+
+        if (!chatChannelNameToHridCache || chatChannelNameToHridCacheSource !== detailMap) {
+            const map = new Map();
+            for (const [hrid, detail] of Object.entries(detailMap)) {
+                const englishName = detail?.name;
+                if (englishName) map.set(englishName, hrid);
+                const translated = translateGameName('chatChannelTypeNames', hrid, englishName || '');
+                if (translated && translated !== englishName) map.set(translated, hrid);
+            }
+            chatChannelNameToHridCache = map;
+            chatChannelNameToHridCacheSource = detailMap;
+        }
+
+        return chatChannelNameToHridCache.get(name) || null;
+    }
+
+    /**
      * Floating Panel Z-Index Manager
      * Manages bring-to-front ordering for persistent floating panels.
      * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
@@ -3888,18 +4157,25 @@ ${starCSS}
             // Strip trailing numbers (unread counts) from tab name
             const cleanName = tabName.replace(/\d+$/, '');
 
+            // Resolve against the game's channel data, matching both the English
+            // data name and the localized tab label (chatChannelTypeNames namespace),
+            // so non-English clients resolve channels too.
+            const resolved = getChatChannelHridFromName(cleanName);
+            if (resolved) return resolved;
+
+            // Fallback for before chat channel data has loaded: legacy English table.
             const nameMap = {
                 Party: '/chat_channel_types/party',
                 Guild: '/chat_channel_types/guild',
                 Local: '/chat_channel_types/local',
                 Whisper: '/chat_channel_types/whisper',
-                Global: '/chat_channel_types/global',
+                Global: '/chat_channel_types/general',
                 General: '/chat_channel_types/general',
                 Trade: '/chat_channel_types/trade',
                 Beginner: '/chat_channel_types/beginner',
                 Recruit: '/chat_channel_types/recruit',
                 Ironcow: '/chat_channel_types/ironcow',
-                Mod: '/chat_channel_types/mod',
+                Mod: '/chat_channel_types/moderator',
             };
             return nameMap[cleanName] || null;
         }
@@ -4433,9 +4709,11 @@ ${starCSS}
                         const name = btn.textContent?.trim().replace(/\d+$/, '').trim();
                         if (!name) return null;
                         if (hrid) return { hrid, name };
-                        // Tab without data-mention-channel: resolve HRID from known lists
-                        const known = CHANNELS.find((c) => c.name === name);
-                        if (known) return { hrid: known.hrid, name };
+                        // Tab without data-mention-channel: resolve the HRID from the tab's
+                        // display name via the game's channel data (English or localized),
+                        // since the hardcoded CHANNELS list is English-only and stale.
+                        const known = getChatChannelHridFromName(name);
+                        if (known) return { hrid: known, name };
                         const discovered = Array.from(this.discoveredChannels.values()).find((c) => c.name === name);
                         if (discovered) return { hrid: discovered.hrid, name };
                         return { hrid: `__label__/${name}`, name };
@@ -6117,186 +6395,6 @@ ${starCSS}
     }
 
     /**
-     * Marketplace Buy Modal Autofill Utility
-     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
-     * an instance, then drives it with startSession / arm / exitSession.
-     *
-     * Exported helpers:
-     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
-     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
-     *   createAutofillManager(observerId)
-     */
-
-    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
-    const MAX_REACT_TREE_FIBERS = 50000;
-
-    function getReactRootFiber() {
-        const rootElement = document.getElementById('root');
-        const rootContainer = rootElement?._reactRootContainer;
-        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
-    }
-
-    function findReactFiberFromRoot(element) {
-        const rootFiber = getReactRootFiber();
-        if (!rootFiber || !element) return null;
-
-        const stack = [rootFiber];
-        const visited = new Set();
-        let matchedFiber = null;
-
-        while (stack.length > 0) {
-            const fiber = stack.pop();
-            if (!fiber || visited.has(fiber)) continue;
-            visited.add(fiber);
-
-            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
-
-            if (fiber.stateNode === element) {
-                if (matchedFiber && matchedFiber !== fiber) return null;
-                matchedFiber = fiber;
-            }
-
-            if (fiber.sibling) stack.push(fiber.sibling);
-            if (fiber.child) stack.push(fiber.child);
-        }
-
-        return matchedFiber;
-    }
-
-    function getReactFiberFromElement(element) {
-        if (!element) return null;
-
-        const directFibers = new Set(
-            Object.getOwnPropertyNames(element)
-                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
-                .map((key) => element[key])
-                .filter(Boolean)
-        );
-        if (directFibers.size > 1) return null;
-        if (directFibers.size === 1) return directFibers.values().next().value;
-
-        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
-        // Resolve the exact host fiber from the public React root instead.
-        return findReactFiberFromRoot(element);
-    }
-
-    /**
-     * Game Data Lookup Utilities
-     *
-     * Centralized functions for resolving display names to HRIDs, plus locale-independent
-     * resolution via icon sprite references (see below) - prefer the sprite-based functions
-     * over the name-based ones wherever a `<use>` element is reachable, since display names are
-     * translated client-side and the name-based functions below only ever match the client's
-     * English-language data, silently failing on any other game locale.
-     */
-
-
-    /**
-     * Extract the last path segment from an hrid, e.g. "/actions/gathering/milking" -> "milking".
-     * This is the fragment MWI's sprite sheets key icons by, for both actions and skills.
-     * @param {string} hrid
-     * @returns {string}
-     */
-    function lastHridSegment(hrid) {
-        return hrid.slice(hrid.lastIndexOf('/') + 1);
-    }
-    let skillFragmentToHridMap = null;
-
-    /**
-     * Resolve a skill HRID from its icon sprite `<use>` href (e.g.
-     * ".../skills_sprite.<hash>.svg#milking"), which is locale-independent - the href's fragment is
-     * always the skill's last hrid segment, unlike the nav bar's rendered label text.
-     * @param {string|null|undefined} href
-     * @returns {string|null}
-     */
-    function getSkillHridFromIconHref(href) {
-        if (!href || !href.includes('skills_sprite')) return null;
-        const fragment = href.split('#')[1];
-        if (!fragment) return null;
-
-        if (!skillFragmentToHridMap) {
-            skillFragmentToHridMap = new Map();
-            const gameData = dataManager.getInitClientData();
-            for (const hrid of Object.keys(gameData?.skillDetailMap || {})) {
-                skillFragmentToHridMap.set(lastHridSegment(hrid), hrid);
-            }
-        }
-
-        return skillFragmentToHridMap.get(fragment) || null;
-    }
-
-    /**
-     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
-     * @param {string} name - Original display name
-     * @returns {string[]} Array of alternate names to try (may be empty)
-     */
-    function getRefinedNameVariants(name) {
-        const variants = [];
-        if (name.includes('★')) {
-            variants.push(name.replace(/\s*★/, ' (R)'));
-        }
-        if (name.includes('(R)')) {
-            variants.push(name.replace(/\s*\(R\)/, ' ★'));
-        }
-        return variants;
-    }
-
-    /**
-     * Resolve a task card's underlying quest object (which carries actionHrid/monsterHrid directly)
-     * by walking the React fiber tree from the card's own "Go"/success button up to the component
-     * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
-     * "SkillType - TaskName" text.
-     * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
-     * @returns {Object|null} The characterQuest object, or null if not found.
-     */
-    function getQuestFromTaskCard(taskCard) {
-        const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
-        if (!goBtn) return null;
-
-        let f = getReactFiberFromElement(goBtn)?.return;
-        while (f) {
-            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
-                return f.memoizedProps.characterQuest;
-            }
-            f = f.return;
-        }
-        return null;
-    }
-
-    /**
-     * Find an action HRID from its display name.
-     * Tries exact match first, then ★ ↔ (R) variants for refined items.
-     * @param {string} actionName - Display name of the action
-     * @returns {string|null} Action HRID or null if not found
-     */
-    function getActionHridFromName(actionName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) {
-            return null;
-        }
-
-        // Try exact match first (English or translated)
-        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            const displayName = getActionName(hrid, detail.name);
-            if (displayName === actionName || detail.name === actionName) {
-                return hrid;
-            }
-        }
-
-        // Try ★ ↔ (R) variants for refined items
-        for (const variant of getRefinedNameVariants(actionName)) {
-            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-                const displayName = getActionName(hrid, detail.name);
-                if (displayName === variant || detail.name === variant) {
-                    return hrid;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * Task Profit Calculator
      * Calculates total profit for gathering and production tasks
      * Includes task rewards (coins, task tokens, Purple's Gift) + action profit
@@ -6740,6 +6838,37 @@ ${starCSS}
             rewards: rewardValue,
             action: actionProfit,
             taskInfo: taskInfo,
+        };
+    }
+
+    /**
+     * Combat Zone Bottleneck
+     *
+     * Given the active combat quests mapped to one zone and that zone's combat-sim SimResult,
+     * finds the quest that takes longest to finish (the "bottleneck") and the total number of
+     * fights needed in the zone to clear every quest there, since the player keeps fighting at
+     * the zone's natural spawn mix until the slowest-progressing quest completes.
+     */
+
+    /**
+     * @param {Array<{hrid: string, name: string, remaining: number, killsPerHour: number, hoursNeeded: number}>} zoneTasks
+     *   Active combat quests mapped to this zone.
+     * @param {Object} simResult - SimResult for this zone (must have a `deaths` map: monsterHrid -> kills).
+     * @returns {{hoursNeeded: number, fightsNeeded: number, bottleneckHrid: string, bottleneckName: string}|null}
+     *   Null when there are no quests in the zone.
+     */
+    function computeZoneBottleneck(zoneTasks, simResult) {
+        if (!zoneTasks.length) return null;
+
+        const bottleneck = zoneTasks.reduce((a, b) => (a.hoursNeeded > b.hoursNeeded ? a : b));
+        const totalFightsPerHour = Object.values(simResult.deaths || {}).reduce((sum, v) => sum + v, 0);
+        const fightsNeeded = totalFightsPerHour > 0 ? Math.round(totalFightsPerHour * bottleneck.hoursNeeded) : Infinity;
+
+        return {
+            hoursNeeded: bottleneck.hoursNeeded,
+            fightsNeeded,
+            bottleneckHrid: bottleneck.hrid,
+            bottleneckName: bottleneck.name,
         };
     }
 
@@ -7311,15 +7440,24 @@ ${starCSS}
         }
 
         // Extract equipped abilities → array of { hrid, level, triggers, experience }
-        const equippedAbilities = characterData.combatUnit?.combatAbilities || [];
-        // Live per-ability XP progress (CSIM-AUD-017) - combatUnit.combatAbilities carries level only;
-        // characterAbilities is the same source AbilityBookCalculator already uses for live XP.
+        // combatUnit.combatAbilities carries no slotNumber itself, so normal-slot order is resolved
+        // against characterAbilities (the full learned-ability catalog, which does carry it) -
+        // otherwise normal slots 1-4 would be ordered however the game happened to send
+        // combatUnit.combatAbilities, which is not guaranteed to be slot order.
         const abilityExperienceByHrid = {};
+        const slotNumberByHrid = {};
         for (const ability of characterData.characterAbilities || []) {
             if (ability?.abilityHrid) {
                 abilityExperienceByHrid[ability.abilityHrid] = ability.experience || 0;
+                slotNumberByHrid[ability.abilityHrid] = ability.slotNumber;
             }
         }
+        const equippedAbilities = [...(characterData.combatUnit?.combatAbilities || [])].sort((a, b) => {
+            const slotA = slotNumberByHrid[a?.abilityHrid];
+            const slotB = slotNumberByHrid[b?.abilityHrid];
+            if (slotA == null || slotB == null) return 0;
+            return slotA - slotB;
+        });
         // Slot 0 = special ability, slots 1-4 = normal abilities
         for (let i = 0; i < 5; i++) {
             dto.abilities.push(null);
@@ -7988,7 +8126,7 @@ ${starCSS}
             const keyDetails = dataManager.getItemDetails(keyHrid);
             costs.push({
                 itemHrid: keyHrid,
-                name: keyDetails?.name || keyHrid.split('/').pop(),
+                name: getItemName(keyHrid, keyDetails?.name || keyHrid.split('/').pop()),
                 count,
                 unitCost,
                 totalCost: count * unitCost,
@@ -8041,7 +8179,10 @@ ${starCSS}
             const perHour = (total / hours) * unitValue;
             revenuePerHour += perHour;
             if (unitValue > 0) {
-                const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
+                const itemName = getItemName(
+                    itemHrid,
+                    dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop()
+                );
                 dropEntries.push({
                     name: itemName,
                     countPerHour: total / hours,
@@ -8061,7 +8202,10 @@ ${starCSS}
             const perHour = (count / hours) * unitCost;
             costPerHour += perHour;
             if (unitCost > 0) {
-                const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
+                const itemName = getItemName(
+                    itemHrid,
+                    dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop()
+                );
                 consumableEntries.push({
                     name: itemName,
                     countPerHour: count / hours,
@@ -9195,6 +9339,10 @@ ${starCSS}
                 return;
             }
 
+            // The questInfo fast path leaves monsterName null; resolve the display name from the
+            // now-known hrid so the summary line shows the localized monster name instead of "null".
+            monsterName = getMonsterName(monsterHrid, monsterMap?.[monsterHrid]?.name || monsterHrid.split('/').pop());
+
             const zoneHrid = dataManager.getCombatZoneForMonster(monsterHrid);
             if (!zoneHrid) {
                 container.innerHTML = `<span style="color:#f87171; font-size:11px;">${i18n_js.t('taskProfitDisplay.noZoneFoundForMonster')}</span>`;
@@ -9410,8 +9558,10 @@ ${starCSS}
                     }
                 )}</div>`
                 );
-                // "Purple's Gift" is the in-game item name for this bonus reward and is not translated here.
-                lines.push(`<div style="margin-left: 10px;">Purple's Gift: ${formatters_js.formatKMB(rewardValue.purpleGift)}</div>`);
+                // Resolve the bonus reward item name through game-i18n (falls back to the EN name).
+                lines.push(
+                    `<div style="margin-left: 10px;">${getItemName('/items/purples_gift', "Purple's Gift")}: ${formatters_js.formatKMB(rewardValue.purpleGift)}</div>`
+                );
                 lines.push(
                     `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${i18n_js.t(
                     'taskProfitDisplay.giftPerTaskNote',
@@ -9543,10 +9693,8 @@ ${starCSS}
                 }
 
                 if (zoneTasks.length > 1) {
-                    const bottleneck = zoneTasks.reduce((a, b) => (a.hoursNeeded > b.hoursNeeded ? a : b));
+                    const bottleneck = computeZoneBottleneck(zoneTasks, simResult);
                     const totalSeconds = Math.round(bottleneck.hoursNeeded * 3600);
-                    const totalFightsPerHour = Object.values(simResult.deaths).reduce((s, v) => s + v, 0);
-                    const fightsNeeded = Math.round(totalFightsPerHour * bottleneck.hoursNeeded);
 
                     const summary = document.createElement('div');
                     summary.style.cssText =
@@ -9558,9 +9706,9 @@ ${starCSS}
                     );
                     summary.textContent = i18n_js.t('taskProfitDisplay.zoneSummaryLine', {
                         zoneName,
-                        fights: formatters_js.formatKMB(fightsNeeded),
+                        fights: formatters_js.formatKMB(bottleneck.fightsNeeded),
                         time: formatters_js.timeReadable(totalSeconds),
-                        bottleneckName: getMonsterName(bottleneck.hrid, bottleneck.name),
+                        bottleneckName: getMonsterName(bottleneck.bottleneckHrid, bottleneck.bottleneckName),
                     });
                     container.appendChild(summary);
                 }
@@ -9856,9 +10004,9 @@ ${starCSS}
                     }
                 )}</div>`
                 );
-                // "Purple's Gift" is the in-game item name for this bonus reward and is not translated here.
+                // Resolve the bonus reward item name through game-i18n (falls back to the EN name).
                 lines.push(
-                    `<div style="margin-left: 10px;">Purple's Gift: ${formatters_js.formatKMB(profitData.rewards.purpleGift)}</div>`
+                    `<div style="margin-left: 10px;">${getItemName('/items/purples_gift', "Purple's Gift")}: ${formatters_js.formatKMB(profitData.rewards.purpleGift)}</div>`
                 );
                 lines.push(
                     `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${i18n_js.t(
@@ -9873,7 +10021,7 @@ ${starCSS}
                     `<div style="margin-left: 10px; color: #888; font-style: italic;">${i18n_js.t('taskProfitDisplay.taskTokensLine', { value: i18n_js.t('taskProfitDisplay.loadingEllipsis') })}</div>`
                 );
                 lines.push(
-                    `<div style="margin-left: 10px; color: #888; font-style: italic;">Purple's Gift: ${i18n_js.t('taskProfitDisplay.loadingEllipsis')}</div>`
+                    `<div style="margin-left: 10px; color: #888; font-style: italic;">${getItemName('/items/purples_gift', "Purple's Gift")}: ${i18n_js.t('taskProfitDisplay.loadingEllipsis')}</div>`
                 );
             }
             // Action profit section
@@ -11088,7 +11236,13 @@ ${starCSS}
                     const monsterDetail = gameData?.combatMonsterDetailMap?.[taskData.monsterHrid];
                     const monsterName =
                         monsterDetail?.name || taskData.monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
-                    if (descLower.includes(monsterName.toLowerCase())) {
+                    // The task card is rendered by the game, so in non-English locales the
+                    // description contains the localized monster name - match either name.
+                    const translatedMonsterName = getMonsterName(taskData.monsterHrid, monsterName);
+                    if (
+                        descLower.includes(monsterName.toLowerCase()) ||
+                        descLower.includes(translatedMonsterName.toLowerCase())
+                    ) {
                         claimedIds?.add(taskId);
                         return taskId;
                     }
@@ -11097,8 +11251,16 @@ ${starCSS}
                 // For action tasks, check actionHrid
                 if (taskData.actionHrid) {
                     const actionParts = taskData.actionHrid.split('/');
-                    const actionName = actionParts[actionParts.length - 1].replace(/_/g, ' ');
-                    if (descLower.includes(actionName.toLowerCase())) {
+                    const slugName = actionParts[actionParts.length - 1].replace(/_/g, ' ');
+                    const actionDetailName = dataManager.getActionDetails(taskData.actionHrid)?.name;
+                    // Same locale-aware matching as the monster path: the description may
+                    // contain the localized action name in non-English locales.
+                    const translatedActionName = getActionName(taskData.actionHrid, actionDetailName || slugName);
+                    if (
+                        descLower.includes(slugName.toLowerCase()) ||
+                        (actionDetailName && descLower.includes(actionDetailName.toLowerCase())) ||
+                        descLower.includes(translatedActionName.toLowerCase())
+                    ) {
                         claimedIds?.add(taskId);
                         return taskId;
                     }
@@ -14633,12 +14795,267 @@ ${starCSS}
 
     const taskInventoryHighlighter = new TaskInventoryHighlighter();
 
+    var MULTI_WORKER_SCRIPT = "(function () {\n    'use strict';\n\n    /**\n     * Multi-Worker Entry for All-Zones Simulation\n     *\n     * This file is bundled into a string and runs inside a Web Worker.\n     * It receives all zones to simulate, creates a pool of child simulation workers,\n     * and processes zones via a task queue. Child workers are spawned from a Blob URL\n     * created from the simulation worker script passed in the init message.\n     *\n     * This matches Shykai's architecture: worker-spawned workers get different\n     * CPU scheduling from the browser than main-thread-spawned workers.\n     *\n     * When useEarlyExit is true, only T0 is seeded per zone initially. After each tier\n     * completes, a zone_tier_result message is sent to the main thread. The main thread\n     * compares XP/hr and profit/hr and responds with zone_tier_decision { skip }. If skip\n     * is false, the next tier is enqueued; if true, remaining tiers for that zone are skipped.\n     */\n\n    let simWorkerBlobURL = null;\n    let taskIdCounter = 0;\n\n    // Pending early-exit decisions: zoneHrid → resolve function\n    const pendingDecisions = new Map();\n\n    onmessage = async function (event) {\n        const { type } = event.data;\n\n        if (type === 'start_all_zones') {\n            const {\n                workerScript,\n                gameData,\n                playerDTOs,\n                zones,\n                simulationTimeLimit,\n                extraBuffsByPlayer,\n                maxWorkers,\n                useEarlyExit,\n            } = event.data;\n\n            // Create Blob URL for simulation workers from the bundled script string\n            const blob = new Blob([workerScript], { type: 'application/javascript' });\n            simWorkerBlobURL = URL.createObjectURL(blob);\n            const workerURL = simWorkerBlobURL;\n\n            const results = new Array(zones.length);\n\n            // Per-zone progress tracking\n            const zoneProgress = new Array(zones.length).fill(0);\n            const reportProgress = () => {\n                const total = zoneProgress.reduce((sum, p) => sum + p, 0);\n                postMessage({ type: 'progress', progress: total / zones.length });\n            };\n\n            // zoneInfoMap groups tiers by zone for early exit tracking\n            const zoneInfoMap = new Map(); // zoneHrid → { tiers: [{tier, index}], nextIdx }\n\n            // Build initial task queue\n            let taskQueue;\n            if (useEarlyExit) {\n                // Group zones by hrid, sort tiers ascending within each group\n                for (let i = 0; i < zones.length; i++) {\n                    const { zoneHrid, difficultyTier } = zones[i];\n                    if (!zoneInfoMap.has(zoneHrid)) {\n                        zoneInfoMap.set(zoneHrid, { tiers: [], nextIdx: 0 });\n                    }\n                    zoneInfoMap.get(zoneHrid).tiers.push({ tier: difficultyTier, index: i });\n                }\n                for (const info of zoneInfoMap.values()) {\n                    info.tiers.sort((a, b) => a.tier - b.tier);\n                }\n\n                // Seed only the first (lowest) tier per zone\n                taskQueue = [];\n                for (const [zoneHrid, info] of zoneInfoMap) {\n                    const first = info.tiers[0];\n                    taskQueue.push({ zoneHrid, difficultyTier: first.tier, index: first.index });\n                    info.nextIdx = 1;\n                }\n            } else {\n                taskQueue = [...zones.map((zone, index) => ({ ...zone, index }))];\n            }\n\n            const poolSize = Math.min(maxWorkers, taskQueue.length);\n\n            // Each pool slot processes tasks sequentially, one fresh worker per task\n            const processQueue = async () => {\n                while (taskQueue.length > 0) {\n                    const task = taskQueue.shift();\n                    if (!task) continue;\n                    const taskId = ++taskIdCounter;\n\n                    let simResult = null;\n                    try {\n                        simResult = await new Promise((resolve, reject) => {\n                            const worker = new Worker(workerURL);\n\n                            worker.onmessage = (e) => {\n                                const msg = e.data;\n                                if (msg.taskId !== taskId) return;\n\n                                if (msg.type === 'progress') {\n                                    zoneProgress[task.index] = msg.progress;\n                                    reportProgress();\n                                } else if (msg.type === 'result') {\n                                    worker.terminate();\n                                    resolve(msg.simResult);\n                                } else if (msg.type === 'error') {\n                                    worker.terminate();\n                                    reject(new Error(msg.error));\n                                }\n                            };\n\n                            worker.onerror = (error) => {\n                                worker.terminate();\n                                reject(new Error(error.message || 'Worker error'));\n                            };\n\n                            worker.postMessage({\n                                type: 'start_simulation',\n                                taskId,\n                                gameData,\n                                playerDTOs,\n                                zoneHrid: task.zoneHrid,\n                                difficultyTier: task.difficultyTier,\n                                simulationTimeLimit,\n                                extraBuffsByPlayer,\n                            });\n                        });\n                    } catch (error) {\n                        console.error(`[MultiWorker] Zone ${task.zoneHrid} T${task.difficultyTier} failed:`, error);\n                    }\n\n                    results[task.index] = simResult;\n                    zoneProgress[task.index] = 100;\n                    reportProgress();\n\n                    // Early exit: send tier result to main thread and await go/skip decision\n                    if (useEarlyExit && simResult) {\n                        const zoneInfo = zoneInfoMap.get(task.zoneHrid);\n                        if (zoneInfo && zoneInfo.nextIdx < zoneInfo.tiers.length) {\n                            postMessage({\n                                type: 'zone_tier_result',\n                                zoneHrid: task.zoneHrid,\n                                tier: task.difficultyTier,\n                                index: task.index,\n                                simResult,\n                            });\n\n                            const skip = await new Promise((resolve) => {\n                                pendingDecisions.set(task.zoneHrid, resolve);\n                            });\n\n                            if (skip) {\n                                // Mark remaining tiers for this zone as skipped (null result)\n                                for (let i = zoneInfo.nextIdx; i < zoneInfo.tiers.length; i++) {\n                                    results[zoneInfo.tiers[i].index] = null;\n                                    zoneProgress[zoneInfo.tiers[i].index] = 100;\n                                }\n                                zoneInfo.nextIdx = zoneInfo.tiers.length;\n                                reportProgress();\n                            } else {\n                                // Enqueue the next tier\n                                const next = zoneInfo.tiers[zoneInfo.nextIdx];\n                                zoneInfo.nextIdx++;\n                                taskQueue.push({\n                                    zoneHrid: task.zoneHrid,\n                                    difficultyTier: next.tier,\n                                    index: next.index,\n                                });\n                            }\n                        }\n                    }\n                }\n            };\n\n            try {\n                await Promise.all(\n                    Array(poolSize)\n                        .fill()\n                        .map(() => processQueue())\n                );\n                postMessage({ type: 'all_zones_result', results });\n            } catch (error) {\n                postMessage({ type: 'error', error: error.message || String(error) });\n            }\n\n            // Clean up\n            URL.revokeObjectURL(simWorkerBlobURL);\n            simWorkerBlobURL = null;\n        } else if (type === 'zone_tier_decision') {\n            // Main thread responded to an early-exit zone_tier_result\n            const { zoneHrid, skip } = event.data;\n            const resolve = pendingDecisions.get(zoneHrid);\n            if (resolve) {\n                pendingDecisions.delete(zoneHrid);\n                resolve(skip);\n            }\n        }\n    };\n\n})();\n";
+
+    /**
+     * All Zones Combat Simulator Runner
+     * Uses a dedicated coordinator worker (multiWorker) that spawns child simulation workers.
+     *
+     * Worker-spawned workers get different CPU scheduling from the browser than
+     * main-thread-spawned workers, matching Shykai's architecture for better
+     * multi-zone throughput.
+     */
+
+
+    let multiWorker = null;
+    let activeReject = null;
+
+    /**
+     * Run simulations for all specified zones in parallel via a coordinator worker.
+     * @param {Object} params
+     * @param {Object} params.gameData - Game data maps from buildGameDataPayload()
+     * @param {Array<Object>} params.playerDTOs - Player DTOs from buildAllPlayerDTOs()
+     * @param {Array<{zoneHrid: string, difficultyTier: number}>} params.zones - Zones to simulate
+     * @param {number} params.hours - Hours to simulate per zone
+     * @param {Object} params.communityBuffs - { mooPass, comExp, comDrop }
+     * @param {boolean} [params.useEarlyExit] - Skip higher tiers when both XP/hr and profit/hr decline
+     * @param {Function} [onProgress] - Called with (percent: 0-100) for overall progress
+     * @returns {Promise<Array<Object>>} Array of SimResults, one per zone (same order as input)
+     */
+    async function runAllZonesSimulation(params, onProgress) {
+        const { gameData, playerDTOs, zones, hours, communityBuffs} = params;
+
+        if (!zones.length) return [];
+
+        // Cancel any previous run
+        cancelAllZonesSimulation();
+
+        const extraBuffsByPlayer = buildExtraBuffsByPlayer(playerDTOs, communityBuffs);
+        const ONE_HOUR_NS = 3600 * 1e9;
+        const simulationTimeLimit = hours * ONE_HOUR_NS;
+
+        const availableCores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+        const maxThreadsSetting = config.getSetting('combatSim_maxThreads') || 0;
+        const maxWorkers = maxThreadsSetting > 0 ? Math.min(maxThreadsSetting, availableCores) : availableCores;
+
+        return new Promise((resolve, reject) => {
+            // Store reject so cancelAllZonesSimulation can unblock the promise
+            activeReject = reject;
+
+            // Create the coordinator worker
+            const blob = new Blob([MULTI_WORKER_SCRIPT], { type: 'application/javascript' });
+            const blobURL = URL.createObjectURL(blob);
+            const worker = new Worker(blobURL);
+            multiWorker = worker;
+
+            const cleanup = () => {
+                multiWorker = null;
+                activeReject = null;
+                URL.revokeObjectURL(blobURL);
+            };
+
+            // Per-zone tier metrics for early exit comparison: zoneHrid → [{xpPerHour, profitPerHour}]
+            const tierResultsByZone = new Map();
+
+            worker.onmessage = (event) => {
+                const msg = event.data;
+
+                if (msg.type === 'progress') ; else if (msg.type === 'zone_tier_result') {
+                    // Calculate XP/hr and profit/hr for this tier and decide whether to skip the next
+                    const { zoneHrid, simResult } = msg;
+                    const simHours = (simResult.simulatedTime || 0) / (3600 * 1e9) || hours;
+
+                    // Sum XP across all players and all skills
+                    let totalXP = 0;
+                    for (const playerXP of Object.values(simResult.experienceGained || {})) {
+                        for (const xp of Object.values(playerXP)) {
+                            totalXP += xp;
+                        }
+                    }
+                    const xpPerHour = totalXP / simHours;
+
+                    let profitPerHour = 0;
+                    try {
+                        const revenue = calculateSimRevenue(simResult, gameData, 'player1', simHours);
+                        profitPerHour = revenue.netPerHour;
+                    } catch {
+                        // Revenue calculation may fail if market data is unavailable
+                    }
+
+                    const prevResults = tierResultsByZone.get(zoneHrid) || [];
+                    const currMetrics = { xpPerHour, profitPerHour };
+
+                    let skip = false;
+                    if (prevResults.length > 0) {
+                        const prev = prevResults[prevResults.length - 1];
+                        if (xpPerHour < prev.xpPerHour && profitPerHour < prev.profitPerHour) {
+                            skip = true;
+                        }
+                    }
+
+                    prevResults.push(currMetrics);
+                    tierResultsByZone.set(zoneHrid, prevResults);
+
+                    worker.postMessage({ type: 'zone_tier_decision', zoneHrid, skip });
+                } else if (msg.type === 'all_zones_result') {
+                    worker.terminate();
+                    cleanup();
+                    resolve(msg.results);
+                } else if (msg.type === 'error') {
+                    worker.terminate();
+                    cleanup();
+                    reject(new Error(msg.error));
+                }
+            };
+
+            worker.onerror = (error) => {
+                worker.terminate();
+                cleanup();
+                reject(new Error(error.message || 'MultiWorker error'));
+            };
+
+            // Send the simulation worker script as a string so the multiWorker can spawn child workers
+            worker.postMessage({
+                type: 'start_all_zones',
+                workerScript: WORKER_SCRIPT,
+                gameData,
+                playerDTOs,
+                zones,
+                simulationTimeLimit,
+                extraBuffsByPlayer,
+                maxWorkers,
+                useEarlyExit: false,
+            });
+        });
+    }
+
+    /**
+     * Terminate the coordinator worker (kills all child workers too) and reject the pending promise.
+     */
+    function cancelAllZonesSimulation() {
+        if (multiWorker) {
+            multiWorker.terminate();
+            multiWorker = null;
+        }
+        if (activeReject) {
+            activeReject(new Error('Cancelled'));
+            activeReject = null;
+        }
+    }
+
+    /**
+     * Per-Zone Combat Task Progress
+     *
+     * Aggregates every active combat task by zone and computes, per zone, the total waves
+     * ("fights") needed to clear every quest there and the time that will take, running one
+     * combat sim per zone in parallel via the All Zones runner. Reuses the same bottleneck math
+     * as the per-task "zone mode" combat estimate (see task-zone-bottleneck.js), just across every
+     * zone with pending combat tasks at once instead of one zone at a time.
+     */
+
+
+    const SIM_HOURS = 1;
+
+    /**
+     * @returns {Promise<Array<{zoneHrid: string, zoneName: string, hoursNeeded: number, fightsNeeded: number, bottleneckName: string}>>}
+     *   Sorted ascending by hoursNeeded (soonest-to-clear zone first). Empty array when there are
+     *   no active combat quests - no simulation is run in that case.
+     */
+    async function computeAllZoneProgress() {
+        const activeCombatQuests = (dataManager.characterQuests || []).filter(
+            (q) => q.category === '/quest_category/random_task' && q.status === '/quest_status/in_progress' && q.monsterHrid
+        );
+        if (!activeCombatQuests.length) return [];
+
+        // Group quests by zone, skipping any monster with no resolvable combat zone.
+        const questsByZone = new Map();
+        for (const quest of activeCombatQuests) {
+            const zoneHrid = dataManager.getCombatZoneForMonster(quest.monsterHrid);
+            if (!zoneHrid) continue;
+            if (!questsByZone.has(zoneHrid)) questsByZone.set(zoneHrid, []);
+            questsByZone.get(zoneHrid).push(quest);
+        }
+
+        const zoneHrids = [...questsByZone.keys()];
+        if (!zoneHrids.length) return [];
+
+        const gameData = buildGameDataPayload();
+        if (!gameData) return [];
+
+        const { players } = await buildAllPlayerDTOs();
+        if (!players.length) return [];
+
+        const communityBuffs = getCommunityBuffs();
+        const monsterDetailMap = gameData.combatMonsterDetailMap || {};
+
+        const simResults = await runAllZonesSimulation({
+            gameData,
+            playerDTOs: players,
+            zones: zoneHrids.map((zoneHrid) => ({ zoneHrid, difficultyTier: 0 })),
+            hours: SIM_HOURS,
+            communityBuffs});
+
+        const results = [];
+        for (let i = 0; i < zoneHrids.length; i++) {
+            const zoneHrid = zoneHrids[i];
+            const simResult = simResults[i];
+            if (!simResult) continue;
+
+            const zoneTasks = questsByZone.get(zoneHrid).map((quest) => {
+                const remaining = Math.max((quest.goalCount ?? 0) - (quest.currentCount ?? 0), 0);
+                const killsPerHour = (simResult.deaths?.[quest.monsterHrid] ?? 0) / SIM_HOURS;
+                const hoursNeeded = killsPerHour > 0 ? remaining / killsPerHour : Infinity;
+                const name = monsterDetailMap[quest.monsterHrid]?.name || quest.monsterHrid.split('/').pop();
+                return { hrid: quest.monsterHrid, name, remaining, killsPerHour, hoursNeeded };
+            });
+
+            const bottleneck = computeZoneBottleneck(zoneTasks, simResult);
+            if (!bottleneck) continue;
+
+            const zoneName = getActionName(
+                zoneHrid,
+                gameData.actionDetailMap?.[zoneHrid]?.name || zoneHrid.split('/').pop()
+            );
+            const bottleneckName = getMonsterName(bottleneck.bottleneckHrid, bottleneck.bottleneckName);
+
+            results.push({
+                zoneHrid,
+                zoneName,
+                hoursNeeded: bottleneck.hoursNeeded,
+                fightsNeeded: bottleneck.fightsNeeded,
+                bottleneckName,
+            });
+        }
+
+        results.sort((a, b) => a.hoursNeeded - b.hoursNeeded);
+        return results;
+    }
+
     /**
      * Task Statistics
      * Adds a Statistics button to the Tasks panel tab bar
      * Shows task overflow time, expected rewards, and completion estimates
      */
 
+
+    /**
+     * Find the game's root React component instance that exposes handleGoToAction, by walking
+     * the fiber tree. Same pattern used by crafting-plan-display.js / pinned-actions-page.js.
+     */
+    function getGameObject() {
+        const root = document.getElementById('root');
+        const rootFiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
+
+        const stack = [rootFiber];
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (typeof fiber?.stateNode?.handleGoToAction === 'function') return fiber.stateNode;
+            if (fiber?.sibling) stack.push(fiber.sibling);
+            if (fiber?.child) stack.push(fiber.child);
+        }
+        return null;
+    }
 
     class TaskStatistics {
         constructor() {
@@ -14752,11 +15169,13 @@ ${starCSS}
             const overflowData = this.calculateOverflowTime();
             const slotStatus = this.calculateSlotStatus();
             const rewardsSummary = await this.calculateRewardsSummary();
+            const zoneProgress = await computeAllZoneProgress();
 
             return {
                 overflow: overflowData,
                 slots: slotStatus,
                 rewards: rewardsSummary,
+                zoneProgress,
             };
         }
 
@@ -15034,6 +15453,9 @@ ${starCSS}
             popup.appendChild(this.createRewardsSection(statsData.rewards, textColor));
             popup.appendChild(this.createActionProfitSection(statsData.rewards));
             popup.appendChild(this.createCompletionTimeSection(statsData.rewards, textColor));
+            if (statsData.zoneProgress.length > 0) {
+                popup.appendChild(this.createZoneProgressSection(statsData.zoneProgress, textColor));
+            }
 
             // Close on overlay click
             overlay.onclick = (e) => {
@@ -15319,6 +15741,43 @@ ${starCSS}
                     : i18n_js.t('combatSimUi.notAvailableLabel');
 
             section.appendChild(this.createRow(i18n_js.t('taskStatistics.totalNonCombatLabel'), totalTimeStr, config.COLOR_INFO));
+
+            return section;
+        }
+
+        /**
+         * Create per-zone combat task progress section: for every zone with at least one active
+         * combat task, shows the total fights needed to clear everything there and the time that
+         * will take. Clicking a row navigates to that zone with the fight count pre-filled.
+         * @param {Array<Object>} zoneProgress - Per-zone progress data from computeAllZoneProgress()
+         * @param {string} textColor - Text color
+         * @returns {HTMLElement} Section element
+         */
+        createZoneProgressSection(zoneProgress, textColor) {
+            const section = this.createSection(i18n_js.t('taskStatistics.zoneProgressHeader'));
+
+            for (const zone of zoneProgress) {
+                const timeStr = Number.isFinite(zone.hoursNeeded)
+                    ? formatters_js.timeReadable(Math.round(zone.hoursNeeded * 3600))
+                    : '???';
+                const fightsStr = Number.isFinite(zone.fightsNeeded) ? formatters_js.formatKMB(zone.fightsNeeded) : '???';
+                const value = i18n_js.t('taskStatistics.zoneProgressRowValue', {
+                    fights: fightsStr,
+                    time: timeStr,
+                    bottleneckName: zone.bottleneckName,
+                });
+
+                const row = this.createRow(zone.zoneName, value, textColor);
+                row.style.cursor = 'pointer';
+                row.onclick = () => {
+                    this.closePopup();
+                    const game = getGameObject();
+                    if (!game?.handleGoToAction) return;
+                    const numActions = Number.isFinite(zone.fightsNeeded) ? Math.round(zone.fightsNeeded) : undefined;
+                    game.handleGoToAction(zone.zoneHrid, numActions);
+                };
+                section.appendChild(row);
+            }
 
             return section;
         }
@@ -21551,6 +22010,67 @@ ${starCSS}
         return parts.length ? ` ${parts.join(' · ')}` : '';
     }
 
+    /**
+     * Split a rendered "Action: Item" string (queue entry or header) into its two name parts.
+     * Chinese (and other CJK locales) render a full-width colon ("炼金：林中精华"), so split on
+     * the first colon of either width. Splitting only at the first occurrence preserves item
+     * names that themselves contain colons, matching the previous split+join behavior.
+     * @param {string} text - Rendered action text, without position/tier decorations
+     * @returns {{actionName: string, itemName: string|null}}
+     */
+    function splitActionAndItemNames(text) {
+        const colonIndex = text.search(/[:：]/);
+        if (colonIndex === -1) {
+            return { actionName: text, itemName: null };
+        }
+        return {
+            actionName: text.slice(0, colonIndex).trim(),
+            itemName: text.slice(colonIndex + 1).trim(),
+        };
+    }
+
+    /**
+     * Compare an action name rendered by the game DOM against an action's English data name in a
+     * locale-aware way: the DOM renders the game's translated action name in non-English locales,
+     * so compare both names plus their ★ ↔ (R) refined-item variants.
+     * @param {string} actionHrid - Action HRID (translation lookup key)
+     * @param {string} actionName - English data name of the action
+     * @param {string|null} domName - Action name as rendered in the DOM
+     * @returns {boolean}
+     */
+    function actionNameMatches(actionHrid, actionName, domName) {
+        if (domName == null) {
+            return false;
+        }
+        const translatedActionName = getActionName(actionHrid, actionName);
+        return (
+            actionName === domName ||
+            translatedActionName === domName ||
+            (domName.includes('★') && actionName === domName.replace(/\s*★/, ' (R)')) ||
+            (domName.includes('(R)') && actionName === domName.replace(/\s*\(R\)/, ' ★')) ||
+            (domName.includes('★') && translatedActionName === domName.replace(/\s*★/, ' (R)')) ||
+            (domName.includes('(R)') && translatedActionName === domName.replace(/\s*\(R\)/, ' ★'))
+        );
+    }
+
+    /**
+     * True for elements Toolasha itself injected into the game DOM. All injected UI follows the
+     * `mwi-` id/class prefix project convention (e.g. #mwi-battle-counter, .mwi-appended-stats),
+     * so such children must be excluded when reading the game's own text.
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    function isToolashaInjectedElement(element) {
+        if (element.id && element.id.startsWith('mwi-')) {
+            return true;
+        }
+        const className = typeof element.className === 'string' ? element.className : '';
+        return className
+            .split(/\s+/)
+            .filter(Boolean)
+            .some((token) => token.startsWith('mwi-'));
+    }
+
     // Marks a native QueuedActions edit-menu once Toolasha has enhanced it, so the width contract
     // below and the row-wrapping rules only ever apply to that specific popup (TLA-040) — never to
     // unrelated MUI tooltips/poppers elsewhere in the game.
@@ -23258,17 +23778,11 @@ ${starCSS}
             const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))*$/);
             const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
 
-            if (fullNameFromDom.includes(':')) {
-                const parts = fullNameFromDom.split(':');
-                return {
-                    actionNameFromDom: parts[0].trim(),
-                    itemNameFromDom: parts.slice(1).join(':').trim(),
-                };
-            }
-
+            // Tolerates the full-width colon the game renders in Chinese: "炼金：林中精华"
+            const { actionName, itemName } = splitActionAndItemNames(fullNameFromDom);
             return {
-                actionNameFromDom: fullNameFromDom,
-                itemNameFromDom: null,
+                actionNameFromDom: actionName,
+                itemNameFromDom: itemName,
             };
         }
 
@@ -23348,17 +23862,7 @@ ${starCSS}
                 const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
                 // The DOM renders the game's translated action name in non-English locales, so
                 // compare both names plus their ★ ↔ (R) variants.
-                const translatedActionName = getActionName(currentAction.actionHrid, actionDetails.name);
-                const matchesName =
-                    actionDetails.name === actionNameFromDom ||
-                    translatedActionName === actionNameFromDom ||
-                    (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
-                    (actionNameFromDom.includes('(R)') &&
-                        actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★')) ||
-                    (actionNameFromDom.includes('★') &&
-                        translatedActionName === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
-                    (actionNameFromDom.includes('(R)') &&
-                        translatedActionName === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
+                const matchesName = actionNameMatches(currentAction.actionHrid, actionDetails.name, actionNameFromDom);
 
                 if (!matchesName && !matchesOutput && !matchesDrop) {
                     return false;
@@ -23409,6 +23913,10 @@ ${starCSS}
             const parts = [];
             for (const node of actionNameElement.childNodes) {
                 if (node === markerSpan) continue;
+                // Skip Toolasha-injected children (e.g. the combat battle counter's
+                // #mwi-battle-counter span) so their text can't pollute the game's action
+                // name and break current-action matching - in any locale.
+                if (node.nodeType === 1 && isToolashaInjectedElement(node)) continue;
                 const text = node.textContent.trim();
                 if (text) parts.push(text);
             }
@@ -23846,21 +24354,29 @@ ${starCSS}
                         return false;
                     }
 
+                    // The queue renders the item's localized display name in non-English locales,
+                    // which the slug-built HRID below cannot reconstruct - compare against both
+                    // the English and translated names of the primaryItemHash item first (same
+                    // approach as matchCurrentActionFromText).
+                    if (a.primaryItemHash) {
+                        const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
+                        const hashItemName = hashItemHrid ? dataManager.getItemDetails(hashItemHrid)?.name : null;
+                        if (hashItemName) {
+                            const translatedItemName = getItemName(hashItemHrid, hashItemName);
+                            if (itemName === hashItemName || itemName === translatedItemName) {
+                                return true;
+                            }
+                        }
+                    }
+
                     // Match on primaryItemHash (the item being enhanced)
                     return a.primaryItemHash && a.primaryItemHash.includes(itemHrid);
                 });
             }
 
-            // Parse action name (same logic as main display)
-            let actionNameFromDiv, itemNameFromDiv;
-            if (actionNameText.includes(':')) {
-                const parts = actionNameText.split(':');
-                actionNameFromDiv = parts[0].trim();
-                itemNameFromDiv = parts.slice(1).join(':').trim();
-            } else {
-                actionNameFromDiv = actionNameText;
-                itemNameFromDiv = null;
-            }
+            // Parse action name (same logic as main display; tolerates the full-width colon
+            // the game renders in Chinese, e.g. "炼金：林中精华")
+            const { actionName: actionNameFromDiv, itemName: itemNameFromDiv } = splitActionAndItemNames(actionNameText);
 
             // Match action from cache (same logic as main display, excluding already-used actions)
             return cachedActions.find((a) => {
@@ -23873,14 +24389,23 @@ ${starCSS}
                     return false;
                 }
 
-                if (actionDetails.name !== actionNameFromDiv) {
-                    const itemHridFromDiv = itemNameFromDiv
-                        ? `/items/${itemNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`
-                        : `/items/${actionNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`;
+                // The queue renders the game's translated action name in non-English locales,
+                // so compare both names plus their ★ ↔ (R) variants (same as main display).
+                if (!actionNameMatches(a.actionHrid, actionDetails.name, actionNameFromDiv)) {
+                    // The item part of the label is likewise localized; resolve it through the
+                    // dual-name index first and keep the English slug form only as a fallback
+                    // for names the index cannot resolve.
+                    const itemHridCandidates = new Set();
+                    const resolvedItemHrid = itemNameFromDiv ? getItemHridFromName(itemNameFromDiv) : null;
+                    if (resolvedItemHrid) {
+                        itemHridCandidates.add(resolvedItemHrid);
+                    }
+                    const slugSource = itemNameFromDiv || actionNameFromDiv;
+                    itemHridCandidates.add(`/items/${slugSource.toLowerCase().replace(/\s+/g, '_')}`);
                     const outputItems = actionDetails.outputItems || [];
                     const dropTable = actionDetails.dropTable || [];
-                    const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDiv);
-                    const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDiv);
+                    const matchesOutput = outputItems.some((item) => itemHridCandidates.has(item.itemHrid));
+                    const matchesDrop = dropTable.some((drop) => itemHridCandidates.has(drop.itemHrid));
 
                     if (!matchesOutput && !matchesDrop) {
                         return false;
@@ -23892,7 +24417,13 @@ ${starCSS}
                     const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
                     if (hashItemHrid) {
                         const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
-                        if (hashItemDetails?.name === itemNameFromDiv) return true;
+                        // The queue renders the item's localized display name in non-English
+                        // locales, so compare both names (same approach as matchCurrentActionFromText).
+                        if (
+                            hashItemDetails?.name === itemNameFromDiv ||
+                            getItemName(hashItemHrid, hashItemDetails?.name || '') === itemNameFromDiv
+                        )
+                            return true;
                     }
                     const itemHrid = '/items/' + itemNameFromDiv.toLowerCase().replace(/\s+/g, '_');
                     return a.primaryItemHash.includes(itemHrid);
@@ -25488,4 +26019,4 @@ ${starCSS}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Core, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);

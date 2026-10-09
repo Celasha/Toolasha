@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.8.1
+ * Version: 3.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9510,6 +9510,67 @@
         return parts.length ? ` ${parts.join(' · ')}` : '';
     }
 
+    /**
+     * Split a rendered "Action: Item" string (queue entry or header) into its two name parts.
+     * Chinese (and other CJK locales) render a full-width colon ("炼金：林中精华"), so split on
+     * the first colon of either width. Splitting only at the first occurrence preserves item
+     * names that themselves contain colons, matching the previous split+join behavior.
+     * @param {string} text - Rendered action text, without position/tier decorations
+     * @returns {{actionName: string, itemName: string|null}}
+     */
+    function splitActionAndItemNames(text) {
+        const colonIndex = text.search(/[:：]/);
+        if (colonIndex === -1) {
+            return { actionName: text, itemName: null };
+        }
+        return {
+            actionName: text.slice(0, colonIndex).trim(),
+            itemName: text.slice(colonIndex + 1).trim(),
+        };
+    }
+
+    /**
+     * Compare an action name rendered by the game DOM against an action's English data name in a
+     * locale-aware way: the DOM renders the game's translated action name in non-English locales,
+     * so compare both names plus their ★ ↔ (R) refined-item variants.
+     * @param {string} actionHrid - Action HRID (translation lookup key)
+     * @param {string} actionName - English data name of the action
+     * @param {string|null} domName - Action name as rendered in the DOM
+     * @returns {boolean}
+     */
+    function actionNameMatches(actionHrid, actionName, domName) {
+        if (domName == null) {
+            return false;
+        }
+        const translatedActionName = getActionName(actionHrid, actionName);
+        return (
+            actionName === domName ||
+            translatedActionName === domName ||
+            (domName.includes('★') && actionName === domName.replace(/\s*★/, ' (R)')) ||
+            (domName.includes('(R)') && actionName === domName.replace(/\s*\(R\)/, ' ★')) ||
+            (domName.includes('★') && translatedActionName === domName.replace(/\s*★/, ' (R)')) ||
+            (domName.includes('(R)') && translatedActionName === domName.replace(/\s*\(R\)/, ' ★'))
+        );
+    }
+
+    /**
+     * True for elements Toolasha itself injected into the game DOM. All injected UI follows the
+     * `mwi-` id/class prefix project convention (e.g. #mwi-battle-counter, .mwi-appended-stats),
+     * so such children must be excluded when reading the game's own text.
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    function isToolashaInjectedElement(element) {
+        if (element.id && element.id.startsWith('mwi-')) {
+            return true;
+        }
+        const className = typeof element.className === 'string' ? element.className : '';
+        return className
+            .split(/\s+/)
+            .filter(Boolean)
+            .some((token) => token.startsWith('mwi-'));
+    }
+
     // Marks a native QueuedActions edit-menu once Toolasha has enhanced it, so the width contract
     // below and the row-wrapping rules only ever apply to that specific popup (TLA-040) — never to
     // unrelated MUI tooltips/poppers elsewhere in the game.
@@ -11217,17 +11278,11 @@
             const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))*$/);
             const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
 
-            if (fullNameFromDom.includes(':')) {
-                const parts = fullNameFromDom.split(':');
-                return {
-                    actionNameFromDom: parts[0].trim(),
-                    itemNameFromDom: parts.slice(1).join(':').trim(),
-                };
-            }
-
+            // Tolerates the full-width colon the game renders in Chinese: "炼金：林中精华"
+            const { actionName, itemName } = splitActionAndItemNames(fullNameFromDom);
             return {
-                actionNameFromDom: fullNameFromDom,
-                itemNameFromDom: null,
+                actionNameFromDom: actionName,
+                itemNameFromDom: itemName,
             };
         }
 
@@ -11307,17 +11362,7 @@
                 const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
                 // The DOM renders the game's translated action name in non-English locales, so
                 // compare both names plus their ★ ↔ (R) variants.
-                const translatedActionName = getActionName(currentAction.actionHrid, actionDetails.name);
-                const matchesName =
-                    actionDetails.name === actionNameFromDom ||
-                    translatedActionName === actionNameFromDom ||
-                    (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
-                    (actionNameFromDom.includes('(R)') &&
-                        actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★')) ||
-                    (actionNameFromDom.includes('★') &&
-                        translatedActionName === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
-                    (actionNameFromDom.includes('(R)') &&
-                        translatedActionName === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
+                const matchesName = actionNameMatches(currentAction.actionHrid, actionDetails.name, actionNameFromDom);
 
                 if (!matchesName && !matchesOutput && !matchesDrop) {
                     return false;
@@ -11368,6 +11413,10 @@
             const parts = [];
             for (const node of actionNameElement.childNodes) {
                 if (node === markerSpan) continue;
+                // Skip Toolasha-injected children (e.g. the combat battle counter's
+                // #mwi-battle-counter span) so their text can't pollute the game's action
+                // name and break current-action matching - in any locale.
+                if (node.nodeType === 1 && isToolashaInjectedElement(node)) continue;
                 const text = node.textContent.trim();
                 if (text) parts.push(text);
             }
@@ -11805,21 +11854,29 @@
                         return false;
                     }
 
+                    // The queue renders the item's localized display name in non-English locales,
+                    // which the slug-built HRID below cannot reconstruct - compare against both
+                    // the English and translated names of the primaryItemHash item first (same
+                    // approach as matchCurrentActionFromText).
+                    if (a.primaryItemHash) {
+                        const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
+                        const hashItemName = hashItemHrid ? dataManager.getItemDetails(hashItemHrid)?.name : null;
+                        if (hashItemName) {
+                            const translatedItemName = getItemName(hashItemHrid, hashItemName);
+                            if (itemName === hashItemName || itemName === translatedItemName) {
+                                return true;
+                            }
+                        }
+                    }
+
                     // Match on primaryItemHash (the item being enhanced)
                     return a.primaryItemHash && a.primaryItemHash.includes(itemHrid);
                 });
             }
 
-            // Parse action name (same logic as main display)
-            let actionNameFromDiv, itemNameFromDiv;
-            if (actionNameText.includes(':')) {
-                const parts = actionNameText.split(':');
-                actionNameFromDiv = parts[0].trim();
-                itemNameFromDiv = parts.slice(1).join(':').trim();
-            } else {
-                actionNameFromDiv = actionNameText;
-                itemNameFromDiv = null;
-            }
+            // Parse action name (same logic as main display; tolerates the full-width colon
+            // the game renders in Chinese, e.g. "炼金：林中精华")
+            const { actionName: actionNameFromDiv, itemName: itemNameFromDiv } = splitActionAndItemNames(actionNameText);
 
             // Match action from cache (same logic as main display, excluding already-used actions)
             return cachedActions.find((a) => {
@@ -11832,14 +11889,23 @@
                     return false;
                 }
 
-                if (actionDetails.name !== actionNameFromDiv) {
-                    const itemHridFromDiv = itemNameFromDiv
-                        ? `/items/${itemNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`
-                        : `/items/${actionNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`;
+                // The queue renders the game's translated action name in non-English locales,
+                // so compare both names plus their ★ ↔ (R) variants (same as main display).
+                if (!actionNameMatches(a.actionHrid, actionDetails.name, actionNameFromDiv)) {
+                    // The item part of the label is likewise localized; resolve it through the
+                    // dual-name index first and keep the English slug form only as a fallback
+                    // for names the index cannot resolve.
+                    const itemHridCandidates = new Set();
+                    const resolvedItemHrid = itemNameFromDiv ? getItemHridFromName(itemNameFromDiv) : null;
+                    if (resolvedItemHrid) {
+                        itemHridCandidates.add(resolvedItemHrid);
+                    }
+                    const slugSource = itemNameFromDiv || actionNameFromDiv;
+                    itemHridCandidates.add(`/items/${slugSource.toLowerCase().replace(/\s+/g, '_')}`);
                     const outputItems = actionDetails.outputItems || [];
                     const dropTable = actionDetails.dropTable || [];
-                    const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDiv);
-                    const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDiv);
+                    const matchesOutput = outputItems.some((item) => itemHridCandidates.has(item.itemHrid));
+                    const matchesDrop = dropTable.some((drop) => itemHridCandidates.has(drop.itemHrid));
 
                     if (!matchesOutput && !matchesDrop) {
                         return false;
@@ -11851,7 +11917,13 @@
                     const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
                     if (hashItemHrid) {
                         const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
-                        if (hashItemDetails?.name === itemNameFromDiv) return true;
+                        // The queue renders the item's localized display name in non-English
+                        // locales, so compare both names (same approach as matchCurrentActionFromText).
+                        if (
+                            hashItemDetails?.name === itemNameFromDiv ||
+                            getItemName(hashItemHrid, hashItemDetails?.name || '') === itemNameFromDiv
+                        )
+                            return true;
                     }
                     const itemHrid = '/items/' + itemNameFromDiv.toLowerCase().replace(/\s+/g, '_');
                     return a.primaryItemHash.includes(itemHrid);
@@ -22362,6 +22434,28 @@
     const PRODUCTION_SKILLS = ['cheesesmithing', 'crafting', 'tailoring', 'cooking', 'brewing', 'alchemy'];
 
     /**
+     * Normalize a skill display name (the game-localized panel title, e.g. zh "伐木",
+     * or English "Woodcutting"/"woodcutting") into the lowercase English skill key
+     * used by SKILL_TO_ACTION_TYPE and the optimizer. Resolution is data-driven:
+     * each candidate key's `/skills/<key>` HRID is matched against the game's own
+     * `skillNames` localization, so new client languages work without changes here.
+     * @param {string} displayName - Skill name as shown in the panel title
+     * @returns {string|null} Lowercase English key (e.g. 'woodcutting'), or null if unrecognized
+     */
+    function normalizeSkillDisplayName(displayName) {
+        if (!displayName) return null;
+        const needle = String(displayName).trim();
+        if (!needle) return null;
+        const lowered = needle.toLowerCase();
+        for (const key of Object.keys(SKILL_TO_ACTION_TYPE)) {
+            if (key === lowered) return key;
+            const localized = translateGameName('skillNames', `/skills/${key}`, '');
+            if (localized && localized === needle) return key;
+        }
+        return null;
+    }
+
+    /**
      * Get all relevant teas for a skill and optimization goal
      * Returns teas grouped by exclusivity (skill teas are mutually exclusive)
      * @param {string} skillName - Skill name (e.g., 'milking')
@@ -24294,8 +24388,11 @@
 
             // Get current skill name — action filter doesn't track alchemy, so override when needed.
             // Reuses labSim's translated "Alchemy" skill-name label rather than a new key.
+            // The optimizer works on lowercase English skill keys, so normalize the (possibly
+            // game-localized, e.g. zh "伐木") display name; keep the raw name for display.
             const skillName = isAlchemy ? i18n_js.t('labSim.skillAlchemy') : actionFilter.getCurrentSkillName();
-            if (!skillName) {
+            const skillKey = normalizeSkillDisplayName(skillName);
+            if (!skillKey) {
                 this.showError(anchorButton, i18n_js.t('teaRecommendation.errorSkillNotDetected'));
                 return;
             }
@@ -24315,12 +24412,12 @@
 
             // Handle 'both' mode - show dual results
             if (goal === 'both') {
-                this.showBothRecommendation(anchorButton, skillName, locationTab, alchemyContext);
+                this.showBothRecommendation(anchorButton, skillName, locationTab, alchemyContext, skillKey);
                 return;
             }
 
             // Calculate optimal teas (pass location name to filter by category)
-            const result = findOptimalTeas(skillName, goal, locationTab, null, null, alchemyContext);
+            const result = findOptimalTeas(skillKey, goal, locationTab, null, null, alchemyContext);
 
             if (result.error) {
                 this.showError(anchorButton, result.error);
@@ -24343,7 +24440,7 @@
             cursor: default;
         `;
 
-            this.buildPopupContent(popup, result, goal, skillName, locationTab, null, alchemyContext);
+            this.buildPopupContent(popup, result, goal, skillName, locationTab, null, alchemyContext, skillKey);
 
             // Position popup relative to button
             document.body.appendChild(popup);
@@ -24389,9 +24486,22 @@
          * @param {string|null} locationTab - Current location tab
          * @param {string|null} drilldownAction - Action name when showing single-action view, null for all-actions
          * @param {Object|null} alchemyContext - Alchemy context for alchemy skills
+         * @param {string|null} skillKey - Normalized lowercase English skill key for optimizer calls
          */
-        buildPopupContent(popup, result, goal, skillName, locationTab, drilldownAction, alchemyContext = null) {
+        buildPopupContent(
+            popup,
+            result,
+            goal,
+            skillName,
+            locationTab,
+            drilldownAction,
+            alchemyContext = null,
+            skillKey = null
+        ) {
             popup.innerHTML = '';
+            // `skillName` is the game-localized display name (kept for UI labels); optimizer calls
+            // must use the normalized lowercase English key.
+            const key = skillKey || skillName.toLowerCase();
 
             const goalLabel = goal === 'xp' ? i18n_js.t('teaRecommendation.xpButtonLabel') : i18n_js.t('teaRecommendation.goldButtonLabel');
 
@@ -24517,9 +24627,9 @@
             `;
                 backLink.textContent = i18n_js.t('teaRecommendation.backToAllActionsLabel', { skillName });
                 backLink.addEventListener('click', () => {
-                    const allResult = findOptimalTeas(skillName, goal, locationTab, null, null, alchemyContext);
+                    const allResult = findOptimalTeas(key, goal, locationTab, null, null, alchemyContext);
                     if (!allResult.error && allResult.optimal) {
-                        this.buildPopupContent(popup, allResult, goal, skillName, locationTab, null, alchemyContext);
+                        this.buildPopupContent(popup, allResult, goal, skillName, locationTab, null, alchemyContext, key);
                     }
                 });
                 stats.querySelector('div:last-child').appendChild(backLink);
@@ -24594,7 +24704,7 @@
                     });
                     actionRow.addEventListener('click', () => {
                         const drillResult = findOptimalTeas(
-                            skillName,
+                            key,
                             goal,
                             locationTab,
                             actionData.action,
@@ -24609,7 +24719,8 @@
                                 skillName,
                                 locationTab,
                                 actionData.action,
-                                alchemyContext
+                                alchemyContext,
+                                key
                             );
                         }
                     });
@@ -24860,7 +24971,7 @@
             constraintHeader.textContent = i18n_js.t('teaRecommendation.teaConstraintsHeader');
             constraintSection.appendChild(constraintHeader);
 
-            const relevantTeas = getRelevantTeas(skillName.toLowerCase(), goal);
+            const relevantTeas = getRelevantTeas(key, goal);
             const allConstraintTeas = [...relevantTeas.skillTeas, ...relevantTeas.generalTeas];
             const gameData = dataManager.getInitClientData();
 
@@ -24910,7 +25021,7 @@
                         this.pinnedTeas.add(hrid);
                         this.bannedTeas.delete(hrid);
                     }
-                    this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext);
+                    this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext, key);
                 });
 
                 // Ban button ⊘
@@ -24933,7 +25044,7 @@
                         this.bannedTeas.add(hrid);
                         this.pinnedTeas.delete(hrid);
                     }
-                    this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext);
+                    this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext, key);
                 });
 
                 btnContainer.appendChild(pinBtn);
@@ -24967,12 +25078,15 @@
         /**
          * Show both XP and Gold recommendations side by side
          * @param {HTMLElement} anchorButton - Button that was clicked
-         * @param {string} skillName - Current skill name
+         * @param {string} skillName - Current skill name (game-localized, for display)
          * @param {string|null} locationTab - Current location tab
+         * @param {Object|null} alchemyContext - Alchemy context for alchemy skills
+         * @param {string|null} skillKey - Normalized lowercase English skill key for optimizer calls
          */
-        showBothRecommendation(anchorButton, skillName, locationTab, alchemyContext = null) {
-            const xpResult = findOptimalTeas(skillName, 'xp', locationTab, null, null, alchemyContext);
-            const goldResult = findOptimalTeas(skillName, 'gold', locationTab, null, null, alchemyContext);
+        showBothRecommendation(anchorButton, skillName, locationTab, alchemyContext = null, skillKey = null) {
+            const key = skillKey || skillName.toLowerCase();
+            const xpResult = findOptimalTeas(key, 'xp', locationTab, null, null, alchemyContext);
+            const goldResult = findOptimalTeas(key, 'gold', locationTab, null, null, alchemyContext);
 
             if (xpResult.error && goldResult.error) {
                 this.showError(anchorButton, xpResult.error);
@@ -25186,18 +25300,20 @@
          * @param {string|null} drilldownAction - Current drilldown action name, or null
          * @param {Object|null} alchemyContext - Alchemy context for alchemy skills
          */
-        _rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext = null) {
+        _rerunWithConstraints(
+            popup,
+            goal,
+            skillName,
+            locationTab,
+            drilldownAction,
+            alchemyContext = null,
+            skillKey = null
+        ) {
+            const key = skillKey || skillName.toLowerCase();
             const constraints = { pinned: this.pinnedTeas, banned: this.bannedTeas };
-            const result = findOptimalTeas(
-                skillName,
-                goal,
-                locationTab,
-                drilldownAction || null,
-                constraints,
-                alchemyContext
-            );
+            const result = findOptimalTeas(key, goal, locationTab, drilldownAction || null, constraints, alchemyContext);
             if (result.error) return;
-            this.buildPopupContent(popup, result, goal, skillName, locationTab, drilldownAction, alchemyContext);
+            this.buildPopupContent(popup, result, goal, skillName, locationTab, drilldownAction, alchemyContext, key);
         }
 
         /**

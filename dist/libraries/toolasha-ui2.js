@@ -2,11 +2,11 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.8.1
+ * Version: 3.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, i18n_js, dom_js, storage, webSocketHook, marketData_js, formatters_js, timerRegistry_js, expectedValueCalculator, marketAPI, warningIcon_js, marketplaceSession_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, actionCalculator_js, efficiency_js, profitHelpers_js, loadoutState, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, buffParser_js) {
+(function (config, dataManager, domObserver, i18n_js, dom_js, storage, marketplaceSession_js, webSocketHook, marketData_js, formatters_js, timerRegistry_js, expectedValueCalculator, marketAPI, warningIcon_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, actionCalculator_js, efficiency_js, profitHelpers_js, loadoutState, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, buffParser_js) {
     'use strict';
 
     /**
@@ -1254,6 +1254,621 @@
     }
 
     /**
+     * Marketplace Buy Modal Autofill Utility
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
+     */
+
+    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+    const MAX_REACT_OWNER_DEPTH = 256;
+
+    function hasMarketplaceStateSignature(state) {
+        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
+    }
+
+    function isElementVisible(element) {
+        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
+
+        for (let current = element; current; current = current.parentElement) {
+            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+            const style = window.getComputedStyle(current);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    function normalizeMarketplaceState(state) {
+        if (!hasMarketplaceStateSignature(state)) return null;
+        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
+        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
+        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
+        if (typeof state.isSell !== 'boolean') return null;
+        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
+        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
+        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
+        if (
+            state.enhancementLevelInput !== undefined &&
+            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
+        ) {
+            return null;
+        }
+
+        return {
+            marketTabKey: state.marketTabKey,
+            marketListingsView: state.marketListingsView,
+            itemHrid: state.itemHrid,
+            enhancementLevel: state.enhancementLevel,
+            enhancementLevelInput: state.enhancementLevelInput,
+            isSell: state.isSell,
+            showPostListing: state.showPostListing,
+            isPostNewListing: state.isPostNewListing,
+            isInstantOrder: state.isInstantOrder,
+            quantityInput: state.quantityInput,
+            priceInput: state.priceInput,
+        };
+    }
+
+    /**
+     * Read the live Marketplace React component state from the unique visible Marketplace panel.
+     * The selected component must be on that panel host fiber's bounded return ancestry.
+     *
+     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
+     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
+     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
+     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
+     */
+    function getMarketplaceRuntimeComponentFromElement(element) {
+        let fiber = getReactFiberFromElement(element);
+        let depth = 0;
+        const candidates = [];
+        const seen = new Set();
+
+        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
+            const stateNode = fiber.stateNode;
+            if (
+                stateNode &&
+                !seen.has(stateNode) &&
+                typeof stateNode.setState === 'function' &&
+                typeof stateNode.handleQuantityInputChanged === 'function' &&
+                hasMarketplaceStateSignature(stateNode.state)
+            ) {
+                seen.add(stateNode);
+                candidates.push(stateNode);
+            }
+            fiber = fiber.return;
+            depth += 1;
+        }
+
+        // Fail closed when the ancestry is unexpectedly deeper than the bound or
+        // contains more than one Marketplace-like owner. The quantity input must
+        // identify one exact live component before we write to a controlled input.
+        if (fiber || candidates.length !== 1) return null;
+        return candidates[0];
+    }
+
+    /**
+     * Read Marketplace state from the exact DOM element that belongs to the live component.
+     * @param {HTMLElement} element
+     * @returns {ReturnType<typeof normalizeMarketplaceState>}
+     */
+    function readMarketplaceRuntimeStateFromElement(element) {
+        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
+    }
+
+    /**
+     * Create an autofill manager instance for one marketplace workflow owner.
+     *
+     * Lifecycle:
+     *   initialize()      — call once at feature startup; installs the buy-modal observer
+     *   startSession(opts) — claim a session slot by sessionId
+     *   arm(opts)         — atomically set target; only 'buy' modalMode is accepted
+     *   setItem()         — @deprecated, use arm()
+     *   setQuantityProvider() — @deprecated, use arm()
+     *   exitSession(sessionId) — disarm without ending the marketplace session token
+     *   cleanup()         — call on feature disable; removes observer
+     *
+     * @param {string} observerId
+     * @returns {Object}
+     */
+    function createAutofillManager(observerId) {
+        let observerUnregister = null;
+        let activeSessionId = null;
+        let targetGeneration = 0;
+        let activeTarget = null;
+        let legacyDraft = null;
+        const modalRetryTimers = new Set();
+        const filledModalGenerations = new WeakMap();
+
+        function clearRetryTimers() {
+            for (const timer of modalRetryTimers) clearTimeout(timer);
+            modalRetryTimers.clear();
+        }
+
+        function invalidateTarget() {
+            clearRetryTimers();
+            targetGeneration += 1;
+            activeTarget = null;
+            legacyDraft = null;
+        }
+
+        function isValidItemHrid(itemHrid) {
+            return typeof itemHrid === 'string' && itemHrid.startsWith('/items/') && itemHrid.length > 7;
+        }
+
+        function isValidEnhancementLevel(enhancementLevel) {
+            return Number.isInteger(enhancementLevel) && enhancementLevel >= 0;
+        }
+
+        function startSession({
+            itemHrid = null,
+            enhancementLevel = 0,
+            sessionId = null,
+            quantityProvider = null,
+            modalMode = 'buy',
+        } = {}) {
+            activeSessionId = marketplaceSession_js.marketplaceSession.isActive(sessionId) ? sessionId : null;
+            invalidateTarget();
+
+            if (activeSessionId !== null && (itemHrid !== null || quantityProvider !== null)) {
+                arm({ sessionId, itemHrid, enhancementLevel, modalMode, quantityProvider });
+            }
+        }
+
+        function arm(opts = {}) {
+            const { sessionId, itemHrid = null, enhancementLevel = 0, modalMode = 'buy', quantityProvider } = opts || {};
+
+            if (sessionId !== activeSessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                activeSessionId = null;
+                invalidateTarget();
+                return false;
+            }
+
+            if (
+                modalMode !== 'buy' ||
+                !isValidItemHrid(itemHrid) ||
+                !isValidEnhancementLevel(enhancementLevel) ||
+                typeof quantityProvider !== 'function'
+            ) {
+                invalidateTarget();
+                return false;
+            }
+
+            activeTarget = Object.freeze({
+                generation: ++targetGeneration,
+                sessionId,
+                itemHrid,
+                enhancementLevel,
+                modalMode,
+                quantityProvider,
+            });
+            legacyDraft = null;
+            return true;
+        }
+
+        /** @deprecated Use arm(). */
+        function setItem(itemHrid, enhancementLevel = 0, sessionId) {
+            if (sessionId === undefined) {
+                invalidateTarget();
+                return false;
+            }
+            if (sessionId !== activeSessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                activeSessionId = null;
+                invalidateTarget();
+                return false;
+            }
+            if (!isValidItemHrid(itemHrid) || !isValidEnhancementLevel(enhancementLevel)) {
+                invalidateTarget();
+                return false;
+            }
+
+            invalidateTarget();
+            legacyDraft = Object.freeze({ sessionId, itemHrid, enhancementLevel });
+            return true;
+        }
+
+        /** @deprecated Use arm(). */
+        function setQuantityProvider(quantityProvider, sessionId) {
+            if (sessionId === undefined) {
+                invalidateTarget();
+                return false;
+            }
+            if (sessionId !== activeSessionId) return false;
+            if (!legacyDraft || legacyDraft.sessionId !== sessionId) {
+                invalidateTarget();
+                return false;
+            }
+
+            return arm({
+                sessionId,
+                itemHrid: legacyDraft.itemHrid,
+                enhancementLevel: legacyDraft.enhancementLevel,
+                modalMode: 'buy',
+                quantityProvider,
+            });
+        }
+
+        function exitSession(sessionId) {
+            if (sessionId !== undefined && sessionId !== activeSessionId) return;
+            activeSessionId = null;
+            invalidateTarget();
+        }
+
+        function findWorkingQuantityInput(modal) {
+            // The marketplace update switched this field from a native number input to a text
+            // input (to support typed compact values like "5k"), so match both types.
+            const structuralInputs = Array.from(
+                modal.querySelectorAll(
+                    '[class*="MarketplacePanel_quantityInputs"] input[type="number"], ' +
+                        '[class*="MarketplacePanel_quantityInputs"] input[type="text"]'
+                )
+            );
+            if (structuralInputs.length === 1) return structuralInputs[0];
+            if (structuralInputs.length > 1) return null;
+
+            const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
+            if (allInputs.length === 1) return allInputs[0];
+
+            const labeled = allInputs.filter((input) => {
+                // Labels are localized by the game (zh: Quantity 数量 / Enhancement Level 强化等级);
+                // match the translated strings alongside the English ones.
+                const quantityLabel = translateGameName('marketplacePanel', 'quantity', 'Quantity');
+                const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
+                let parent = input.parentElement;
+                for (let depth = 0; parent && depth < 4; depth += 1) {
+                    const text = parent.textContent || '';
+                    const mentionsEnhancement = text.includes('Enhancement Level') || text.includes(enhancementLabel);
+                    const mentionsQuantity = text.includes('Quantity') || text.includes(quantityLabel);
+                    if (mentionsEnhancement && !mentionsQuantity) return false;
+                    if (mentionsQuantity && !mentionsEnhancement) return true;
+                    parent = parent.parentElement;
+                }
+                return false;
+            });
+            return labeled.length === 1 ? labeled[0] : null;
+        }
+
+        function isVisibleBuyModal(modal) {
+            if (!modal || !modal.isConnected || !isElementVisible(modal)) return false;
+            const header = modal.querySelector('[class*="MarketplacePanel_header"]');
+            if (!header) return false;
+            const text = header.textContent?.trim() || '';
+            // Header text is localized (zh: Buy Now 立即购买 / Buy Listing 购买挂牌); the React
+            // state check in targetMatchesInput remains the strict ownership verification.
+            return (
+                text.includes('Buy Now') ||
+                text.includes('Buy Listing') ||
+                text.includes(translateGameName('marketplacePanel', 'buyNow', 'Buy Now')) ||
+                text.includes(translateGameName('marketplacePanel', 'buyListing', 'Buy Listing'))
+            );
+        }
+
+        function resolveQuantity(target) {
+            try {
+                const quantity = target.quantityProvider();
+                return typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? Math.trunc(quantity) : 0;
+            } catch (error) {
+                console.error('[MarketplaceAutofill] quantityProvider failed:', error);
+                return 0;
+            }
+        }
+
+        function targetMatchesInput(target, quantityInput) {
+            const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+            // MWI uses two exact buy forms: an instant order from an existing ask and
+            // a patient New Buy Listing. Reject mixed flag states rather than widening
+            // the verified write path to every post-listing modal.
+            const isInstantBuy = state?.isPostNewListing === false && state?.isInstantOrder === true;
+            const isNewBuyListing = state?.isPostNewListing === true && state?.isInstantOrder === false;
+
+            return (
+                state?.marketTabKey === 'MarketListings' &&
+                state?.marketListingsView === 'OrderBook' &&
+                state?.showPostListing === true &&
+                state?.isSell === false &&
+                (isInstantBuy || isNewBuyListing) &&
+                state?.itemHrid === target.itemHrid &&
+                state?.enhancementLevel === target.enhancementLevel &&
+                state?.enhancementLevelInput === target.enhancementLevel
+            );
+        }
+
+        function fillVerifiedModal(modal, target) {
+            if (!target || activeTarget !== target) return false;
+            if (activeSessionId !== target.sessionId || !marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) return false;
+            if (!isVisibleBuyModal(modal)) return false;
+            const quantityInput = findWorkingQuantityInput(modal);
+            if (!quantityInput || !targetMatchesInput(target, quantityInput)) return false;
+
+            const quantity = resolveQuantity(target);
+            if (quantity <= 0) return false;
+
+            const previousFill = filledModalGenerations.get(modal);
+            if (
+                previousFill?.generation === target.generation &&
+                previousFill.input === quantityInput &&
+                previousFill.quantity === quantity &&
+                Number(quantityInput.value) === quantity
+            ) {
+                return true;
+            }
+
+            // Re-check ownership after the provider call, immediately before the proven write path.
+            if (activeTarget !== target || activeSessionId !== target.sessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(target.sessionId) || !targetMatchesInput(target, quantityInput)) return false;
+
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (typeof nativeInputValueSetter !== 'function') return false;
+
+            nativeInputValueSetter.call(quantityInput, quantity.toString());
+            quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+            filledModalGenerations.set(modal, { generation: target.generation, input: quantityInput, quantity });
+            marketplaceSession_js.marketplaceSession.consume(target.sessionId);
+            return true;
+        }
+
+        function handleObservedModal(modal) {
+            const target = activeTarget;
+            if (!target || !modal) return;
+
+            // The Marketplace modal can mount before its owning React component has
+            // converged on the selected item. Retry this observed modal for a bounded
+            // 1.5-second window, but keep the verified workflow target armed afterward
+            // so an unrelated or retained modal cannot destroy the next exact Buy fill.
+            const delays = [0, 25, 75, 150, 300, 500, 750, 1000, 1500];
+            delays.forEach((delay) => {
+                const timer = setTimeout(() => {
+                    modalRetryTimers.delete(timer);
+                    if (!activeTarget || activeTarget.generation !== target.generation) return;
+                    if (fillVerifiedModal(modal, target)) {
+                        clearRetryTimers();
+                    }
+                    // Keep the verified target armed after a bounded miss. A retained or unrelated
+                    // modal must not destroy the workflow; the next exact Buy modal can still fill.
+                }, delay);
+                modalRetryTimers.add(timer);
+            });
+        }
+
+        return {
+            initialize() {
+                if (observerUnregister) observerUnregister();
+                observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', handleObservedModal);
+            },
+            startSession,
+            arm,
+            setItem,
+            setQuantityProvider,
+            exitSession,
+            cleanup() {
+                if (observerUnregister) {
+                    observerUnregister();
+                    observerUnregister = null;
+                }
+                activeSessionId = null;
+                invalidateTarget();
+            },
+        };
+    }
+
+    /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs, plus locale-independent
+     * resolution via icon sprite references (see below) - prefer the sprite-based functions
+     * over the name-based ones wherever a `<use>` element is reachable, since display names are
+     * translated client-side and the name-based functions below only ever match the client's
+     * English-language data, silently failing on any other game locale.
+     */
+
+
+    /**
+     * Resolve an item HRID from its icon sprite `<use>` href (e.g.
+     * ".../items_sprite.<hash>.svg#redwood_log"), which is locale-independent - unlike items, the
+     * href's fragment IS the full remaining hrid segment (items have no sub-category prefix like
+     * actions/skills do), so no reverse map is needed - just validate it against itemDetailMap.
+     * @param {string|null|undefined} href
+     * @returns {string|null}
+     */
+    function getItemHridFromIconHref(href) {
+        if (!href || !href.includes('items_sprite')) return null;
+        const fragment = href.split('#')[1];
+        if (!fragment) return null;
+
+        const hrid = `/items/${fragment}`;
+        const gameData = dataManager.getInitClientData();
+        return gameData?.itemDetailMap?.[hrid] ? hrid : null;
+    }
+
+    /**
+     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
+     * @param {string} name - Original display name
+     * @returns {string[]} Array of alternate names to try (may be empty)
+     */
+    function getRefinedNameVariants(name) {
+        const variants = [];
+        if (name.includes('★')) {
+            variants.push(name.replace(/\s*★/, ' (R)'));
+        }
+        if (name.includes('(R)')) {
+            variants.push(name.replace(/\s*\(R\)/, ' ★'));
+        }
+        return variants;
+    }
+
+    /**
+     * Find an action HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} actionName - Display name of the action
+     * @returns {string|null} Action HRID or null if not found
+     */
+    function getActionHridFromName(actionName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) {
+            return null;
+        }
+
+        // Try exact match first (English or translated)
+        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+            const displayName = getActionName(hrid, detail.name);
+            if (displayName === actionName || detail.name === actionName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(actionName)) {
+            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+                const displayName = getActionName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find an item HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} itemName - Display name of the item
+     * @returns {string|null} Item HRID or null if not found
+     */
+    function getItemHridFromName(itemName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) {
+            return null;
+        }
+
+        // Try exact match first (English or translated)
+        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+            const displayName = getItemName(hrid, detail.name);
+            if (displayName === itemName || detail.name === itemName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(itemName)) {
+            for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+                const displayName = getItemName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve an action HRID by walking up the React fiber tree from a DOM element inside the
+     * action detail modal (SkillActionDetail) - unlike the tile list, that modal renders no
+     * hrid-keyed icon of its own, but `this.props.actionDetail.hrid` is set on its own component
+     * instance (confirmed against the client bundle), so this is locale-independent, unlike matching
+     * the modal's translated name text.
+     * @param {HTMLElement} element - Any DOM node inside the action detail modal.
+     * @returns {string|null}
+     */
+    function getActionHridFromFiber(element) {
+        if (!element) return null;
+
+        let f = getReactFiberFromElement(element);
+        while (f) {
+            const hrid = f.memoizedProps?.actionDetail?.hrid;
+            if (hrid) return hrid;
+            f = f.return;
+        }
+        return null;
+    }
+
+    /**
+     * Get the coin cost of an item from the in-game shop.
+     * Returns 0 if the item is not available in the shop or not purchasable with coins.
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Coin cost, or 0 if not available in shop
+     */
+    function getShopCoinCost(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.shopItemDetailMap) return 0;
+
+        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
+            if (shopItem.itemHrid === itemHrid) {
+                if (shopItem.costs && shopItem.costs.length > 0) {
+                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
+                    if (coinCost) {
+                        return coinCost.count;
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
      * Alt+Click Item Navigation Feature
      * Adds Alt+click handlers to item tooltips and inventory/marketplace items
      */
@@ -1389,10 +2004,14 @@
                 );
                 if (nameElement) {
                     const itemName = nameElement.textContent.trim();
-
-                    // Convert name to HRID format (lowercase, replace spaces with underscores)
-                    const itemHrid = `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
-                    this.currentItemHrid = itemHrid;
+                    // Strip any enhancement level (e.g. "+10"), then resolve through the
+                    // shared dual-name lookup (English + localized) instead of reconstructing
+                    // a slug from the display name, which cannot work for translated names.
+                    const baseName = itemName.replace(/\s*\+\d+\s*$/, '').trim();
+                    const itemHrid = getItemHridFromName(baseName);
+                    if (itemHrid) {
+                        this.currentItemHrid = itemHrid;
+                    }
                 }
             } catch (error) {
                 console.error('[AltClickNav] Error parsing tooltip:', error);
@@ -3522,465 +4141,6 @@
     }
 
     const houseCostCalculator = new HouseCostCalculator();
-
-    /**
-     * Marketplace Buy Modal Autofill Utility
-     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
-     * an instance, then drives it with startSession / arm / exitSession.
-     *
-     * Exported helpers:
-     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
-     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
-     *   createAutofillManager(observerId)
-     */
-
-    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
-    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
-    const MAX_REACT_TREE_FIBERS = 50000;
-    const MAX_REACT_OWNER_DEPTH = 256;
-
-    function hasMarketplaceStateSignature(state) {
-        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
-    }
-
-    function isElementVisible(element) {
-        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
-
-        for (let current = element; current; current = current.parentElement) {
-            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
-            const style = window.getComputedStyle(current);
-            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    function getReactRootFiber() {
-        const rootElement = document.getElementById('root');
-        const rootContainer = rootElement?._reactRootContainer;
-        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
-    }
-
-    function findReactFiberFromRoot(element) {
-        const rootFiber = getReactRootFiber();
-        if (!rootFiber || !element) return null;
-
-        const stack = [rootFiber];
-        const visited = new Set();
-        let matchedFiber = null;
-
-        while (stack.length > 0) {
-            const fiber = stack.pop();
-            if (!fiber || visited.has(fiber)) continue;
-            visited.add(fiber);
-
-            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
-
-            if (fiber.stateNode === element) {
-                if (matchedFiber && matchedFiber !== fiber) return null;
-                matchedFiber = fiber;
-            }
-
-            if (fiber.sibling) stack.push(fiber.sibling);
-            if (fiber.child) stack.push(fiber.child);
-        }
-
-        return matchedFiber;
-    }
-
-    function getReactFiberFromElement(element) {
-        if (!element) return null;
-
-        const directFibers = new Set(
-            Object.getOwnPropertyNames(element)
-                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
-                .map((key) => element[key])
-                .filter(Boolean)
-        );
-        if (directFibers.size > 1) return null;
-        if (directFibers.size === 1) return directFibers.values().next().value;
-
-        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
-        // Resolve the exact host fiber from the public React root instead.
-        return findReactFiberFromRoot(element);
-    }
-
-    function normalizeMarketplaceState(state) {
-        if (!hasMarketplaceStateSignature(state)) return null;
-        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
-        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
-        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
-        if (typeof state.isSell !== 'boolean') return null;
-        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
-        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
-        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
-        if (
-            state.enhancementLevelInput !== undefined &&
-            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
-        ) {
-            return null;
-        }
-
-        return {
-            marketTabKey: state.marketTabKey,
-            marketListingsView: state.marketListingsView,
-            itemHrid: state.itemHrid,
-            enhancementLevel: state.enhancementLevel,
-            enhancementLevelInput: state.enhancementLevelInput,
-            isSell: state.isSell,
-            showPostListing: state.showPostListing,
-            isPostNewListing: state.isPostNewListing,
-            isInstantOrder: state.isInstantOrder,
-            quantityInput: state.quantityInput,
-            priceInput: state.priceInput,
-        };
-    }
-
-    /**
-     * Read the live Marketplace React component state from the unique visible Marketplace panel.
-     * The selected component must be on that panel host fiber's bounded return ancestry.
-     *
-     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
-     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
-     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
-     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
-     */
-    function getMarketplaceRuntimeComponentFromElement(element) {
-        let fiber = getReactFiberFromElement(element);
-        let depth = 0;
-        const candidates = [];
-        const seen = new Set();
-
-        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
-            const stateNode = fiber.stateNode;
-            if (
-                stateNode &&
-                !seen.has(stateNode) &&
-                typeof stateNode.setState === 'function' &&
-                typeof stateNode.handleQuantityInputChanged === 'function' &&
-                hasMarketplaceStateSignature(stateNode.state)
-            ) {
-                seen.add(stateNode);
-                candidates.push(stateNode);
-            }
-            fiber = fiber.return;
-            depth += 1;
-        }
-
-        // Fail closed when the ancestry is unexpectedly deeper than the bound or
-        // contains more than one Marketplace-like owner. The quantity input must
-        // identify one exact live component before we write to a controlled input.
-        if (fiber || candidates.length !== 1) return null;
-        return candidates[0];
-    }
-
-    /**
-     * Read Marketplace state from the exact DOM element that belongs to the live component.
-     * @param {HTMLElement} element
-     * @returns {ReturnType<typeof normalizeMarketplaceState>}
-     */
-    function readMarketplaceRuntimeStateFromElement(element) {
-        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
-    }
-
-    /**
-     * Create an autofill manager instance for one marketplace workflow owner.
-     *
-     * Lifecycle:
-     *   initialize()      — call once at feature startup; installs the buy-modal observer
-     *   startSession(opts) — claim a session slot by sessionId
-     *   arm(opts)         — atomically set target; only 'buy' modalMode is accepted
-     *   setItem()         — @deprecated, use arm()
-     *   setQuantityProvider() — @deprecated, use arm()
-     *   exitSession(sessionId) — disarm without ending the marketplace session token
-     *   cleanup()         — call on feature disable; removes observer
-     *
-     * @param {string} observerId
-     * @returns {Object}
-     */
-    function createAutofillManager(observerId) {
-        let observerUnregister = null;
-        let activeSessionId = null;
-        let targetGeneration = 0;
-        let activeTarget = null;
-        let legacyDraft = null;
-        const modalRetryTimers = new Set();
-        const filledModalGenerations = new WeakMap();
-
-        function clearRetryTimers() {
-            for (const timer of modalRetryTimers) clearTimeout(timer);
-            modalRetryTimers.clear();
-        }
-
-        function invalidateTarget() {
-            clearRetryTimers();
-            targetGeneration += 1;
-            activeTarget = null;
-            legacyDraft = null;
-        }
-
-        function isValidItemHrid(itemHrid) {
-            return typeof itemHrid === 'string' && itemHrid.startsWith('/items/') && itemHrid.length > 7;
-        }
-
-        function isValidEnhancementLevel(enhancementLevel) {
-            return Number.isInteger(enhancementLevel) && enhancementLevel >= 0;
-        }
-
-        function startSession({
-            itemHrid = null,
-            enhancementLevel = 0,
-            sessionId = null,
-            quantityProvider = null,
-            modalMode = 'buy',
-        } = {}) {
-            activeSessionId = marketplaceSession_js.marketplaceSession.isActive(sessionId) ? sessionId : null;
-            invalidateTarget();
-
-            if (activeSessionId !== null && (itemHrid !== null || quantityProvider !== null)) {
-                arm({ sessionId, itemHrid, enhancementLevel, modalMode, quantityProvider });
-            }
-        }
-
-        function arm(opts = {}) {
-            const { sessionId, itemHrid = null, enhancementLevel = 0, modalMode = 'buy', quantityProvider } = opts || {};
-
-            if (sessionId !== activeSessionId) return false;
-            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
-                activeSessionId = null;
-                invalidateTarget();
-                return false;
-            }
-
-            if (
-                modalMode !== 'buy' ||
-                !isValidItemHrid(itemHrid) ||
-                !isValidEnhancementLevel(enhancementLevel) ||
-                typeof quantityProvider !== 'function'
-            ) {
-                invalidateTarget();
-                return false;
-            }
-
-            activeTarget = Object.freeze({
-                generation: ++targetGeneration,
-                sessionId,
-                itemHrid,
-                enhancementLevel,
-                modalMode,
-                quantityProvider,
-            });
-            legacyDraft = null;
-            return true;
-        }
-
-        /** @deprecated Use arm(). */
-        function setItem(itemHrid, enhancementLevel = 0, sessionId) {
-            if (sessionId === undefined) {
-                invalidateTarget();
-                return false;
-            }
-            if (sessionId !== activeSessionId) return false;
-            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
-                activeSessionId = null;
-                invalidateTarget();
-                return false;
-            }
-            if (!isValidItemHrid(itemHrid) || !isValidEnhancementLevel(enhancementLevel)) {
-                invalidateTarget();
-                return false;
-            }
-
-            invalidateTarget();
-            legacyDraft = Object.freeze({ sessionId, itemHrid, enhancementLevel });
-            return true;
-        }
-
-        /** @deprecated Use arm(). */
-        function setQuantityProvider(quantityProvider, sessionId) {
-            if (sessionId === undefined) {
-                invalidateTarget();
-                return false;
-            }
-            if (sessionId !== activeSessionId) return false;
-            if (!legacyDraft || legacyDraft.sessionId !== sessionId) {
-                invalidateTarget();
-                return false;
-            }
-
-            return arm({
-                sessionId,
-                itemHrid: legacyDraft.itemHrid,
-                enhancementLevel: legacyDraft.enhancementLevel,
-                modalMode: 'buy',
-                quantityProvider,
-            });
-        }
-
-        function exitSession(sessionId) {
-            if (sessionId !== undefined && sessionId !== activeSessionId) return;
-            activeSessionId = null;
-            invalidateTarget();
-        }
-
-        function findWorkingQuantityInput(modal) {
-            // The marketplace update switched this field from a native number input to a text
-            // input (to support typed compact values like "5k"), so match both types.
-            const structuralInputs = Array.from(
-                modal.querySelectorAll(
-                    '[class*="MarketplacePanel_quantityInputs"] input[type="number"], ' +
-                        '[class*="MarketplacePanel_quantityInputs"] input[type="text"]'
-                )
-            );
-            if (structuralInputs.length === 1) return structuralInputs[0];
-            if (structuralInputs.length > 1) return null;
-
-            const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
-            if (allInputs.length === 1) return allInputs[0];
-
-            const labeled = allInputs.filter((input) => {
-                // Labels are localized by the game (zh: Quantity 数量 / Enhancement Level 强化等级);
-                // match the translated strings alongside the English ones.
-                const quantityLabel = translateGameName('marketplacePanel', 'quantity', 'Quantity');
-                const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
-                let parent = input.parentElement;
-                for (let depth = 0; parent && depth < 4; depth += 1) {
-                    const text = parent.textContent || '';
-                    const mentionsEnhancement = text.includes('Enhancement Level') || text.includes(enhancementLabel);
-                    const mentionsQuantity = text.includes('Quantity') || text.includes(quantityLabel);
-                    if (mentionsEnhancement && !mentionsQuantity) return false;
-                    if (mentionsQuantity && !mentionsEnhancement) return true;
-                    parent = parent.parentElement;
-                }
-                return false;
-            });
-            return labeled.length === 1 ? labeled[0] : null;
-        }
-
-        function isVisibleBuyModal(modal) {
-            if (!modal || !modal.isConnected || !isElementVisible(modal)) return false;
-            const header = modal.querySelector('[class*="MarketplacePanel_header"]');
-            if (!header) return false;
-            const text = header.textContent?.trim() || '';
-            // Header text is localized (zh: Buy Now 立即购买 / Buy Listing 购买挂牌); the React
-            // state check in targetMatchesInput remains the strict ownership verification.
-            return (
-                text.includes('Buy Now') ||
-                text.includes('Buy Listing') ||
-                text.includes(translateGameName('marketplacePanel', 'buyNow', 'Buy Now')) ||
-                text.includes(translateGameName('marketplacePanel', 'buyListing', 'Buy Listing'))
-            );
-        }
-
-        function resolveQuantity(target) {
-            try {
-                const quantity = target.quantityProvider();
-                return typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? Math.trunc(quantity) : 0;
-            } catch (error) {
-                console.error('[MarketplaceAutofill] quantityProvider failed:', error);
-                return 0;
-            }
-        }
-
-        function targetMatchesInput(target, quantityInput) {
-            const state = readMarketplaceRuntimeStateFromElement(quantityInput);
-            // MWI uses two exact buy forms: an instant order from an existing ask and
-            // a patient New Buy Listing. Reject mixed flag states rather than widening
-            // the verified write path to every post-listing modal.
-            const isInstantBuy = state?.isPostNewListing === false && state?.isInstantOrder === true;
-            const isNewBuyListing = state?.isPostNewListing === true && state?.isInstantOrder === false;
-
-            return (
-                state?.marketTabKey === 'MarketListings' &&
-                state?.marketListingsView === 'OrderBook' &&
-                state?.showPostListing === true &&
-                state?.isSell === false &&
-                (isInstantBuy || isNewBuyListing) &&
-                state?.itemHrid === target.itemHrid &&
-                state?.enhancementLevel === target.enhancementLevel &&
-                state?.enhancementLevelInput === target.enhancementLevel
-            );
-        }
-
-        function fillVerifiedModal(modal, target) {
-            if (!target || activeTarget !== target) return false;
-            if (activeSessionId !== target.sessionId || !marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) return false;
-            if (!isVisibleBuyModal(modal)) return false;
-            const quantityInput = findWorkingQuantityInput(modal);
-            if (!quantityInput || !targetMatchesInput(target, quantityInput)) return false;
-
-            const quantity = resolveQuantity(target);
-            if (quantity <= 0) return false;
-
-            const previousFill = filledModalGenerations.get(modal);
-            if (
-                previousFill?.generation === target.generation &&
-                previousFill.input === quantityInput &&
-                previousFill.quantity === quantity &&
-                Number(quantityInput.value) === quantity
-            ) {
-                return true;
-            }
-
-            // Re-check ownership after the provider call, immediately before the proven write path.
-            if (activeTarget !== target || activeSessionId !== target.sessionId) return false;
-            if (!marketplaceSession_js.marketplaceSession.isActive(target.sessionId) || !targetMatchesInput(target, quantityInput)) return false;
-
-            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-            if (typeof nativeInputValueSetter !== 'function') return false;
-
-            nativeInputValueSetter.call(quantityInput, quantity.toString());
-            quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
-            filledModalGenerations.set(modal, { generation: target.generation, input: quantityInput, quantity });
-            marketplaceSession_js.marketplaceSession.consume(target.sessionId);
-            return true;
-        }
-
-        function handleObservedModal(modal) {
-            const target = activeTarget;
-            if (!target || !modal) return;
-
-            // The Marketplace modal can mount before its owning React component has
-            // converged on the selected item. Retry this observed modal for a bounded
-            // 1.5-second window, but keep the verified workflow target armed afterward
-            // so an unrelated or retained modal cannot destroy the next exact Buy fill.
-            const delays = [0, 25, 75, 150, 300, 500, 750, 1000, 1500];
-            delays.forEach((delay) => {
-                const timer = setTimeout(() => {
-                    modalRetryTimers.delete(timer);
-                    if (!activeTarget || activeTarget.generation !== target.generation) return;
-                    if (fillVerifiedModal(modal, target)) {
-                        clearRetryTimers();
-                    }
-                    // Keep the verified target armed after a bounded miss. A retained or unrelated
-                    // modal must not destroy the workflow; the next exact Buy modal can still fill.
-                }, delay);
-                modalRetryTimers.add(timer);
-            });
-        }
-
-        return {
-            initialize() {
-                if (observerUnregister) observerUnregister();
-                observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', handleObservedModal);
-            },
-            startSession,
-            arm,
-            setItem,
-            setQuantityProvider,
-            exitSession,
-            cleanup() {
-                if (observerUnregister) {
-                    observerUnregister();
-                    observerUnregister = null;
-                }
-                activeSessionId = null;
-                invalidateTarget();
-            },
-        };
-    }
 
     /**
      * Marketplace Custom Tabs Utility
@@ -6353,162 +6513,6 @@
 
     // Setup setting listener (always active, even when feature is disabled)
     transmuteRates.setupSettingListener();
-
-    /**
-     * Game Data Lookup Utilities
-     *
-     * Centralized functions for resolving display names to HRIDs, plus locale-independent
-     * resolution via icon sprite references (see below) - prefer the sprite-based functions
-     * over the name-based ones wherever a `<use>` element is reachable, since display names are
-     * translated client-side and the name-based functions below only ever match the client's
-     * English-language data, silently failing on any other game locale.
-     */
-
-
-    /**
-     * Resolve an item HRID from its icon sprite `<use>` href (e.g.
-     * ".../items_sprite.<hash>.svg#redwood_log"), which is locale-independent - unlike items, the
-     * href's fragment IS the full remaining hrid segment (items have no sub-category prefix like
-     * actions/skills do), so no reverse map is needed - just validate it against itemDetailMap.
-     * @param {string|null|undefined} href
-     * @returns {string|null}
-     */
-    function getItemHridFromIconHref(href) {
-        if (!href || !href.includes('items_sprite')) return null;
-        const fragment = href.split('#')[1];
-        if (!fragment) return null;
-
-        const hrid = `/items/${fragment}`;
-        const gameData = dataManager.getInitClientData();
-        return gameData?.itemDetailMap?.[hrid] ? hrid : null;
-    }
-
-    /**
-     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
-     * @param {string} name - Original display name
-     * @returns {string[]} Array of alternate names to try (may be empty)
-     */
-    function getRefinedNameVariants(name) {
-        const variants = [];
-        if (name.includes('★')) {
-            variants.push(name.replace(/\s*★/, ' (R)'));
-        }
-        if (name.includes('(R)')) {
-            variants.push(name.replace(/\s*\(R\)/, ' ★'));
-        }
-        return variants;
-    }
-
-    /**
-     * Find an action HRID from its display name.
-     * Tries exact match first, then ★ ↔ (R) variants for refined items.
-     * @param {string} actionName - Display name of the action
-     * @returns {string|null} Action HRID or null if not found
-     */
-    function getActionHridFromName(actionName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) {
-            return null;
-        }
-
-        // Try exact match first (English or translated)
-        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            const displayName = getActionName(hrid, detail.name);
-            if (displayName === actionName || detail.name === actionName) {
-                return hrid;
-            }
-        }
-
-        // Try ★ ↔ (R) variants for refined items
-        for (const variant of getRefinedNameVariants(actionName)) {
-            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-                const displayName = getActionName(hrid, detail.name);
-                if (displayName === variant || detail.name === variant) {
-                    return hrid;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Find an item HRID from its display name.
-     * Tries exact match first, then ★ ↔ (R) variants for refined items.
-     * @param {string} itemName - Display name of the item
-     * @returns {string|null} Item HRID or null if not found
-     */
-    function getItemHridFromName(itemName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.itemDetailMap) {
-            return null;
-        }
-
-        // Try exact match first (English or translated)
-        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-            const displayName = getItemName(hrid, detail.name);
-            if (displayName === itemName || detail.name === itemName) {
-                return hrid;
-            }
-        }
-
-        // Try ★ ↔ (R) variants for refined items
-        for (const variant of getRefinedNameVariants(itemName)) {
-            for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-                const displayName = getItemName(hrid, detail.name);
-                if (displayName === variant || detail.name === variant) {
-                    return hrid;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Resolve an action HRID by walking up the React fiber tree from a DOM element inside the
-     * action detail modal (SkillActionDetail) - unlike the tile list, that modal renders no
-     * hrid-keyed icon of its own, but `this.props.actionDetail.hrid` is set on its own component
-     * instance (confirmed against the client bundle), so this is locale-independent, unlike matching
-     * the modal's translated name text.
-     * @param {HTMLElement} element - Any DOM node inside the action detail modal.
-     * @returns {string|null}
-     */
-    function getActionHridFromFiber(element) {
-        if (!element) return null;
-
-        let f = getReactFiberFromElement(element);
-        while (f) {
-            const hrid = f.memoizedProps?.actionDetail?.hrid;
-            if (hrid) return hrid;
-            f = f.return;
-        }
-        return null;
-    }
-
-    /**
-     * Get the coin cost of an item from the in-game shop.
-     * Returns 0 if the item is not available in the shop or not purchasable with coins.
-     * @param {string} itemHrid - Item HRID
-     * @returns {number} Coin cost, or 0 if not available in shop
-     */
-    function getShopCoinCost(itemHrid) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.shopItemDetailMap) return 0;
-
-        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
-            if (shopItem.itemHrid === itemHrid) {
-                if (shopItem.costs && shopItem.costs.length > 0) {
-                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
-                    if (coinCost) {
-                        return coinCost.count;
-                    }
-                }
-            }
-        }
-
-        return 0;
-    }
 
     /**
      * View Action Button Module
@@ -22753,6 +22757,67 @@ self.onmessage = function (e) {
         return parts.length ? ` ${parts.join(' · ')}` : '';
     }
 
+    /**
+     * Split a rendered "Action: Item" string (queue entry or header) into its two name parts.
+     * Chinese (and other CJK locales) render a full-width colon ("炼金：林中精华"), so split on
+     * the first colon of either width. Splitting only at the first occurrence preserves item
+     * names that themselves contain colons, matching the previous split+join behavior.
+     * @param {string} text - Rendered action text, without position/tier decorations
+     * @returns {{actionName: string, itemName: string|null}}
+     */
+    function splitActionAndItemNames(text) {
+        const colonIndex = text.search(/[:：]/);
+        if (colonIndex === -1) {
+            return { actionName: text, itemName: null };
+        }
+        return {
+            actionName: text.slice(0, colonIndex).trim(),
+            itemName: text.slice(colonIndex + 1).trim(),
+        };
+    }
+
+    /**
+     * Compare an action name rendered by the game DOM against an action's English data name in a
+     * locale-aware way: the DOM renders the game's translated action name in non-English locales,
+     * so compare both names plus their ★ ↔ (R) refined-item variants.
+     * @param {string} actionHrid - Action HRID (translation lookup key)
+     * @param {string} actionName - English data name of the action
+     * @param {string|null} domName - Action name as rendered in the DOM
+     * @returns {boolean}
+     */
+    function actionNameMatches(actionHrid, actionName, domName) {
+        if (domName == null) {
+            return false;
+        }
+        const translatedActionName = getActionName(actionHrid, actionName);
+        return (
+            actionName === domName ||
+            translatedActionName === domName ||
+            (domName.includes('★') && actionName === domName.replace(/\s*★/, ' (R)')) ||
+            (domName.includes('(R)') && actionName === domName.replace(/\s*\(R\)/, ' ★')) ||
+            (domName.includes('★') && translatedActionName === domName.replace(/\s*★/, ' (R)')) ||
+            (domName.includes('(R)') && translatedActionName === domName.replace(/\s*\(R\)/, ' ★'))
+        );
+    }
+
+    /**
+     * True for elements Toolasha itself injected into the game DOM. All injected UI follows the
+     * `mwi-` id/class prefix project convention (e.g. #mwi-battle-counter, .mwi-appended-stats),
+     * so such children must be excluded when reading the game's own text.
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    function isToolashaInjectedElement(element) {
+        if (element.id && element.id.startsWith('mwi-')) {
+            return true;
+        }
+        const className = typeof element.className === 'string' ? element.className : '';
+        return className
+            .split(/\s+/)
+            .filter(Boolean)
+            .some((token) => token.startsWith('mwi-'));
+    }
+
     // Marks a native QueuedActions edit-menu once Toolasha has enhanced it, so the width contract
     // below and the row-wrapping rules only ever apply to that specific popup (TLA-040) — never to
     // unrelated MUI tooltips/poppers elsewhere in the game.
@@ -24460,17 +24525,11 @@ self.onmessage = function (e) {
             const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))*$/);
             const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
 
-            if (fullNameFromDom.includes(':')) {
-                const parts = fullNameFromDom.split(':');
-                return {
-                    actionNameFromDom: parts[0].trim(),
-                    itemNameFromDom: parts.slice(1).join(':').trim(),
-                };
-            }
-
+            // Tolerates the full-width colon the game renders in Chinese: "炼金：林中精华"
+            const { actionName, itemName } = splitActionAndItemNames(fullNameFromDom);
             return {
-                actionNameFromDom: fullNameFromDom,
-                itemNameFromDom: null,
+                actionNameFromDom: actionName,
+                itemNameFromDom: itemName,
             };
         }
 
@@ -24550,17 +24609,7 @@ self.onmessage = function (e) {
                 const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
                 // The DOM renders the game's translated action name in non-English locales, so
                 // compare both names plus their ★ ↔ (R) variants.
-                const translatedActionName = getActionName(currentAction.actionHrid, actionDetails.name);
-                const matchesName =
-                    actionDetails.name === actionNameFromDom ||
-                    translatedActionName === actionNameFromDom ||
-                    (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
-                    (actionNameFromDom.includes('(R)') &&
-                        actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★')) ||
-                    (actionNameFromDom.includes('★') &&
-                        translatedActionName === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
-                    (actionNameFromDom.includes('(R)') &&
-                        translatedActionName === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
+                const matchesName = actionNameMatches(currentAction.actionHrid, actionDetails.name, actionNameFromDom);
 
                 if (!matchesName && !matchesOutput && !matchesDrop) {
                     return false;
@@ -24611,6 +24660,10 @@ self.onmessage = function (e) {
             const parts = [];
             for (const node of actionNameElement.childNodes) {
                 if (node === markerSpan) continue;
+                // Skip Toolasha-injected children (e.g. the combat battle counter's
+                // #mwi-battle-counter span) so their text can't pollute the game's action
+                // name and break current-action matching - in any locale.
+                if (node.nodeType === 1 && isToolashaInjectedElement(node)) continue;
                 const text = node.textContent.trim();
                 if (text) parts.push(text);
             }
@@ -25048,21 +25101,29 @@ self.onmessage = function (e) {
                         return false;
                     }
 
+                    // The queue renders the item's localized display name in non-English locales,
+                    // which the slug-built HRID below cannot reconstruct - compare against both
+                    // the English and translated names of the primaryItemHash item first (same
+                    // approach as matchCurrentActionFromText).
+                    if (a.primaryItemHash) {
+                        const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
+                        const hashItemName = hashItemHrid ? dataManager.getItemDetails(hashItemHrid)?.name : null;
+                        if (hashItemName) {
+                            const translatedItemName = getItemName(hashItemHrid, hashItemName);
+                            if (itemName === hashItemName || itemName === translatedItemName) {
+                                return true;
+                            }
+                        }
+                    }
+
                     // Match on primaryItemHash (the item being enhanced)
                     return a.primaryItemHash && a.primaryItemHash.includes(itemHrid);
                 });
             }
 
-            // Parse action name (same logic as main display)
-            let actionNameFromDiv, itemNameFromDiv;
-            if (actionNameText.includes(':')) {
-                const parts = actionNameText.split(':');
-                actionNameFromDiv = parts[0].trim();
-                itemNameFromDiv = parts.slice(1).join(':').trim();
-            } else {
-                actionNameFromDiv = actionNameText;
-                itemNameFromDiv = null;
-            }
+            // Parse action name (same logic as main display; tolerates the full-width colon
+            // the game renders in Chinese, e.g. "炼金：林中精华")
+            const { actionName: actionNameFromDiv, itemName: itemNameFromDiv } = splitActionAndItemNames(actionNameText);
 
             // Match action from cache (same logic as main display, excluding already-used actions)
             return cachedActions.find((a) => {
@@ -25075,14 +25136,23 @@ self.onmessage = function (e) {
                     return false;
                 }
 
-                if (actionDetails.name !== actionNameFromDiv) {
-                    const itemHridFromDiv = itemNameFromDiv
-                        ? `/items/${itemNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`
-                        : `/items/${actionNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`;
+                // The queue renders the game's translated action name in non-English locales,
+                // so compare both names plus their ★ ↔ (R) variants (same as main display).
+                if (!actionNameMatches(a.actionHrid, actionDetails.name, actionNameFromDiv)) {
+                    // The item part of the label is likewise localized; resolve it through the
+                    // dual-name index first and keep the English slug form only as a fallback
+                    // for names the index cannot resolve.
+                    const itemHridCandidates = new Set();
+                    const resolvedItemHrid = itemNameFromDiv ? getItemHridFromName(itemNameFromDiv) : null;
+                    if (resolvedItemHrid) {
+                        itemHridCandidates.add(resolvedItemHrid);
+                    }
+                    const slugSource = itemNameFromDiv || actionNameFromDiv;
+                    itemHridCandidates.add(`/items/${slugSource.toLowerCase().replace(/\s+/g, '_')}`);
                     const outputItems = actionDetails.outputItems || [];
                     const dropTable = actionDetails.dropTable || [];
-                    const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDiv);
-                    const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDiv);
+                    const matchesOutput = outputItems.some((item) => itemHridCandidates.has(item.itemHrid));
+                    const matchesDrop = dropTable.some((drop) => itemHridCandidates.has(drop.itemHrid));
 
                     if (!matchesOutput && !matchesDrop) {
                         return false;
@@ -25094,7 +25164,13 @@ self.onmessage = function (e) {
                     const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
                     if (hashItemHrid) {
                         const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
-                        if (hashItemDetails?.name === itemNameFromDiv) return true;
+                        // The queue renders the item's localized display name in non-English
+                        // locales, so compare both names (same approach as matchCurrentActionFromText).
+                        if (
+                            hashItemDetails?.name === itemNameFromDiv ||
+                            getItemName(hashItemHrid, hashItemDetails?.name || '') === itemNameFromDiv
+                        )
+                            return true;
                     }
                     const itemHrid = '/items/' + itemNameFromDiv.toLowerCase().replace(/\s+/g, '_');
                     return a.primaryItemHash.includes(itemHrid);
@@ -26784,4 +26860,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] UI library 2 loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.marketData, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Core, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Core.loadoutState, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Utils.buffParser);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core, Toolasha.Core.webSocketHook, Toolasha.Utils.marketData, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Core.loadoutState, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Utils.buffParser);

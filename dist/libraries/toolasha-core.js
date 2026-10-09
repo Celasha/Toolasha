@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.8.1
+ * Version: 3.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4053,6 +4053,7 @@
                 // in a later buff value, so the lossy prefix hash must never collapse them.
                 messageType === 'house_rooms_updated' ||
                 messageType === 'achievement_buffs_updated' ||
+                messageType === 'achievements_updated' ||
                 messageType === 'moo_pass_buffs_updated' ||
                 messageType === 'community_buffs_updated' ||
                 messageType === 'consumable_buffs_updated' ||
@@ -4067,6 +4068,10 @@
                 messageType === 'leaderboard_updated' ||
                 messageType === 'guild_updated' ||
                 messageType === 'loot_opened' ||
+                messageType === 'character_stats_updated' ||
+                messageType === 'party_updated' ||
+                messageType === 'all_combat_triggers_updated' ||
+                messageType === 'combat_triggers_updated' ||
                 // Two genuine, distinct info toasts (e.g. selling the same item twice in a row)
                 // can share the same first-100-char prefix - see the exact-match branch below.
                 messageType === 'info';
@@ -4791,6 +4796,10 @@
             this.loadRetryInterval = null;
             this.fallbackInterval = null;
 
+            // Debounce timer for refreshing the cross-domain GM-stored characterData snapshot (see
+            // _scheduleCrossDomainSnapshotRefresh).
+            this.crossDomainSnapshotTimer = null;
+
             // Setup WebSocket message handlers
             this.setupMessageHandlers();
         }
@@ -5004,10 +5013,15 @@
                 const characterItems = Array.isArray(data.characterItems)
                     ? data.characterItems.filter((item) => item?.count !== 0)
                     : [];
-                this.characterData = { ...data, characterItems };
+                // Keep characterData.characterActions and this.characterActions on the same live
+                // array (same reasoning as characterItems above) - actions_updated below mutates
+                // this.characterActions in place, and consumers reading characterData.characterActions
+                // directly (e.g. the Combat Sim export's current-zone detection) must see those same
+                // splices/pushes rather than a frozen copy from login.
+                this.characterActions = [...data.characterActions];
+                this.characterData = { ...data, characterItems, characterActions: this.characterActions };
                 this.characterSkills = data.characterSkills;
                 this.characterItems = characterItems;
-                this.characterActions = [...data.characterActions];
                 this.characterQuests = data.characterQuests || [];
 
                 // Restore/establish the current-unit timing boundary for whatever action is now
@@ -5208,6 +5222,18 @@
                 if (data.actionTypeDrinkSlotsMap) {
                     this.updateDrinkSlotsMap(data.actionTypeDrinkSlotsMap);
                 }
+                // Mirror both maps into characterData - consumers that read
+                // characterData.actionTypeFoodSlotsMap/actionTypeDrinkSlotsMap directly (e.g. the
+                // Combat Sim export) otherwise keep seeing whichever food/drink was equipped at
+                // login, since this.actionTypeDrinkSlotsMap above is a separate Map, not a mirror.
+                if (this.characterData) {
+                    if (data.actionTypeFoodSlotsMap !== undefined) {
+                        this.characterData.actionTypeFoodSlotsMap = data.actionTypeFoodSlotsMap;
+                    }
+                    if (data.actionTypeDrinkSlotsMap !== undefined) {
+                        this.characterData.actionTypeDrinkSlotsMap = data.actionTypeDrinkSlotsMap;
+                    }
+                }
 
                 this.emit('consumables_updated', data);
             });
@@ -5245,6 +5271,26 @@
 
                 this.emit('achievement_buffs_updated', data);
                 this.emit('buffs_updated', data);
+            });
+
+            // Handle achievements_updated (an achievement is completed/progressed mid-session).
+            // Incremental update set, merged by achievementHrid like _mergeCharacterAbilities -
+            // without this, characterData.characterAchievements (what the Combat Sim export reads)
+            // only ever reflected achievements completed as of login.
+            this.webSocketHook.on('achievements_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (this.characterData && Array.isArray(data.achievements) && data.achievements.length > 0) {
+                    const achievements = [...(this.characterData.characterAchievements || [])];
+                    for (const updated of data.achievements) {
+                        const index = achievements.findIndex((a) => a.achievementHrid === updated.achievementHrid);
+                        if (index !== -1) achievements[index] = updated;
+                        else achievements.push(updated);
+                    }
+                    this.characterData.characterAchievements = achievements;
+                }
+
+                this.emit('achievements_updated', data);
             });
 
             // Handle moo_pass_buffs_updated
@@ -5360,12 +5406,86 @@
             this.webSocketHook.on('skills_updated', (data, context) => {
                 if (!this._isFromActiveSocket(context)) return;
 
-                // Update character skills with new levels
+                // Update character skills with new levels. Also mirror into characterData -
+                // this.characterSkills alone used to go stale the moment a skills_updated arrived,
+                // since reassigning it detaches it from whatever array characterData.characterSkills
+                // still points to (every consumer reading characterData.characterSkills directly,
+                // e.g. the Combat Sim export, would keep seeing the character's skills as of login).
                 if (data.characterSkills) {
                     this.characterSkills = data.characterSkills;
+                    if (this.characterData) this.characterData.characterSkills = data.characterSkills;
                 }
 
                 this.emit('skills_updated', data);
+            });
+
+            // Handle character_stats_updated (combatUnit - equipped abilities/combat stats - and
+            // noncombatStats change on ability equip/unequip, stat-affecting item changes, etc.).
+            // Without this, characterData.combatUnit (the only place equipped-ability state lives)
+            // was never refreshed after init_character_data, so the Combat Sim export kept
+            // reporting whichever abilities were equipped at login.
+            this.webSocketHook.on('character_stats_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (this.characterData) {
+                    if (data.combatUnit !== undefined) this.characterData.combatUnit = data.combatUnit;
+                    if (data.noncombatStats !== undefined) this.characterData.noncombatStats = data.noncombatStats;
+                }
+
+                this.emit('character_stats_updated', data);
+            });
+
+            // Handle party_updated (joining/leaving a party, party zone/difficulty changes). Full
+            // replace, matching characterData.partyInfo's own shape - without this, the Combat Sim
+            // export kept exporting whatever party (or lack of one) was active at login.
+            this.webSocketHook.on('party_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (this.characterData && data.partyInfo !== undefined) {
+                    this.characterData.partyInfo = data.partyInfo;
+                }
+
+                this.emit('party_updated', data);
+            });
+
+            // Handle all_combat_triggers_updated (bulk trigger replace - e.g. loadout switch) and
+            // combat_triggers_updated (single ability/consumable trigger edit). Without these,
+            // characterData.abilityCombatTriggersMap/consumableCombatTriggersMap were only ever as
+            // fresh as login, so edited trigger conditions never reached the Combat Sim export.
+            this.webSocketHook.on('all_combat_triggers_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (this.characterData) {
+                    if (data.abilityCombatTriggersMap !== undefined) {
+                        this.characterData.abilityCombatTriggersMap = data.abilityCombatTriggersMap;
+                    }
+                    if (data.consumableCombatTriggersMap !== undefined) {
+                        this.characterData.consumableCombatTriggersMap = data.consumableCombatTriggersMap;
+                    }
+                }
+
+                this.emit('all_combat_triggers_updated', data);
+            });
+
+            this.webSocketHook.on('combat_triggers_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (this.characterData) {
+                    const isAbility = data.combatTriggerTypeHrid === '/combat_trigger_types/ability';
+                    if (isAbility && data.abilityHrid) {
+                        this.characterData.abilityCombatTriggersMap = {
+                            ...(this.characterData.abilityCombatTriggersMap || {}),
+                            [data.abilityHrid]: data.combatTriggers,
+                        };
+                    } else if (!isAbility && data.itemHrid) {
+                        this.characterData.consumableCombatTriggersMap = {
+                            ...(this.characterData.consumableCombatTriggersMap || {}),
+                            [data.itemHrid]: data.combatTriggers,
+                        };
+                    }
+                }
+
+                this.emit('combat_triggers_updated', data);
             });
 
             // Handle new_battle (combat start - for Combat Sim export on Steam)
@@ -5427,6 +5547,56 @@
 
                 this.emit('loot_opened', { data, characterId: this.currentCharacterId });
             });
+
+            // Cross-domain combat-sim export (the "Import from Toolasha" button on Metz's/Shykai's
+            // own page) reads a GM-storage snapshot of init_character_data instead of this live
+            // characterData, since no game WebSocket exists on a third-party domain. That snapshot
+            // was previously written ONLY on init_character_data itself, so it froze at login and
+            // never reflected later gear swaps, ability re-equips, skill-ups, party changes, trigger
+            // edits, or food/drink swaps - exactly what "Import from Toolasha" has been exporting
+            // stale. Listen for every message type above that can mutate characterData and refresh
+            // the GM snapshot from the current in-memory characterData shortly after, debounced so a
+            // burst of updates (e.g. several items_updated in a row) writes once, not once per message.
+            const liveCharacterDataEvents = new Set([
+                'items_updated',
+                'abilities_updated',
+                'action_completed',
+                'skills_updated',
+                'character_stats_updated',
+                'party_updated',
+                'all_combat_triggers_updated',
+                'combat_triggers_updated',
+                'consumables_updated',
+                'achievements_updated',
+                'house_rooms_updated',
+                'guild_buffs_updated',
+                'guild_updated',
+                'moo_pass_buffs_updated',
+            ]);
+            this.webSocketHook.on('*', (data) => {
+                if (!liveCharacterDataEvents.has(data?.type)) return;
+                this._scheduleCrossDomainSnapshotRefresh();
+            });
+        }
+
+        /**
+         * Debounce-refresh the GM-stored cross-domain characterData snapshot (see the comment above
+         * where this is scheduled). No-ops when GM storage or a loaded characterData aren't
+         * available (in-page game consumers never read this snapshot - dataManager.characterData is
+         * already live for them).
+         */
+        _scheduleCrossDomainSnapshotRefresh() {
+            if (typeof GM_setValue === 'undefined' || !this.characterData) return;
+
+            if (this.crossDomainSnapshotTimer) clearTimeout(this.crossDomainSnapshotTimer);
+            this.crossDomainSnapshotTimer = setTimeout(() => {
+                this.crossDomainSnapshotTimer = null;
+                try {
+                    GM_setValue('toolasha_init_character_data', JSON.stringify(this.characterData));
+                } catch {
+                    /* ignore */
+                }
+            }, 500);
         }
 
         /**
@@ -8470,6 +8640,8 @@
             progressSuffix: (p) => ` (${p.current}/${p.goal})`,
             totalNonCombatLabel: 'Total (non-combat)',
             characterInfoNotAvailable: 'Character info not available',
+            zoneProgressHeader: 'Zone Task Progress',
+            zoneProgressRowValue: (p) => `~${p.fights} fights | ${p.time} (bottleneck: ${p.bottleneckName})`,
         },
         combatSimIntegrationMetz: {
             noCharacterDataAlert:
@@ -10300,7 +10472,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 ironCow: { title: '铁牛模式' },
                 general: { title: '通用设置' },
                 actionBar: { title: '动作栏' },
-                skillPageTiles: { title: '技能页面与图块' },
+                skillPageTiles: { title: '专业页面与图块' },
                 actionPanel: { title: '动作面板' },
                 actionQueue: { title: '动作队列' },
                 alchemy: { title: '炼金' },
@@ -10314,7 +10486,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 pricingProfit: { title: '定价与利润' },
                 inventoryNetWorth: { title: '物品栏与净资产' },
                 inventoryTabs: { title: '自定义物品栏标签' },
-                skills: { title: '技能' },
+                skills: { title: '专业' },
                 combat: { title: '战斗功能' },
                 tasks: { title: '任务' },
                 ui: { title: '界面与外观' },
@@ -10422,11 +10594,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '动作栏：实时倒计时',
                     help: '将动作进度条上的静态时间替换为按秒跳动的实时倒计时',
                 },
-                actionPanel_showFilter: { label: '技能页面：动作筛选输入框' },
-                actionPanel_showSort: { label: '技能页面：排序按钮' },
-                actionPanel_showPricingMode: { label: '技能页面：定价模式按钮' },
-                actionPanel_showCraftToggle: { label: '技能页面：制作切换按钮' },
-                actionPanel_showSellTaxToggle: { label: '技能页面：出售税切换按钮' },
+                actionPanel_showFilter: { label: '专业页面：动作筛选输入框' },
+                actionPanel_showSort: { label: '专业页面：排序按钮' },
+                actionPanel_showPricingMode: { label: '专业页面：定价模式按钮' },
+                actionPanel_showCraftToggle: { label: '专业页面：制作切换按钮' },
+                actionPanel_showSellTaxToggle: { label: '专业页面：出售税切换按钮' },
                 actionPanel_showProfitPerHour_gathering: {
                     label: '动作页面：在采集方块上显示利润/时',
                     help: '在采集类动作方块上显示利润/时（采集、伐木等）',
@@ -10644,12 +10816,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '显示采集区域中的稀有发现掉落（例如 Asteroid Belt 掉落的 Thread of Expertise）',
                 },
                 itemTooltip_abilityStatus: {
-                    label: '显示能力书状态',
-                    help: '在能力书提示框中显示能力是否已学习，以及当前等级/进度',
+                    label: '显示技能书状态',
+                    help: '在技能书提示框中显示技能是否已学习，以及当前等级/进度',
                 },
                 abilityTooltip_effectiveTiming: {
                     label: '显示实际冷却/施法时间（基于你的属性）',
-                    help: '根据当前的能力急速、施法速度和攻击等级计算实际冷却/施法时间，与基础值不同时显示在能力提示框中。',
+                    help: '根据当前的技能急速、施法速度和攻击等级计算实际冷却/施法时间，与基础值不同时显示在技能提示框中。',
                 },
                 itemTooltip_enhancementMilestones: {
                     label: '显示强化里程碑（+5/+7/+10/+12）',
@@ -10700,7 +10872,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '保护物品选择器：显示“购买最便宜”市场按钮',
                     help: '在强化面板的保护物品选择弹窗中添加按钮，点击后跳转到市场购买最便宜的可用保护物品',
                 },
-                enhanceSim_enhancingLevel: { label: '强化技能等级', help: '默认 140（专业强化师等级）' },
+                enhanceSim_enhancingLevel: { label: '强化专业等级', help: '默认 140（专业强化师等级）' },
                 enhanceSim_houseLevel: { label: '天文台房屋房间等级', help: '默认 8（最高等级）' },
                 enhanceSim_achievement: { label: '成就加成（+0.2%）', help: '计入强化成就带来的成功率加成' },
                 enhanceSim_gear_enhancer: { label: '强化器' },
@@ -10715,7 +10887,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 enhanceSim_gear_charm: { label: '护符' },
                 enhanceSim_tea: {
                     label: '强化茶',
-                    help: '强化茶可提供技能等级加成',
+                    help: '强化茶可提供专业等级加成',
                     options: {
                         none: '无',
                         basic: '强化茶（+3）',
@@ -10938,7 +11110,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 networth: { label: '右上角：显示金币数量', help: '在页面顶部的总等级旁显示当前金币数量' },
                 invWorth: {
                     label: '物品栏下方：显示净资产明细',
-                    help: '在物品栏面板下方显示总净资产，并按类别（装备、物品栏、挂单、房屋、能力）列出明细',
+                    help: '在物品栏面板下方显示总净资产，并按类别（装备、物品栏、挂单、房屋、技能）列出明细',
                 },
                 invSort: { label: '按价值排序物品栏物品' },
                 invSort_showBadges: { label: '按卖价/买价排序时显示堆叠价值徽标' },
@@ -10986,8 +11158,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '根据任务商店宝箱的期望值估算任务代币价值，关闭则将其排除在净资产之外。',
                 },
                 networth_abilityBooksAsInventory: {
-                    label: '将能力书计入物品栏（流动资产）',
-                    help: '将能力书从固定资产移至流动资产的物品栏价值中，适合打算出售能力书时使用。',
+                    label: '将技能书计入物品栏（流动资产）',
+                    help: '将技能书从固定资产移至流动资产的物品栏价值中，适合打算出售技能书时使用。',
                 },
                 networth_historyChart: {
                     label: '启用净资产历史图表',
@@ -11038,26 +11210,26 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '当一个物品出现在多个标签中时，仅在包含该物品的最上层标签中显示。关闭后，收起某个标签会将其物品释放给下层标签。',
                 },
                 simulateScrollEffects: {
-                    label: '技能：在计算中模拟缺失的卷轴效果',
+                    label: '专业：在计算中模拟缺失的卷轴效果',
                     help: '启用后，利润/经验/速度计算会显示假设所选卷轴生效时的结果。可通过按钮配置默认卷轴，也可在“配装”面板中为单个配装单独设置覆盖。',
                 },
                 xpTracker: {
-                    label: '左侧栏：在技能条上显示经验/时速率',
-                    help: '在导航面板的每个技能条下方实时显示经验/时速率',
+                    label: '左侧栏：在专业条上显示经验/时速率',
+                    help: '在导航面板的每个专业条下方实时显示经验/时速率',
                 },
                 xpTracker_timeTillLevel: {
-                    label: '技能提示框：显示距下一等级的剩余时间',
-                    help: '在技能悬停提示框中显示距下一等级的预计剩余时间（基于当前经验/时）',
+                    label: '专业提示框：显示距下一等级的剩余时间',
+                    help: '在专业悬停提示框中显示距下一等级的预计剩余时间（基于当前经验/时）',
                 },
                 skillRemainingXP: {
                     label: '左侧栏：显示距下一等级所需经验',
-                    help: '在技能进度条下方显示升到下一等级所需的经验值',
+                    help: '在专业进度条下方显示升到下一等级所需的经验值',
                 },
                 skillRemainingXP_blackBorder: {
                     label: '剩余经验：添加黑色文字描边以提高可见度',
                     help: '为经验文字添加黑色描边/阴影，使其在进度条上更清晰易读',
                 },
-                skillbook: { label: '能力书：显示达到目标等级所需的书籍数量（在能力书物品词典窗口中）' },
+                skillbook: { label: '技能书：显示达到目标等级所需的书籍数量（在技能书物品词典窗口中）' },
                 drinkTimer: {
                     label: '饮品计时器：在消耗品栏显示饮品剩余时间',
                     help: '在采集/生产、炼金和强化动作面板的消耗品槽位下方，显示饮品剩余供应时间及队列覆盖情况。',
@@ -11066,11 +11238,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '饮品计时器：警告阈值（小时）',
                     help: '当剩余供应时间低于此小时数时，饮品时间显示黄色警告。',
                 },
-                skillingOptimizer: { label: '生活技能模拟器/优化器：在角色面板启用优化器标签页' },
+                skillingOptimizer: { label: '生活专业模拟器/优化器：在角色面板启用优化器标签页' },
                 combatScore: { label: '资料面板：显示装备评分' },
                 abilitiesTriggers: {
-                    label: '资料面板：显示能力与触发器',
-                    help: '在资料下方显示已装备的能力、消耗品及其战斗触发条件',
+                    label: '资料面板：显示技能与触发器',
+                    help: '在资料下方显示已装备的技能、消耗品及其战斗触发条件',
                 },
                 characterCard: { label: '资料面板：显示“查看卡片”按钮', help: '添加按钮，可在外部查看器中打开角色卡' },
                 eliteAchievementReminder: {
@@ -11127,7 +11299,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '为当前查看单位的战斗信息面板添加遭遇数/时、收入和经验速率',
                 },
                 combatSim: { label: '战斗模拟器', help: '模拟战斗遭遇，估算经验/时、死亡次数和消耗品用量' },
-                labSim: { label: '迷宫模拟器', help: '模拟迷宫通关，估算各技能及战斗的表现' },
+                labSim: { label: '迷宫模拟器', help: '模拟迷宫通关，估算各专业及战斗的表现' },
                 combatSim_defaultHours: { label: '战斗模拟器：默认小时数（单区域）', help: '单区域模拟的默认时长（小时）' },
                 combatSim_allZonesDefaultHours: {
                     label: '战斗模拟器：默认小时数（全部区域）',
@@ -11218,13 +11390,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '在战斗任务上显示地下城图标',
                     help: '显示该怪物出现在哪些地下城中（需启用任务图标）',
                 },
-                taskSorter_autoSort: { label: '打开任务面板时自动排序任务', help: '打开任务面板时按技能类型自动排序任务' },
+                taskSorter_autoSort: { label: '打开任务面板时自动排序任务', help: '打开任务面板时按专业类型自动排序任务' },
                 taskSorter_hideButton: { label: '隐藏任务排序按钮', help: '隐藏任务排序按钮，同时保留自动排序功能' },
                 taskSorter_sortMode: {
                     label: '任务排序模式',
                     help: '点击任务排序时的排序方式。“完成所需时间”将最快完成的任务排在最前，战斗任务和已完成任务排在最后；“保护”将未受保护的任务排在最前。',
                     options: {
-                        skill: '技能 / 区域',
+                        skill: '专业 / 区域',
                         time: '完成所需时间',
                         protection: '保护（未受保护优先）',
                     },
@@ -11291,23 +11463,23 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 hideLabyrinthBadge: { label: '左侧栏：隐藏迷宫提示徽标' },
                 hideGuildBadge: { label: '左侧栏：隐藏公会通知徽标' },
                 hideNavBarGlow: {
-                    label: '左侧栏：隐藏当前技能光效',
-                    help: '移除游戏左侧导航栏中当前激活技能图标上的橙色脉动光效动画。',
+                    label: '左侧栏：隐藏当前专业光效',
+                    help: '移除游戏左侧导航栏中当前激活专业图标上的橙色脉动光效动画。',
                 },
                 tabReorder: {
                     label: '角色面板：拖放重排标签顺序',
-                    help: '拖动标签以重新排列物品栏、Toolasha、装备、房屋、能力和配装的顺序，刷新后仍会保留。',
+                    help: '拖动标签以重新排列物品栏、Toolasha、装备、房屋、技能和配装的顺序，刷新后仍会保留。',
                 },
-                expPercentage: { label: '左侧栏：显示技能经验百分比' },
+                expPercentage: { label: '左侧栏：显示专业经验百分比' },
                 combatLevelProgress: {
                     label: '左侧栏：显示小数战斗等级',
-                    help: '根据当前整数技能等级显示未四舍五入的战斗等级公式值（例如 133.2）。游戏原生侧栏显示时会向下取整为整数。',
+                    help: '根据当前整数战斗技能等级显示未四舍五入的战斗等级公式值（例如 133.2）。游戏原生侧栏显示时会向下取整为整数。',
                 },
                 itemIconLevel: { label: '图标左下角：显示装备等级' },
                 loadoutEnhancementDisplay: { label: '配装面板：在装备图标上显示拥有的最高强化等级' },
                 loadoutSnapshot: {
                     label: '配装：在利润/动作计算中使用已保存的配装',
-                    help: '当你把一个动作加入队列时，Toolasha 会使用该技能当前已保存的游戏配装（技能默认 → 全技能默认 → 匹配的已保存配装 → 当前已装备）来预测其经验、时间和利润。“使用最高强化等级”会根据你当前拥有的物品解析。若已保存的装备不可用，预测会回退到当前已装备的配置；若已保存的食物/饮品不可用，配装不会失效，其缺失槽位会被省略。禁用此项将始终使用当前已装备的装备进行预测。',
+                    help: '当你把一个动作加入队列时，Toolasha 会使用该专业当前已保存的游戏配装（专业默认 → 全部专业默认 → 匹配的已保存配装 → 当前已装备）来预测其经验、时间和利润。“使用最高强化等级”会根据你当前拥有的物品解析。若已保存的装备不可用，预测会回退到当前已装备的配置；若已保存的食物/饮品不可用，配装不会失效，其缺失槽位会被省略。禁用此项将始终使用当前已装备的装备进行预测。',
                 },
                 showsKeyInfoInIcon: { label: '钥匙图标左下角：显示区域索引' },
                 mapIndex: { label: '战斗区域：显示区域索引号' },
@@ -11325,7 +11497,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 guildTrialSignupDisplay: {
                     label: '公会试炼：显示未报名成员列表',
-                    help: '显示哪些公会成员尚未报名本周的生活技能和战斗试炼。',
+                    help: '显示哪些公会成员尚未报名本周的生活专业和战斗试炼。',
                 },
                 guildTrialWhisperTemplate: {
                     label: '公会试炼：点击名字时的私聊消息',
@@ -11404,9 +11576,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '脚本主题色',
                     help: '脚本界面元素（按钮、标题、区域编号、经验百分比等）的主要主题色',
                 },
-                color_remaining_xp: { label: '剩余经验文本', help: '左侧导航栏中技能条下方剩余经验文本的颜色' },
-                color_xp_rate: { label: '经验速率文本', help: '左侧导航栏技能条上经验/时速率文本的颜色' },
-                color_hours_to_level: { label: '升级所需时间文本', help: '技能提示框中“距下一等级所需小时数”文本的颜色' },
+                color_remaining_xp: { label: '剩余经验文本', help: '左侧导航栏中专业条下方剩余经验文本的颜色' },
+                color_xp_rate: { label: '经验速率文本', help: '左侧导航栏专业条上经验/时速率文本的颜色' },
+                color_hours_to_level: { label: '升级所需时间文本', help: '专业提示框中“距下一等级所需小时数”文本的颜色' },
                 color_inv_count: { label: '物品栏数量文本', help: '动作方块和动作详情面板中显示的物品栏数量的颜色' },
                 color_invBadge_ask: {
                     label: '物品栏徽标：卖价',
@@ -11425,12 +11597,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '队列长度：估算值',
                     help: '估算队列长度（根据同一价格下 20 个以上订单推算）的颜色',
                 },
-                collectionFilters: { label: '收藏筛选：数量范围、地下城和生活技能套装筛选' },
+                collectionFilters: { label: '收藏筛选：数量范围、地下城和生活专业套装筛选' },
                 collectionFavorites: { label: '收藏夹：为物品加星（★）以标记和筛选收藏' },
                 collectionFavoritesSection: { label: '收藏夹：在网格顶部显示收藏区' },
                 collectionFilters_skillingBadges: {
-                    label: '在生活技能动作方块上显示收藏数量徽标',
-                    help: '在生活技能动作上显示你的收藏数量（请先打开一次收藏页面以填充数量）',
+                    label: '在生活专业动作方块上显示收藏数量徽标',
+                    help: '在生活专业动作上显示你的收藏数量（请先打开一次收藏页面以填充数量）',
                 },
             },
         },
@@ -11532,13 +11704,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             playerLabel: '玩家',
             modeLabel: '模式',
             equipmentOption: '装备',
-            abilityLevelsOption: '能力等级',
-            abilitySwapsOption: '能力替换',
+            abilityLevelsOption: '技能等级',
+            abilitySwapsOption: '技能替换',
             houseRoomsOption: '房屋房间',
             incrementLevelsOption: '+等级',
             targetLevelOption: '目标等级',
-            levelsToAddTitle: '为每个能力增加的等级数',
-            absoluteTargetLevelTitle: '所有能力的绝对目标等级',
+            levelsToAddTitle: '为每个技能增加的等级数',
+            absoluteTargetLevelTitle: '所有技能的绝对目标等级',
             exampleLevelPlaceholder: '例如 80',
             skipBackLabel: '跳过背部',
             analyzeButton: '分析',
@@ -11699,7 +11871,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             roomLevelLabel: '房间等级',
             calculateButton: '计算',
             analyzeUpgradesButton: '分析升级',
-            allSkillsOption: '所有技能',
+            allSkillsOption: '所有专业',
             skillWoodcutting: '伐木',
             skillForaging: '采集',
             skillMilking: '挤奶',
@@ -11767,15 +11939,15 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             colWinRate: '胜率',
             colGoldPerPct: '金币/1%',
             statusUpgradeCandidatesAnalyzed: (p) => `已分析 ${p.count} 个升级项。`,
-            skillLoadoutsHeader: '技能配装',
+            skillLoadoutsHeader: '专业配装',
             currentGearOption: '当前装备',
             unavailableSuffix: (p) => `${p.name}（不可用）`,
-            allSuffix: (p) => `${p.name}（全部技能）`,
+            allSuffix: (p) => `${p.name}（全部专业）`,
             statusNoCharacterDataWaitEditor: '暂无角色数据，请等待编辑器加载完成。',
             statusSkillingLoadoutUnavailable: (p) => `所选生产配装不可用：${p.names}，请选择其他配装或当前装备。`,
             skillingRoomLevelTitle: (p) => `生产房间等级 ${p.level}`,
             avgClearLabel: '平均通关率：',
-            colSkill: '技能',
+            colSkill: '专业',
             colLevel: '等级',
             colEffLevel: '有效等级',
             colSuccess: '成功率',
@@ -11806,7 +11978,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             pasteShykaiExportPlaceholder: '在此粘贴 Shykai 导出 JSON...',
             loadoutLabel: '配装',
             currentGearOption: '— 当前装备 —',
-            loadoutOptionLabel: (p) => `${p.name}${p.allSkills ? '（全部技能）' : ''}${p.unavailable ? '（不可用）' : ''}`,
+            loadoutOptionLabel: (p) => `${p.name}${p.allSkills ? '（全部专业）' : ''}${p.unavailable ? '（不可用）' : ''}`,
             resetToCurrentButton: '重置为当前',
             slotHead: '头部',
             slotBody: '身体',
@@ -11825,7 +11997,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             equipmentSectionHeader: (p) => `装备（${p.count} 件）`,
             addButton: '添加',
             changeButton: '更换',
-            abilitiesSectionHeader: (p) => `能力（已装备 ${p.count} 个）`,
+            abilitiesSectionHeader: (p) => `技能（已装备 ${p.count} 个）`,
             abilitySpecialSlotLabel: '特殊',
             abilitySlotLabel: (p) => `槽位 ${p.index}`,
             levelAbbreviation: 'Lv',
@@ -11852,8 +12024,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             inUseLabel: '（使用中）',
             moreItemsSuffix: (p) => `...还有 ${p.count} 个`,
             selectEquipmentSlotHeader: (p) => `选择${p.slot}`,
-            specialAbilityLabel: '特殊能力',
-            abilitySlotNumberLabel: (p) => `能力槽位 ${p.index}`,
+            specialAbilityLabel: '特殊技能',
+            abilitySlotNumberLabel: (p) => `技能槽位 ${p.index}`,
             selectAbilityHeader: (p) => `选择${p.slotLabel}`,
             skillStamina: '体力',
             skillIntelligence: '智力',
@@ -11862,7 +12034,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             skillDefense: '防御',
             skillRanged: '远程',
             skillMagic: '魔法',
-            skillLevelsSectionHeader: '技能等级',
+            skillLevelsSectionHeader: '战斗技能等级',
             houseRoomsSectionHeader: '房屋房间',
             activeCountLabel: (p) => `${p.count} 个已激活`,
             shrinesSectionHeader: '神殿',
@@ -11981,13 +12153,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             scoreTooltip:
                 '按当前购买价格和你现有的强化设置，估算现在复刻这套账号配装所需的成本。市场价值按当前最优卖价单价估算，未根据挂单深度调整。',
             combatScoreCalculatingLabel: '战斗评分：计算中…',
-            skillerScoreCalculatingLabel: '技能评分：计算中…',
+            skillerScoreCalculatingLabel: '专业评分：计算中…',
             combatScoreLine: (p) => `战斗评分：${p.value}`,
             houseLine: (p) => `房屋：${p.value}`,
-            abilityLine: (p) => `能力：${p.value}`,
+            abilityLine: (p) => `技能：${p.value}`,
             equipmentLine: (p) => `装备：${p.value}`,
             shrinesLine: (p) => `神殿：${p.value}`,
-            skillerScoreLine: (p) => `技能评分：${p.value}`,
+            skillerScoreLine: (p) => `专业评分：${p.value}`,
             playerFallbackName: '玩家',
             viewCardButton: '查看卡片',
             closeTooltip: '关闭',
@@ -12004,7 +12176,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             noDataStatus: '✗ 无数据',
             copiedStatus: '✓ 已复制',
             failedStatus: '✗ 失败',
-            abilitiesTriggersPanelTitle: (p) => `${p.playerName} - 能力与触发器`,
+            abilitiesTriggersPanelTitle: (p) => `${p.playerName} - 技能与触发器`,
             expandCollapseTooltip: '展开/收起',
             showDetailsLabel: '显示详情',
             hideDetailsLabel: '隐藏详情',
@@ -12025,7 +12197,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             triggerConditionValue: (p) => `${p.dependency}：${p.condition} ${p.comparator} ${p.value}`,
             noTriggerLabel: '无触发条件',
             triggerAndSeparator: ' 且 ',
-            abilityAriaLabel: '能力',
+            abilityAriaLabel: '技能',
             foodAndDrinksHeader: '食物与饮品',
             itemAriaLabel: '物品',
         },
@@ -12051,8 +12223,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         scrollSimulatorUi: {
             headingWithDash: (p) => `卷轴模拟 — ${p.contextLabel}`,
             title: '卷轴模拟',
-            noteForLoadout: '当此配装对某个技能生效时，这些卷轴会覆盖默认配置。',
-            noteForDefaults: '当没有配装匹配当前技能（或自动配装计算已禁用）时，应用此配置。',
+            noteForLoadout: '当此配装对某个专业生效时，这些卷轴会覆盖默认配置。',
+            noteForDefaults: '当没有配装匹配当前专业（或自动配装计算已禁用）时，应用此配置。',
         },
         combatBattleCounter: {
             attemptLabel: (p) => `· 第 ${p.attempt} 次尝试`,
@@ -12060,7 +12232,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             battleLabel: (p) => `· 战斗 #${p.battle}`,
         },
         combatLevelProgress: {
-            decimalTooltip: (p) => `按当前技能整数等级计算的战斗等级 · 游戏原生显示：${p.nativeLevel}`,
+            decimalTooltip: (p) => `按当前战斗技能整数等级计算的战斗等级 · 游戏原生显示：${p.nativeLevel}`,
         },
         combatStatsCalculator: {
             unknownItemFallback: '未知',
@@ -12439,7 +12611,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             modeUpgrade: '升级',
             noCompareGainNote: '百分比为相对于空槽位的提升幅度。在“比较”中选择一个配装，可查看相对于当前装备的提升。',
             noLoadoutOption: '—— 无配装 ——',
-            noRelevantEquipment: '在所选等级下，未找到该技能的相关装备。',
+            noRelevantEquipment: '在所选等级下，未找到该专业的相关装备。',
             optimalTeasHeader: '最佳茶饮',
             optimizeButton: '优化',
             optimizingButton: '优化中…',
@@ -12451,7 +12623,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             selectedLoadoutFallbackName: '所选配装',
             simulateButton: '模拟',
             simulatingButton: '模拟中…',
-            skillLabel: '技能：',
+            skillLabel: '专业：',
             sortBestValue: '最佳性价比',
             sortCostCheapest: '费用（最低）',
             sortGoldGainPercent: '金币提升 %',
@@ -12461,7 +12633,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             sortSlotOrder: '槽位顺序',
             sortXpGainPercent: '经验提升 %',
             sortXpRatioCheapest: 'G/0.01% 经验/时（最低）',
-            tabLabel: '技能模拟器',
+            tabLabel: '专业模拟器',
             tableHeaderCost: '费用',
             tableHeaderPayback: '回本时间',
             tableHeaderProfitDelta: '利润 Δ',
@@ -13210,7 +13382,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             profitPerHourLine: (p) => `利润/时：${p.sign}${p.value}${p.note}`,
             profitUnknownLine: '利润/时：-- ⚠',
             sellTaxExcludedTooltip:
-                '已排除出售税——假设你自留此产出物，而非按实际出售价格计价。若打算出售，请在技能页面关闭此开关。',
+                '已排除出售税——假设你自留此产出物，而非按实际出售价格计价。若打算出售，请在专业页面关闭此开关。',
             unpinTooltip: '取消固定此操作',
         },
         houseCostDisplay: {
@@ -13276,7 +13448,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             categoryEquipment: '装备',
             categoryListings: '挂单',
             categoryHouse: '房屋',
-            categoryAbilities: '能力',
+            categoryAbilities: '技能',
             range24hLabel: '24时',
             range7dLabel: '7天',
             range30dLabel: '30天',
@@ -13346,18 +13518,18 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             marketListingsLabel: (p) => `市场挂单：${p.value}`,
             fixedAssetsLabel: (p) => `固定资产：${p.value}`,
             housesLabel: (p) => `房屋：${p.value}`,
-            abilitiesLabel: (p) => `能力：${p.value}`,
+            abilitiesLabel: (p) => `技能：${p.value}`,
             equippedAbilitiesLabel: (p) => `已装备（${p.count}）：${p.value}`,
             otherAbilitiesCountLabel: (p) => `其他（${p.count}）：${p.value}`,
-            otherAbilitiesLabel: (p) => `其他能力：${p.value}`,
-            abilityBooksCountLabel: (p) => `能力书（${p.count}）：${p.value}`,
-            abilityBooksLabel: (p) => `能力书：${p.value}`,
+            otherAbilitiesLabel: (p) => `其他技能：${p.value}`,
+            abilityBooksCountLabel: (p) => `技能书（${p.count}）：${p.value}`,
+            abilityBooksLabel: (p) => `技能书：${p.value}`,
             guildShrinesLabel: (p) => `公会神殿：${p.value}`,
             excludedLabel: (p) => `已排除：${p.value}`,
             coinLabel: (p) => `金币：${p.value}`,
             noHousesBuiltMessage: '尚未建造房屋',
-            noAbilitiesMessage: '暂无能力',
-            noAbilityBooksMessage: '暂无能力书',
+            noAbilitiesMessage: '暂无技能',
+            noAbilityBooksMessage: '暂无技能书',
             noGuildShrineBuffsMessage: '未购买任何公会神殿增益',
             noEquipmentMessage: '暂无装备',
             noMarketListingsMessage: '暂无市场挂单',
@@ -13371,8 +13543,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             allEquippedItemsLabel: '所有已装备物品',
             allMarketListingsLabel: '所有市场挂单',
             allHousesLabel: '所有房屋',
-            allAbilitiesLabel: '所有能力',
-            allAbilityBooksLabel: '所有能力书',
+            allAbilitiesLabel: '所有技能',
+            allAbilityBooksLabel: '所有技能书',
             allGuildShrinesLabel: '所有公会神殿',
             categoryNameSuffix: (p) => `${p.name}（分类）`,
             loadoutNameLabel: (p) => `配装：${p.name}`,
@@ -13530,7 +13702,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             xpButtonLabel: '经验',
             goldButtonLabel: '金币',
             bothButtonLabel: '两者',
-            errorSkillNotDetected: '无法检测当前技能',
+            errorSkillNotDetected: '无法检测当前专业',
             errorNoAlchemyItemSelected: '炼金面板中未选择物品',
             dragToMoveTooltip: '拖动以移动',
             headerTitle: (p) =>
@@ -13572,7 +13744,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         },
         pinnedActionsPage: {
             columnAction: '动作',
-            columnSkill: '技能',
+            columnSkill: '专业',
             columnLevel: '等级',
             columnProfitPerHour: '利润/时',
             columnExpPerHour: '经验/时',
@@ -13586,7 +13758,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             noFilterMatches: '没有动作符合当前筛选条件。',
             noProductionActionsPinned: '尚未固定任何生产类动作',
             canProduceLabel: (p) => `可生产：${p.count}`,
-            filterBySkillTitle: '按技能筛选',
+            filterBySkillTitle: '按专业筛选',
             applyButton: '应用',
             clearButton: '清除',
         },
@@ -13816,6 +13988,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             progressSuffix: (p) => `（${p.current}/${p.goal}）`,
             totalNonCombatLabel: '合计（非战斗）',
             characterInfoNotAvailable: '角色信息不可用',
+            zoneProgressHeader: '区域任务进度',
+            zoneProgressRowValue: (p) => `约 ${p.fights} 场战斗 | ${p.time}（瓶颈：${p.bottleneckName}）`,
         },
         actionFilter: {
             modeLabel: (p) => `模式：${p.mode}`,
@@ -13905,7 +14079,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         collectionFilters: {
             favoritesLabel: '收藏',
             notDungeon: '非地下城',
-            skillingOutfits: '生活技能套装',
+            skillingOutfits: '生活专业套装',
             uncollectedCharms: '未收集护符',
             uncollectedCelestials: '未收集圣物',
             alwaysShowFavorites: '始终显示收藏',

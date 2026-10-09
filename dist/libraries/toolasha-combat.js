@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.8.1
+ * Version: 3.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9269,15 +9269,24 @@
         }
 
         // Extract equipped abilities → array of { hrid, level, triggers, experience }
-        const equippedAbilities = characterData.combatUnit?.combatAbilities || [];
-        // Live per-ability XP progress (CSIM-AUD-017) - combatUnit.combatAbilities carries level only;
-        // characterAbilities is the same source AbilityBookCalculator already uses for live XP.
+        // combatUnit.combatAbilities carries no slotNumber itself, so normal-slot order is resolved
+        // against characterAbilities (the full learned-ability catalog, which does carry it) -
+        // otherwise normal slots 1-4 would be ordered however the game happened to send
+        // combatUnit.combatAbilities, which is not guaranteed to be slot order.
         const abilityExperienceByHrid = {};
+        const slotNumberByHrid = {};
         for (const ability of characterData.characterAbilities || []) {
             if (ability?.abilityHrid) {
                 abilityExperienceByHrid[ability.abilityHrid] = ability.experience || 0;
+                slotNumberByHrid[ability.abilityHrid] = ability.slotNumber;
             }
         }
+        const equippedAbilities = [...(characterData.combatUnit?.combatAbilities || [])].sort((a, b) => {
+            const slotA = slotNumberByHrid[a?.abilityHrid];
+            const slotB = slotNumberByHrid[b?.abilityHrid];
+            if (slotA == null || slotB == null) return 0;
+            return slotA - slotB;
+        });
         // Slot 0 = special ability, slots 1-4 = normal abilities
         for (let i = 0; i < 5; i++) {
             dto.abilities.push(null);
@@ -10235,7 +10244,7 @@
             const keyDetails = dataManager.getItemDetails(keyHrid);
             costs.push({
                 itemHrid: keyHrid,
-                name: keyDetails?.name || keyHrid.split('/').pop(),
+                name: getItemName(keyHrid, keyDetails?.name || keyHrid.split('/').pop()),
                 count,
                 unitCost,
                 totalCost: count * unitCost,
@@ -10288,7 +10297,10 @@
             const perHour = (total / hours) * unitValue;
             revenuePerHour += perHour;
             if (unitValue > 0) {
-                const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
+                const itemName = getItemName(
+                    itemHrid,
+                    dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop()
+                );
                 dropEntries.push({
                     name: itemName,
                     countPerHour: total / hours,
@@ -10308,7 +10320,10 @@
             const perHour = (count / hours) * unitCost;
             costPerHour += perHour;
             if (unitCost > 0) {
-                const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
+                const itemName = getItemName(
+                    itemHrid,
+                    dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop()
+                );
                 consumableEntries.push({
                     name: itemName,
                     countPerHour: count / hours,
@@ -13965,12 +13980,26 @@
         // When abilityDetailMap is available (game page), use isSpecialAbility for precise detection.
         // On Shykai (cross-domain, no clientObj), fall back to the convention that combatAbilities[0]
         // is the special/aura ability when 4 or more abilities are present.
+        // combatUnit.combatAbilities itself carries no slotNumber, so normal-slot order is resolved
+        // against characterAbilities (the full learned-ability catalog, which does), matching Metz's
+        // own export script - without this, normal slots 1-4 would be ordered however the game
+        // happened to send combatUnit.combatAbilities, which is not guaranteed to be slot order.
         const combatAbilities = characterObj.combatUnit?.combatAbilities || [];
         const hasDetailMap = !!clientObj?.abilityDetailMap;
+        const slotNumberByHrid = {};
+        for (const ability of characterObj.characterAbilities || []) {
+            if (ability?.abilityHrid) slotNumberByHrid[ability.abilityHrid] = ability.slotNumber;
+        }
+        const orderedCombatAbilities = [...combatAbilities].sort((a, b) => {
+            const slotA = slotNumberByHrid[a?.abilityHrid];
+            const slotB = slotNumberByHrid[b?.abilityHrid];
+            if (slotA == null || slotB == null) return 0;
+            return slotA - slotB;
+        });
         let normalAbilityIndex = 1;
 
-        for (let i = 0; i < combatAbilities.length; i++) {
-            const ability = combatAbilities[i];
+        for (let i = 0; i < orderedCombatAbilities.length; i++) {
+            const ability = orderedCombatAbilities[i];
             if (!ability?.abilityHrid) continue;
 
             let isSpecial;
@@ -13978,7 +14007,7 @@
                 isSpecial = clientObj.abilityDetailMap[ability.abilityHrid]?.isSpecialAbility || false;
             } else {
                 // Cross-domain fallback: treat first entry as special when kit is full-sized
-                isSpecial = i === 0 && combatAbilities.length >= 4;
+                isSpecial = i === 0 && orderedCombatAbilities.length >= 4;
             }
 
             if (isSpecial) {
@@ -14088,7 +14117,7 @@
                 const isDrink =
                     itemHrid.includes('/drinks/') ||
                     itemHrid.includes('coffee') ||
-                    clientObj?.itemDetailMap?.[itemHrid]?.type === 'drink';
+                    clientObj?.itemDetailMap?.[itemHrid]?.categoryHrid === '/item_categories/drink';
 
                 if (isDrink && drinkIndex < 3) {
                     playerObj.drinks['/action_types/combat'][drinkIndex++] = { itemHrid: itemHrid };
@@ -14110,7 +14139,7 @@
                     const isDrink =
                         itemHrid.includes('/drinks/') ||
                         itemHrid.includes('coffee') ||
-                        clientObj?.itemDetailMap?.[itemHrid]?.type === 'drink';
+                        clientObj?.itemDetailMap?.[itemHrid]?.categoryHrid === '/item_categories/drink';
 
                     if (isDrink && drinkIndex < 3) {
                         playerObj.drinks['/action_types/combat'][drinkIndex++] = { itemHrid: itemHrid };
@@ -14130,7 +14159,14 @@
         // When abilityDetailMap is available (game page), use isSpecialAbility for precise detection.
         // On Shykai (cross-domain, no clientObj), fall back to the convention that equippedAbilities[0]
         // is the special/aura ability when 4 or more abilities are present.
-        const equippedAbilities = profile.profile?.equippedAbilities || [];
+        // Sort by slotNumber first (each row carries its own, unlike combatUnit.combatAbilities above)
+        // so normal-slot order matches the game's actual slot assignment, not raw message order.
+        const equippedAbilities = [...(profile.profile?.equippedAbilities || [])].sort((a, b) => {
+            const slotA = a?.slotNumber;
+            const slotB = b?.slotNumber;
+            if (slotA == null || slotB == null) return 0;
+            return slotA - slotB;
+        });
         const hasProfileDetailMap = !!clientObj?.abilityDetailMap;
         let profileNormalIndex = 1;
 
@@ -27946,6 +27982,21 @@
             }
         }
 
+        /**
+         * Localized monster display name; English title-cased slug as fallback
+         * when the game data or translation is unavailable.
+         * @param {string} monsterHrid - Labyrinth monster HRID (e.g. '/monsters/cyclops')
+         * @returns {string} Display name
+         */
+        _monsterDisplayName(monsterHrid) {
+            const fallback = monsterHrid
+                .split('/')
+                .pop()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, (c) => c.toUpperCase());
+            return getMonsterName(monsterHrid, fallback);
+        }
+
         /** @private */
         _displaySimResults(simResult, monsterHrid, roomLevel, hours, simStartTime) {
             const container = this.panel?.querySelector('#mwi-labsim-results');
@@ -27958,11 +28009,7 @@
             const simHours = (simResult.simulatedTime || 0) / (3600 * 1e9) || hours;
             const winRate = attempts > 0 ? ((encounters / attempts) * 100).toFixed(2) : '0.00';
 
-            const monsterName = monsterHrid
-                .split('/')
-                .pop()
-                .replace(/_/g, ' ')
-                .replace(/\b\w/g, (c) => c.toUpperCase());
+            const monsterName = this._monsterDisplayName(monsterHrid);
 
             container.innerHTML = `
             <div style="margin-bottom:12px;">
@@ -27988,11 +28035,7 @@
             if (!container) return;
 
             const totalElapsed = formatElapsed((Date.now() - simStartTime) / 1000);
-            const monsterName = monsterHrid
-                .split('/')
-                .pop()
-                .replace(/_/g, ' ')
-                .replace(/\b\w/g, (c) => c.toUpperCase());
+            const monsterName = this._monsterDisplayName(monsterHrid);
             const effectiveCombatLevel = labyrinthClearRate.getPlayerEffectiveCombatLevel();
             const recommendedSkip = maxResult.maxLevel - effectiveCombatLevel + 1;
 
@@ -33130,15 +33173,35 @@
             const titleElement = panel.querySelector('h1.ItemDictionary_title__27cTd');
             if (!titleElement) return null;
 
-            // Get the item name from title
-            const itemName = titleElement.textContent.trim().toLowerCase().replaceAll(' ', '_').replaceAll("'", '');
+            const titleText = titleElement.textContent.trim();
 
             // Look up ability HRID from name
             const gameData = dataManager.getInitClientData();
             if (!gameData) return null;
 
+            // Legacy fallback: English title, snake_cased, matched against the ability hrid
+            // segment. The dictionary title is client-localized, so this only ever hits on
+            // English clients - keep it, then dual-match below covers localized titles.
+            const itemName = titleText.toLowerCase().replaceAll(' ', '_').replaceAll("'", '');
             for (const abilityHrid of Object.keys(gameData.abilityDetailMap)) {
                 if (abilityHrid.includes('/' + itemName)) {
+                    return abilityHrid;
+                }
+            }
+
+            // Dual-name match: ability book items share their hrid segment with their ability,
+            // so match the title against both the localized display name (getItemName /
+            // getAbilityName via the game's i18n) and the English data name of the book item
+            // and its ability. Additive: the English-slug loop above stays as the first try.
+            for (const [bookItemHrid, itemDetail] of Object.entries(gameData.itemDetailMap)) {
+                if (!itemDetail?.abilityBookDetail) continue;
+                const abilityHrid = bookItemHrid.replace('/items/', '/abilities/');
+                const abilityDetail = gameData.abilityDetailMap[abilityHrid];
+                const names = [getItemName(bookItemHrid, itemDetail.name || ''), itemDetail.name];
+                if (abilityDetail) {
+                    names.push(getAbilityName(abilityHrid, abilityDetail.name || ''), abilityDetail.name);
+                }
+                if (names.includes(titleText)) {
                     return abilityHrid;
                 }
             }
@@ -33552,6 +33615,28 @@
     const INJECTED_CLASS = 'mwi-ability-timing-injected';
     const SUBSCRIBER_NAME = 'AbilityTooltipTiming';
 
+    /**
+     * Build the line prefixes that identify a native tooltip line: the English prefix
+     * plus the game-localized one. The game renders these labels from the i18next
+     * `abilityTooltipText` namespace (verified against the client bundle, e.g.
+     * cooldown: "Cooldown: {{duration}}", zh-Hans: "冷却: {{duration}}"), so strip the
+     * interpolation placeholder and the trailing colon (half- or full-width) from the
+     * template to get a prefix that also matches before the localized colon variant.
+     * @param {string} key - abilityTooltipText key (e.g. 'cooldown')
+     * @param {string} english - English line prefix (e.g. 'Cooldown:')
+     * @returns {string[]} Distinct prefixes to try
+     */
+    function getLocalizedLinePrefixes(key, english) {
+        const strip = (text) =>
+            text
+                .replace(/\{\{.*$/, '')
+                .replace(/[:：]\s*$/, '')
+                .trim();
+        const englishPrefix = strip(english);
+        const localizedPrefix = strip(translateGameName('abilityTooltipText', key, english));
+        return [...new Set([englishPrefix, localizedPrefix])];
+    }
+
     class AbilityTooltipTiming {
         constructor() {
             this.isInitialized = false;
@@ -33617,8 +33702,16 @@
                 stats
             );
 
-            this.injectInline(abilityTooltip, 'Cooldown:', this.roundIfDifferent(baseCooldown, effectiveCooldown));
-            this.injectInline(abilityTooltip, 'Cast Time:', this.roundIfDifferent(baseCastTime, effectiveCastTime));
+            this.injectInline(
+                abilityTooltip,
+                getLocalizedLinePrefixes('cooldown', 'Cooldown:'),
+                this.roundIfDifferent(baseCooldown, effectiveCooldown)
+            );
+            this.injectInline(
+                abilityTooltip,
+                getLocalizedLinePrefixes('castTime', 'Cast Time:'),
+                this.roundIfDifferent(baseCastTime, effectiveCastTime)
+            );
         }
 
         /**
@@ -33635,20 +33728,22 @@
         /**
          * Append the effective value in parentheses right after the native "Cooldown:"/"Cast Time:"
          * line. The native tooltip renders each line as a plain, class-less div, so the target line
-         * is located by matching its own leaf text rather than a CSS selector. Once a line has been
-         * annotated it gains a child span, so it naturally stops matching on a later call for the
-         * same tooltip element - no separate "already injected" bookkeeping is needed.
+         * is located by matching its own leaf text rather than a CSS selector. The line's label is
+         * game-localized, so any of the given prefixes (English or translated) may identify it.
+         * Once a line has been annotated it gains a child span, so it naturally stops matching on a
+         * later call for the same tooltip element - no separate "already injected" bookkeeping is
+         * needed.
          * @param {Element} abilityTooltip - The `.Ability_abilityTooltip` container
-         * @param {string} linePrefix - Text prefix identifying the native line (e.g. "Cooldown:")
+         * @param {string[]} linePrefixes - Text prefixes identifying the native line (localized + English)
          * @param {number|null} effectiveValue - Effective value in seconds, or null if unchanged from base
          */
-        injectInline(abilityTooltip, linePrefix, effectiveValue) {
+        injectInline(abilityTooltip, linePrefixes, effectiveValue) {
             if (effectiveValue === null) {
                 return;
             }
 
             const lineElement = Array.from(abilityTooltip.querySelectorAll('div')).find(
-                (el) => el.children.length === 0 && el.textContent.trim().startsWith(linePrefix)
+                (el) => el.children.length === 0 && linePrefixes.some((p) => el.textContent.trim().startsWith(p))
             );
             if (!lineElement) {
                 return;
@@ -33680,6 +33775,12 @@
             const map = new Map();
             for (const [hrid, ability] of Object.entries(gameData.abilityDetailMap)) {
                 map.set(ability.name, hrid);
+                // Also register the localized name so tooltips rendered in the
+                // game's non-English locale (e.g. Chinese) can resolve the HRID.
+                const localizedName = getAbilityName(hrid, ability.name);
+                if (localizedName && localizedName !== ability.name) {
+                    map.set(localizedName, hrid);
+                }
             }
 
             if (map.size > 0) {

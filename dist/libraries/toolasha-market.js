@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.8.1
+ * Version: 3.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -397,6 +397,39 @@
         for (const variant of getRefinedNameVariants(actionName)) {
             for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
                 const displayName = getActionName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find an item HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} itemName - Display name of the item
+     * @returns {string|null} Item HRID or null if not found
+     */
+    function getItemHridFromName(itemName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) {
+            return null;
+        }
+
+        // Try exact match first (English or translated)
+        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+            const displayName = getItemName(hrid, detail.name);
+            if (displayName === itemName || detail.name === itemName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(itemName)) {
+            for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+                const displayName = getItemName(hrid, detail.name);
                 if (displayName === variant || detail.name === variant) {
                     return hrid;
                 }
@@ -20907,17 +20940,35 @@ self.onmessage = function (e) {
             const gameData = dataManager.getInitClientData();
             if (!gameData?.itemDetailMap) return null;
 
-            // Build cache on first use
+            // Build cache on first use. Index both the English data name and the
+            // game's localized display name so the lookup works in any locale.
             if (!this.itemNameToHridCache) {
                 this.itemNameToHridCache = new Map();
                 for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
                     if (item.name) {
                         this.itemNameToHridCache.set(item.name, hrid);
+                        const localizedName = getItemName(hrid, item.name);
+                        if (localizedName && localizedName !== item.name) {
+                            this.itemNameToHridCache.set(localizedName, hrid);
+                        }
                     }
                 }
             }
 
-            return this.itemNameToHridCache.get(itemName) || null;
+            // 1. Exact match (handles base items and items already in "(R)" form)
+            if (this.itemNameToHridCache.has(itemName)) {
+                return this.itemNameToHridCache.get(itemName);
+            }
+
+            // 2. ★ → (R) substitution for refined items ("Griffin Bulwark ★" → "Griffin Bulwark (R)")
+            if (itemName.includes('★')) {
+                const refinedVariant = itemName.replace(/\s*★/g, ' (R)').replace(/\s+/g, ' ').trim();
+                if (this.itemNameToHridCache.has(refinedVariant)) {
+                    return this.itemNameToHridCache.get(refinedVariant);
+                }
+            }
+
+            return null;
         }
 
         /**
@@ -21358,7 +21409,14 @@ self.onmessage = function (e) {
             );
             if (nameEl) {
                 const itemName = nameEl.textContent.trim();
-                currentItemHrid = `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
+                // Strip any enhancement level (e.g. "+10"), then resolve through the shared
+                // dual-name lookup (English + localized) instead of reconstructing a slug
+                // from the display name, which cannot work for translated names.
+                const baseName = itemName.replace(/\s*\+\d+\s*$/, '').trim();
+                const itemHrid = getItemHridFromName(baseName);
+                if (itemHrid) {
+                    currentItemHrid = itemHrid;
+                }
             }
         } catch (error) {
             console.error('[SellQueue] Error parsing tooltip:', error);
@@ -30108,6 +30166,12 @@ self.onmessage = function (e) {
             const map = new Map();
             for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
                 map.set(item.name, hrid);
+                // Also register the localized name so tooltips rendered in the
+                // game's non-English locale (e.g. Chinese) can resolve the HRID.
+                const localizedName = getItemName(hrid, item.name);
+                if (localizedName && localizedName !== item.name) {
+                    map.set(localizedName, hrid);
+                }
             }
 
             if (map.size > 0) {
