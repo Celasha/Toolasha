@@ -75,9 +75,12 @@ const PANEL_CSS = `
     grid-column: 1 / -1;
     justify-self: stretch;
 }
-/* Flatten game category wrappers so tiles become direct grid children.
-   Exclude our own injected elements (they have class starting with toolasha-). */
-.toolasha-ct-active > *:not([class*="toolasha-"]) {
+/* Flatten the game's own category-tabs wrapper so its tiles become direct grid children.
+   Targeted specifically at the native wrapper class (not a catch-all for any non-Toolasha
+   child) so a third-party script injecting its own elements into this same container (e.g.
+   another userscript's panel) is left alone in normal document flow instead of being dragged
+   into this grid as an undersized, mispositioned cell. */
+.toolasha-ct-active > [class*="TabsComponent_tabsComponent"] {
     display: contents;
 }
 .toolasha-ct-active [class*="Inventory_itemGrid"] {

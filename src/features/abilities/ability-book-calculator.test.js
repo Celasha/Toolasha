@@ -9,6 +9,8 @@ const {
     mockWatchNativeTabExit,
     mockAutofillManager,
     mockGetItemPrices,
+    mockGetItemName,
+    mockGetAbilityName,
 } = vi.hoisted(() => ({
     mockReadMarketplaceRuntimeState: vi.fn(),
     mockGetVisibleMarketplaceTabContainer: vi.fn(),
@@ -22,6 +24,8 @@ const {
         cleanup: vi.fn(),
     },
     mockGetItemPrices: vi.fn(() => ({ ask: 0, bid: 0, askOutlier: false, bidOutlier: false })),
+    mockGetItemName: vi.fn((_hrid, fallback) => fallback),
+    mockGetAbilityName: vi.fn((_hrid, fallback) => fallback),
 }));
 
 vi.mock('../../core/config.js', () => ({
@@ -40,6 +44,10 @@ vi.mock('../../core/data-manager.js', () => ({
 }));
 vi.mock('../../api/marketplace.js', () => ({ default: { getPrice: vi.fn(() => ({ ask: 0, bid: 0 })) } }));
 vi.mock('../../utils/market-data.js', () => ({ getItemPrices: (...args) => mockGetItemPrices(...args) }));
+vi.mock('../../utils/game-i18n.js', () => ({
+    getItemName: (...args) => mockGetItemName(...args),
+    getAbilityName: (...args) => mockGetAbilityName(...args),
+}));
 vi.mock('../../utils/formatters.js', () => ({
     numberFormatter: vi.fn((value) => String(value)),
     formatKMB: vi.fn((value) => String(value)),
@@ -416,5 +424,59 @@ describe('AbilityBookCalculator live ability state (TLA-016)', () => {
 
         calculator.disable();
         panel.remove();
+    });
+});
+
+describe('AbilityBookCalculator.extractAbilityHrid locale handling', () => {
+    const gameData = {
+        abilityDetailMap: {
+            '/abilities/speed_aura': { name: 'Speed Aura' },
+        },
+        itemDetailMap: {
+            '/items/speed_aura': { name: 'Speed Aura', abilityBookDetail: { experienceGain: 125 } },
+            '/items/iron_ore': { name: 'Iron Ore' },
+        },
+    };
+
+    function buildPanel(title) {
+        const panel = document.createElement('div');
+        const h1 = document.createElement('h1');
+        h1.className = 'ItemDictionary_title__27cTd';
+        h1.textContent = title;
+        panel.appendChild(h1);
+        return panel;
+    }
+
+    beforeEach(() => {
+        dataManager.getInitClientData.mockReset();
+        dataManager.getInitClientData.mockReturnValue(gameData);
+        mockGetItemName.mockImplementation((_hrid, fallback) => fallback);
+        mockGetAbilityName.mockImplementation((_hrid, fallback) => fallback);
+    });
+
+    test('English title still resolves via the legacy hrid-slug match', () => {
+        const calculator = new AbilityBookCalculator();
+        expect(calculator.extractAbilityHrid(buildPanel('Speed Aura'))).toBe('/abilities/speed_aura');
+    });
+
+    test('localized ability-book item title resolves via dual-name match', () => {
+        mockGetItemName.mockImplementation((hrid, fallback) =>
+            hrid === '/items/speed_aura' ? '极速光环之书' : fallback
+        );
+        const calculator = new AbilityBookCalculator();
+        expect(calculator.extractAbilityHrid(buildPanel('极速光环之书'))).toBe('/abilities/speed_aura');
+    });
+
+    test('localized ability-name title resolves via dual-name match', () => {
+        mockGetAbilityName.mockImplementation((hrid, fallback) =>
+            hrid === '/abilities/speed_aura' ? '极速光环' : fallback
+        );
+        const calculator = new AbilityBookCalculator();
+        expect(calculator.extractAbilityHrid(buildPanel('极速光环'))).toBe('/abilities/speed_aura');
+    });
+
+    test('non-ability-book title returns null', () => {
+        const calculator = new AbilityBookCalculator();
+        expect(calculator.extractAbilityHrid(buildPanel('Iron Ore'))).toBeNull();
     });
 });

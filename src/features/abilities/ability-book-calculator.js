@@ -10,6 +10,7 @@ import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import dom from '../../utils/dom.js';
+import { getItemName, getAbilityName } from '../../utils/game-i18n.js';
 import { numberFormatter, formatKMB } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
@@ -239,15 +240,35 @@ export class AbilityBookCalculator {
         const titleElement = panel.querySelector('h1.ItemDictionary_title__27cTd');
         if (!titleElement) return null;
 
-        // Get the item name from title
-        const itemName = titleElement.textContent.trim().toLowerCase().replaceAll(' ', '_').replaceAll("'", '');
+        const titleText = titleElement.textContent.trim();
 
         // Look up ability HRID from name
         const gameData = dataManager.getInitClientData();
         if (!gameData) return null;
 
+        // Legacy fallback: English title, snake_cased, matched against the ability hrid
+        // segment. The dictionary title is client-localized, so this only ever hits on
+        // English clients - keep it, then dual-match below covers localized titles.
+        const itemName = titleText.toLowerCase().replaceAll(' ', '_').replaceAll("'", '');
         for (const abilityHrid of Object.keys(gameData.abilityDetailMap)) {
             if (abilityHrid.includes('/' + itemName)) {
+                return abilityHrid;
+            }
+        }
+
+        // Dual-name match: ability book items share their hrid segment with their ability,
+        // so match the title against both the localized display name (getItemName /
+        // getAbilityName via the game's i18n) and the English data name of the book item
+        // and its ability. Additive: the English-slug loop above stays as the first try.
+        for (const [bookItemHrid, itemDetail] of Object.entries(gameData.itemDetailMap)) {
+            if (!itemDetail?.abilityBookDetail) continue;
+            const abilityHrid = bookItemHrid.replace('/items/', '/abilities/');
+            const abilityDetail = gameData.abilityDetailMap[abilityHrid];
+            const names = [getItemName(bookItemHrid, itemDetail.name || ''), itemDetail.name];
+            if (abilityDetail) {
+                names.push(getAbilityName(abilityHrid, abilityDetail.name || ''), abilityDetail.name);
+            }
+            if (names.includes(titleText)) {
                 return abilityHrid;
             }
         }
