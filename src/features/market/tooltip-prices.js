@@ -504,6 +504,12 @@ class TooltipPrices {
             map = new Map();
             for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
                 map.set(item.name, hrid);
+                // Also register the localized name so tooltips rendered in the
+                // game's non-English locale (e.g. Chinese) can resolve the HRID.
+                const localizedName = getItemName(hrid, item.name);
+                if (localizedName && localizedName !== item.name) {
+                    map.set(localizedName, hrid);
+                }
             }
 
             // Only cache if we got actual entries (avoid poisoning with empty map)
