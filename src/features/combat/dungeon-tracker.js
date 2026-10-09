@@ -22,7 +22,16 @@ export function getChatMarkers() {
     const prefixOf = (key, enPrefix) => {
         const template = translateGameName('systemChatMessage', key, enPrefix);
         const placeholderIndex = template.search(/\$t\(|\{\{/);
-        const prefix = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex)).trimEnd();
+        const prefix = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex))
+            // At runtime i18next consumes the nesting wrapper around the inner key
+            // (the $t syntax) while translating, so the battle-started/battle-ended
+            // templates come back with a leaked "actionNames." namespace segment
+            // before the placeholder. Cutting at the placeholder alone leaves that
+            // segment in the prefix, which never matches the rendered message
+            // ("战斗开始: 地狱深渊"). Strip a trailing ASCII dotted path to recover
+            // the real visible prefix.
+            .replace(/[A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_.]*$/, '')
+            .trimEnd();
         return prefix || enPrefix;
     };
     const waveFailedRegexes = [/Party failed on wave \d+/];
