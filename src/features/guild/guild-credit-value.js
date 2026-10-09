@@ -78,6 +78,13 @@ export { MAX_GUILD_CREDIT_EXCHANGE_BATCH_COUNT };
  * unpriced junk items out of the ranking -- its "price" here is the opportunity cost of the
  * cheapest tradeable route to this same credit type, i.e. what you'd otherwise have to pay in
  * gold to get one more of this credit.
+ *
+ * For the token row, `tokenAskEach`/`tokenBidEach` hold the gold-equivalent value of a single
+ * Guild Token (display-only, for the "Ask each"/"Bid each" columns) while `sellGPC`/`buyGPC`
+ * hold the true per-credit cost, run through the exact same (price * itemCount) / creditCount
+ * formula as every other row. `sellPrice`/`buyPrice` stay null for the token row -- those are
+ * what the exchange advisor treats as a real sellable market price, and Guild Token was never
+ * actually sellable on the market.
  * @param {Object} itemDetailMap
  * @param {string} creditHrid
  * @param {Object} [options]
@@ -112,8 +119,22 @@ function buildCreditRows(itemDetailMap, creditHrid, { includeToken = true } = {}
         const buyInfo = isToken ? null : getItemPriceOutlierInfo(hrid, { mode: 'bid' });
         const sellPrice = isToken ? null : sellInfo.value;
         const buyPrice = isToken ? null : buyInfo.value;
-        const sellGPC = isToken ? tokenAskGPC : sellPrice > 0 ? (sellPrice * conv.itemCount) / conv.creditCount : null;
-        const buyGPC = isToken ? tokenBidGPC : buyPrice > 0 ? (buyPrice * conv.itemCount) / conv.creditCount : null;
+        const tokenAskEach = isToken ? tokenAskGPC : null;
+        const tokenBidEach = isToken ? tokenBidGPC : null;
+        const sellGPC = isToken
+            ? tokenAskGPC !== null
+                ? (tokenAskGPC * conv.itemCount) / conv.creditCount
+                : null
+            : sellPrice > 0
+              ? (sellPrice * conv.itemCount) / conv.creditCount
+              : null;
+        const buyGPC = isToken
+            ? tokenBidGPC !== null
+                ? (tokenBidGPC * conv.itemCount) / conv.creditCount
+                : null
+            : buyPrice > 0
+              ? (buyPrice * conv.itemCount) / conv.creditCount
+              : null;
 
         if (sellGPC === null && buyGPC === null) continue;
 
@@ -124,6 +145,8 @@ function buildCreditRows(itemDetailMap, creditHrid, { includeToken = true } = {}
             creditCount: conv.creditCount,
             sellPrice,
             buyPrice,
+            tokenAskEach,
+            tokenBidEach,
             sellGPC,
             buyGPC,
             sellOutlier: isToken ? tokenSellRow?.isOutlier || false : sellInfo.isOutlier,
@@ -395,11 +418,13 @@ class GuildCreditValue {
                 const nameDisplay = row.isToken
                     ? `${localizedName} <span style="color:#6b7280;font-size:9px;">${t('guildCreditValue.tokensLabel')}</span>`
                     : localizedName;
+                const askEach = row.isToken ? row.tokenAskEach : row.sellPrice;
+                const bidEach = row.isToken ? row.tokenBidEach : row.buyPrice;
                 tr.innerHTML = `
                 <td style="padding:4px 6px; text-align:left;">${nameDisplay}</td>
                 <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatKMB(row.sellPrice) + buildOutlierPriceWarningIcon(row.sellOutlier) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatKMB(row.buyPrice) + buildOutlierPriceWarningIcon(row.buyOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${askEach ? formatKMB(askEach) + buildOutlierPriceWarningIcon(row.sellOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${bidEach ? formatKMB(bidEach) + buildOutlierPriceWarningIcon(row.buyOutlier) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right; ${sortKey === 'bid' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.sellGPC ? formatKMB(row.sellGPC) + buildOutlierPriceWarningIcon(row.sellOutlier) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right; ${sortKey === 'ask' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.buyGPC ? formatKMB(row.buyGPC) + buildOutlierPriceWarningIcon(row.buyOutlier) : '–'}</td>
             `;

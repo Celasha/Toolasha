@@ -65,8 +65,11 @@ describe('buildCreditRows', () => {
         expect(tokenRow).toBeDefined();
         expect(tokenRow.sellPrice).toBeNull();
         expect(tokenRow.buyPrice).toBeNull();
-        expect(tokenRow.sellGPC).toBeCloseTo(5_400); // 864,000/16 = 54,000/credit; /10 tokens = 5,400/token
-        expect(tokenRow.buyGPC).toBeCloseTo(5_337.5); // 854,000/16 = 53,375/credit; /10 tokens = 5,337.5/token
+        expect(tokenRow.tokenAskEach).toBeCloseTo(5_400); // 864,000/16 = 54,000/credit; /10 tokens = 5,400/token
+        expect(tokenRow.tokenBidEach).toBeCloseTo(5_337.5); // 854,000/16 = 53,375/credit; /10 tokens = 5,337.5/token
+        // Per-credit value must match the cheapest item route exactly, not the per-token value.
+        expect(tokenRow.sellGPC).toBeCloseTo(54_000);
+        expect(tokenRow.buyGPC).toBeCloseTo(53_375);
 
         const itemRow = rows.find((r) => !r.isToken);
         expect(itemRow.sellGPC).toBeCloseTo(54_000);
