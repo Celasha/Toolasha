@@ -13,6 +13,7 @@ import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import { calculateRawCombatLevel } from '../../utils/combat-level-progress-calculator.js';
+import { getItemName } from '../../utils/game-i18n.js';
 
 /**
  * The five current combat-relevant guild Shrines (CSIM-AUD-021, UI-002). Effect construction is
@@ -1325,7 +1326,7 @@ export function calculateDungeonKeyCosts(dropMap, getBuyPrice) {
         const keyDetails = dataManager.getItemDetails(keyHrid);
         costs.push({
             itemHrid: keyHrid,
-            name: keyDetails?.name || keyHrid.split('/').pop(),
+            name: getItemName(keyHrid, keyDetails?.name || keyHrid.split('/').pop()),
             count,
             unitCost,
             totalCost: count * unitCost,
@@ -1378,7 +1379,10 @@ export function calculateSimRevenue(simResult, gameData, playerHrid, hours) {
         const perHour = (total / hours) * unitValue;
         revenuePerHour += perHour;
         if (unitValue > 0) {
-            const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
+            const itemName = getItemName(
+                itemHrid,
+                dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop()
+            );
             dropEntries.push({
                 name: itemName,
                 countPerHour: total / hours,
@@ -1398,7 +1402,10 @@ export function calculateSimRevenue(simResult, gameData, playerHrid, hours) {
         const perHour = (count / hours) * unitCost;
         costPerHour += perHour;
         if (unitCost > 0) {
-            const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
+            const itemName = getItemName(
+                itemHrid,
+                dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop()
+            );
             consumableEntries.push({
                 name: itemName,
                 countPerHour: count / hours,

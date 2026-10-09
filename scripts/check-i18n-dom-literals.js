@@ -146,11 +146,6 @@ const ALLOWLIST = [
         reason: "known: '#28' English data name compared to localized queue text",
     },
     {
-        file: 'src/features/actions/action-time-display.js',
-        literal: 'hashItemDetails.name',
-        reason: "known: '#28' English data name compared to localized queue text",
-    },
-    {
         file: 'src/features/chat/mention-tracker.js',
         literal: 'Party|Guild|Local|…',
         reason: "known: '#31' English channel-name map reverse-looked-up with localized tab text",
