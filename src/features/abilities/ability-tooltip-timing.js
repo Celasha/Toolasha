@@ -9,6 +9,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import tooltipObserver from '../../core/tooltip-observer.js';
 import dom from '../../utils/dom.js';
+import { getAbilityName, translateGameName } from '../../utils/game-i18n.js';
 import {
     getCurrentAbilityTimingStats,
     calculateEffectiveAbilityTiming,
@@ -16,6 +17,28 @@ import {
 
 const INJECTED_CLASS = 'mwi-ability-timing-injected';
 const SUBSCRIBER_NAME = 'AbilityTooltipTiming';
+
+/**
+ * Build the line prefixes that identify a native tooltip line: the English prefix
+ * plus the game-localized one. The game renders these labels from the i18next
+ * `abilityTooltipText` namespace (verified against the client bundle, e.g.
+ * cooldown: "Cooldown: {{duration}}", zh-Hans: "冷却: {{duration}}"), so strip the
+ * interpolation placeholder and the trailing colon (half- or full-width) from the
+ * template to get a prefix that also matches before the localized colon variant.
+ * @param {string} key - abilityTooltipText key (e.g. 'cooldown')
+ * @param {string} english - English line prefix (e.g. 'Cooldown:')
+ * @returns {string[]} Distinct prefixes to try
+ */
+function getLocalizedLinePrefixes(key, english) {
+    const strip = (text) =>
+        text
+            .replace(/\{\{.*$/, '')
+            .replace(/[:：]\s*$/, '')
+            .trim();
+    const englishPrefix = strip(english);
+    const localizedPrefix = strip(translateGameName('abilityTooltipText', key, english));
+    return [...new Set([englishPrefix, localizedPrefix])];
+}
 
 class AbilityTooltipTiming {
     constructor() {
@@ -82,8 +105,16 @@ class AbilityTooltipTiming {
             stats
         );
 
-        this.injectInline(abilityTooltip, 'Cooldown:', this.roundIfDifferent(baseCooldown, effectiveCooldown));
-        this.injectInline(abilityTooltip, 'Cast Time:', this.roundIfDifferent(baseCastTime, effectiveCastTime));
+        this.injectInline(
+            abilityTooltip,
+            getLocalizedLinePrefixes('cooldown', 'Cooldown:'),
+            this.roundIfDifferent(baseCooldown, effectiveCooldown)
+        );
+        this.injectInline(
+            abilityTooltip,
+            getLocalizedLinePrefixes('castTime', 'Cast Time:'),
+            this.roundIfDifferent(baseCastTime, effectiveCastTime)
+        );
     }
 
     /**
@@ -100,20 +131,22 @@ class AbilityTooltipTiming {
     /**
      * Append the effective value in parentheses right after the native "Cooldown:"/"Cast Time:"
      * line. The native tooltip renders each line as a plain, class-less div, so the target line
-     * is located by matching its own leaf text rather than a CSS selector. Once a line has been
-     * annotated it gains a child span, so it naturally stops matching on a later call for the
-     * same tooltip element - no separate "already injected" bookkeeping is needed.
+     * is located by matching its own leaf text rather than a CSS selector. The line's label is
+     * game-localized, so any of the given prefixes (English or translated) may identify it.
+     * Once a line has been annotated it gains a child span, so it naturally stops matching on a
+     * later call for the same tooltip element - no separate "already injected" bookkeeping is
+     * needed.
      * @param {Element} abilityTooltip - The `.Ability_abilityTooltip` container
-     * @param {string} linePrefix - Text prefix identifying the native line (e.g. "Cooldown:")
+     * @param {string[]} linePrefixes - Text prefixes identifying the native line (localized + English)
      * @param {number|null} effectiveValue - Effective value in seconds, or null if unchanged from base
      */
-    injectInline(abilityTooltip, linePrefix, effectiveValue) {
+    injectInline(abilityTooltip, linePrefixes, effectiveValue) {
         if (effectiveValue === null) {
             return;
         }
 
         const lineElement = Array.from(abilityTooltip.querySelectorAll('div')).find(
-            (el) => el.children.length === 0 && el.textContent.trim().startsWith(linePrefix)
+            (el) => el.children.length === 0 && linePrefixes.some((p) => el.textContent.trim().startsWith(p))
         );
         if (!lineElement) {
             return;
@@ -145,6 +178,12 @@ class AbilityTooltipTiming {
         const map = new Map();
         for (const [hrid, ability] of Object.entries(gameData.abilityDetailMap)) {
             map.set(ability.name, hrid);
+            // Also register the localized name so tooltips rendered in the
+            // game's non-English locale (e.g. Chinese) can resolve the HRID.
+            const localizedName = getAbilityName(hrid, ability.name);
+            if (localizedName && localizedName !== ability.name) {
+                map.set(localizedName, hrid);
+            }
         }
 
         if (map.size > 0) {
@@ -161,7 +200,7 @@ class AbilityTooltipTiming {
     }
 }
 
-const abilityTooltipTiming = new AbilityTooltipTiming();
+export const abilityTooltipTiming = new AbilityTooltipTiming();
 
 export default {
     name: 'Ability Tooltip Timing',

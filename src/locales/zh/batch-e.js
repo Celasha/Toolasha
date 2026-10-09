@@ -104,7 +104,7 @@ export default {
         xpButtonLabel: '经验',
         goldButtonLabel: '金币',
         bothButtonLabel: '两者',
-        errorSkillNotDetected: '无法检测当前技能',
+        errorSkillNotDetected: '无法检测当前专业',
         errorNoAlchemyItemSelected: '炼金面板中未选择物品',
         dragToMoveTooltip: '拖动以移动',
         headerTitle: (p) =>
@@ -146,7 +146,7 @@ export default {
     },
     pinnedActionsPage: {
         columnAction: '动作',
-        columnSkill: '技能',
+        columnSkill: '专业',
         columnLevel: '等级',
         columnProfitPerHour: '利润/时',
         columnExpPerHour: '经验/时',
@@ -160,7 +160,7 @@ export default {
         noFilterMatches: '没有动作符合当前筛选条件。',
         noProductionActionsPinned: '尚未固定任何生产类动作',
         canProduceLabel: (p) => `可生产：${p.count}`,
-        filterBySkillTitle: '按技能筛选',
+        filterBySkillTitle: '按专业筛选',
         applyButton: '应用',
         clearButton: '清除',
     },
@@ -481,7 +481,7 @@ export default {
     collectionFilters: {
         favoritesLabel: '收藏',
         notDungeon: '非地下城',
-        skillingOutfits: '生活技能套装',
+        skillingOutfits: '生活专业套装',
         uncollectedCharms: '未收集护符',
         uncollectedCelestials: '未收集圣物',
         alwaysShowFavorites: '始终显示收藏',

@@ -9,7 +9,12 @@ import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import actionFilter from './action-filter.js';
 import alchemyProfit from '../alchemy/alchemy-profit.js';
-import { findOptimalTeas, getTeaBuffDescription, getRelevantTeas } from '../../utils/tea-optimizer.js';
+import {
+    findOptimalTeas,
+    getTeaBuffDescription,
+    getRelevantTeas,
+    normalizeSkillDisplayName,
+} from '../../utils/tea-optimizer.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -294,8 +299,11 @@ class TeaRecommendation {
 
         // Get current skill name — action filter doesn't track alchemy, so override when needed.
         // Reuses labSim's translated "Alchemy" skill-name label rather than a new key.
+        // The optimizer works on lowercase English skill keys, so normalize the (possibly
+        // game-localized, e.g. zh "伐木") display name; keep the raw name for display.
         const skillName = isAlchemy ? t('labSim.skillAlchemy') : actionFilter.getCurrentSkillName();
-        if (!skillName) {
+        const skillKey = normalizeSkillDisplayName(skillName);
+        if (!skillKey) {
             this.showError(anchorButton, t('teaRecommendation.errorSkillNotDetected'));
             return;
         }
@@ -315,12 +323,12 @@ class TeaRecommendation {
 
         // Handle 'both' mode - show dual results
         if (goal === 'both') {
-            this.showBothRecommendation(anchorButton, skillName, locationTab, alchemyContext);
+            this.showBothRecommendation(anchorButton, skillName, locationTab, alchemyContext, skillKey);
             return;
         }
 
         // Calculate optimal teas (pass location name to filter by category)
-        const result = findOptimalTeas(skillName, goal, locationTab, null, null, alchemyContext);
+        const result = findOptimalTeas(skillKey, goal, locationTab, null, null, alchemyContext);
 
         if (result.error) {
             this.showError(anchorButton, result.error);
@@ -343,7 +351,7 @@ class TeaRecommendation {
             cursor: default;
         `;
 
-        this.buildPopupContent(popup, result, goal, skillName, locationTab, null, alchemyContext);
+        this.buildPopupContent(popup, result, goal, skillName, locationTab, null, alchemyContext, skillKey);
 
         // Position popup relative to button
         document.body.appendChild(popup);
@@ -389,9 +397,22 @@ class TeaRecommendation {
      * @param {string|null} locationTab - Current location tab
      * @param {string|null} drilldownAction - Action name when showing single-action view, null for all-actions
      * @param {Object|null} alchemyContext - Alchemy context for alchemy skills
+     * @param {string|null} skillKey - Normalized lowercase English skill key for optimizer calls
      */
-    buildPopupContent(popup, result, goal, skillName, locationTab, drilldownAction, alchemyContext = null) {
+    buildPopupContent(
+        popup,
+        result,
+        goal,
+        skillName,
+        locationTab,
+        drilldownAction,
+        alchemyContext = null,
+        skillKey = null
+    ) {
         popup.innerHTML = '';
+        // `skillName` is the game-localized display name (kept for UI labels); optimizer calls
+        // must use the normalized lowercase English key.
+        const key = skillKey || skillName.toLowerCase();
 
         const goalLabel = goal === 'xp' ? t('teaRecommendation.xpButtonLabel') : t('teaRecommendation.goldButtonLabel');
 
@@ -517,9 +538,9 @@ class TeaRecommendation {
             `;
             backLink.textContent = t('teaRecommendation.backToAllActionsLabel', { skillName });
             backLink.addEventListener('click', () => {
-                const allResult = findOptimalTeas(skillName, goal, locationTab, null, null, alchemyContext);
+                const allResult = findOptimalTeas(key, goal, locationTab, null, null, alchemyContext);
                 if (!allResult.error && allResult.optimal) {
-                    this.buildPopupContent(popup, allResult, goal, skillName, locationTab, null, alchemyContext);
+                    this.buildPopupContent(popup, allResult, goal, skillName, locationTab, null, alchemyContext, key);
                 }
             });
             stats.querySelector('div:last-child').appendChild(backLink);
@@ -594,7 +615,7 @@ class TeaRecommendation {
                 });
                 actionRow.addEventListener('click', () => {
                     const drillResult = findOptimalTeas(
-                        skillName,
+                        key,
                         goal,
                         locationTab,
                         actionData.action,
@@ -609,7 +630,8 @@ class TeaRecommendation {
                             skillName,
                             locationTab,
                             actionData.action,
-                            alchemyContext
+                            alchemyContext,
+                            key
                         );
                     }
                 });
@@ -860,7 +882,7 @@ class TeaRecommendation {
         constraintHeader.textContent = t('teaRecommendation.teaConstraintsHeader');
         constraintSection.appendChild(constraintHeader);
 
-        const relevantTeas = getRelevantTeas(skillName.toLowerCase(), goal);
+        const relevantTeas = getRelevantTeas(key, goal);
         const allConstraintTeas = [...relevantTeas.skillTeas, ...relevantTeas.generalTeas];
         const gameData = dataManager.getInitClientData();
 
@@ -910,7 +932,7 @@ class TeaRecommendation {
                     this.pinnedTeas.add(hrid);
                     this.bannedTeas.delete(hrid);
                 }
-                this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext);
+                this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext, key);
             });
 
             // Ban button ⊘
@@ -933,7 +955,7 @@ class TeaRecommendation {
                     this.bannedTeas.add(hrid);
                     this.pinnedTeas.delete(hrid);
                 }
-                this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext);
+                this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext, key);
             });
 
             btnContainer.appendChild(pinBtn);
@@ -967,12 +989,15 @@ class TeaRecommendation {
     /**
      * Show both XP and Gold recommendations side by side
      * @param {HTMLElement} anchorButton - Button that was clicked
-     * @param {string} skillName - Current skill name
+     * @param {string} skillName - Current skill name (game-localized, for display)
      * @param {string|null} locationTab - Current location tab
+     * @param {Object|null} alchemyContext - Alchemy context for alchemy skills
+     * @param {string|null} skillKey - Normalized lowercase English skill key for optimizer calls
      */
-    showBothRecommendation(anchorButton, skillName, locationTab, alchemyContext = null) {
-        const xpResult = findOptimalTeas(skillName, 'xp', locationTab, null, null, alchemyContext);
-        const goldResult = findOptimalTeas(skillName, 'gold', locationTab, null, null, alchemyContext);
+    showBothRecommendation(anchorButton, skillName, locationTab, alchemyContext = null, skillKey = null) {
+        const key = skillKey || skillName.toLowerCase();
+        const xpResult = findOptimalTeas(key, 'xp', locationTab, null, null, alchemyContext);
+        const goldResult = findOptimalTeas(key, 'gold', locationTab, null, null, alchemyContext);
 
         if (xpResult.error && goldResult.error) {
             this.showError(anchorButton, xpResult.error);
@@ -1186,18 +1211,20 @@ class TeaRecommendation {
      * @param {string|null} drilldownAction - Current drilldown action name, or null
      * @param {Object|null} alchemyContext - Alchemy context for alchemy skills
      */
-    _rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction, alchemyContext = null) {
+    _rerunWithConstraints(
+        popup,
+        goal,
+        skillName,
+        locationTab,
+        drilldownAction,
+        alchemyContext = null,
+        skillKey = null
+    ) {
+        const key = skillKey || skillName.toLowerCase();
         const constraints = { pinned: this.pinnedTeas, banned: this.bannedTeas };
-        const result = findOptimalTeas(
-            skillName,
-            goal,
-            locationTab,
-            drilldownAction || null,
-            constraints,
-            alchemyContext
-        );
+        const result = findOptimalTeas(key, goal, locationTab, drilldownAction || null, constraints, alchemyContext);
         if (result.error) return;
-        this.buildPopupContent(popup, result, goal, skillName, locationTab, drilldownAction, alchemyContext);
+        this.buildPopupContent(popup, result, goal, skillName, locationTab, drilldownAction, alchemyContext, key);
     }
 
     /**

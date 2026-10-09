@@ -1133,6 +1133,10 @@ class TaskProfitDisplay {
             return;
         }
 
+        // The questInfo fast path leaves monsterName null; resolve the display name from the
+        // now-known hrid so the summary line shows the localized monster name instead of "null".
+        monsterName = getMonsterName(monsterHrid, monsterMap?.[monsterHrid]?.name || monsterHrid.split('/').pop());
+
         const zoneHrid = dataManager.getCombatZoneForMonster(monsterHrid);
         if (!zoneHrid) {
             container.innerHTML = `<span style="color:#f87171; font-size:11px;">${t('taskProfitDisplay.noZoneFoundForMonster')}</span>`;
@@ -1348,8 +1352,10 @@ class TaskProfitDisplay {
                     }
                 )}</div>`
             );
-            // "Purple's Gift" is the in-game item name for this bonus reward and is not translated here.
-            lines.push(`<div style="margin-left: 10px;">Purple's Gift: ${formatKMB(rewardValue.purpleGift)}</div>`);
+            // Resolve the bonus reward item name through game-i18n (falls back to the EN name).
+            lines.push(
+                `<div style="margin-left: 10px;">${getItemName('/items/purples_gift', "Purple's Gift")}: ${formatKMB(rewardValue.purpleGift)}</div>`
+            );
             lines.push(
                 `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${t(
                     'taskProfitDisplay.giftPerTaskNote',
@@ -1792,9 +1798,9 @@ class TaskProfitDisplay {
                     }
                 )}</div>`
             );
-            // "Purple's Gift" is the in-game item name for this bonus reward and is not translated here.
+            // Resolve the bonus reward item name through game-i18n (falls back to the EN name).
             lines.push(
-                `<div style="margin-left: 10px;">Purple's Gift: ${formatKMB(profitData.rewards.purpleGift)}</div>`
+                `<div style="margin-left: 10px;">${getItemName('/items/purples_gift', "Purple's Gift")}: ${formatKMB(profitData.rewards.purpleGift)}</div>`
             );
             lines.push(
                 `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${t(
@@ -1809,7 +1815,7 @@ class TaskProfitDisplay {
                 `<div style="margin-left: 10px; color: #888; font-style: italic;">${t('taskProfitDisplay.taskTokensLine', { value: t('taskProfitDisplay.loadingEllipsis') })}</div>`
             );
             lines.push(
-                `<div style="margin-left: 10px; color: #888; font-style: italic;">Purple's Gift: ${t('taskProfitDisplay.loadingEllipsis')}</div>`
+                `<div style="margin-left: 10px; color: #888; font-style: italic;">${getItemName('/items/purples_gift', "Purple's Gift")}: ${t('taskProfitDisplay.loadingEllipsis')}</div>`
             );
         }
         // Action profit section

@@ -378,12 +378,18 @@ class CollectionNavigation {
         }
 
         if (this.itemNameToHridCache && this.itemNameToHridCacheSource === initData.itemDetailMap) {
-            return this.itemNameToHridCache.get(itemName) || null;
+            return this.lookupItemHridFromCache(this.itemNameToHridCache, itemName);
         }
 
         const map = new Map();
         for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
             map.set(item.name, hrid);
+            // Also register the localized name so tiles rendered in the game's
+            // non-English locale (e.g. Chinese) can resolve the HRID.
+            const localizedName = getItemName(hrid, item.name);
+            if (localizedName && localizedName !== item.name) {
+                map.set(localizedName, hrid);
+            }
         }
 
         if (map.size > 0) {
@@ -391,7 +397,27 @@ class CollectionNavigation {
             this.itemNameToHridCacheSource = initData.itemDetailMap;
         }
 
-        return map.get(itemName) || null;
+        return this.lookupItemHridFromCache(map, itemName);
+    }
+
+    /**
+     * Query the name→HRID cache: exact match first, then a ★ → (R)
+     * substitution for refined items ("Griffin Bulwark ★" → "Griffin Bulwark (R)").
+     * @param {Map<string, string>} map
+     * @param {string} itemName
+     * @returns {string|null}
+     */
+    lookupItemHridFromCache(map, itemName) {
+        if (map.has(itemName)) {
+            return map.get(itemName);
+        }
+        if (itemName.includes('★')) {
+            const refinedVariant = itemName.replace(/\s*★/g, ' (R)').replace(/\s+/g, ' ').trim();
+            if (map.has(refinedVariant)) {
+                return map.get(refinedVariant);
+            }
+        }
+        return null;
     }
 
     /**

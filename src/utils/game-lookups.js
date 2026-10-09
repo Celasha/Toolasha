@@ -10,7 +10,7 @@
 
 import dataManager from '../core/data-manager.js';
 import { getReactFiberFromElement } from './marketplace-autofill.js';
-import { getActionName, getItemName } from './game-i18n.js';
+import { getActionName, getItemName, translateGameName } from './game-i18n.js';
 
 /**
  * Extract the last path segment from an hrid, e.g. "/actions/gathering/milking" -> "milking".
@@ -24,6 +24,8 @@ function lastHridSegment(hrid) {
 
 let actionFragmentToHridMap = null;
 let skillFragmentToHridMap = null;
+let chatChannelNameToHridCache = null;
+let chatChannelNameToHridCacheSource = null;
 
 /**
  * Resolve an action HRID from its icon sprite `<use>` href (e.g.
@@ -191,6 +193,34 @@ export function getItemHridFromName(itemName) {
     }
 
     return null;
+}
+
+/**
+ * Resolve a chat channel HRID from a tab display name (e.g. "Party", "队伍").
+ * Chat tab labels are rendered by the game via the i18next `chatChannelTypeNames`
+ * namespace (verified against the client bundle), so the cache indexes both the
+ * English data name from `chatChannelTypeDetailMap` and the localized name.
+ * @param {string} name - Tab display name (strip trailing unread-count digits first)
+ * @returns {string|null} Channel HRID or null if not found
+ */
+export function getChatChannelHridFromName(name) {
+    if (!name) return null;
+    const detailMap = dataManager.getInitClientData()?.chatChannelTypeDetailMap;
+    if (!detailMap) return null;
+
+    if (!chatChannelNameToHridCache || chatChannelNameToHridCacheSource !== detailMap) {
+        const map = new Map();
+        for (const [hrid, detail] of Object.entries(detailMap)) {
+            const englishName = detail?.name;
+            if (englishName) map.set(englishName, hrid);
+            const translated = translateGameName('chatChannelTypeNames', hrid, englishName || '');
+            if (translated && translated !== englishName) map.set(translated, hrid);
+        }
+        chatChannelNameToHridCache = map;
+        chatChannelNameToHridCacheSource = detailMap;
+    }
+
+    return chatChannelNameToHridCache.get(name) || null;
 }
 
 /**

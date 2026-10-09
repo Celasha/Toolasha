@@ -919,6 +919,21 @@ class LabSimUI {
         }
     }
 
+    /**
+     * Localized monster display name; English title-cased slug as fallback
+     * when the game data or translation is unavailable.
+     * @param {string} monsterHrid - Labyrinth monster HRID (e.g. '/monsters/cyclops')
+     * @returns {string} Display name
+     */
+    _monsterDisplayName(monsterHrid) {
+        const fallback = monsterHrid
+            .split('/')
+            .pop()
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+        return getMonsterName(monsterHrid, fallback);
+    }
+
     /** @private */
     _displaySimResults(simResult, monsterHrid, roomLevel, hours, simStartTime) {
         const container = this.panel?.querySelector('#mwi-labsim-results');
@@ -931,11 +946,7 @@ class LabSimUI {
         const simHours = (simResult.simulatedTime || 0) / (3600 * 1e9) || hours;
         const winRate = attempts > 0 ? ((encounters / attempts) * 100).toFixed(2) : '0.00';
 
-        const monsterName = monsterHrid
-            .split('/')
-            .pop()
-            .replace(/_/g, ' ')
-            .replace(/\b\w/g, (c) => c.toUpperCase());
+        const monsterName = this._monsterDisplayName(monsterHrid);
 
         container.innerHTML = `
             <div style="margin-bottom:12px;">
@@ -961,11 +972,7 @@ class LabSimUI {
         if (!container) return;
 
         const totalElapsed = formatElapsed((Date.now() - simStartTime) / 1000);
-        const monsterName = monsterHrid
-            .split('/')
-            .pop()
-            .replace(/_/g, ' ')
-            .replace(/\b\w/g, (c) => c.toUpperCase());
+        const monsterName = this._monsterDisplayName(monsterHrid);
         const effectiveCombatLevel = labyrinthClearRate.getPlayerEffectiveCombatLevel();
         const recommendedSkip = maxResult.maxLevel - effectiveCombatLevel + 1;
 

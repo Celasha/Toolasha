@@ -25,6 +25,14 @@ vi.mock('../../core/tooltip-observer.js', () => ({
     default: { subscribe: subscribeMock, unsubscribe: unsubscribeMock },
 }));
 
+// Localized (non-English) display names, e.g. translations['/abilities/frost_surge'] = '霜涌'.
+const { translations, tooltipText } = vi.hoisted(() => ({ translations: {}, tooltipText: {} }));
+
+vi.mock('../../utils/game-i18n.js', () => ({
+    getAbilityName: (hrid, fallback) => translations[hrid] ?? fallback,
+    translateGameName: (namespace, key, fallback) => tooltipText[key] ?? fallback,
+}));
+
 const abilityDetailMap = {
     '/abilities/frost_surge': {
         hrid: '/abilities/frost_surge',
@@ -54,9 +62,9 @@ vi.mock('../combat-sim/ability-timing-calculator.js', () => ({
     },
 }));
 
-const abilityTooltipTiming = (await import('./ability-tooltip-timing.js')).default;
+const { default: abilityTooltipFeature, abilityTooltipTiming: instance } = await import('./ability-tooltip-timing.js');
 
-function makeAbilityTooltip(name = 'Frost Surge') {
+function makeAbilityTooltip(name = 'Frost Surge', cooldownText = 'Cooldown: 15s', castTimeText = 'Cast Time: 2s') {
     const popper = document.createElement('div');
     popper.className = 'MuiTooltip-popper';
 
@@ -68,10 +76,10 @@ function makeAbilityTooltip(name = 'Frost Surge') {
     nameEl.textContent = name;
 
     const cooldownEl = document.createElement('div');
-    cooldownEl.textContent = 'Cooldown: 15s';
+    cooldownEl.textContent = cooldownText;
 
     const castTimeEl = document.createElement('div');
-    castTimeEl.textContent = 'Cast Time: 2s';
+    castTimeEl.textContent = castTimeText;
 
     abilityTooltip.appendChild(nameEl);
     abilityTooltip.appendChild(cooldownEl);
@@ -82,25 +90,34 @@ function makeAbilityTooltip(name = 'Frost Surge') {
 
 describe('AbilityTooltipTiming', () => {
     beforeEach(() => {
-        abilityTooltipTiming.disable();
+        abilityTooltipFeature.disable();
         vi.clearAllMocks();
+        for (const key of Object.keys(translations)) {
+            delete translations[key];
+        }
+        for (const key of Object.keys(tooltipText)) {
+            delete tooltipText[key];
+        }
+        // The name→hrid cache is instance state keyed on the module-level detail map,
+        // so it never invalidates between tests - reset it explicitly.
+        instance.abilityNameToHridCache = null;
         settingsMap.abilityTooltip_effectiveTiming = true;
         statsMock.stats = { abilityHaste: 0, castSpeed: 0, attackLevel: 1 };
     });
 
     test('does not subscribe when the setting is off', () => {
         settingsMap.abilityTooltip_effectiveTiming = false;
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         expect(subscribeMock).not.toHaveBeenCalled();
     });
 
     test('subscribes to the shared tooltip observer when enabled', () => {
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         expect(subscribeMock).toHaveBeenCalledWith('AbilityTooltipTiming', expect.any(Function));
     });
 
     test('injects nothing when effective values match base (no haste/cast speed contribution)', () => {
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, abilityTooltip } = makeAbilityTooltip();
 
@@ -111,7 +128,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('injects only the differing value (Ability Haste reduces cooldown, cast speed unaffected)', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl, castTimeEl } = makeAbilityTooltip();
 
@@ -123,7 +140,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('injects both values inline when both differ from base', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0.25, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl, castTimeEl } = makeAbilityTooltip();
 
@@ -135,7 +152,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('ignores close events', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl } = makeAbilityTooltip();
 
@@ -146,7 +163,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('does not inject twice for the same tooltip element', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl } = makeAbilityTooltip();
 
@@ -157,7 +174,7 @@ describe('AbilityTooltipTiming', () => {
     });
 
     test('skips non-ability tooltips silently', () => {
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const popper = document.createElement('div');
         popper.className = 'MuiTooltip-popper';
@@ -168,7 +185,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('skips unrecognized ability names (no hrid match) without throwing', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl } = makeAbilityTooltip('Unknown Ability');
 
@@ -177,9 +194,68 @@ describe('AbilityTooltipTiming', () => {
         expect(cooldownEl.textContent).toBe('Cooldown: 15s');
     });
 
+    test('resolves the ability by its localized (non-English) tooltip name', () => {
+        // zh client: the tooltip renders the game's translated name while the
+        // game data only carries the English name.
+        translations['/abilities/frost_surge'] = '霜涌';
+        statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
+        abilityTooltipFeature.initialize();
+        const callback = subscribeMock.mock.calls[0][1];
+        const { popper, cooldownEl } = makeAbilityTooltip('霜涌');
+
+        callback(popper, 'opened');
+
+        expect(cooldownEl.textContent).toBe('Cooldown: 15s (12.5s)');
+    });
+
+    test('injects into localized (zh-Hans) tooltip lines end to end', () => {
+        // zh client: name, line labels and line text all localized. Real zh-Hans
+        // templates from the game's language chunk (note the half-width colon).
+        translations['/abilities/frost_surge'] = '霜涌';
+        tooltipText.cooldown = '冷却: {{duration}}';
+        tooltipText.castTime = '施法时间: {{duration}}';
+        statsMock.stats = { abilityHaste: 20, castSpeed: 0.25, attackLevel: 1 };
+        abilityTooltipFeature.initialize();
+        const callback = subscribeMock.mock.calls[0][1];
+        const { popper, cooldownEl, castTimeEl } = makeAbilityTooltip('霜涌', '冷却: 15s', '施法时间: 2s');
+
+        callback(popper, 'opened');
+
+        expect(cooldownEl.textContent).toBe('冷却: 15s (12.5s)');
+        expect(castTimeEl.textContent).toBe('施法时间: 2s (1.6s)');
+    });
+
+    test('matches a full-width colon variant of the localized line label', () => {
+        // The prefix matcher strips both half- and full-width colons, so locales
+        // rendering "冷却： 15s" still get the injection.
+        translations['/abilities/frost_surge'] = '霜涌';
+        tooltipText.cooldown = '冷却： {{duration}}';
+        statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
+        abilityTooltipFeature.initialize();
+        const callback = subscribeMock.mock.calls[0][1];
+        const { popper, cooldownEl } = makeAbilityTooltip('霜涌', '冷却： 15s');
+
+        callback(popper, 'opened');
+
+        expect(cooldownEl.textContent).toBe('冷却： 15s (12.5s)');
+    });
+
+    test('still matches English lines while a translation is active (prefix dedup)', () => {
+        // English clients never regress: both prefixes are tried against each line.
+        tooltipText.cooldown = '冷却: {{duration}}';
+        statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
+        abilityTooltipFeature.initialize();
+        const callback = subscribeMock.mock.calls[0][1];
+        const { popper, cooldownEl } = makeAbilityTooltip();
+
+        callback(popper, 'opened');
+
+        expect(cooldownEl.textContent).toBe('Cooldown: 15s (12.5s)');
+    });
+
     test('unsubscribes on disable', () => {
-        abilityTooltipTiming.initialize();
-        abilityTooltipTiming.disable();
+        abilityTooltipFeature.initialize();
+        abilityTooltipFeature.disable();
         expect(unsubscribeMock).toHaveBeenCalledWith('AbilityTooltipTiming');
     });
 });

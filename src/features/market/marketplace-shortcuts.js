@@ -15,7 +15,7 @@ import { setReactInputValue } from '../../utils/react-input.js';
 import { readMarketplaceRuntimeStateFromElement } from '../../utils/marketplace-autofill.js';
 import estimatedListingAge from './estimated-listing-age.js';
 import { formatRelativeTime, formatWithSeparator } from '../../utils/formatters.js';
-import { translateGameName } from '../../utils/game-i18n.js';
+import { translateGameName, getItemName } from '../../utils/game-i18n.js';
 
 /** Native input value setter for triggering React state updates */
 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -922,17 +922,35 @@ class MarketplaceShortcuts {
         const gameData = dataManager.getInitClientData();
         if (!gameData?.itemDetailMap) return null;
 
-        // Build cache on first use
+        // Build cache on first use. Index both the English data name and the
+        // game's localized display name so the lookup works in any locale.
         if (!this.itemNameToHridCache) {
             this.itemNameToHridCache = new Map();
             for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
                 if (item.name) {
                     this.itemNameToHridCache.set(item.name, hrid);
+                    const localizedName = getItemName(hrid, item.name);
+                    if (localizedName && localizedName !== item.name) {
+                        this.itemNameToHridCache.set(localizedName, hrid);
+                    }
                 }
             }
         }
 
-        return this.itemNameToHridCache.get(itemName) || null;
+        // 1. Exact match (handles base items and items already in "(R)" form)
+        if (this.itemNameToHridCache.has(itemName)) {
+            return this.itemNameToHridCache.get(itemName);
+        }
+
+        // 2. ★ → (R) substitution for refined items ("Griffin Bulwark ★" → "Griffin Bulwark (R)")
+        if (itemName.includes('★')) {
+            const refinedVariant = itemName.replace(/\s*★/g, ' (R)').replace(/\s+/g, ' ').trim();
+            if (this.itemNameToHridCache.has(refinedVariant)) {
+                return this.itemNameToHridCache.get(refinedVariant);
+            }
+        }
+
+        return null;
     }
 
     /**

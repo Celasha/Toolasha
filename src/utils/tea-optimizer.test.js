@@ -6,6 +6,12 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const FORAGING_TYPE = '/action_types/foraging';
 
+const gameI18n = vi.hoisted(() => ({ translations: {} }));
+
+vi.mock('./game-i18n.js', () => ({
+    translateGameName: (ns, hrid, fallback = '') => gameI18n.translations[`${ns}.${hrid}`] ?? fallback,
+}));
+
 const mocks = vi.hoisted(() => ({
     skills: [{ skillHrid: '/skills/foraging', level: 5 }],
     prices: {},
@@ -553,5 +559,32 @@ describe('getSkillActionsForDisplay sort order', () => {
         const result = getSkillActionsForDisplay('milking', 1);
 
         expect(result.map((a) => a.name)).toEqual(['A Cow', 'B Cow']);
+    });
+});
+
+describe('normalizeSkillDisplayName', () => {
+    beforeEach(() => {
+        gameI18n.translations = {};
+    });
+
+    test('resolves game-localized zh skill names via skillNames', async () => {
+        const { normalizeSkillDisplayName } = await import('./tea-optimizer.js');
+        gameI18n.translations['skillNames./skills/woodcutting'] = '伐木';
+        gameI18n.translations['skillNames./skills/milking'] = '挤奶';
+        expect(normalizeSkillDisplayName('伐木')).toBe('woodcutting');
+        expect(normalizeSkillDisplayName('挤奶')).toBe('milking');
+    });
+
+    test('accepts English capitalized and lowercase skill names', async () => {
+        const { normalizeSkillDisplayName } = await import('./tea-optimizer.js');
+        expect(normalizeSkillDisplayName('Woodcutting')).toBe('woodcutting');
+        expect(normalizeSkillDisplayName('alchemy')).toBe('alchemy');
+    });
+
+    test('returns null for unknown or empty names', async () => {
+        const { normalizeSkillDisplayName } = await import('./tea-optimizer.js');
+        expect(normalizeSkillDisplayName('未知专业')).toBeNull();
+        expect(normalizeSkillDisplayName('')).toBeNull();
+        expect(normalizeSkillDisplayName(null)).toBeNull();
     });
 });

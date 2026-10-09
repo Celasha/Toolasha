@@ -146,11 +146,6 @@ const ALLOWLIST = [
         reason: "known: '#28' English data name compared to localized queue text",
     },
     {
-        file: 'src/features/actions/action-time-display.js',
-        literal: 'hashItemDetails.name',
-        reason: "known: '#28' English data name compared to localized queue text",
-    },
-    {
         file: 'src/features/chat/mention-tracker.js',
         literal: 'Party|Guild|Local|…',
         reason: "known: '#31' English channel-name map reverse-looked-up with localized tab text",
@@ -176,11 +171,6 @@ const ALLOWLIST = [
         reason: "known: '#24' item name→hrid cache keyed by English .name only",
     },
     {
-        file: 'src/features/market/sell-queue.js',
-        literal: '/items/*',
-        reason: "known: '#32' third-level fallback builds hrid from localized tooltip name",
-    },
-    {
         file: 'src/features/navigation/alt-click-navigation.js',
         literal: '/items/*',
         reason: "known: '#33' fallback at :142 builds hrid from localized tooltip name (sibling hit :129 is a sprite-href fragment, locale-independent, flagged via name collision)",
@@ -189,11 +179,6 @@ const ALLOWLIST = [
         file: 'src/features/tasks/task-reroll-tracker.js',
         literal: 'monsterName.toLowerCase(…)',
         reason: "known: '#29' English monster data name matched against localized task text",
-    },
-    {
-        file: 'src/features/tasks/task-reroll-tracker.js',
-        literal: 'actionName.toLowerCase(…)',
-        reason: "known: '#29' English action data name matched against localized task text",
     },
     // --- verified safe (reason required) ---
     {

@@ -9,6 +9,16 @@ const mocks = vi.hoisted(() => ({
     actionDetailMap: {},
 }));
 
+const gameI18nTranslations = vi.hoisted(() => ({ map: {} }));
+
+vi.mock('../../utils/game-i18n.js', () => ({
+    getItemName: (hrid, fallback = '') => gameI18nTranslations.map[hrid] ?? fallback,
+    getActionName: (hrid, fallback = '') => fallback,
+    getMonsterName: (hrid, fallback = '') => fallback,
+    getAbilityName: (hrid, fallback = '') => fallback,
+    translateGameName: (namespace, key, fallback = '') => fallback,
+}));
+
 vi.mock('../../api/marketplace.js', () => ({
     default: {
         getPrice: vi.fn((itemHrid) => mocks.marketPrices[itemHrid] || null),
@@ -51,6 +61,59 @@ function simResult(overrides = {}) {
         ...overrides,
     };
 }
+
+describe('calculateSimRevenue - localized entry names (#39)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        for (const key of Object.keys(gameI18nTranslations.map)) delete gameI18nTranslations.map[key];
+        mocks.marketPrices = {};
+        mocks.itemDetails = {};
+        mocks.itemDetails['/items/foraging_essence'] = { name: 'Foraging Essence' };
+        mocks.itemDetails['/items/alchemy_tea'] = { name: 'Alchemy Tea' };
+        mocks.resolveSellSideValue.mockReturnValue({ value: 100, source: 'market', needsTax: false });
+        mocks.resolveBuySideValue.mockReturnValue({ value: 50, isOutlier: false });
+    });
+
+    test('drop entry name uses the localized item name when available', () => {
+        gameI18nTranslations.map['/items/foraging_essence'] = '觅得精华';
+        const gameData = { combatMonsterDetailMap: { '/monsters/bear': { dropTable: [] } } };
+        gameData.combatMonsterDetailMap['/monsters/bear'].dropTable = [
+            { itemHrid: '/items/foraging_essence', dropRate: 1, minCount: 1, maxCount: 1, minDifficultyTier: 0 },
+        ];
+        const result = simResult({ deaths: { '/monsters/bear': 10 } });
+
+        const revenue = calculateSimRevenue(result, gameData, 'player1', 10);
+
+        expect(revenue.dropEntries).toHaveLength(1);
+        expect(revenue.dropEntries[0].name).toBe('觅得精华');
+    });
+
+    test('consumable entry name uses the localized item name when available', () => {
+        gameI18nTranslations.map['/items/alchemy_tea'] = '炼金茶';
+        const result = simResult({ consumablesUsed: { player1: { '/items/alchemy_tea': 10 } } });
+
+        const revenue = calculateSimRevenue(result, { combatMonsterDetailMap: {} }, 'player1', 10);
+
+        expect(revenue.consumableEntries).toHaveLength(1);
+        expect(revenue.consumableEntries[0].name).toBe('炼金茶');
+    });
+
+    test('entry names fall back to the English data name when no translation exists', () => {
+        const gameData = { combatMonsterDetailMap: { '/monsters/bear': { dropTable: [] } } };
+        gameData.combatMonsterDetailMap['/monsters/bear'].dropTable = [
+            { itemHrid: '/items/foraging_essence', dropRate: 1, minCount: 1, maxCount: 1, minDifficultyTier: 0 },
+        ];
+        const result = simResult({
+            deaths: { '/monsters/bear': 10 },
+            consumablesUsed: { player1: { '/items/alchemy_tea': 10 } },
+        });
+
+        const revenue = calculateSimRevenue(result, gameData, 'player1', 10);
+
+        expect(revenue.dropEntries[0].name).toBe('Foraging Essence');
+        expect(revenue.consumableEntries[0].name).toBe('Alchemy Tea');
+    });
+});
 
 describe('calculateSimRevenue - canonical sell-side valuation + tax reuse (CSIM-AUD-012)', () => {
     beforeEach(() => {

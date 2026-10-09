@@ -5,6 +5,14 @@ import dataManager from '../../core/data-manager.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import { MarketplaceShortcuts } from './marketplace-shortcuts.js';
 
+// Localized (non-English) display names, e.g. translations['/items/cheese'] = '奶酪'.
+const translations = vi.hoisted(() => ({}));
+
+vi.mock('../../utils/game-i18n.js', () => ({
+    translateGameName: (namespace, key, fallback) => fallback,
+    getItemName: (hrid, fallback) => translations[hrid] ?? fallback,
+}));
+
 function createActionMenu() {
     const menu = document.createElement('div');
     menu.innerHTML = '<button type="button">Existing action</button>';
@@ -68,6 +76,9 @@ afterEach(() => {
     vi.useRealTimers();
     document.body.innerHTML = '';
     vi.restoreAllMocks();
+    for (const key of Object.keys(translations)) {
+        delete translations[key];
+    }
     dataManager.characterItems = null;
 });
 
@@ -349,5 +360,26 @@ describe('MarketplaceShortcuts quick-input and multiplier buttons', () => {
         const ownedEl = modal.querySelector('.mwi-owned-count');
         expect(ownedEl).not.toBeNull();
         expect(ownedEl.textContent).toContain('3');
+    });
+});
+
+describe('MarketplaceShortcuts localized name lookup', () => {
+    test('findItemHrid resolves localized names and ★ → (R) refined variants', () => {
+        vi.spyOn(dataManager, 'getInitClientData').mockReturnValue({
+            itemDetailMap: {
+                '/items/cheese': { name: 'Cheese' },
+                '/items/griffin_bulwark_r': { name: 'Griffin Bulwark (R)' },
+            },
+        });
+        translations['/items/cheese'] = '奶酪';
+        translations['/items/griffin_bulwark_r'] = '狮鹫壁垒 (R)';
+
+        const feature = new MarketplaceShortcuts();
+        expect(feature.findItemHrid('奶酪')).toBe('/items/cheese');
+        expect(feature.findItemHrid('Cheese')).toBe('/items/cheese');
+        // zh renders refined items with ★ while the data name carries "(R)".
+        expect(feature.findItemHrid('狮鹫壁垒 ★')).toBe('/items/griffin_bulwark_r');
+        expect(feature.findItemHrid('Griffin Bulwark ★')).toBe('/items/griffin_bulwark_r');
+        expect(feature.findItemHrid('Unknown Item')).toBeNull();
     });
 });

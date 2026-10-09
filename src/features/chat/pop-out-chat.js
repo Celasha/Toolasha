@@ -13,6 +13,7 @@ import { formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { chatBlockList } from './chat-block-list.js';
 import { getItemName, getAbilityName, getActionName, getMonsterName, getSkillName } from '../../utils/game-i18n.js';
+import { getChatChannelHridFromName } from '../../utils/game-lookups.js';
 
 const RELAY_CHANNEL = 'mwi-chat-relay';
 const SEND_CHANNEL = 'mwi-chat-send';
@@ -346,9 +347,11 @@ class PopOutChat {
                     const name = btn.textContent?.trim().replace(/\d+$/, '').trim();
                     if (!name) return null;
                     if (hrid) return { hrid, name };
-                    // Tab without data-mention-channel: resolve HRID from known lists
-                    const known = CHANNELS.find((c) => c.name === name);
-                    if (known) return { hrid: known.hrid, name };
+                    // Tab without data-mention-channel: resolve the HRID from the tab's
+                    // display name via the game's channel data (English or localized),
+                    // since the hardcoded CHANNELS list is English-only and stale.
+                    const known = getChatChannelHridFromName(name);
+                    if (known) return { hrid: known, name };
                     const discovered = Array.from(this.discoveredChannels.values()).find((c) => c.name === name);
                     if (discovered) return { hrid: discovered.hrid, name };
                     return { hrid: `__label__/${name}`, name };

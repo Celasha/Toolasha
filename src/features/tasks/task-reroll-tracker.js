@@ -13,6 +13,7 @@ import { GAME, TOOLASHA } from '../../utils/selectors.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { addStyles } from '../../utils/dom.js';
 import { formatKMB } from '../../utils/formatters.js';
+import { getMonsterName, getActionName } from '../../utils/game-i18n.js';
 
 class TaskRerollTracker {
     constructor() {
@@ -386,7 +387,13 @@ class TaskRerollTracker {
                 const monsterDetail = gameData?.combatMonsterDetailMap?.[taskData.monsterHrid];
                 const monsterName =
                     monsterDetail?.name || taskData.monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
-                if (descLower.includes(monsterName.toLowerCase())) {
+                // The task card is rendered by the game, so in non-English locales the
+                // description contains the localized monster name - match either name.
+                const translatedMonsterName = getMonsterName(taskData.monsterHrid, monsterName);
+                if (
+                    descLower.includes(monsterName.toLowerCase()) ||
+                    descLower.includes(translatedMonsterName.toLowerCase())
+                ) {
                     claimedIds?.add(taskId);
                     return taskId;
                 }
@@ -395,8 +402,16 @@ class TaskRerollTracker {
             // For action tasks, check actionHrid
             if (taskData.actionHrid) {
                 const actionParts = taskData.actionHrid.split('/');
-                const actionName = actionParts[actionParts.length - 1].replace(/_/g, ' ');
-                if (descLower.includes(actionName.toLowerCase())) {
+                const slugName = actionParts[actionParts.length - 1].replace(/_/g, ' ');
+                const actionDetailName = dataManager.getActionDetails(taskData.actionHrid)?.name;
+                // Same locale-aware matching as the monster path: the description may
+                // contain the localized action name in non-English locales.
+                const translatedActionName = getActionName(taskData.actionHrid, actionDetailName || slugName);
+                if (
+                    descLower.includes(slugName.toLowerCase()) ||
+                    (actionDetailName && descLower.includes(actionDetailName.toLowerCase())) ||
+                    descLower.includes(translatedActionName.toLowerCase())
+                ) {
                     claimedIds?.add(taskId);
                     return taskId;
                 }

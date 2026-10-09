@@ -21,6 +21,7 @@ import {
 } from '../../utils/marketplace-tabs.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { getItemName, translateGameName } from '../../utils/game-i18n.js';
+import { getItemHridFromName } from '../../utils/game-lookups.js';
 
 const timerRegistry = createTimerRegistry();
 
@@ -357,7 +358,14 @@ function handleTooltipAppear(tooltipElement) {
         );
         if (nameEl) {
             const itemName = nameEl.textContent.trim();
-            currentItemHrid = `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
+            // Strip any enhancement level (e.g. "+10"), then resolve through the shared
+            // dual-name lookup (English + localized) instead of reconstructing a slug
+            // from the display name, which cannot work for translated names.
+            const baseName = itemName.replace(/\s*\+\d+\s*$/, '').trim();
+            const itemHrid = getItemHridFromName(baseName);
+            if (itemHrid) {
+                currentItemHrid = itemHrid;
+            }
         }
     } catch (error) {
         console.error('[SellQueue] Error parsing tooltip:', error);
