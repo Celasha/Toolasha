@@ -40,6 +40,28 @@ const GATHERING_SKILLS = ['milking', 'foraging', 'woodcutting'];
 const PRODUCTION_SKILLS = ['cheesesmithing', 'crafting', 'tailoring', 'cooking', 'brewing', 'alchemy'];
 
 /**
+ * Normalize a skill display name (the game-localized panel title, e.g. zh "伐木",
+ * or English "Woodcutting"/"woodcutting") into the lowercase English skill key
+ * used by SKILL_TO_ACTION_TYPE and the optimizer. Resolution is data-driven:
+ * each candidate key's `/skills/<key>` HRID is matched against the game's own
+ * `skillNames` localization, so new client languages work without changes here.
+ * @param {string} displayName - Skill name as shown in the panel title
+ * @returns {string|null} Lowercase English key (e.g. 'woodcutting'), or null if unrecognized
+ */
+export function normalizeSkillDisplayName(displayName) {
+    if (!displayName) return null;
+    const needle = String(displayName).trim();
+    if (!needle) return null;
+    const lowered = needle.toLowerCase();
+    for (const key of Object.keys(SKILL_TO_ACTION_TYPE)) {
+        if (key === lowered) return key;
+        const localized = translateGameName('skillNames', `/skills/${key}`, '');
+        if (localized && localized === needle) return key;
+    }
+    return null;
+}
+
+/**
  * Get all relevant teas for a skill and optimization goal
  * Returns teas grouped by exclusivity (skill teas are mutually exclusive)
  * @param {string} skillName - Skill name (e.g., 'milking')
