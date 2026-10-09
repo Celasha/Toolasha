@@ -151,6 +151,16 @@ const ALLOWLIST = [
         reason: "known: '#28' English data name compared to localized queue text",
     },
     {
+        file: 'src/features/actions/action-time-display.js',
+        literal: 'item.itemHrid',
+        reason: "safe: '#28' output-item slug fallback only after actionNameMatches dual match (en+localized) fails; zh covered by translated name",
+    },
+    {
+        file: 'src/features/actions/action-time-display.js',
+        literal: 'drop.itemHrid',
+        reason: "safe: '#28' drop-table slug fallback only after actionNameMatches dual match (en+localized) fails; zh covered by translated name",
+    },
+    {
         file: 'src/features/chat/mention-tracker.js',
         literal: 'Party|Guild|Local|…',
         reason: "known: '#31' English channel-name map reverse-looked-up with localized tab text",
