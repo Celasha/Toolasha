@@ -47,7 +47,7 @@ vi.mock('../../core/loadout-state.js', () => ({
 vi.mock('../../api/marketplace.js', () => ({ default: { on: vi.fn(), off: vi.fn() } }));
 
 vi.mock('./action-panel-sort.js', () => ({
-    default: { initialize: vi.fn(async () => {}), clearAllPanels: vi.fn() },
+    default: { initialize: vi.fn(async () => {}), clearAllPanels: vi.fn(), updateMaxProduceable: vi.fn() },
 }));
 
 vi.mock('./action-filter.js', () => ({ default: {} }));

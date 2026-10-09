@@ -511,6 +511,9 @@ class MaxProduceable {
             }
         }
 
+        // Store max produceable for sorting (null for gathering actions - no inputs to count)
+        actionPanelSort.updateMaxProduceable(actionPanel, maxCrafts);
+
         // Calculate profit/hr (for both gathering and production)
         let profitPerHour = null;
         let hasMissingPrices = false;

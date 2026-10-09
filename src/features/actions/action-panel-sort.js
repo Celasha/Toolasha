@@ -13,10 +13,10 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class ActionPanelSort {
     constructor() {
-        this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour, expPerHour}
+        this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour, expPerHour, maxProduceable}
         this.pinnedActions = new Set(); // Set of pinned action HRIDs
         this.cachedStats = {}; // actionHrid → { profitPerHour, expPerHour }
-        this.sortMode = 'default'; // 'default' | 'profit' | 'xp' | 'coinsPerXp'
+        this.sortMode = 'default'; // 'default' | 'profit' | 'xp' | 'coinsPerXp' | 'craftable'
         this.sortTimeout = null; // Debounce timer
         this.initialized = false;
         this.timerRegistry = createTimerRegistry();
@@ -118,6 +118,7 @@ class ActionPanelSort {
             actionHrid: actionHrid,
             profitPerHour: profitPerHour,
             expPerHour: null,
+            maxProduceable: null,
         });
     }
 
@@ -150,8 +151,20 @@ class ActionPanelSort {
     }
 
     /**
+     * Update max produceable count for a registered panel
+     * @param {HTMLElement} actionPanel - The action panel element
+     * @param {number|null} maxProduceable - Max times this action can be performed with current inventory
+     */
+    updateMaxProduceable(actionPanel, maxProduceable) {
+        const data = this.panels.get(actionPanel);
+        if (data) {
+            data.maxProduceable = maxProduceable;
+        }
+    }
+
+    /**
      * Set the active sort mode
-     * @param {'default'|'profit'|'xp'|'coinsPerXp'} mode
+     * @param {'default'|'profit'|'xp'|'coinsPerXp'|'craftable'} mode
      */
     setSortMode(mode) {
         this.sortMode = mode;
@@ -161,7 +174,7 @@ class ActionPanelSort {
 
     /**
      * Get the active sort mode
-     * @returns {'default'|'profit'|'xp'|'coinsPerXp'}
+     * @returns {'default'|'profit'|'xp'|'coinsPerXp'|'craftable'}
      */
     getSortMode() {
         return this.sortMode;
@@ -327,6 +340,7 @@ class ActionPanelSort {
                 panel: actionPanel,
                 profit: data.profitPerHour ?? null,
                 exp: data.expPerHour ?? null,
+                maxProduceable: data.maxProduceable ?? null,
                 pinned: isPinned,
                 originalIndex: containerMap.get(container).length,
                 actionHrid: data.actionHrid,
@@ -390,6 +404,13 @@ class ActionPanelSort {
             if (aRatio === null) return 1;
             if (bRatio === null) return -1;
             return bRatio - aRatio;
+        }
+
+        if (sortMode === 'craftable') {
+            if (a.maxProduceable === null && b.maxProduceable === null) return 0;
+            if (a.maxProduceable === null) return 1;
+            if (b.maxProduceable === null) return -1;
+            return b.maxProduceable - a.maxProduceable;
         }
 
         // 'default' — sort ascending by required level, falling back to insertion order

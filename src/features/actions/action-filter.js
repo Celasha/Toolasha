@@ -173,12 +173,13 @@ class ActionFilter {
         }
 
         // Create sort toggle button
-        const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp'];
+        const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp', 'craftable'];
         const SORT_LABELS = {
             default: t('actionFilter.sortDefaultLabel'),
             profit: t('actionFilter.sortProfitLabel'),
             xp: t('actionFilter.sortXpLabel'),
             coinsPerXp: t('actionFilter.sortProfitXpLabel'),
+            craftable: t('actionFilter.sortCraftableLabel'),
         };
         const sortBtn = document.createElement('button');
         sortBtn.id = 'mwi-action-sort-toggle';

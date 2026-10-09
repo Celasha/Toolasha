@@ -2157,6 +2157,7 @@ export default {
         sortProfitLabel: 'Sort: Profit',
         sortProfitXpLabel: 'Sort: Profit/XP',
         sortXpLabel: 'Sort: XP',
+        sortCraftableLabel: 'Sort: Craftable',
     },
     actionTimeDisplay: {
         unknownAction: '[Unknown action]',

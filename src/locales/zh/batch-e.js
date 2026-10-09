@@ -407,6 +407,7 @@ export default {
         sortProfitLabel: '排序：利润',
         sortProfitXpLabel: '排序：利润/经验',
         sortXpLabel: '排序：经验',
+        sortCraftableLabel: '排序：可制作数',
     },
     actionTimeDisplay: {
         unknownAction: '[未知动作]',
