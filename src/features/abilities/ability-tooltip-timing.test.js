@@ -25,6 +25,13 @@ vi.mock('../../core/tooltip-observer.js', () => ({
     default: { subscribe: subscribeMock, unsubscribe: unsubscribeMock },
 }));
 
+// Localized (non-English) display names, e.g. translations['/abilities/frost_surge'] = '霜涌'.
+const translations = vi.hoisted(() => ({}));
+
+vi.mock('../../utils/game-i18n.js', () => ({
+    getAbilityName: (hrid, fallback) => translations[hrid] ?? fallback,
+}));
+
 const abilityDetailMap = {
     '/abilities/frost_surge': {
         hrid: '/abilities/frost_surge',
@@ -54,7 +61,7 @@ vi.mock('../combat-sim/ability-timing-calculator.js', () => ({
     },
 }));
 
-const abilityTooltipTiming = (await import('./ability-tooltip-timing.js')).default;
+const { default: abilityTooltipFeature, abilityTooltipTiming: instance } = await import('./ability-tooltip-timing.js');
 
 function makeAbilityTooltip(name = 'Frost Surge') {
     const popper = document.createElement('div');
@@ -82,25 +89,31 @@ function makeAbilityTooltip(name = 'Frost Surge') {
 
 describe('AbilityTooltipTiming', () => {
     beforeEach(() => {
-        abilityTooltipTiming.disable();
+        abilityTooltipFeature.disable();
         vi.clearAllMocks();
+        for (const key of Object.keys(translations)) {
+            delete translations[key];
+        }
+        // The name→hrid cache is instance state keyed on the module-level detail map,
+        // so it never invalidates between tests - reset it explicitly.
+        instance.abilityNameToHridCache = null;
         settingsMap.abilityTooltip_effectiveTiming = true;
         statsMock.stats = { abilityHaste: 0, castSpeed: 0, attackLevel: 1 };
     });
 
     test('does not subscribe when the setting is off', () => {
         settingsMap.abilityTooltip_effectiveTiming = false;
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         expect(subscribeMock).not.toHaveBeenCalled();
     });
 
     test('subscribes to the shared tooltip observer when enabled', () => {
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         expect(subscribeMock).toHaveBeenCalledWith('AbilityTooltipTiming', expect.any(Function));
     });
 
     test('injects nothing when effective values match base (no haste/cast speed contribution)', () => {
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, abilityTooltip } = makeAbilityTooltip();
 
@@ -111,7 +124,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('injects only the differing value (Ability Haste reduces cooldown, cast speed unaffected)', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl, castTimeEl } = makeAbilityTooltip();
 
@@ -123,7 +136,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('injects both values inline when both differ from base', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0.25, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl, castTimeEl } = makeAbilityTooltip();
 
@@ -135,7 +148,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('ignores close events', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl } = makeAbilityTooltip();
 
@@ -146,7 +159,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('does not inject twice for the same tooltip element', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl } = makeAbilityTooltip();
 
@@ -157,7 +170,7 @@ describe('AbilityTooltipTiming', () => {
     });
 
     test('skips non-ability tooltips silently', () => {
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const popper = document.createElement('div');
         popper.className = 'MuiTooltip-popper';
@@ -168,7 +181,7 @@ describe('AbilityTooltipTiming', () => {
 
     test('skips unrecognized ability names (no hrid match) without throwing', () => {
         statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
-        abilityTooltipTiming.initialize();
+        abilityTooltipFeature.initialize();
         const callback = subscribeMock.mock.calls[0][1];
         const { popper, cooldownEl } = makeAbilityTooltip('Unknown Ability');
 
@@ -177,9 +190,23 @@ describe('AbilityTooltipTiming', () => {
         expect(cooldownEl.textContent).toBe('Cooldown: 15s');
     });
 
+    test('resolves the ability by its localized (non-English) tooltip name', () => {
+        // zh client: the tooltip renders the game's translated name while the
+        // game data only carries the English name.
+        translations['/abilities/frost_surge'] = '霜涌';
+        statsMock.stats = { abilityHaste: 20, castSpeed: 0, attackLevel: 1 };
+        abilityTooltipFeature.initialize();
+        const callback = subscribeMock.mock.calls[0][1];
+        const { popper, cooldownEl } = makeAbilityTooltip('霜涌');
+
+        callback(popper, 'opened');
+
+        expect(cooldownEl.textContent).toBe('Cooldown: 15s (12.5s)');
+    });
+
     test('unsubscribes on disable', () => {
-        abilityTooltipTiming.initialize();
-        abilityTooltipTiming.disable();
+        abilityTooltipFeature.initialize();
+        abilityTooltipFeature.disable();
         expect(unsubscribeMock).toHaveBeenCalledWith('AbilityTooltipTiming');
     });
 });

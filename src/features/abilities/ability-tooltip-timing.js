@@ -9,6 +9,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import tooltipObserver from '../../core/tooltip-observer.js';
 import dom from '../../utils/dom.js';
+import { getAbilityName } from '../../utils/game-i18n.js';
 import {
     getCurrentAbilityTimingStats,
     calculateEffectiveAbilityTiming,
@@ -145,6 +146,12 @@ class AbilityTooltipTiming {
         const map = new Map();
         for (const [hrid, ability] of Object.entries(gameData.abilityDetailMap)) {
             map.set(ability.name, hrid);
+            // Also register the localized name so tooltips rendered in the
+            // game's non-English locale (e.g. Chinese) can resolve the HRID.
+            const localizedName = getAbilityName(hrid, ability.name);
+            if (localizedName && localizedName !== ability.name) {
+                map.set(localizedName, hrid);
+            }
         }
 
         if (map.size > 0) {
@@ -161,7 +168,7 @@ class AbilityTooltipTiming {
     }
 }
 
-const abilityTooltipTiming = new AbilityTooltipTiming();
+export const abilityTooltipTiming = new AbilityTooltipTiming();
 
 export default {
     name: 'Ability Tooltip Timing',

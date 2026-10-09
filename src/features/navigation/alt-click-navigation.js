@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { navigateToItem } from '../../utils/item-navigation.js';
+import { getItemHridFromName } from '../../utils/game-lookups.js';
 
 class AltClickNavigation {
     constructor() {
@@ -137,10 +138,14 @@ class AltClickNavigation {
             );
             if (nameElement) {
                 const itemName = nameElement.textContent.trim();
-
-                // Convert name to HRID format (lowercase, replace spaces with underscores)
-                const itemHrid = `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
-                this.currentItemHrid = itemHrid;
+                // Strip any enhancement level (e.g. "+10"), then resolve through the
+                // shared dual-name lookup (English + localized) instead of reconstructing
+                // a slug from the display name, which cannot work for translated names.
+                const baseName = itemName.replace(/\s*\+\d+\s*$/, '').trim();
+                const itemHrid = getItemHridFromName(baseName);
+                if (itemHrid) {
+                    this.currentItemHrid = itemHrid;
+                }
             }
         } catch (error) {
             console.error('[AltClickNav] Error parsing tooltip:', error);

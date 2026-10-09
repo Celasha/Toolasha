@@ -277,6 +277,12 @@ class DungeonTokenTooltips {
         const map = new Map();
         for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
             map.set(item.name, hrid);
+            // Also register the localized name so tooltips rendered in the
+            // game's non-English locale (e.g. Chinese) can resolve the HRID.
+            const localizedName = getItemName(hrid, item.name);
+            if (localizedName && localizedName !== item.name) {
+                map.set(localizedName, hrid);
+            }
         }
 
         if (map.size > 0) {

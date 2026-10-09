@@ -3,8 +3,24 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { CollectionNavigation } from './collection-navigation.js';
 
+const mocks = vi.hoisted(() => ({ gameData: null }));
+
+vi.mock('../../core/data-manager.js', () => ({
+    default: { getInitClientData: vi.fn(() => mocks.gameData) },
+}));
+
+// Localized (non-English) display names, e.g. translations['/items/griffin_leather'] = '狮鹫皮革'.
+const translations = vi.hoisted(() => ({}));
+
+vi.mock('../../utils/game-i18n.js', () => ({
+    getItemName: (hrid, fallback) => translations[hrid] ?? fallback,
+}));
+
 afterEach(() => {
     document.body.innerHTML = '';
+    for (const key of Object.keys(translations)) {
+        delete translations[key];
+    }
 });
 
 describe('CollectionNavigation tile lifecycle', () => {
@@ -41,5 +57,25 @@ describe('CollectionNavigation tile lifecycle', () => {
 
         feature.pruneDetachedTileHandlers();
         expect(feature.tileClickHandlers.size).toBe(0);
+    });
+});
+
+describe('localized name lookup', () => {
+    test('extractItemHridFromName resolves localized names and ★ → (R) refined variants', () => {
+        mocks.gameData = {
+            itemDetailMap: {
+                '/items/griffin_leather': { name: 'Griffin Leather' },
+                '/items/griffin_bulwark_r': { name: 'Griffin Bulwark (R)' },
+            },
+        };
+        translations['/items/griffin_leather'] = '狮鹫皮革';
+        translations['/items/griffin_bulwark_r'] = '狮鹫壁垒 (R)';
+
+        const feature = new CollectionNavigation();
+        expect(feature.extractItemHridFromName('狮鹫皮革')).toBe('/items/griffin_leather');
+        expect(feature.extractItemHridFromName('Griffin Leather')).toBe('/items/griffin_leather');
+        // zh renders refined items with ★ while the data name carries "(R)".
+        expect(feature.extractItemHridFromName('狮鹫壁垒 ★')).toBe('/items/griffin_bulwark_r');
+        expect(feature.extractItemHridFromName('Griffin Bulwark ★')).toBe('/items/griffin_bulwark_r');
     });
 });

@@ -29,6 +29,13 @@ vi.mock('../market/expected-value-calculator.js', () => ({
     },
 }));
 
+// Localized (non-English) display names, e.g. translations['/items/griffin_leather'] = '狮鹫皮革'.
+const translations = vi.hoisted(() => ({}));
+
+vi.mock('../../utils/game-i18n.js', () => ({
+    getItemName: (hrid, fallback) => translations[hrid] ?? fallback,
+}));
+
 import { dungeonTokenTooltips } from './dungeon-token-tooltips.js';
 import { getCurrencyOpportunityValue } from '../profile/score/special-currency-valuation.js';
 
@@ -163,6 +170,30 @@ describe('_getGuildTokenShopItems', () => {
         };
 
         expect(dungeonTokenTooltips._getGuildTokenShopItems()).toEqual([]);
+    });
+});
+
+describe('localized name lookup', () => {
+    beforeEach(() => {
+        resetMocks();
+        for (const key of Object.keys(translations)) {
+            delete translations[key];
+        }
+        dungeonTokenTooltips.itemNameToHridCache = null;
+    });
+
+    test('extractItemHridFromName resolves localized (non-English) display names', () => {
+        // zh client: the tooltip renders the game's translated name while the
+        // game data only carries the English name.
+        translations['/items/griffin_leather'] = '狮鹫皮革';
+
+        expect(dungeonTokenTooltips.extractItemHridFromName('狮鹫皮革')).toBe('/items/griffin_leather');
+        // English names keep working alongside the localized ones.
+        expect(dungeonTokenTooltips.extractItemHridFromName('Griffin Leather')).toBe('/items/griffin_leather');
+    });
+
+    test('exact English matches stay intact when no translation is available', () => {
+        expect(dungeonTokenTooltips.extractItemHridFromName('Task Crystal')).toBe('/items/task_crystal');
     });
 });
 
