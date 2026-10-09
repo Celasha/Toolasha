@@ -79,6 +79,10 @@ class DataManager {
         this.loadRetryInterval = null;
         this.fallbackInterval = null;
 
+        // Debounce timer for refreshing the cross-domain GM-stored characterData snapshot (see
+        // _scheduleCrossDomainSnapshotRefresh).
+        this.crossDomainSnapshotTimer = null;
+
         // Setup WebSocket message handlers
         this.setupMessageHandlers();
     }
@@ -292,10 +296,15 @@ class DataManager {
             const characterItems = Array.isArray(data.characterItems)
                 ? data.characterItems.filter((item) => item?.count !== 0)
                 : [];
-            this.characterData = { ...data, characterItems };
+            // Keep characterData.characterActions and this.characterActions on the same live
+            // array (same reasoning as characterItems above) - actions_updated below mutates
+            // this.characterActions in place, and consumers reading characterData.characterActions
+            // directly (e.g. the Combat Sim export's current-zone detection) must see those same
+            // splices/pushes rather than a frozen copy from login.
+            this.characterActions = [...data.characterActions];
+            this.characterData = { ...data, characterItems, characterActions: this.characterActions };
             this.characterSkills = data.characterSkills;
             this.characterItems = characterItems;
-            this.characterActions = [...data.characterActions];
             this.characterQuests = data.characterQuests || [];
 
             // Restore/establish the current-unit timing boundary for whatever action is now
@@ -496,6 +505,18 @@ class DataManager {
             if (data.actionTypeDrinkSlotsMap) {
                 this.updateDrinkSlotsMap(data.actionTypeDrinkSlotsMap);
             }
+            // Mirror both maps into characterData - consumers that read
+            // characterData.actionTypeFoodSlotsMap/actionTypeDrinkSlotsMap directly (e.g. the
+            // Combat Sim export) otherwise keep seeing whichever food/drink was equipped at
+            // login, since this.actionTypeDrinkSlotsMap above is a separate Map, not a mirror.
+            if (this.characterData) {
+                if (data.actionTypeFoodSlotsMap !== undefined) {
+                    this.characterData.actionTypeFoodSlotsMap = data.actionTypeFoodSlotsMap;
+                }
+                if (data.actionTypeDrinkSlotsMap !== undefined) {
+                    this.characterData.actionTypeDrinkSlotsMap = data.actionTypeDrinkSlotsMap;
+                }
+            }
 
             this.emit('consumables_updated', data);
         });
@@ -533,6 +554,26 @@ class DataManager {
 
             this.emit('achievement_buffs_updated', data);
             this.emit('buffs_updated', data);
+        });
+
+        // Handle achievements_updated (an achievement is completed/progressed mid-session).
+        // Incremental update set, merged by achievementHrid like _mergeCharacterAbilities -
+        // without this, characterData.characterAchievements (what the Combat Sim export reads)
+        // only ever reflected achievements completed as of login.
+        this.webSocketHook.on('achievements_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
+            if (this.characterData && Array.isArray(data.achievements) && data.achievements.length > 0) {
+                const achievements = [...(this.characterData.characterAchievements || [])];
+                for (const updated of data.achievements) {
+                    const index = achievements.findIndex((a) => a.achievementHrid === updated.achievementHrid);
+                    if (index !== -1) achievements[index] = updated;
+                    else achievements.push(updated);
+                }
+                this.characterData.characterAchievements = achievements;
+            }
+
+            this.emit('achievements_updated', data);
         });
 
         // Handle moo_pass_buffs_updated
@@ -648,12 +689,86 @@ class DataManager {
         this.webSocketHook.on('skills_updated', (data, context) => {
             if (!this._isFromActiveSocket(context)) return;
 
-            // Update character skills with new levels
+            // Update character skills with new levels. Also mirror into characterData -
+            // this.characterSkills alone used to go stale the moment a skills_updated arrived,
+            // since reassigning it detaches it from whatever array characterData.characterSkills
+            // still points to (every consumer reading characterData.characterSkills directly,
+            // e.g. the Combat Sim export, would keep seeing the character's skills as of login).
             if (data.characterSkills) {
                 this.characterSkills = data.characterSkills;
+                if (this.characterData) this.characterData.characterSkills = data.characterSkills;
             }
 
             this.emit('skills_updated', data);
+        });
+
+        // Handle character_stats_updated (combatUnit - equipped abilities/combat stats - and
+        // noncombatStats change on ability equip/unequip, stat-affecting item changes, etc.).
+        // Without this, characterData.combatUnit (the only place equipped-ability state lives)
+        // was never refreshed after init_character_data, so the Combat Sim export kept
+        // reporting whichever abilities were equipped at login.
+        this.webSocketHook.on('character_stats_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
+            if (this.characterData) {
+                if (data.combatUnit !== undefined) this.characterData.combatUnit = data.combatUnit;
+                if (data.noncombatStats !== undefined) this.characterData.noncombatStats = data.noncombatStats;
+            }
+
+            this.emit('character_stats_updated', data);
+        });
+
+        // Handle party_updated (joining/leaving a party, party zone/difficulty changes). Full
+        // replace, matching characterData.partyInfo's own shape - without this, the Combat Sim
+        // export kept exporting whatever party (or lack of one) was active at login.
+        this.webSocketHook.on('party_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
+            if (this.characterData && data.partyInfo !== undefined) {
+                this.characterData.partyInfo = data.partyInfo;
+            }
+
+            this.emit('party_updated', data);
+        });
+
+        // Handle all_combat_triggers_updated (bulk trigger replace - e.g. loadout switch) and
+        // combat_triggers_updated (single ability/consumable trigger edit). Without these,
+        // characterData.abilityCombatTriggersMap/consumableCombatTriggersMap were only ever as
+        // fresh as login, so edited trigger conditions never reached the Combat Sim export.
+        this.webSocketHook.on('all_combat_triggers_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
+            if (this.characterData) {
+                if (data.abilityCombatTriggersMap !== undefined) {
+                    this.characterData.abilityCombatTriggersMap = data.abilityCombatTriggersMap;
+                }
+                if (data.consumableCombatTriggersMap !== undefined) {
+                    this.characterData.consumableCombatTriggersMap = data.consumableCombatTriggersMap;
+                }
+            }
+
+            this.emit('all_combat_triggers_updated', data);
+        });
+
+        this.webSocketHook.on('combat_triggers_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
+            if (this.characterData) {
+                const isAbility = data.combatTriggerTypeHrid === '/combat_trigger_types/ability';
+                if (isAbility && data.abilityHrid) {
+                    this.characterData.abilityCombatTriggersMap = {
+                        ...(this.characterData.abilityCombatTriggersMap || {}),
+                        [data.abilityHrid]: data.combatTriggers,
+                    };
+                } else if (!isAbility && data.itemHrid) {
+                    this.characterData.consumableCombatTriggersMap = {
+                        ...(this.characterData.consumableCombatTriggersMap || {}),
+                        [data.itemHrid]: data.combatTriggers,
+                    };
+                }
+            }
+
+            this.emit('combat_triggers_updated', data);
         });
 
         // Handle new_battle (combat start - for Combat Sim export on Steam)
@@ -715,6 +830,56 @@ class DataManager {
 
             this.emit('loot_opened', { data, characterId: this.currentCharacterId });
         });
+
+        // Cross-domain combat-sim export (the "Import from Toolasha" button on Metz's/Shykai's
+        // own page) reads a GM-storage snapshot of init_character_data instead of this live
+        // characterData, since no game WebSocket exists on a third-party domain. That snapshot
+        // was previously written ONLY on init_character_data itself, so it froze at login and
+        // never reflected later gear swaps, ability re-equips, skill-ups, party changes, trigger
+        // edits, or food/drink swaps - exactly what "Import from Toolasha" has been exporting
+        // stale. Listen for every message type above that can mutate characterData and refresh
+        // the GM snapshot from the current in-memory characterData shortly after, debounced so a
+        // burst of updates (e.g. several items_updated in a row) writes once, not once per message.
+        const liveCharacterDataEvents = new Set([
+            'items_updated',
+            'abilities_updated',
+            'action_completed',
+            'skills_updated',
+            'character_stats_updated',
+            'party_updated',
+            'all_combat_triggers_updated',
+            'combat_triggers_updated',
+            'consumables_updated',
+            'achievements_updated',
+            'house_rooms_updated',
+            'guild_buffs_updated',
+            'guild_updated',
+            'moo_pass_buffs_updated',
+        ]);
+        this.webSocketHook.on('*', (data) => {
+            if (!liveCharacterDataEvents.has(data?.type)) return;
+            this._scheduleCrossDomainSnapshotRefresh();
+        });
+    }
+
+    /**
+     * Debounce-refresh the GM-stored cross-domain characterData snapshot (see the comment above
+     * where this is scheduled). No-ops when GM storage or a loaded characterData aren't
+     * available (in-page game consumers never read this snapshot - dataManager.characterData is
+     * already live for them).
+     */
+    _scheduleCrossDomainSnapshotRefresh() {
+        if (typeof GM_setValue === 'undefined' || !this.characterData) return;
+
+        if (this.crossDomainSnapshotTimer) clearTimeout(this.crossDomainSnapshotTimer);
+        this.crossDomainSnapshotTimer = setTimeout(() => {
+            this.crossDomainSnapshotTimer = null;
+            try {
+                GM_setValue('toolasha_init_character_data', JSON.stringify(this.characterData));
+            } catch {
+                /* ignore */
+            }
+        }, 500);
     }
 
     /**

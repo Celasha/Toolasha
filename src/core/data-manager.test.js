@@ -1686,3 +1686,293 @@ describe('DataManager live buff WebSocket state parity (TLA-028)', () => {
         expect(dataManager.characterData.communityBuffs).toBe(currentCommunity);
     });
 });
+
+describe('DataManager live mirrors for combatUnit / partyInfo / combat triggers / achievements', () => {
+    function makeCharacterPayload(characterId, overrides = {}) {
+        return {
+            character: { id: characterId, name: `char-${characterId}` },
+            characterActions: [],
+            characterSkills: [],
+            characterItems: [],
+            characterQuests: [],
+            characterHouseRoomMap: {},
+            actionTypeDrinkSlotsMap: {},
+            characterGuildBuffMap: {},
+            guildBuildingLevelMap: {},
+            characterAchievements: [],
+            ...overrides,
+        };
+    }
+
+    beforeEach(async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.currentCharacterId = null;
+        dataManager.currentCharacterName = null;
+        dataManager.lastCharacterSwitchTime = 0;
+        dataManager.characterData = null;
+        dataManager.characterItems = null;
+        dataManager.characterSkills = null;
+        dataManager.characterActions = [];
+        dataManager.characterQuests = [];
+        dataManager.activeSocket = null;
+        dataManager.initGeneration = 0;
+    });
+
+    test('character_stats_updated mirrors combatUnit and noncombatStats into characterData', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(1), { socket });
+
+        const combatUnit = { combatAbilities: [{ abilityHrid: '/abilities/aura', level: 10 }] };
+        webSocketHandlers.get('character_stats_updated')(
+            { type: 'character_stats_updated', combatUnit, noncombatStats: { foo: 1 } },
+            { socket }
+        );
+
+        expect(dataManager.characterData.combatUnit).toBe(combatUnit);
+        expect(dataManager.characterData.noncombatStats).toEqual({ foo: 1 });
+    });
+
+    test('party_updated replaces characterData.partyInfo wholesale', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(2), { socket });
+
+        const partyInfo = { partySlotMap: { 1: { characterID: 'other' } } };
+        webSocketHandlers.get('party_updated')({ type: 'party_updated', partyInfo }, { socket });
+
+        expect(dataManager.characterData.partyInfo).toBe(partyInfo);
+    });
+
+    test('all_combat_triggers_updated replaces both trigger maps', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(3), { socket });
+
+        const abilityCombatTriggersMap = { '/abilities/aura': null };
+        const consumableCombatTriggersMap = { '/items/gourmet_tea': null };
+        webSocketHandlers.get('all_combat_triggers_updated')(
+            { type: 'all_combat_triggers_updated', abilityCombatTriggersMap, consumableCombatTriggersMap },
+            { socket }
+        );
+
+        expect(dataManager.characterData.abilityCombatTriggersMap).toBe(abilityCombatTriggersMap);
+        expect(dataManager.characterData.consumableCombatTriggersMap).toBe(consumableCombatTriggersMap);
+    });
+
+    test('combat_triggers_updated merges a single ability trigger edit without clobbering others', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(
+            makeCharacterPayload(4, {
+                abilityCombatTriggersMap: { '/abilities/existing': [{ dependencyHrid: 'x' }] },
+            }),
+            { socket }
+        );
+
+        webSocketHandlers.get('combat_triggers_updated')(
+            {
+                type: 'combat_triggers_updated',
+                combatTriggerTypeHrid: '/combat_trigger_types/ability',
+                abilityHrid: '/abilities/aura',
+                combatTriggers: [{ dependencyHrid: 'y' }],
+            },
+            { socket }
+        );
+
+        expect(dataManager.characterData.abilityCombatTriggersMap).toEqual({
+            '/abilities/existing': [{ dependencyHrid: 'x' }],
+            '/abilities/aura': [{ dependencyHrid: 'y' }],
+        });
+    });
+
+    test('combat_triggers_updated merges a single consumable trigger edit', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(5), { socket });
+
+        webSocketHandlers.get('combat_triggers_updated')(
+            {
+                type: 'combat_triggers_updated',
+                combatTriggerTypeHrid: '/combat_trigger_types/consumable',
+                itemHrid: '/items/gourmet_tea',
+                combatTriggers: null,
+            },
+            { socket }
+        );
+
+        expect(dataManager.characterData.consumableCombatTriggersMap).toEqual({
+            '/items/gourmet_tea': null,
+        });
+    });
+
+    test('achievements_updated merges new/updated achievements by achievementHrid', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(
+            makeCharacterPayload(6, {
+                characterAchievements: [{ achievementHrid: '/achievements/old', isCompleted: true }],
+            }),
+            { socket }
+        );
+
+        webSocketHandlers.get('achievements_updated')(
+            {
+                type: 'achievements_updated',
+                achievements: [{ achievementHrid: '/achievements/new', isCompleted: true }],
+            },
+            { socket }
+        );
+
+        expect(dataManager.characterData.characterAchievements).toEqual([
+            { achievementHrid: '/achievements/old', isCompleted: true },
+            { achievementHrid: '/achievements/new', isCompleted: true },
+        ]);
+    });
+
+    test('action_type_consumable_slots_updated mirrors both food and drink slot maps into characterData', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(7), { socket });
+
+        const actionTypeFoodSlotsMap = { '/action_types/combat': [{ itemHrid: '/items/star_fruit_gummy' }] };
+        const actionTypeDrinkSlotsMap = { '/action_types/combat': [{ itemHrid: '/items/gourmet_tea' }] };
+        webSocketHandlers.get('action_type_consumable_slots_updated')(
+            { type: 'action_type_consumable_slots_updated', actionTypeFoodSlotsMap, actionTypeDrinkSlotsMap },
+            { socket }
+        );
+
+        expect(dataManager.characterData.actionTypeFoodSlotsMap).toBe(actionTypeFoodSlotsMap);
+        expect(dataManager.characterData.actionTypeDrinkSlotsMap).toBe(actionTypeDrinkSlotsMap);
+    });
+
+    test('actions_updated splices/pushes are visible through characterData.characterActions (same live array)', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(
+            makeCharacterPayload(8, { characterActions: [{ id: 'a1', ordinal: 0, isDone: false }] }),
+            { socket }
+        );
+
+        webSocketHandlers.get('actions_updated')(
+            {
+                type: 'actions_updated',
+                endCharacterActions: [{ id: 'a2', ordinal: 1, isDone: false }],
+            },
+            { socket }
+        );
+
+        expect(dataManager.characterData.characterActions).toBe(dataManager.characterActions);
+        expect(dataManager.characterData.characterActions.map((a) => a.id)).toEqual(['a1', 'a2']);
+    });
+
+    test('skills_updated mirrors characterSkills into characterData (not just the detached this.characterSkills copy)', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(
+            makeCharacterPayload(9, { characterSkills: [{ skillHrid: '/skills/attack', level: 1 }] }),
+            { socket }
+        );
+
+        const updatedSkills = [{ skillHrid: '/skills/attack', level: 50 }];
+        webSocketHandlers.get('skills_updated')({ type: 'skills_updated', characterSkills: updatedSkills }, { socket });
+
+        expect(dataManager.characterData.characterSkills).toBe(updatedSkills);
+    });
+});
+
+describe('DataManager cross-domain characterData snapshot refresh (GM storage)', () => {
+    function makeCharacterPayload(characterId, overrides = {}) {
+        return {
+            character: { id: characterId, name: `char-${characterId}` },
+            characterActions: [],
+            characterSkills: [],
+            characterItems: [],
+            characterQuests: [],
+            characterHouseRoomMap: {},
+            actionTypeDrinkSlotsMap: {},
+            characterGuildBuffMap: {},
+            guildBuildingLevelMap: {},
+            ...overrides,
+        };
+    }
+
+    beforeEach(async () => {
+        vi.useFakeTimers();
+        globalThis.GM_setValue = vi.fn();
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.currentCharacterId = null;
+        dataManager.currentCharacterName = null;
+        dataManager.lastCharacterSwitchTime = 0;
+        dataManager.characterData = null;
+        dataManager.characterItems = null;
+        dataManager.characterSkills = null;
+        dataManager.characterActions = [];
+        dataManager.characterQuests = [];
+        dataManager.activeSocket = null;
+        dataManager.initGeneration = 0;
+        dataManager.crossDomainSnapshotTimer = null;
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        delete globalThis.GM_setValue;
+    });
+
+    test('a live update schedules a debounced GM_setValue refresh of the character snapshot', async () => {
+        await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(1), { socket });
+
+        const wildcardHandler = webSocketHandlers.get('*');
+        expect(typeof wildcardHandler).toBe('function');
+
+        wildcardHandler({ type: 'items_updated' });
+        expect(globalThis.GM_setValue).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(500);
+
+        expect(globalThis.GM_setValue).toHaveBeenCalledTimes(1);
+        const [key, json] = globalThis.GM_setValue.mock.calls[0];
+        expect(key).toBe('toolasha_init_character_data');
+        expect(JSON.parse(json).character.id).toBe(1);
+    });
+
+    test('a burst of live updates within the debounce window writes GM storage only once', async () => {
+        await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(2), { socket });
+
+        const wildcardHandler = webSocketHandlers.get('*');
+        wildcardHandler({ type: 'items_updated' });
+        vi.advanceTimersByTime(100);
+        wildcardHandler({ type: 'abilities_updated' });
+        vi.advanceTimersByTime(100);
+        wildcardHandler({ type: 'skills_updated' });
+        vi.advanceTimersByTime(500);
+
+        expect(globalThis.GM_setValue).toHaveBeenCalledTimes(1);
+    });
+
+    test('a message type unrelated to live characterData does not schedule a GM refresh', async () => {
+        await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(3), { socket });
+
+        const wildcardHandler = webSocketHandlers.get('*');
+        wildcardHandler({ type: 'chat_message_received' });
+        vi.advanceTimersByTime(500);
+
+        expect(globalThis.GM_setValue).not.toHaveBeenCalled();
+    });
+
+    test('no GM_setValue is called when GM storage is unavailable (in-page game context)', async () => {
+        delete globalThis.GM_setValue;
+        await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(4), { socket });
+
+        const wildcardHandler = webSocketHandlers.get('*');
+        expect(() => wildcardHandler({ type: 'items_updated' })).not.toThrow();
+    });
+});

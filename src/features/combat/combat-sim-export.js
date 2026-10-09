@@ -247,12 +247,26 @@ export function constructSelfPlayer(characterObj, clientObj) {
     // When abilityDetailMap is available (game page), use isSpecialAbility for precise detection.
     // On Shykai (cross-domain, no clientObj), fall back to the convention that combatAbilities[0]
     // is the special/aura ability when 4 or more abilities are present.
+    // combatUnit.combatAbilities itself carries no slotNumber, so normal-slot order is resolved
+    // against characterAbilities (the full learned-ability catalog, which does), matching Metz's
+    // own export script - without this, normal slots 1-4 would be ordered however the game
+    // happened to send combatUnit.combatAbilities, which is not guaranteed to be slot order.
     const combatAbilities = characterObj.combatUnit?.combatAbilities || [];
     const hasDetailMap = !!clientObj?.abilityDetailMap;
+    const slotNumberByHrid = {};
+    for (const ability of characterObj.characterAbilities || []) {
+        if (ability?.abilityHrid) slotNumberByHrid[ability.abilityHrid] = ability.slotNumber;
+    }
+    const orderedCombatAbilities = [...combatAbilities].sort((a, b) => {
+        const slotA = slotNumberByHrid[a?.abilityHrid];
+        const slotB = slotNumberByHrid[b?.abilityHrid];
+        if (slotA == null || slotB == null) return 0;
+        return slotA - slotB;
+    });
     let normalAbilityIndex = 1;
 
-    for (let i = 0; i < combatAbilities.length; i++) {
-        const ability = combatAbilities[i];
+    for (let i = 0; i < orderedCombatAbilities.length; i++) {
+        const ability = orderedCombatAbilities[i];
         if (!ability?.abilityHrid) continue;
 
         let isSpecial;
@@ -260,7 +274,7 @@ export function constructSelfPlayer(characterObj, clientObj) {
             isSpecial = clientObj.abilityDetailMap[ability.abilityHrid]?.isSpecialAbility || false;
         } else {
             // Cross-domain fallback: treat first entry as special when kit is full-sized
-            isSpecial = i === 0 && combatAbilities.length >= 4;
+            isSpecial = i === 0 && orderedCombatAbilities.length >= 4;
         }
 
         if (isSpecial) {
@@ -370,7 +384,7 @@ export function constructPartyPlayer(profile, clientObj, battleObj) {
             const isDrink =
                 itemHrid.includes('/drinks/') ||
                 itemHrid.includes('coffee') ||
-                clientObj?.itemDetailMap?.[itemHrid]?.type === 'drink';
+                clientObj?.itemDetailMap?.[itemHrid]?.categoryHrid === '/item_categories/drink';
 
             if (isDrink && drinkIndex < 3) {
                 playerObj.drinks['/action_types/combat'][drinkIndex++] = { itemHrid: itemHrid };
@@ -392,7 +406,7 @@ export function constructPartyPlayer(profile, clientObj, battleObj) {
                 const isDrink =
                     itemHrid.includes('/drinks/') ||
                     itemHrid.includes('coffee') ||
-                    clientObj?.itemDetailMap?.[itemHrid]?.type === 'drink';
+                    clientObj?.itemDetailMap?.[itemHrid]?.categoryHrid === '/item_categories/drink';
 
                 if (isDrink && drinkIndex < 3) {
                     playerObj.drinks['/action_types/combat'][drinkIndex++] = { itemHrid: itemHrid };
@@ -412,7 +426,14 @@ export function constructPartyPlayer(profile, clientObj, battleObj) {
     // When abilityDetailMap is available (game page), use isSpecialAbility for precise detection.
     // On Shykai (cross-domain, no clientObj), fall back to the convention that equippedAbilities[0]
     // is the special/aura ability when 4 or more abilities are present.
-    const equippedAbilities = profile.profile?.equippedAbilities || [];
+    // Sort by slotNumber first (each row carries its own, unlike combatUnit.combatAbilities above)
+    // so normal-slot order matches the game's actual slot assignment, not raw message order.
+    const equippedAbilities = [...(profile.profile?.equippedAbilities || [])].sort((a, b) => {
+        const slotA = a?.slotNumber;
+        const slotB = b?.slotNumber;
+        if (slotA == null || slotB == null) return 0;
+        return slotA - slotB;
+    });
     const hasProfileDetailMap = !!clientObj?.abilityDetailMap;
     let profileNormalIndex = 1;
 

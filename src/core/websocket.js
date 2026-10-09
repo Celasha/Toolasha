@@ -263,6 +263,7 @@ class WebSocketHook {
             // in a later buff value, so the lossy prefix hash must never collapse them.
             messageType === 'house_rooms_updated' ||
             messageType === 'achievement_buffs_updated' ||
+            messageType === 'achievements_updated' ||
             messageType === 'moo_pass_buffs_updated' ||
             messageType === 'community_buffs_updated' ||
             messageType === 'consumable_buffs_updated' ||
@@ -277,6 +278,10 @@ class WebSocketHook {
             messageType === 'leaderboard_updated' ||
             messageType === 'guild_updated' ||
             messageType === 'loot_opened' ||
+            messageType === 'character_stats_updated' ||
+            messageType === 'party_updated' ||
+            messageType === 'all_combat_triggers_updated' ||
+            messageType === 'combat_triggers_updated' ||
             // Two genuine, distinct info toasts (e.g. selling the same item twice in a row)
             // can share the same first-100-char prefix - see the exact-match branch below.
             messageType === 'info';

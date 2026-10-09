@@ -335,15 +335,24 @@ export function buildPlayerDTO() {
     }
 
     // Extract equipped abilities → array of { hrid, level, triggers, experience }
-    const equippedAbilities = characterData.combatUnit?.combatAbilities || [];
-    // Live per-ability XP progress (CSIM-AUD-017) - combatUnit.combatAbilities carries level only;
-    // characterAbilities is the same source AbilityBookCalculator already uses for live XP.
+    // combatUnit.combatAbilities carries no slotNumber itself, so normal-slot order is resolved
+    // against characterAbilities (the full learned-ability catalog, which does carry it) -
+    // otherwise normal slots 1-4 would be ordered however the game happened to send
+    // combatUnit.combatAbilities, which is not guaranteed to be slot order.
     const abilityExperienceByHrid = {};
+    const slotNumberByHrid = {};
     for (const ability of characterData.characterAbilities || []) {
         if (ability?.abilityHrid) {
             abilityExperienceByHrid[ability.abilityHrid] = ability.experience || 0;
+            slotNumberByHrid[ability.abilityHrid] = ability.slotNumber;
         }
     }
+    const equippedAbilities = [...(characterData.combatUnit?.combatAbilities || [])].sort((a, b) => {
+        const slotA = slotNumberByHrid[a?.abilityHrid];
+        const slotB = slotNumberByHrid[b?.abilityHrid];
+        if (slotA == null || slotB == null) return 0;
+        return slotA - slotB;
+    });
     // Slot 0 = special ability, slots 1-4 = normal abilities
     for (let i = 0; i < 5; i++) {
         dto.abilities.push(null);
