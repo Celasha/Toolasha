@@ -42,6 +42,7 @@ import {
 
 const ENHANCING_TOOL_LOCATION = '/item_locations/enhancing_tool';
 const ALCHEMY_TOOL_LOCATION = '/item_locations/alchemy_tool';
+const TOOL_LOCATION_PATTERN = /_tool$/;
 const INVENTORY_LOCATION = '/item_locations/inventory';
 const SPEED_GEAR_STATS = ['enhancingSpeed', 'skillingSpeed'];
 const COMBAT_SKILL_NAMES = new Set(['attack', 'magic', 'ranged', 'stamina', 'intelligence', 'defense', 'melee']);
@@ -57,9 +58,13 @@ function dropBlankSlots(slots, hridField) {
 }
 
 /**
- * Pull the enhancing/alchemy tool out of a Shykai-shape equipment array. Metz's own parser
- * already regex-drops any `_tool`-suffixed location from player.equipment, so this just moves
- * those two entries into `skilling` instead of relying on Metz to silently discard them.
+ * Pull every `_tool`-suffixed location out of a Shykai-shape equipment array: the enhancing/
+ * alchemy tool moves into `skilling` (used by the Optimize tab's enhancement-cost math), and
+ * every other tool (tailoring, foraging, woodcutting, cooking, crafting, milking, brewing,
+ * cheesesmithing) is dropped outright - none of them carry combat stats, and none have a home
+ * in Metz's player.equipment shape. Previously only enhancing/alchemy were pulled out, on the
+ * assumption Metz's own importer already regex-stripped the rest - that assumption was never
+ * verified against Metz's actual parser, so this drops them explicitly instead.
  * @param {Array<Object>} equipment
  * @returns {{ equipment: Array<Object>, enhancingTool: Object|null, alchemyTool: Object|null }}
  */
@@ -73,6 +78,8 @@ function extractToolsFromEquipment(equipment) {
             enhancingTool = { itemHrid: item.itemHrid, enhancementLevel: item.enhancementLevel || 0 };
         } else if (item.itemLocationHrid === ALCHEMY_TOOL_LOCATION) {
             alchemyTool = { itemHrid: item.itemHrid, enhancementLevel: item.enhancementLevel || 0 };
+        } else if (TOOL_LOCATION_PATTERN.test(item.itemLocationHrid || '')) {
+            continue;
         } else {
             rest.push(item);
         }

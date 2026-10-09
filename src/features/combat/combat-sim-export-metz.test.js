@@ -151,6 +151,39 @@ describe('Metz export - skilling/owned blocks', () => {
         });
     });
 
+    test('self export drops every other skilling-tool slot outright - none belong in player.equipment', async () => {
+        mocks.characterData = baseCharacter();
+        mocks.selfEquipment = [
+            { itemLocationHrid: '/item_locations/body', itemHrid: '/items/plate_body', enhancementLevel: 5 },
+            {
+                itemLocationHrid: '/item_locations/tailoring_tool',
+                itemHrid: '/items/holy_needle',
+                enhancementLevel: 10,
+            },
+            { itemLocationHrid: '/item_locations/foraging_tool', itemHrid: '/items/holy_shears', enhancementLevel: 0 },
+            {
+                itemLocationHrid: '/item_locations/woodcutting_tool',
+                itemHrid: '/items/holy_hatchet',
+                enhancementLevel: 10,
+            },
+            { itemLocationHrid: '/item_locations/cooking_tool', itemHrid: '/items/holy_spatula', enhancementLevel: 0 },
+            { itemLocationHrid: '/item_locations/crafting_tool', itemHrid: '/items/holy_chisel', enhancementLevel: 10 },
+            { itemLocationHrid: '/item_locations/milking_tool', itemHrid: '/items/holy_brush', enhancementLevel: 0 },
+            { itemLocationHrid: '/item_locations/brewing_tool', itemHrid: '/items/holy_pot', enhancementLevel: 10 },
+            {
+                itemLocationHrid: '/item_locations/cheesesmithing_tool',
+                itemHrid: '/items/holy_hammer',
+                enhancementLevel: 0,
+            },
+        ];
+
+        const character = await constructMetzCharacterExport();
+
+        expect(character.player.equipment).toEqual([
+            { itemLocationHrid: '/item_locations/body', itemHrid: '/items/plate_body', enhancementLevel: 5 },
+        ]);
+    });
+
     test('self export finds speed gear anywhere in the full inventory, not just equipped', async () => {
         mocks.characterData = baseCharacter();
         mocks.itemDetailMap = {
