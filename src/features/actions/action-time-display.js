@@ -92,6 +92,67 @@ function buildCompletionText(accumulatedTime) {
     return parts.length ? ` ${parts.join(' · ')}` : '';
 }
 
+/**
+ * Split a rendered "Action: Item" string (queue entry or header) into its two name parts.
+ * Chinese (and other CJK locales) render a full-width colon ("炼金：林中精华"), so split on
+ * the first colon of either width. Splitting only at the first occurrence preserves item
+ * names that themselves contain colons, matching the previous split+join behavior.
+ * @param {string} text - Rendered action text, without position/tier decorations
+ * @returns {{actionName: string, itemName: string|null}}
+ */
+function splitActionAndItemNames(text) {
+    const colonIndex = text.search(/[:：]/);
+    if (colonIndex === -1) {
+        return { actionName: text, itemName: null };
+    }
+    return {
+        actionName: text.slice(0, colonIndex).trim(),
+        itemName: text.slice(colonIndex + 1).trim(),
+    };
+}
+
+/**
+ * Compare an action name rendered by the game DOM against an action's English data name in a
+ * locale-aware way: the DOM renders the game's translated action name in non-English locales,
+ * so compare both names plus their ★ ↔ (R) refined-item variants.
+ * @param {string} actionHrid - Action HRID (translation lookup key)
+ * @param {string} actionName - English data name of the action
+ * @param {string|null} domName - Action name as rendered in the DOM
+ * @returns {boolean}
+ */
+function actionNameMatches(actionHrid, actionName, domName) {
+    if (domName == null) {
+        return false;
+    }
+    const translatedActionName = getActionName(actionHrid, actionName);
+    return (
+        actionName === domName ||
+        translatedActionName === domName ||
+        (domName.includes('★') && actionName === domName.replace(/\s*★/, ' (R)')) ||
+        (domName.includes('(R)') && actionName === domName.replace(/\s*\(R\)/, ' ★')) ||
+        (domName.includes('★') && translatedActionName === domName.replace(/\s*★/, ' (R)')) ||
+        (domName.includes('(R)') && translatedActionName === domName.replace(/\s*\(R\)/, ' ★'))
+    );
+}
+
+/**
+ * True for elements Toolasha itself injected into the game DOM. All injected UI follows the
+ * `mwi-` id/class prefix project convention (e.g. #mwi-battle-counter, .mwi-appended-stats),
+ * so such children must be excluded when reading the game's own text.
+ * @param {Element} element
+ * @returns {boolean}
+ */
+function isToolashaInjectedElement(element) {
+    if (element.id && element.id.startsWith('mwi-')) {
+        return true;
+    }
+    const className = typeof element.className === 'string' ? element.className : '';
+    return className
+        .split(/\s+/)
+        .filter(Boolean)
+        .some((token) => token.startsWith('mwi-'));
+}
+
 // Marks a native QueuedActions edit-menu once Toolasha has enhanced it, so the width contract
 // below and the row-wrapping rules only ever apply to that specific popup (TLA-040) — never to
 // unrelated MUI tooltips/poppers elsewhere in the game.
@@ -1799,17 +1860,11 @@ export class ActionTimeDisplay {
         const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))*$/);
         const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
 
-        if (fullNameFromDom.includes(':')) {
-            const parts = fullNameFromDom.split(':');
-            return {
-                actionNameFromDom: parts[0].trim(),
-                itemNameFromDom: parts.slice(1).join(':').trim(),
-            };
-        }
-
+        // Tolerates the full-width colon the game renders in Chinese: "炼金：林中精华"
+        const { actionName, itemName } = splitActionAndItemNames(fullNameFromDom);
         return {
-            actionNameFromDom: fullNameFromDom,
-            itemNameFromDom: null,
+            actionNameFromDom: actionName,
+            itemNameFromDom: itemName,
         };
     }
 
@@ -1889,17 +1944,7 @@ export class ActionTimeDisplay {
             const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
             // The DOM renders the game's translated action name in non-English locales, so
             // compare both names plus their ★ ↔ (R) variants.
-            const translatedActionName = getActionName(currentAction.actionHrid, actionDetails.name);
-            const matchesName =
-                actionDetails.name === actionNameFromDom ||
-                translatedActionName === actionNameFromDom ||
-                (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
-                (actionNameFromDom.includes('(R)') &&
-                    actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★')) ||
-                (actionNameFromDom.includes('★') &&
-                    translatedActionName === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
-                (actionNameFromDom.includes('(R)') &&
-                    translatedActionName === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
+            const matchesName = actionNameMatches(currentAction.actionHrid, actionDetails.name, actionNameFromDom);
 
             if (!matchesName && !matchesOutput && !matchesDrop) {
                 return false;
@@ -1950,6 +1995,10 @@ export class ActionTimeDisplay {
         const parts = [];
         for (const node of actionNameElement.childNodes) {
             if (node === markerSpan) continue;
+            // Skip Toolasha-injected children (e.g. the combat battle counter's
+            // #mwi-battle-counter span) so their text can't pollute the game's action
+            // name and break current-action matching - in any locale.
+            if (node.nodeType === 1 && isToolashaInjectedElement(node)) continue;
             const text = node.textContent.trim();
             if (text) parts.push(text);
         }
@@ -2387,21 +2436,29 @@ export class ActionTimeDisplay {
                     return false;
                 }
 
+                // The queue renders the item's localized display name in non-English locales,
+                // which the slug-built HRID below cannot reconstruct - compare against both
+                // the English and translated names of the primaryItemHash item first (same
+                // approach as matchCurrentActionFromText).
+                if (a.primaryItemHash) {
+                    const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
+                    const hashItemName = hashItemHrid ? dataManager.getItemDetails(hashItemHrid)?.name : null;
+                    if (hashItemName) {
+                        const translatedItemName = getItemName(hashItemHrid, hashItemName);
+                        if (itemName === hashItemName || itemName === translatedItemName) {
+                            return true;
+                        }
+                    }
+                }
+
                 // Match on primaryItemHash (the item being enhanced)
                 return a.primaryItemHash && a.primaryItemHash.includes(itemHrid);
             });
         }
 
-        // Parse action name (same logic as main display)
-        let actionNameFromDiv, itemNameFromDiv;
-        if (actionNameText.includes(':')) {
-            const parts = actionNameText.split(':');
-            actionNameFromDiv = parts[0].trim();
-            itemNameFromDiv = parts.slice(1).join(':').trim();
-        } else {
-            actionNameFromDiv = actionNameText;
-            itemNameFromDiv = null;
-        }
+        // Parse action name (same logic as main display; tolerates the full-width colon
+        // the game renders in Chinese, e.g. "炼金：林中精华")
+        const { actionName: actionNameFromDiv, itemName: itemNameFromDiv } = splitActionAndItemNames(actionNameText);
 
         // Match action from cache (same logic as main display, excluding already-used actions)
         return cachedActions.find((a) => {
@@ -2414,7 +2471,9 @@ export class ActionTimeDisplay {
                 return false;
             }
 
-            if (actionDetails.name !== actionNameFromDiv) {
+            // The queue renders the game's translated action name in non-English locales,
+            // so compare both names plus their ★ ↔ (R) variants (same as main display).
+            if (!actionNameMatches(a.actionHrid, actionDetails.name, actionNameFromDiv)) {
                 const itemHridFromDiv = itemNameFromDiv
                     ? `/items/${itemNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`
                     : `/items/${actionNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`;
@@ -2433,7 +2492,13 @@ export class ActionTimeDisplay {
                 const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
                 if (hashItemHrid) {
                     const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
-                    if (hashItemDetails?.name === itemNameFromDiv) return true;
+                    // The queue renders the item's localized display name in non-English
+                    // locales, so compare both names (same approach as matchCurrentActionFromText).
+                    if (
+                        hashItemDetails?.name === itemNameFromDiv ||
+                        getItemName(hashItemHrid, hashItemDetails?.name || '') === itemNameFromDiv
+                    )
+                        return true;
                 }
                 const itemHrid = '/items/' + itemNameFromDiv.toLowerCase().replace(/\s+/g, '_');
                 return a.primaryItemHash.includes(itemHrid);
