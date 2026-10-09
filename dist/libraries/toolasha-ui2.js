@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.7.0
+ * Version: 3.7.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1516,78 +1516,6 @@
     }
 
     /**
-     * Loot Log History Storage
-     * Persists loot log entries to IndexedDB for extended history
-     */
-
-
-    const STORE_NAME$4 = 'lootLogHistory';
-    const MAX_ENTRIES = 5000;
-
-    class LootLogHistory {
-        _getKey() {
-            const charId = dataManager.getCurrentCharacterId();
-            return charId ? `lootLog_${charId}` : null;
-        }
-
-        /**
-         * @returns {Promise<Array>}
-         */
-        async _load() {
-            const key = this._getKey();
-            if (!key) return [];
-            return await storage.get(key, STORE_NAME$4, []);
-        }
-
-        /**
-         * @param {Array} entries
-         */
-        async _save(entries) {
-            const key = this._getKey();
-            if (!key) return;
-            await storage.set(key, entries, STORE_NAME$4, true);
-        }
-
-        /**
-         * Merge new entries from a loot_log_updated message into stored history.
-         * Deduplicates by characterActionId, keeps newest first, caps at MAX_ENTRIES.
-         * @param {Array} lootLog - Array from the WebSocket message
-         */
-        async mergeAndSave(lootLog) {
-            if (!lootLog || lootLog.length === 0) return;
-
-            const existing = await this._load();
-            const existingIds = new Set(existing.map((e) => e.characterActionId));
-
-            const newEntries = lootLog.filter((e) => !existingIds.has(e.characterActionId));
-            if (newEntries.length === 0) return;
-
-            const merged = [...newEntries, ...existing];
-            merged.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-
-            await this._save(merged.slice(0, MAX_ENTRIES));
-        }
-
-        /**
-         * Get entries that are in storage but not in the current game-provided set.
-         * @param {Set<number>} currentIds - characterActionIds from the current loot_log_updated
-         * @returns {Promise<Array>}
-         */
-        async getHistoricalEntries(currentIds) {
-            const all = await this._load();
-            return all.filter((e) => !currentIds.has(e.characterActionId));
-        }
-
-        async clearHistory() {
-            const key = this._getKey();
-            if (!key) return;
-            await storage.delete(key, STORE_NAME$4);
-        }
-    }
-
-    const lootLogHistory = new LootLogHistory();
-
-    /**
      * Loot Log Analytics
      * Pure aggregation logic for the Loot & XP Log pivot table (current session + stored history).
      * No DOM/game-data access here - callers resolve names/icons/prices from the returned hrids.
@@ -1609,8 +1537,48 @@
     }
 
     /**
-     * Union current-session and stored-history entries, deduplicated by characterActionId.
-     * Current-session data wins on overlap, since it's the freshest source for entries still live.
+     * Identity key for a loot log entry. `characterActionId` is NOT part of this - the game appears
+     * to reissue it mid-session for a single continuous action (observed on labyrinth runs that span
+     * an interrupt/resume), while startTime stays stable for the whole session. The game's own loot
+     * log panel never reads characterActionId either; it groups/labels rows by exactly these fields
+     * (see renderActionLoots in the client bundle), so this key matches the game's own notion of "one
+     * entry" rather than an internal id that can churn underneath a still-running action.
+     * @param {Object} entry
+     * @returns {string}
+     */
+    function buildEntryIdentityKey(entry) {
+        if (!entry) return '';
+        return [
+            entry.actionHrid ?? '',
+            entry.difficultyTier ?? '',
+            entry.primaryItemHash ?? '',
+            entry.secondaryItemHash ?? '',
+            entry.partyId ?? '',
+            entry.startTime ?? '',
+        ].join('::');
+    }
+
+    /**
+     * Whether `candidate` represents at least as much progress as `existing` for the same logical
+     * entry (same identity key) - i.e. whether it should replace it. Higher actionCount wins; ties
+     * fall back to the later endTime. Anything is more complete than nothing stored yet.
+     * @param {Object} candidate
+     * @param {Object|undefined} existing
+     * @returns {boolean}
+     */
+    function isMoreCompleteEntry(candidate, existing) {
+        if (!existing) return true;
+        const candidateCount = candidate?.actionCount ?? 0;
+        const existingCount = existing?.actionCount ?? 0;
+        if (candidateCount !== existingCount) return candidateCount > existingCount;
+        return new Date(candidate?.endTime || 0).getTime() > new Date(existing?.endTime || 0).getTime();
+    }
+
+    /**
+     * Union current-session and stored-history entries, deduplicated by entry identity (not
+     * characterActionId - see buildEntryIdentityKey). Whichever copy is more complete wins on
+     * overlap, since the live window can retain an earlier snapshot of a still-running action than
+     * what's already been persisted to history.
      * @param {Array} currentEntries
      * @param {Array} historicalEntries
      * @returns {Array}
@@ -1618,10 +1586,15 @@
     function mergeCurrentAndHistoricalEntries(currentEntries, historicalEntries) {
         const seen = new Map();
         for (const entry of historicalEntries || []) {
-            if (entry?.characterActionId != null) seen.set(entry.characterActionId, entry);
+            if (!entry) continue;
+            seen.set(buildEntryIdentityKey(entry), entry);
         }
         for (const entry of currentEntries || []) {
-            if (entry?.characterActionId != null) seen.set(entry.characterActionId, entry);
+            if (!entry) continue;
+            const key = buildEntryIdentityKey(entry);
+            if (isMoreCompleteEntry(entry, seen.get(key))) {
+                seen.set(key, entry);
+            }
         }
         return Array.from(seen.values());
     }
@@ -1697,6 +1670,122 @@
     }
 
     /**
+     * Loot Log History Storage
+     * Persists loot log entries to IndexedDB for extended history
+     */
+
+
+    const STORE_NAME$4 = 'lootLogHistory';
+    const MAX_ENTRIES = 5000;
+
+    class LootLogHistory {
+        _getKey() {
+            const charId = dataManager.getCurrentCharacterId();
+            return charId ? `lootLog_${charId}` : null;
+        }
+
+        /**
+         * @returns {Promise<Array>}
+         */
+        async _load() {
+            const key = this._getKey();
+            if (!key) return [];
+            return await storage.get(key, STORE_NAME$4, []);
+        }
+
+        /**
+         * @param {Array} entries
+         */
+        async _save(entries) {
+            const key = this._getKey();
+            if (!key) return;
+            await storage.set(key, entries, STORE_NAME$4, true);
+        }
+
+        /**
+         * Merge new entries from a loot_log_updated message into stored history.
+         *
+         * Deduplicates by entry identity (actionHrid/difficultyTier/item hashes/partyId/startTime -
+         * see buildEntryIdentityKey), not characterActionId: a single continuous action (e.g. an
+         * interrupted-and-resumed labyrinth run) can have characterActionId reissued mid-session while
+         * startTime stays stable, which previously caused one real run to be stored as several
+         * separate, incomplete entries. When an incoming entry shares an identity with one already
+         * stored, the more complete copy (higher actionCount, tie-broken by later endTime) replaces
+         * the other instead of being discarded or duplicated. Sorted newest-first, capped at
+         * MAX_ENTRIES.
+         * @param {Array} lootLog - Array from the WebSocket message
+         */
+        async mergeAndSave(lootLog) {
+            if (!lootLog || lootLog.length === 0) return;
+
+            const existing = await this._load();
+            const byKey = new Map(existing.map((e) => [buildEntryIdentityKey(e), e]));
+
+            let changed = false;
+            for (const entry of lootLog) {
+                const key = buildEntryIdentityKey(entry);
+                if (isMoreCompleteEntry(entry, byKey.get(key))) {
+                    byKey.set(key, entry);
+                    changed = true;
+                }
+            }
+            if (!changed) return;
+
+            const merged = Array.from(byKey.values());
+            merged.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
+            await this._save(merged.slice(0, MAX_ENTRIES));
+        }
+
+        /**
+         * Get entries that are in storage but not in the current game-provided set.
+         * @param {Set<string>} currentKeys - identity keys (buildEntryIdentityKey) from the current
+         *   loot_log_updated
+         * @returns {Promise<Array>}
+         */
+        async getHistoricalEntries(currentKeys) {
+            const all = await this._load();
+            return all.filter((e) => !currentKeys.has(buildEntryIdentityKey(e)));
+        }
+
+        /**
+         * Collapse any already-stored duplicate entries sharing the same identity key down to the
+         * single most-complete copy. One-time self-heal for history written before entries were
+         * deduplicated by identity instead of the unstable characterActionId - safe to call
+         * repeatedly (a no-op once storage has no duplicates left).
+         * @returns {Promise<number>} Number of duplicate entries removed
+         */
+        async dedupeStoredEntries() {
+            const existing = await this._load();
+            if (existing.length === 0) return 0;
+
+            const byKey = new Map();
+            for (const entry of existing) {
+                const key = buildEntryIdentityKey(entry);
+                if (isMoreCompleteEntry(entry, byKey.get(key))) {
+                    byKey.set(key, entry);
+                }
+            }
+
+            const removedCount = existing.length - byKey.size;
+            if (removedCount === 0) return 0;
+
+            const deduped = Array.from(byKey.values());
+            deduped.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+            await this._save(deduped);
+            return removedCount;
+        }
+
+        async clearHistory() {
+            const key = this._getKey();
+            if (!key) return;
+            await storage.delete(key, STORE_NAME$4);
+        }
+    }
+
+    const lootLogHistory = new LootLogHistory();
+
+    /**
      * Loot Log Statistics Module
      * Adds total value, average time, and daily output statistics to loot logs
      * Port of Edible Tools loot tracker feature, integrated into Toolasha architecture
@@ -1764,6 +1853,13 @@
                     () => this.renderHistoricalEntries()
                 );
                 this.unregisterHandlers.push(unregisterHistoryObserver);
+
+                // One-time self-heal: collapse any entries stored before the identity-key dedup fix
+                // (keyed on the unstable characterActionId) that split a single continuous action,
+                // like an interrupted/resumed labyrinth run, into several incomplete duplicates.
+                lootLogHistory.dedupeStoredEntries().catch((error) => {
+                    console.error('[LootLogStats] Failed to dedupe stored history:', error);
+                });
             }
 
             this.initialized = true;
@@ -2340,11 +2436,13 @@
 
             if (!this.currentLootLogData) return;
 
-            // Build set of current IDs
-            const currentIds = new Set(this.currentLootLogData.map((e) => e.characterActionId));
+            // Build set of current entry identity keys (not characterActionId - see
+            // buildEntryIdentityKey for why that field is unreliable across an interrupted/resumed
+            // action like a labyrinth run)
+            const currentKeys = new Set(this.currentLootLogData.map((e) => buildEntryIdentityKey(e)));
 
             // Get historical entries not in current set
-            const historicalEntries = await lootLogHistory.getHistoricalEntries(currentIds);
+            const historicalEntries = await lootLogHistory.getHistoricalEntries(currentKeys);
             if (historicalEntries.length === 0) return;
 
             // Create separator
@@ -2461,7 +2559,7 @@
                 deleteBtn.style.background = 'none';
             });
             deleteBtn.addEventListener('click', async () => {
-                await this.deleteHistoricalEntry(entry.characterActionId);
+                await this.deleteHistoricalEntry(entry);
                 entryEl.remove();
                 // Update separator count
                 const wrapper = document.querySelector('.mwi-loot-log-history');
@@ -2560,14 +2658,15 @@
         }
 
         /**
-         * Delete a single historical entry by characterActionId
-         * @param {number} characterActionId
+         * Delete a single historical entry by identity (see buildEntryIdentityKey).
+         * @param {Object} entry - The entry to delete, as rendered (from storage)
          */
-        async deleteHistoricalEntry(characterActionId) {
+        async deleteHistoricalEntry(entry) {
             const key = lootLogHistory._getKey();
             if (!key) return;
+            const targetKey = buildEntryIdentityKey(entry);
             const entries = await lootLogHistory._load();
-            const filtered = entries.filter((e) => e.characterActionId !== characterActionId);
+            const filtered = entries.filter((e) => buildEntryIdentityKey(e) !== targetKey);
             await lootLogHistory._save(filtered);
         }
 

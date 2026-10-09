@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.7.0
+ * Version: 3.7.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5577,8 +5577,11 @@ ${starCSS}
      */
 
 
-    // Matches the native client's "[M/D H:MM:SS AM/PM]" or "[H:MM:SS AM/PM]" timestamp text.
-    const TIMESTAMP_RE = /^\[(?:(\d{1,2}\/\d{1,2})\s+)?(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)\]$/i;
+    // Matches the native client's "[M/D H:MM:SS AM/PM]" or "[H:MM:SS AM/PM]" timestamp text. The
+    // client bakes a trailing space after the closing bracket into the span's own text (it builds
+    // the string as "[" + time + "] "), so that trailing whitespace must be matched and preserved,
+    // not treated as absent.
+    const TIMESTAMP_RE = /^\[(?:(\d{1,2}\/\d{1,2})\s+)?(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)\](\s*)$/i;
 
     /**
      * Reformat a single timestamp span's text according to the current date/time settings.
@@ -5589,7 +5592,7 @@ ${starCSS}
         const match = span.textContent.match(TIMESTAMP_RE);
         if (!match) return;
 
-        const [, datePart, hourStr, minuteStr, secondStr, meridiem] = match;
+        const [, datePart, hourStr, minuteStr, secondStr, meridiem, trailingSpace] = match;
         const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
         const dateFormat = config.getSettingValue('market_listingDateFormat', 'MM-DD');
 
@@ -5615,7 +5618,7 @@ ${starCSS}
             newText = `[${dateText} ${timeText}]`;
         }
 
-        span.textContent = newText;
+        span.textContent = newText + trailingSpace;
     }
 
     /**
