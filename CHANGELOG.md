@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.9.0](https://github.com/Celasha/Toolasha/compare/v3.8.1...v3.9.0) (2026-10-09)
+
+### Features
+
+- add per-zone combat task progress to Task Statistics (closes [#751](https://github.com/Celasha/Toolasha/issues/751)) ([afad06e](https://github.com/Celasha/Toolasha/commit/afad06e56fc0585750d20844b5f0e8bc7f28528e))
+- **i18n:** extend DOM-literal gate with data-flow blind-spot detection ([#749](https://github.com/Celasha/Toolasha/issues/749)) ([ad72fee](https://github.com/Celasha/Toolasha/commit/ad72fee2467abb9b01c101b534db8e0118f1a45a))
+
+### Bug Fixes
+
+- **i18n:** dual-match localized titles in ability book calculator ([#748](https://github.com/Celasha/Toolasha/issues/748)) ([ded492a](https://github.com/Celasha/Toolasha/commit/ded492a9d056d397bb8ddd921732c254f05454a4))
+- **i18n:** match localized names in name/HRID lookups, queue times and reroll tracker ([#750](https://github.com/Celasha/Toolasha/issues/750)) ([9973259](https://github.com/Celasha/Toolasha/commit/9973259fe76e25ecf580510815ed4ac87241fae4))
+- keep cross-domain combat sim export in sync with live character data ([acf9909](https://github.com/Celasha/Toolasha/commit/acf9909327e16dc2d5c5853bff00b8844b2d17a2))
+
 ## [3.8.1](https://github.com/Celasha/Toolasha/compare/v3.8.0...v3.8.1) (2026-10-09)
 
 ### Bug Fixes
