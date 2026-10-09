@@ -20,8 +20,48 @@ function getEntryDurationMs(entry) {
 }
 
 /**
- * Union current-session and stored-history entries, deduplicated by characterActionId.
- * Current-session data wins on overlap, since it's the freshest source for entries still live.
+ * Identity key for a loot log entry. `characterActionId` is NOT part of this - the game appears
+ * to reissue it mid-session for a single continuous action (observed on labyrinth runs that span
+ * an interrupt/resume), while startTime stays stable for the whole session. The game's own loot
+ * log panel never reads characterActionId either; it groups/labels rows by exactly these fields
+ * (see renderActionLoots in the client bundle), so this key matches the game's own notion of "one
+ * entry" rather than an internal id that can churn underneath a still-running action.
+ * @param {Object} entry
+ * @returns {string}
+ */
+function buildEntryIdentityKey(entry) {
+    if (!entry) return '';
+    return [
+        entry.actionHrid ?? '',
+        entry.difficultyTier ?? '',
+        entry.primaryItemHash ?? '',
+        entry.secondaryItemHash ?? '',
+        entry.partyId ?? '',
+        entry.startTime ?? '',
+    ].join('::');
+}
+
+/**
+ * Whether `candidate` represents at least as much progress as `existing` for the same logical
+ * entry (same identity key) - i.e. whether it should replace it. Higher actionCount wins; ties
+ * fall back to the later endTime. Anything is more complete than nothing stored yet.
+ * @param {Object} candidate
+ * @param {Object|undefined} existing
+ * @returns {boolean}
+ */
+function isMoreCompleteEntry(candidate, existing) {
+    if (!existing) return true;
+    const candidateCount = candidate?.actionCount ?? 0;
+    const existingCount = existing?.actionCount ?? 0;
+    if (candidateCount !== existingCount) return candidateCount > existingCount;
+    return new Date(candidate?.endTime || 0).getTime() > new Date(existing?.endTime || 0).getTime();
+}
+
+/**
+ * Union current-session and stored-history entries, deduplicated by entry identity (not
+ * characterActionId - see buildEntryIdentityKey). Whichever copy is more complete wins on
+ * overlap, since the live window can retain an earlier snapshot of a still-running action than
+ * what's already been persisted to history.
  * @param {Array} currentEntries
  * @param {Array} historicalEntries
  * @returns {Array}
@@ -29,10 +69,15 @@ function getEntryDurationMs(entry) {
 function mergeCurrentAndHistoricalEntries(currentEntries, historicalEntries) {
     const seen = new Map();
     for (const entry of historicalEntries || []) {
-        if (entry?.characterActionId != null) seen.set(entry.characterActionId, entry);
+        if (!entry) continue;
+        seen.set(buildEntryIdentityKey(entry), entry);
     }
     for (const entry of currentEntries || []) {
-        if (entry?.characterActionId != null) seen.set(entry.characterActionId, entry);
+        if (!entry) continue;
+        const key = buildEntryIdentityKey(entry);
+        if (isMoreCompleteEntry(entry, seen.get(key))) {
+            seen.set(key, entry);
+        }
     }
     return Array.from(seen.values());
 }
@@ -110,6 +155,8 @@ function aggregatePivotRows(entries) {
 export {
     EXCLUDED_XP_SKILL_HRID,
     getEntryDurationMs,
+    buildEntryIdentityKey,
+    isMoreCompleteEntry,
     mergeCurrentAndHistoricalEntries,
     buildActionGroupKey,
     aggregatePivotRows,

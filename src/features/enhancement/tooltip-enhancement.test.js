@@ -19,7 +19,9 @@ vi.mock('../../core/config.js', () => ({
         COLOR_TOOLTIP_PROFIT: '#047857',
         COLOR_TOOLTIP_LOSS: '#dc2626',
         COLOR_MIRROR: '#ffd700',
-        isFeatureEnabled: () => false,
+        // Keyed off settingsMap like getSetting below, so individual tests can flip a specific
+        // feature on (e.g. enhanceSim_baseItemCraftingCost) without affecting any other key.
+        isFeatureEnabled: (key) => settingsMap[key]?.isTrue ?? false,
         // Boolean-only accessor, mirrors the real config.js: reads .isTrue, defaults to false.
         // A text-type setting has no .isTrue, so this must NOT be used to read its value.
         getSetting: (key) => settingsMap[key]?.isTrue ?? false,
@@ -29,8 +31,14 @@ vi.mock('../../core/config.js', () => ({
 }));
 
 const itemDetailMap = {};
+const actionDetailMap = {};
 vi.mock('../../core/data-manager.js', () => ({
-    default: { getInitClientData: () => ({ itemDetailMap }) },
+    default: {
+        getInitClientData: () => ({ itemDetailMap, actionDetailMap, shopItemDetailMap: {} }),
+        getItemDetails: (itemHrid) => itemDetailMap[itemHrid] || null,
+        getEquipment: () => new Map(),
+        getActionDrinkSlots: () => [],
+    },
 }));
 
 const marketPrices = {};
@@ -57,9 +65,11 @@ import { getItemPrices } from '../../utils/market-data.js';
 
 const {
     buildEnhancementTooltipHTML,
+    buildEnhancementMilestonesHTML,
     calculateMinimumSellPrice,
     calculatePerAttemptMaterialCost,
     calculateDirectEnhancementCost,
+    calculateEnhancementPath,
     getRealisticBaseItemPrice,
 } = await import('./tooltip-enhancement.js');
 
@@ -388,6 +398,86 @@ describe('getRealisticBaseItemPrice - reference market value fallback', () => {
     });
 });
 
+describe("calculateEnhancementPath - refined item Philosopher's Mirror fodder species (regression)", () => {
+    const calcPath = calculateEnhancementPath;
+
+    const enhancingConfig = {
+        enhancingLevel: 300,
+        houseLevel: 8,
+        toolBonus: 0,
+        speedBonus: 0,
+        teas: { blessed: false },
+        guzzlingBonus: 1,
+    };
+
+    beforeEach(() => {
+        for (const key of Object.keys(itemDetailMap)) delete itemDetailMap[key];
+        for (const key of Object.keys(marketPrices)) delete marketPrices[key];
+
+        itemDetailMap['/items/furious_spear'] = {
+            name: 'Furious Spear',
+            itemLevel: 95,
+            enhancementCosts: [{ itemHrid: '/items/coin', count: 100 }],
+        };
+        itemDetailMap['/items/furious_spear_refined'] = {
+            name: 'Furious Spear (R)',
+            itemLevel: 95,
+            enhancementCosts: [{ itemHrid: '/items/coin', count: 100 }],
+            baseItemHrids: ['/items/furious_spear'],
+        };
+        itemDetailMap['/items/philosophers_mirror'] = { name: "Philosopher's Mirror" };
+
+        // Non-refined spear is cheap; refined spear's own copies are far pricier - this price gap
+        // is what should make the Mirror strategy prefer non-refined fodder over refined fodder.
+        marketPrices['/items/furious_spear'] = {};
+        marketPrices['/items/furious_spear_refined'] = {};
+        marketPrices['/items/philosophers_mirror'] = { ask: 10_000_000, bid: 9_000_000 };
+
+        getItemPrices.mockImplementation((hrid, level) => {
+            if (hrid === '/items/furious_spear') {
+                return level === 0 ? { ask: 1_000_000, bid: 900_000 } : null;
+            }
+            if (hrid === '/items/furious_spear_refined') {
+                return level === 0 ? { ask: 50_000_000, bid: 48_000_000 } : null;
+            }
+            if (hrid === '/items/philosophers_mirror') {
+                return { ask: 10_000_000, bid: 9_000_000 };
+            }
+            return { ask: 400_000_000, bid: 390_000_000 };
+        });
+    });
+
+    test('a refined item mirror-protected at the final step consumes NON-refined fodder, not a refined copy', () => {
+        const result = calcPath('/items/furious_spear_refined', 15, enhancingConfig);
+
+        expect(result).not.toBeNull();
+        expect(result.optimalStrategy.usedMirror).toBe(true);
+
+        const fodderRow = result.optimalStrategy.consumedItems.find((item) => item.level === 13);
+        expect(fodderRow).toBeDefined();
+        expect(fodderRow.hrid).toBe('/items/furious_spear'); // non-refined, not furious_spear_refined
+
+        const primaryRow = result.optimalStrategy.consumedItems.find((item) => item.level === 14);
+        expect(primaryRow).toBeDefined();
+        expect(primaryRow.hrid).toBe('/items/furious_spear_refined'); // the item actually being enhanced
+    });
+
+    test('the rendered materials table prices the fodder row off the non-refined market, not the refined one', () => {
+        const pathResult = calcPath('/items/furious_spear_refined', 15, enhancingConfig);
+        const html = buildEnhancementTooltipHTML({
+            itemHrid: '/items/furious_spear_refined',
+            targetLevel: 15,
+            optimalStrategy: pathResult.optimalStrategy,
+            xpPerHour: null,
+            totalExpectedXP: null,
+        });
+
+        // Non-refined fodder's own market price (1,000,000 -> "1.00M"), not the refined item's (50,000,000).
+        expect(html).toContain('Furious Spear +13');
+        expect(html).toContain('Furious Spear (R) +14');
+    });
+});
+
 describe('buildEnhancementTooltipHTML - outlier warning icons', () => {
     test('flags the base item row when the base price was substituted', () => {
         const html = buildEnhancementTooltipHTML(makeEnhancementData({ baseAskOutlier: true, baseBidOutlier: false }));
@@ -442,5 +532,141 @@ describe('buildEnhancementTooltipHTML - outlier warning icons', () => {
 
         const totalLabelIndex = html.indexOf('Total');
         expect(html.slice(totalLabelIndex, totalLabelIndex + 400)).toContain('⚠');
+    });
+});
+
+describe('buildEnhancementTooltipHTML - Crafting Cost / Enhancing Cost subtotals', () => {
+    test('splits the base item cost from the materials+protection cost, instead of one combined total', () => {
+        const html = buildEnhancementTooltipHTML(
+            makeEnhancementData({
+                baseAskPrice: 1_000_000,
+                baseBidPrice: 900_000,
+                materialBreakdown: [
+                    {
+                        itemHrid: '/items/mat',
+                        name: 'Mat',
+                        totalQuantity: 10,
+                        unitPrice: 200_000,
+                        bidPrice: 180_000,
+                        askOutlier: false,
+                        bidOutlier: false,
+                    },
+                ],
+            })
+        );
+
+        const craftingIndex = html.indexOf('Crafting Cost');
+        const enhancingIndex = html.indexOf('Enhancing Cost');
+        expect(craftingIndex).toBeGreaterThan(-1);
+        expect(enhancingIndex).toBeGreaterThan(-1);
+
+        // Crafting Cost == the base item's own ask/bid price (1.00M / 900.00K).
+        expect(html.slice(craftingIndex, craftingIndex + 200)).toContain('1.00M');
+        expect(html.slice(craftingIndex, craftingIndex + 200)).toContain('900.00K');
+
+        // Enhancing Cost == materials only (10 * 200K ask / 10 * 180K bid), excluding the base item.
+        expect(html.slice(enhancingIndex, enhancingIndex + 200)).toContain('2.00M');
+        expect(html.slice(enhancingIndex, enhancingIndex + 200)).toContain('1.80M');
+    });
+
+    test('does not add the subtotal split to the mirror-optimized breakdown (no separate base item there)', () => {
+        const html = buildEnhancementTooltipHTML(
+            makeEnhancementData({
+                usedMirror: true,
+                mirrorStartLevel: 10,
+                baseCost: 0,
+                materialCost: 0,
+                protectionCost: 0,
+                consumedItemsCost: 2_000_000,
+                philosopherMirrorCost: 500_000,
+                totalCost: 2_500_000,
+                consumedItems: [
+                    { hrid: '/items/test_item', level: 9, quantity: 1, costEach: 1_500_000, totalCost: 1_500_000 },
+                    { hrid: '/items/test_item', level: 8, quantity: 1, costEach: 500_000, totalCost: 500_000 },
+                ],
+                mirrorCount: 1,
+                consumedItemHrid: '/items/test_item',
+            })
+        );
+
+        expect(html).not.toContain('Crafting Cost');
+        expect(html).not.toContain('Enhancing Cost');
+    });
+});
+
+describe('buildEnhancementMilestonesHTML - Craft Cost / Enhance Cost columns (recursive crafting plan)', () => {
+    const enhancingConfig = {
+        enhancingLevel: 300,
+        houseLevel: 8,
+        toolBonus: 0,
+        speedBonus: 0,
+        teas: { blessed: false },
+        guzzlingBonus: 1,
+    };
+
+    beforeEach(() => {
+        for (const key of Object.keys(itemDetailMap)) delete itemDetailMap[key];
+        for (const key of Object.keys(actionDetailMap)) delete actionDetailMap[key];
+        for (const key of Object.keys(marketPrices)) delete marketPrices[key];
+        for (const key of Object.keys(settingsMap)) delete settingsMap[key];
+
+        settingsMap.enhanceSim_baseItemCraftingCost = { isTrue: true };
+        settingsMap.itemTooltip_prices = { isTrue: false };
+
+        // ore -> alloy -> gadget_body: a 2-tier chain where buying the base item or its
+        // immediate input outright is far pricier than crafting all the way down to ore.
+        itemDetailMap['/items/ore'] = { name: 'Ore', itemLevel: 1, isTradable: true };
+        itemDetailMap['/items/alloy'] = { name: 'Alloy', itemLevel: 1, isTradable: true };
+        itemDetailMap['/items/gadget_body'] = {
+            name: 'Gadget Body',
+            itemLevel: 1,
+            isTradable: true,
+            enhancementCosts: [{ itemHrid: '/items/coin', count: 1 }],
+        };
+
+        actionDetailMap['/actions/crafting/alloy'] = {
+            type: '/action_types/crafting',
+            category: '/action_categories/crafting/alloy',
+            inputItems: [{ itemHrid: '/items/ore', count: 1 }],
+            outputItems: [{ itemHrid: '/items/alloy', count: 1 }],
+        };
+        actionDetailMap['/actions/crafting/gadget_body'] = {
+            type: '/action_types/crafting',
+            category: '/action_categories/crafting/gadget',
+            inputItems: [{ itemHrid: '/items/alloy', count: 1 }],
+            outputItems: [{ itemHrid: '/items/gadget_body', count: 1 }],
+        };
+
+        marketPrices['/items/ore'] = { ask: 10, bid: 9 };
+        marketPrices['/items/alloy'] = { ask: 1000, bid: 900 };
+        marketPrices['/items/gadget_body'] = { ask: 5_000_000, bid: 4_900_000 };
+
+        getItemPrices.mockImplementation((hrid) => marketPrices[hrid] ?? null);
+    });
+
+    test('prices the base item via the full recursive buy-vs-craft chain, not a one-tier market lookup', () => {
+        const result = calculateEnhancementPath('/items/gadget_body', 1, enhancingConfig);
+
+        expect(result).not.toBeNull();
+        // Deep-optimal: craft gadget_body from alloy, and craft alloy from ore too (unit cost 10),
+        // instead of buying alloy outright (1000) or gadget_body outright (5M).
+        expect(result.optimalStrategy.baseAskPrice).toBeCloseTo(10, 5);
+        expect(result.optimalStrategy.baseAskPrice).toBeLessThan(1000);
+        expect(result.optimalStrategy.baseAskIsCrafted).toBe(true);
+    });
+
+    test('splits Craft Cost from Enhance Cost per milestone row, instead of one combined Cost column', () => {
+        const html = buildEnhancementMilestonesHTML('/items/gadget_body', enhancingConfig);
+
+        expect(html).not.toBe('');
+        expect(html).toContain('Craft Cost');
+        expect(html).toContain('Enhance Cost');
+        expect(html).not.toContain('>Cost<');
+
+        // The craft leg should stay pinned near the deep-optimal ~10 cost at every milestone
+        // level, since the base item's own cost doesn't change with target level.
+        const craftCostIndex = html.indexOf('Craft Cost');
+        const rowsSection = html.slice(craftCostIndex);
+        expect(rowsSection).toContain('10');
     });
 });
