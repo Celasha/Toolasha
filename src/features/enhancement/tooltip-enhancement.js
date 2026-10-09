@@ -28,14 +28,17 @@ import { parseItemCount } from '../../utils/number-parser.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import marketAPI from '../../api/marketplace.js';
 import marketValuesAPI from '../../api/market-values.js';
+import { computeBestCraftingPlan } from '../crafting-plan/crafting-plan-calculator.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 const _costCache = new Map();
 const _chainTimeCache = new Map();
+const _craftPlanCache = new Map();
 
 marketAPI.on(() => {
     _costCache.clear();
     _chainTimeCache.clear();
+    _craftPlanCache.clear();
 });
 
 /**
@@ -103,7 +106,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     const targetTimes = new Array(currentEnhancementLevel + 1);
     const targetAttempts = new Array(currentEnhancementLevel + 1);
     targetCosts[0] = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
-        ? Math.min(getProductionCost(itemHrid) || Infinity, getItemPrices(itemHrid, 0)?.ask || Infinity) ||
+        ? Math.min(getOptimalCraftingCost(itemHrid) || Infinity, getItemPrices(itemHrid, 0)?.ask || Infinity) ||
           getRealisticBaseItemPrice(itemHrid)
         : getRealisticBaseItemPrice(itemHrid); // Level 0: base item
     targetTimes[0] = 0; // Level 0: no time needed
@@ -149,7 +152,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
             if (fodderLevel === 0) {
                 fodderCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
                     ? Math.min(
-                          getProductionCost(baseItemHrid) || Infinity,
+                          getOptimalCraftingCost(baseItemHrid) || Infinity,
                           getItemPrices(baseItemHrid, 0)?.ask || Infinity
                       ) || getRealisticBaseItemPrice(baseItemHrid)
                     : getRealisticBaseItemPrice(baseItemHrid);
@@ -629,8 +632,8 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     }
 
     // Base item cost (initial investment) — market price or min(crafting, market) per setting
-    const craftingCostAsk = getProductionCost(itemHrid, 'ask');
-    const craftingCostBid = getProductionCost(itemHrid, 'bid');
+    const craftingCostAsk = getOptimalCraftingCost(itemHrid, 'ask');
+    const craftingCostBid = getOptimalCraftingCost(itemHrid, 'bid');
     const baseItemPrices = getItemPrices(itemHrid, 0);
     const marketAsk = baseItemPrices?.ask > 0 ? baseItemPrices.ask : 0;
     const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
@@ -640,7 +643,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
     const baseBidPrice = askIsCrafted
         ? craftingCostBid || craftingCostAsk
-        : marketBid || getProductionCost(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
+        : marketBid || getOptimalCraftingCost(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
     const baseCost = baseAskPrice;
     const baseAskIsCrafted = askIsCrafted;
     const baseBidIsCrafted = askIsCrafted;
@@ -801,6 +804,55 @@ function _computeProductionCost(itemHrid, mode = 'ask') {
     }
 
     return totalPrice / outputCount;
+}
+
+/**
+ * Get the optimal (recursive buy-vs-craft) cost to obtain the base item, matching the Best
+ * Crafting Plan calculation shown on the item's production action page. Unlike
+ * getProductionCost() above (a shallow walk that only recurses through upgrade-item chains,
+ * pricing every regular input at market value even when crafting that input would be cheaper),
+ * this walks the full material tree and picks whichever is cheaper -- buy or craft -- at every
+ * tier down to raw materials, honoring the same Crafting Plan settings used on the production
+ * page so the two stay consistent.
+ * @param {string} itemHrid
+ * @param {'ask'|'bid'} [mode='ask']
+ * @private
+ */
+function getOptimalCraftingCost(itemHrid, mode = 'ask') {
+    const cacheKey = `${itemHrid}|${mode}`;
+    if (_craftPlanCache.has(cacheKey)) return _craftPlanCache.get(cacheKey);
+
+    const buyIntermediates = toolashaConfig.getSetting('actionPanel_craftingPlanBuyIntermediates');
+    const noProcessing = toolashaConfig.getSetting('actionPanel_craftingPlanNoProcessing');
+    const taskMode = toolashaConfig.getSetting('actionPanel_craftingPlanTaskMode');
+    const timeCostEnabled = toolashaConfig.getSetting('actionPanel_craftingPlanTimeCost');
+    const goldPerHour = Number(toolashaConfig.getSettingValue('actionPanel_craftingPlanGoldPerHour', 0)) || 0;
+
+    let result = 0;
+    try {
+        const plan = computeBestCraftingPlan(
+            itemHrid,
+            1,
+            mode,
+            new Set(),
+            new Map(),
+            0,
+            undefined,
+            buyIntermediates,
+            taskMode,
+            timeCostEnabled ? goldPerHour : 0,
+            noProcessing
+        );
+        // computeBestCraftingPlan can return Infinity (depth limit reached with no buyable price
+        // anywhere in the chain) - treat that the same as "unknown" (0), matching
+        // getProductionCost()'s own contract, so callers' existing `|| fallback` chains still work.
+        result = Number.isFinite(plan?.totalCost) && plan.totalCost > 0 ? plan.totalCost : 0;
+    } catch (error) {
+        console.error('[Enhancement Tooltip] computeBestCraftingPlan failed for', itemHrid, error);
+    }
+
+    _craftPlanCache.set(cacheKey, result);
+    return result;
 }
 
 /**
@@ -1275,6 +1327,27 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatKMB(totalBid)}${buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
         html += '</tr>';
 
+        // Crafting Cost / Enhancing Cost subtotals - the base item row above is the crafting
+        // leg; materials + protection together are the enhancing leg. Shown separately so the
+        // two don't have to be mentally picked back out of the itemized rows below.
+        const craftingCostAsk = optimalStrategy.baseAskPrice || optimalStrategy.baseCost;
+        const craftingCostBid = optimalStrategy.baseBidPrice || optimalStrategy.baseCost;
+        const enhancingCostAsk = Math.max(0, totalAsk - craftingCostAsk);
+        const enhancingCostBid = Math.max(0, totalBid - craftingCostBid);
+
+        html += '<tr>';
+        html += `<td style="padding: 2px 4px;">${t('tooltipEnhancement.craftingCostSubtotalLabel')}</td>`;
+        html += '<td style="padding: 2px 4px; text-align: center;"></td>';
+        html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(craftingCostAsk)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(craftingCostBid)}</td>`;
+        html += '</tr>';
+        html += '<tr>';
+        html += `<td style="padding: 2px 4px;">${t('tooltipEnhancement.enhancingCostSubtotalLabel')}</td>`;
+        html += '<td style="padding: 2px 4px; text-align: center;"></td>';
+        html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(enhancingCostAsk)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(enhancingCostBid)}</td>`;
+        html += '</tr>';
+
         // Item rows
         for (const row of rows) {
             html += '<tr>';
@@ -1383,7 +1456,10 @@ export function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
         const data = calculateEnhancementPath(itemHrid, level, enhancementConfig);
         if (!data) continue;
 
-        const cost = fmtCost(data.optimalStrategy.totalCost);
+        const craftCost = fmtCost(data.optimalStrategy.baseCost);
+        const enhanceCost = fmtCost(
+            Math.max(0, (data.optimalStrategy.totalCost || 0) - (data.optimalStrategy.baseCost || 0))
+        );
         const xp = data.totalExpectedXP !== null ? fmt(Math.round(data.totalExpectedXP)) : '—';
 
         let ask = '—';
@@ -1394,7 +1470,7 @@ export function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
             bid = fmt(prices?.bid) + buildOutlierPriceWarningIcon(prices?.bid > 0 && prices.bidOutlier);
         }
 
-        rows.push({ level, cost, xp, ask, bid });
+        rows.push({ level, craftCost, enhanceCost, xp, ask, bid });
     }
 
     if (rows.length === 0) return '';
@@ -1409,7 +1485,8 @@ export function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
     html += '<table style="font-size: 0.9em; border-collapse: collapse; width: 100%;">';
     html += '<thead><tr>';
     html += `<th ${thStyle('left')}>${t('tooltipEnhancement.levelHeader')}</th>`;
-    html += `<th ${thStyle()}>${t('tooltipEnhancement.costHeader')}</th>`;
+    html += `<th ${thStyle()}>${t('tooltipEnhancement.craftCostHeader')}</th>`;
+    html += `<th ${thStyle()}>${t('tooltipEnhancement.enhanceCostHeader')}</th>`;
     if (showPrices) html += `<th ${thStyle()}>${t('tooltipEnhancement.askBidHeader')}</th>`;
     html += `<th ${thStyle()}>${t('tooltipEnhancement.xpHeader')}</th>`;
     html += '</tr></thead><tbody>';
@@ -1417,7 +1494,8 @@ export function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
     for (const row of rows) {
         html += '<tr>';
         html += `<td ${tdStyle('left', config.COLOR_TOOLTIP_INFO)}>+${row.level}</td>`;
-        html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.cost}</td>`;
+        html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.craftCost}</td>`;
+        html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.enhanceCost}</td>`;
         if (showPrices) {
             html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.ask} / ${row.bid}</td>`;
         }
