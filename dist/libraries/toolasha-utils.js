@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.7.1
+ * Version: 3.7.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3122,6 +3122,1626 @@
     });
 
     /**
+     * Action Calculator
+     * Shared calculation logic for action time and efficiency
+     * Used by action-time-display.js and quick-input-buttons.js
+     */
+
+
+    /**
+     * Calculate complete action statistics (time + efficiency)
+     * @param {Object} actionDetails - Action detail object from game data
+     * @param {Object} options - Configuration options
+     * @param {Array} options.skills - Character skills array
+     * @param {Array|Map} options.equipment - Character equipment for legacy callers
+     * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Atomic equipment+drinks
+     *   context. When provided, both fields are used together and no second live/saved context is
+     *   resolved for drinks - prevents mixing e.g. current equipment with saved-loadout drinks.
+     * @param {Object} options.itemDetailMap - Item detail map from game data
+     * @param {string} options.actionHrid - Action HRID for task detection (optional)
+     * @param {boolean} options.includeCommunityBuff - Include community buff in efficiency (default: false)
+     * @param {boolean} options.includeBreakdown - Include detailed breakdown data (default: false)
+     * @param {number} options.levelRequirementOverride - Override base level requirement (e.g., item level for alchemy)
+     * @returns {Object} { actionTime, totalEfficiency, breakdown? }
+     */
+    function calculateActionStats(actionDetails, options = {}) {
+        const {
+            skills,
+            equipment: equipmentOption,
+            actionContext = null,
+            itemDetailMap,
+            actionHrid,
+            includeCommunityBuff = false,
+            includeBreakdown = false,
+            levelRequirementOverride,
+        } = options;
+
+        try {
+            const equipment = actionContext?.equipment ?? equipmentOption;
+            // Calculate base action time
+            const baseTime = actionDetails.baseTimeCost / 1e9; // nanoseconds to seconds
+
+            // Get equipment speed bonus
+            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
+            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
+
+            const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
+            const guildSpeedBonus = guildBuffs.reduce(
+                (sum, b) =>
+                    b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
+                0
+            );
+            const guildEfficiency = guildBuffs.reduce(
+                (sum, b) =>
+                    b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
+                0
+            );
+
+            // Calculate action time with equipment speed
+            let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus + guildSpeedBonus);
+
+            // Apply task speed multiplicatively (if action is an active task)
+            if (actionHrid && dataManager.isTaskAction(actionHrid)) {
+                const taskSpeedBonus = dataManager.getTaskSpeedBonus(); // Returns percentage (e.g., 15 for 15%)
+                actionTime = actionTime / (1 + taskSpeedBonus / 100); // Apply multiplicatively
+            }
+
+            // Enforce game minimum action time
+            actionTime = Math.max(MIN_ACTION_TIME_SECONDS, actionTime);
+
+            // Calculate efficiency
+            const skillLevel = getSkillLevel(skills, actionDetails.type);
+            const baseRequirement = levelRequirementOverride ?? actionDetails.levelRequirement?.level ?? 1;
+
+            // Get drink concentration
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+
+            // Keep equipment and drinks atomic when the caller supplied an explicit context. Legacy
+            // callers without actionContext retain the existing loadout-aware drink behavior.
+            const activeDrinks = actionContext?.drinks ?? resolveActionContext(actionDetails.type).drinks;
+
+            // Calculate Action Level bonus from teas
+            const actionLevelBonus = parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+            // Get Action Level bonus breakdown (if requested)
+            let actionLevelBreakdown = null;
+            if (includeBreakdown) {
+                actionLevelBreakdown = parseActionLevelBonusBreakdown(activeDrinks, itemDetailMap, drinkConcentration);
+            }
+
+            // Calculate effective requirement
+            // Game uses full fractional action level bonus (no flooring)
+            const effectiveRequirement = baseRequirement + actionLevelBonus;
+
+            // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
+            const teaSkillLevelBonus = parseTeaSkillLevelBonus(
+                actionDetails.type,
+                activeDrinks,
+                itemDetailMap,
+                drinkConcentration
+            );
+
+            // Calculate efficiency components
+            // Apply tea skill level bonus to effective player level
+            const effectiveLevel = skillLevel + teaSkillLevelBonus;
+            const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
+            const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+            const equipmentEfficiency = parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap);
+            const achievementEfficiency =
+                dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+            const personalEfficiency =
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+
+            // Calculate tea efficiency
+            let teaEfficiency;
+            let teaBreakdown = null;
+            if (includeBreakdown) {
+                // Get detailed breakdown
+                teaBreakdown = parseTeaEfficiencyBreakdown(
+                    actionDetails.type,
+                    activeDrinks,
+                    itemDetailMap,
+                    drinkConcentration
+                );
+                teaEfficiency = teaBreakdown.reduce((sum, tea) => sum + tea.efficiency, 0);
+            } else {
+                // Simple total
+                teaEfficiency = parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
+            }
+
+            // Get community buff efficiency (if requested)
+            let communityEfficiency = 0;
+            if (includeCommunityBuff) {
+                // Production Efficiency buff applies to production skills and alchemy
+                const productionSkills = [
+                    '/action_types/alchemy',
+                    '/action_types/brewing',
+                    '/action_types/cheesesmithing',
+                    '/action_types/cooking',
+                    '/action_types/crafting',
+                    '/action_types/tailoring',
+                ];
+
+                if (productionSkills.includes(actionDetails.type)) {
+                    const communityBuffLevel = dataManager.getCommunityBuffLevel(
+                        '/community_buff_types/production_efficiency'
+                    );
+                    communityEfficiency = communityBuffLevel ? (0.14 + (communityBuffLevel - 1) * 0.003) * 100 : 0;
+                }
+            }
+
+            // Total efficiency (stack all components additively)
+            const totalEfficiency = stackAdditive(
+                levelEfficiency,
+                houseEfficiency,
+                equipmentEfficiency,
+                teaEfficiency,
+                communityEfficiency,
+                achievementEfficiency,
+                personalEfficiency,
+                guildEfficiency
+            );
+
+            // Build result object
+            const result = {
+                actionTime,
+                totalEfficiency,
+            };
+
+            // Add breakdown if requested
+            if (includeBreakdown) {
+                result.efficiencyBreakdown = {
+                    levelEfficiency,
+                    houseEfficiency,
+                    equipmentEfficiency,
+                    teaEfficiency,
+                    teaBreakdown,
+                    communityEfficiency,
+                    achievementEfficiency,
+                    personalEfficiency,
+                    guildEfficiency,
+                    skillLevel,
+                    baseRequirement,
+                    actionLevelBonus,
+                    actionLevelBreakdown,
+                    effectiveRequirement,
+                };
+            }
+
+            return result;
+        } catch (error) {
+            console.error('[Action Calculator] Error calculating action stats:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get character skill level for a skill type
+     * @param {Array} skills - Character skills array
+     * @param {string} skillType - Skill type HRID (e.g., "/action_types/cheesesmithing")
+     * @returns {number} Skill level
+     */
+    function getSkillLevel(skills, skillType) {
+        // Combat/labyrinth actions don't map to a single skill — efficiency scaling doesn't apply
+        if (skillType === '/action_types/combat' || skillType === '/action_types/labyrinth') {
+            return 1;
+        }
+        // Map action type to skill HRID
+        const skillHrid = skillType.replace('/action_types/', '/skills/');
+        const skill = skills.find((s) => s.skillHrid === skillHrid);
+        if (!skill) {
+            console.error(`[ActionCalculator] Skill not found: ${skillHrid}`);
+        }
+        return skill?.level || 1;
+    }
+
+    var actionCalculator = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        calculateActionStats: calculateActionStats
+    });
+
+    /**
+     * Skill Gear Detector
+     *
+     * Auto-detects gear and buffs from character equipment for any skill.
+     * Originally designed for enhancing, now works generically for all skills.
+     */
+
+
+    /**
+     * Detect best gear for a specific skill by equipment slot
+     * @param {string} skillName - Skill name (e.g., 'enhancing', 'cooking', 'milking')
+     * @param {Map} equipment - Character equipment map (equipped items only)
+     * @param {Object} itemDetailMap - Item details map from init_client_data
+     * @returns {Object} Best gear per slot with bonuses
+     */
+    function detectSkillGear(skillName, equipment, itemDetailMap) {
+        const gear = {
+            // Totals for calculations
+            toolBonus: 0,
+            speedBonus: 0,
+            rareFindBonus: 0,
+            experienceBonus: 0,
+
+            // Per-slot breakdown for display
+            slotBreakdown: [],
+
+            // Best items per slot for display
+            toolSlot: null, // main_hand or two_hand
+            bodySlot: null, // body
+            legsSlot: null, // legs
+            handsSlot: null, // hands
+        };
+
+        // Get items to scan - only use equipment map (already filtered to equipped items only)
+        let itemsToScan = [];
+
+        if (equipment) {
+            // Scan only equipped items from equipment map
+            itemsToScan = Array.from(equipment.values()).filter((item) => item && item.itemHrid);
+        }
+
+        // Track best item per slot (by item level, then enhancement level)
+        const slotCandidates = {
+            tool: [], // main_hand or two_hand or skill-specific tool
+            body: [], // body
+            legs: [], // legs
+            hands: [], // hands
+            neck: [], // neck (accessories have 5× multiplier)
+            ring: [], // ring (accessories have 5× multiplier)
+            earrings: [], // earrings (accessories have 5× multiplier)
+            back: [], // back (capes)
+            charm: [], // charm (5× multiplier)
+        };
+
+        // Dynamic stat names based on skill
+        const successStat = `${skillName}Success`;
+        const speedStat = `${skillName}Speed`;
+        const rareFindStat = `${skillName}RareFind`;
+        const experienceStat = `${skillName}Experience`;
+
+        // Search all items for skill-related bonuses and group by slot
+        for (const item of itemsToScan) {
+            const itemDetails = itemDetailMap[item.itemHrid];
+            if (!itemDetails?.equipmentDetail?.noncombatStats) {
+                continue;
+            }
+
+            const stats = itemDetails.equipmentDetail.noncombatStats;
+            const enhancementLevel = item.enhancementLevel || 0;
+            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+            const equipmentType = itemDetails.equipmentDetail.type;
+
+            // Generic stat calculation: Loop over ALL stats and apply multiplier
+            const allStats = {};
+            for (const [statName, statValue] of Object.entries(stats)) {
+                if (typeof statValue !== 'number') continue; // Skip non-numeric values
+                allStats[statName] = statValue * 100 * multiplier;
+            }
+
+            // Check if item has any skill-related stats (including universal skills)
+            const hasSkillStats =
+                allStats[successStat] ||
+                allStats[speedStat] ||
+                allStats[rareFindStat] ||
+                allStats[experienceStat] ||
+                allStats.skillingSpeed ||
+                allStats.skillingRareFind ||
+                allStats.skillingExperience;
+
+            if (!hasSkillStats) {
+                continue;
+            }
+
+            // Calculate bonuses for this item (backward-compatible output)
+            const itemBonuses = {
+                item: item,
+                itemDetails: itemDetails,
+                itemLevel: itemDetails.itemLevel || 0,
+                enhancementLevel: enhancementLevel,
+                // Named bonuses (dynamic based on skill)
+                toolBonus: allStats[successStat] || 0,
+                speedBonus: (allStats[speedStat] || 0) + (allStats.skillingSpeed || 0), // Combine speed sources
+                rareFindBonus: (allStats[rareFindStat] || 0) + (allStats.skillingRareFind || 0),
+                experienceBonus: (allStats[experienceStat] || 0) + (allStats.skillingExperience || 0), // Combine experience sources
+                // Generic access to all stats
+                allStats: allStats,
+            };
+
+            // Group by slot
+            // Tool slots: skill-specific tools (e.g., enhancing_tool, cooking_tool) plus main_hand/two_hand
+            const skillToolType = `/equipment_types/${skillName}_tool`;
+            if (
+                equipmentType === skillToolType ||
+                equipmentType === '/equipment_types/main_hand' ||
+                equipmentType === '/equipment_types/two_hand'
+            ) {
+                slotCandidates.tool.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/body') {
+                slotCandidates.body.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/legs') {
+                slotCandidates.legs.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/hands') {
+                slotCandidates.hands.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/neck') {
+                slotCandidates.neck.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/ring') {
+                slotCandidates.ring.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/earrings') {
+                slotCandidates.earrings.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/back') {
+                slotCandidates.back.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/charm') {
+                slotCandidates.charm.push(itemBonuses);
+            }
+        }
+
+        // Select best item per slot (highest item level, then highest enhancement level)
+        const selectBest = (candidates) => {
+            if (candidates.length === 0) return null;
+
+            return candidates.reduce((best, current) => {
+                // Compare by item level first
+                if (current.itemLevel > best.itemLevel) return current;
+                if (current.itemLevel < best.itemLevel) return best;
+
+                // If item levels are equal, compare by enhancement level
+                if (current.enhancementLevel > best.enhancementLevel) return current;
+                return best;
+            });
+        };
+
+        const bestTool = selectBest(slotCandidates.tool);
+        const bestBody = selectBest(slotCandidates.body);
+        const bestLegs = selectBest(slotCandidates.legs);
+        const bestHands = selectBest(slotCandidates.hands);
+        const bestNeck = selectBest(slotCandidates.neck);
+        const bestRing = selectBest(slotCandidates.ring);
+        const bestEarrings = selectBest(slotCandidates.earrings);
+        const bestBack = selectBest(slotCandidates.back);
+        const bestCharm = selectBest(slotCandidates.charm);
+
+        // Add bonuses from best items in each slot
+        const addSlot = (best) => {
+            if (!best) return;
+            gear.toolBonus += best.toolBonus;
+            gear.speedBonus += best.speedBonus;
+            gear.rareFindBonus += best.rareFindBonus;
+            gear.experienceBonus += best.experienceBonus;
+            gear.slotBreakdown.push({
+                itemHrid: best.item?.itemHrid || best.itemDetails?.hrid || '',
+                name: best.itemDetails.name,
+                enhancementLevel: best.enhancementLevel,
+                success: best.toolBonus,
+                speed: best.speedBonus,
+                rareFind: best.rareFindBonus,
+                experience: best.experienceBonus,
+            });
+            return {
+                itemHrid: best.item?.itemHrid || best.itemDetails?.hrid || '',
+                name: best.itemDetails.name,
+                enhancementLevel: best.enhancementLevel,
+            };
+        };
+
+        gear.toolSlot = addSlot(bestTool) || null;
+        gear.bodySlot = addSlot(bestBody) || null;
+        gear.legsSlot = addSlot(bestLegs) || null;
+        gear.handsSlot = addSlot(bestHands) || null;
+        addSlot(bestNeck);
+        addSlot(bestRing);
+        addSlot(bestEarrings);
+        addSlot(bestBack);
+        addSlot(bestCharm);
+
+        return gear;
+    }
+
+    /**
+     * Detect active enhancing teas from drink slots
+     * @param {Array} drinkSlots - Active drink slots for enhancing action type
+     * @param {Object} itemDetailMap - Item details map from init_client_data
+     * @returns {Object} Active teas { enhancing, superEnhancing, ultraEnhancing, blessed }
+     */
+    function detectEnhancingTeas(drinkSlots, _itemDetailMap) {
+        const teas = {
+            enhancing: false, // Enhancing Tea (+3 levels)
+            superEnhancing: false, // Super Enhancing Tea (+6 levels)
+            ultraEnhancing: false, // Ultra Enhancing Tea (+8 levels)
+            blessed: false, // Blessed Tea (1% double jump)
+        };
+
+        if (!drinkSlots || drinkSlots.length === 0) {
+            return teas;
+        }
+
+        // Tea HRIDs to check for
+        const teaMap = {
+            '/items/enhancing_tea': 'enhancing',
+            '/items/super_enhancing_tea': 'superEnhancing',
+            '/items/ultra_enhancing_tea': 'ultraEnhancing',
+            '/items/blessed_tea': 'blessed',
+        };
+
+        for (const drink of drinkSlots) {
+            if (!drink || !drink.itemHrid) continue;
+
+            const teaKey = teaMap[drink.itemHrid];
+            if (teaKey) {
+                teas[teaKey] = true;
+            }
+        }
+
+        return teas;
+    }
+
+    /**
+     * Get enhancing tea level bonus
+     * @param {Object} teas - Active teas from detectEnhancingTeas()
+     * @returns {number} Total level bonus from teas
+     */
+    function getEnhancingTeaLevelBonus(teas) {
+        // Teas don't stack - highest one wins
+        if (teas.ultraEnhancing) return 8;
+        if (teas.superEnhancing) return 6;
+        if (teas.enhancing) return 3;
+
+        return 0;
+    }
+
+    /**
+     * Get enhancing tea speed bonus (base, before concentration)
+     * @param {Object} teas - Active teas from detectEnhancingTeas()
+     * @returns {number} Base speed bonus % from teas
+     */
+    function getEnhancingTeaSpeedBonus(teas) {
+        // Teas don't stack - highest one wins
+        // Base speed bonuses (before drink concentration):
+        if (teas.ultraEnhancing) return 6; // +6% base
+        if (teas.superEnhancing) return 4; // +4% base
+        if (teas.enhancing) return 2; // +2% base
+
+        return 0;
+    }
+
+    /**
+     * Backward-compatible wrapper for enhancing gear detection
+     * @param {Map} equipment - Character equipment map (equipped items only)
+     * @param {Object} itemDetailMap - Item details map from init_client_data
+     * @returns {Object} Best enhancing gear per slot with bonuses
+     */
+    function detectEnhancingGear(equipment, itemDetailMap) {
+        return detectSkillGear('enhancing', equipment, itemDetailMap);
+    }
+
+    var enhancementGearDetector = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        detectEnhancingGear: detectEnhancingGear,
+        detectEnhancingTeas: detectEnhancingTeas,
+        detectSkillGear: detectSkillGear,
+        getEnhancingTeaLevelBonus: getEnhancingTeaLevelBonus,
+        getEnhancingTeaSpeedBonus: getEnhancingTeaSpeedBonus
+    });
+
+    /**
+     * Enhancement Configuration Manager
+     *
+     * Combines auto-detected enhancing parameters with manual overrides from settings.
+     * Provides single source of truth for enhancement simulator inputs.
+     */
+
+
+    /**
+     * Get enhancing parameters (auto-detected or manual)
+     * @returns {Object} Enhancement parameters for simulator
+     */
+    function getEnhancingParams() {
+        const autoDetect = config.getSettingValue('enhanceSim_autoDetect', false);
+
+        if (autoDetect) {
+            return getAutoDetectedParams();
+        } else {
+            return getManualParams();
+        }
+    }
+
+    /**
+     * Get auto-detected enhancing parameters from character data
+     * @returns {Object} Auto-detected parameters
+     */
+    function getAutoDetectedParams() {
+        // Get character data
+        const equipment = dataManager.getEquipment();
+        const skills = dataManager.getSkills();
+        const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+
+        // Detect gear from equipped items only
+        const gear = detectEnhancingGear(equipment, itemDetailMap);
+
+        // Detect drink concentration from equipment (Guzzling Pouch)
+        // IMPORTANT: Only scan equipped items, not entire inventory
+        let drinkConcentration = 0;
+        const itemsToScan = equipment ? Array.from(equipment.values()).filter((item) => item && item.itemHrid) : [];
+
+        for (const item of itemsToScan) {
+            const itemDetails = itemDetailMap[item.itemHrid];
+            if (!itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) continue;
+
+            const concentration = itemDetails.equipmentDetail.noncombatStats.drinkConcentration;
+            const enhancementLevel = item.enhancementLevel || 0;
+            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+            const scaledConcentration = concentration * 100 * multiplier;
+
+            // Only keep the highest concentration (shouldn't have multiple, but just in case)
+            if (scaledConcentration > drinkConcentration) {
+                drinkConcentration = scaledConcentration;
+            }
+        }
+
+        // Detect teas
+        const teas = detectEnhancingTeas(drinkSlots);
+
+        // Get tea level bonus (base, then scale with concentration)
+        const baseTeaLevel = getEnhancingTeaLevelBonus(teas);
+        const teaLevelBonus = baseTeaLevel > 0 ? baseTeaLevel * (1 + drinkConcentration / 100) : 0;
+
+        // Get tea speed bonus (base, then scale with concentration)
+        const baseTeaSpeed = getEnhancingTeaSpeedBonus(teas);
+        const teaSpeedBonus = baseTeaSpeed > 0 ? baseTeaSpeed * (1 + drinkConcentration / 100) : 0;
+
+        // Get tea wisdom bonus (base, then scale with concentration)
+        // Wisdom Tea/Coffee provide 12% wisdom, scales with drink concentration
+        let baseTeaWisdom = 0;
+        if (drinkSlots && drinkSlots.length > 0) {
+            for (const drink of drinkSlots) {
+                if (!drink || !drink.itemHrid) continue;
+                const drinkDetails = itemDetailMap[drink.itemHrid];
+                if (!drinkDetails?.consumableDetail?.buffs) continue;
+
+                const wisdomBuff = drinkDetails.consumableDetail.buffs.find(
+                    (buff) => buff.typeHrid === '/buff_types/wisdom'
+                );
+
+                if (wisdomBuff && wisdomBuff.flatBoost) {
+                    baseTeaWisdom += wisdomBuff.flatBoost * 100; // Convert to percentage
+                }
+            }
+        }
+        const teaWisdomBonus = baseTeaWisdom > 0 ? baseTeaWisdom * (1 + drinkConcentration / 100) : 0;
+
+        // Get Enhancing skill level
+        const enhancingSkill = skills?.find((s) => s.skillHrid === '/skills/enhancing');
+        if (!enhancingSkill) {
+            console.error('[EnhancementConfig] Skill not found: /skills/enhancing');
+        }
+        const enhancingLevel = enhancingSkill?.level || 1;
+
+        // Get Observatory house room level (enhancing uses observatory, NOT laboratory!)
+        const houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
+
+        // Calculate global house buffs from ALL house rooms
+        // Rare Find: 0.2% base + 0.2% per level (per room, only if level >= 1)
+        // Wisdom: 0.05% base + 0.05% per level (per room, only if level >= 1)
+        const houseRooms = dataManager.getHouseRooms();
+        let houseRareFindBonus = 0;
+        let houseWisdomBonus = 0;
+
+        for (const [_hrid, room] of houseRooms) {
+            const level = room.level || 0;
+            if (level >= 1) {
+                // Each room: 0.2% per level (NOT 0.2% base + 0.2% per level)
+                houseRareFindBonus += 0.2 * level;
+                // Each room: 0.05% per level (NOT 0.05% base + 0.05% per level)
+                houseWisdomBonus += 0.05 * level;
+            }
+        }
+
+        // Get Enhancing Speed community buff level
+        const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+        // Formula: 20% base + 0.5% per level
+        const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
+
+        // Get Experience (Wisdom) community buff level
+        const communityWisdomLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
+        // Formula: 20% base + 0.5% per level (same as other community buffs)
+        const communityWisdomBonus = communityWisdomLevel > 0 ? 20 + (communityWisdomLevel - 1) * 0.5 : 0;
+
+        const achievementWisdomBonus =
+            dataManager.getAchievementBuffFlatBoost('/action_types/enhancing', '/buff_types/wisdom') * 100;
+        const achievementRareFindBonus =
+            dataManager.getAchievementBuffFlatBoost('/action_types/enhancing', '/buff_types/rare_find') * 100;
+
+        // Calculate total success rate bonus
+        // Equipment + house + achievement
+        const houseSuccessBonus = houseLevel * 0.05; // 0.05% per level for success
+        const equipmentSuccessBonus = gear.toolBonus;
+        const achievementSuccessBonus =
+            dataManager.getAchievementBuffRatioBoost('/action_types/enhancing', '/buff_types/enhancing_success') * 100;
+        const totalSuccessBonus = equipmentSuccessBonus + houseSuccessBonus + achievementSuccessBonus;
+
+        // Calculate total speed bonus
+        // Speed bonus (from equipment) + house bonus (1% per level) + community buff + tea speed
+        const houseSpeedBonus = houseLevel * 1.0; // 1% per level for action speed
+        const totalSpeedBonus = gear.speedBonus + houseSpeedBonus + communitySpeedBonus + teaSpeedBonus;
+
+        // Calculate total experience bonus
+        // Equipment + house wisdom + tea wisdom + community wisdom + achievement wisdom
+        const totalExperienceBonus =
+            gear.experienceBonus + houseWisdomBonus + teaWisdomBonus + communityWisdomBonus + achievementWisdomBonus;
+
+        // Calculate guzzling bonus multiplier (1.0 at level 0, scales with drink concentration)
+        const guzzlingBonus = 1 + drinkConcentration / 100;
+
+        return {
+            // Core values for calculations
+            enhancingLevel: enhancingLevel + teaLevelBonus, // Base level + tea bonus
+            houseLevel: houseLevel,
+            toolBonus: totalSuccessBonus, // Tool + house combined
+            speedBonus: totalSpeedBonus, // Speed + house + community + tea combined
+            rareFindBonus: gear.rareFindBonus + houseRareFindBonus + achievementRareFindBonus, // Rare find (equipment + house rooms + achievements)
+            experienceBonus: totalExperienceBonus, // Experience (equipment + house + tea + community wisdom)
+            guzzlingBonus: guzzlingBonus, // Drink concentration multiplier for blessed tea
+            teas: teas,
+
+            // Display info (for UI) - show best item per slot
+            toolSlot: gear.toolSlot,
+            bodySlot: gear.bodySlot,
+            legsSlot: gear.legsSlot,
+            handsSlot: gear.handsSlot,
+            detectedTeaBonus: teaLevelBonus,
+            communityBuffLevel: communityBuffLevel, // For display (speed)
+            communitySpeedBonus: communitySpeedBonus, // For display
+            communityWisdomLevel: communityWisdomLevel, // For display
+            communityWisdomBonus: communityWisdomBonus, // For display
+            achievementWisdomBonus: achievementWisdomBonus, // For display
+            teaSpeedBonus: teaSpeedBonus, // For display
+            teaWisdomBonus: teaWisdomBonus, // For display
+            drinkConcentration: drinkConcentration, // For display
+            houseRareFindBonus: houseRareFindBonus, // For display
+            achievementRareFindBonus: achievementRareFindBonus, // For display
+            houseWisdomBonus: houseWisdomBonus, // For display
+            equipmentRareFind: gear.rareFindBonus, // For display
+            equipmentExperience: gear.experienceBonus, // For display
+            equipmentSuccessBonus: equipmentSuccessBonus, // For display
+            houseSuccessBonus: houseSuccessBonus, // For display
+            achievementSuccessBonus: achievementSuccessBonus, // For display
+            equipmentSpeedBonus: gear.speedBonus, // For display
+            houseSpeedBonus: houseSpeedBonus, // For display
+            slotBreakdown: gear.slotBreakdown || [], // Per-item breakdown for display
+        };
+    }
+
+    /**
+     * Detect current character's enhancing gear and return values mapped to setting keys.
+     * Used by settings UI to populate gear inputs when auto-detect is toggled on.
+     * @returns {Object} Map of settingId → detected value
+     */
+    function getDetectedGearSettings() {
+        const equipment = dataManager.getEquipment();
+        const skills = dataManager.getSkills();
+        const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
+
+        const result = {};
+
+        // Enhancing level
+        const enhancingSkill = skills?.find((s) => s.skillHrid === '/skills/enhancing');
+        result.enhanceSim_enhancingLevel = enhancingSkill?.level || 1;
+
+        // Observatory
+        result.enhanceSim_houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
+
+        // Community buff
+        const communityLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+        result.enhanceSim_communityBuff = { enabled: true, level: communityLevel };
+
+        // Achievement
+        const achievementBonus = dataManager.getAchievementBuffRatioBoost(
+            '/action_types/enhancing',
+            '/buff_types/enhancing_success'
+        );
+        result.enhanceSim_achievement = achievementBonus > 0;
+
+        // Tea detection
+        const teaMap = {
+            '/items/ultra_enhancing_tea': 'ultra',
+            '/items/super_enhancing_tea': 'super',
+            '/items/enhancing_tea': 'basic',
+        };
+        let detectedTea = 'none';
+        let hasBlessed = false;
+        if (drinkSlots) {
+            for (const drink of drinkSlots) {
+                if (!drink?.itemHrid) continue;
+                if (teaMap[drink.itemHrid]) detectedTea = teaMap[drink.itemHrid];
+                if (drink.itemHrid === '/items/blessed_tea') hasBlessed = true;
+            }
+        }
+        result.enhanceSim_tea = detectedTea;
+        result.enhanceSim_blessedTea = hasBlessed;
+
+        // Gear detection — match equipped items to known gear HRIDs
+        const ENHANCER_HRIDS = {
+            '/items/cheese_enhancer': 'cheese',
+            '/items/verdant_enhancer': 'verdant',
+            '/items/azure_enhancer': 'azure',
+            '/items/burble_enhancer': 'burble',
+            '/items/crimson_enhancer': 'crimson',
+            '/items/rainbow_enhancer': 'rainbow',
+            '/items/holy_enhancer': 'holy',
+            '/items/celestial_enhancer': 'celestial',
+        };
+        const CAPE_HRIDS = {
+            '/items/chance_cape': 'normal',
+            '/items/chance_cape_refined': 'refined',
+        };
+        const CHARM_HRIDS = {
+            '/items/trainee_enhancing_charm': 'trainee',
+            '/items/basic_enhancing_charm': 'basic',
+            '/items/advanced_enhancing_charm': 'advanced',
+            '/items/expert_enhancing_charm': 'expert',
+            '/items/master_enhancing_charm': 'master',
+            '/items/grandmaster_enhancing_charm': 'grandmaster',
+        };
+        const FIXED_HRIDS = {
+            '/items/enchanted_gloves': 'gloves',
+            '/items/enhancers_top': 'top',
+            '/items/enhancers_bottoms': 'bottoms',
+            '/items/guzzling_pouch': 'guzzling',
+        };
+        const NECK_HRIDS = {
+            '/items/philosophers_necklace': 'philo',
+            '/items/necklace_of_speed': 'speed',
+        };
+        const RING_HRIDS = {
+            '/items/philosophers_ring': 'philo',
+            '/items/ring_of_rare_find': 'rarefind',
+        };
+        const EARRING_HRIDS = {
+            '/items/philosophers_earrings': 'philo',
+            '/items/earrings_of_rare_find': 'rarefind',
+        };
+
+        // Default all gear to disabled (not detected)
+        result.enhanceSim_gear_enhancer = { enabled: false, tier: 'celestial', level: 0 };
+        result.enhanceSim_gear_gloves = { enabled: false, level: 0 };
+        result.enhanceSim_gear_top = { enabled: false, level: 0 };
+        result.enhanceSim_gear_bottoms = { enabled: false, level: 0 };
+        result.enhanceSim_gear_neck = { enabled: false, tier: 'philo', level: 0 };
+        result.enhanceSim_gear_ring = { enabled: false, tier: 'philo', level: 0 };
+        result.enhanceSim_gear_earring = { enabled: false, tier: 'philo', level: 0 };
+        result.enhanceSim_gear_cape = { enabled: false, tier: 'normal', level: 0 };
+        result.enhanceSim_gear_guzzling = { enabled: false, level: 0 };
+        result.enhanceSim_gear_charm = { enabled: false, tier: 'grandmaster', level: 0 };
+
+        if (equipment) {
+            for (const item of equipment.values()) {
+                if (!item?.itemHrid) continue;
+                const hrid = item.itemHrid;
+                const enhLevel = item.enhancementLevel || 0;
+
+                if (ENHANCER_HRIDS[hrid]) {
+                    result.enhanceSim_gear_enhancer = { enabled: true, tier: ENHANCER_HRIDS[hrid], level: enhLevel };
+                } else if (CAPE_HRIDS[hrid]) {
+                    result.enhanceSim_gear_cape = { enabled: true, tier: CAPE_HRIDS[hrid], level: enhLevel };
+                } else if (CHARM_HRIDS[hrid]) {
+                    result.enhanceSim_gear_charm = { enabled: true, tier: CHARM_HRIDS[hrid], level: enhLevel };
+                } else if (NECK_HRIDS[hrid]) {
+                    result.enhanceSim_gear_neck = { enabled: true, tier: NECK_HRIDS[hrid], level: enhLevel };
+                } else if (RING_HRIDS[hrid]) {
+                    result.enhanceSim_gear_ring = { enabled: true, tier: RING_HRIDS[hrid], level: enhLevel };
+                } else if (EARRING_HRIDS[hrid]) {
+                    result.enhanceSim_gear_earring = { enabled: true, tier: EARRING_HRIDS[hrid], level: enhLevel };
+                } else if (FIXED_HRIDS[hrid]) {
+                    const slot = FIXED_HRIDS[hrid];
+                    result[`enhanceSim_gear_${slot}`] = { enabled: true, level: enhLevel };
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Get manual enhancing parameters from gear-based config settings
+     * @returns {Object} Manual parameters
+     */
+    function getManualParams() {
+        const getValue = (key, defaultValue) => {
+            return config.getSettingValue(key, defaultValue);
+        };
+
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+
+        // --- ENHANCING ---
+        const houseLevel = getValue('enhanceSim_houseLevel', 8);
+        const baseEnhancingLevel = getValue('enhanceSim_enhancingLevel', 140);
+
+        // --- TEA ---
+        const teaSelection = getValue('enhanceSim_tea', 'ultra');
+        const teas = {
+            enhancing: teaSelection === 'basic',
+            superEnhancing: teaSelection === 'super',
+            ultraEnhancing: teaSelection === 'ultra',
+            blessed: getValue('enhanceSim_blessedTea', true),
+        };
+        const teaLevelBonus =
+            teaSelection === 'ultra' ? 8 : teaSelection === 'super' ? 6 : teaSelection === 'basic' ? 3 : 0;
+        const teaSpeedBonus =
+            teaSelection === 'ultra' ? 6 : teaSelection === 'super' ? 4 : teaSelection === 'basic' ? 2 : 0;
+
+        // --- GEAR ---
+        const ENHANCER_TIERS = {
+            cheese: '/items/cheese_enhancer',
+            verdant: '/items/verdant_enhancer',
+            azure: '/items/azure_enhancer',
+            burble: '/items/burble_enhancer',
+            crimson: '/items/crimson_enhancer',
+            rainbow: '/items/rainbow_enhancer',
+            holy: '/items/holy_enhancer',
+            celestial: '/items/celestial_enhancer',
+        };
+        const CAPE_TIERS = {
+            normal: '/items/chance_cape',
+            refined: '/items/chance_cape_refined',
+        };
+        const CHARM_TIERS = {
+            trainee: '/items/trainee_enhancing_charm',
+            basic: '/items/basic_enhancing_charm',
+            advanced: '/items/advanced_enhancing_charm',
+            expert: '/items/expert_enhancing_charm',
+            master: '/items/master_enhancing_charm',
+            grandmaster: '/items/grandmaster_enhancing_charm',
+        };
+        const FIXED_GEAR = {
+            gloves: '/items/enchanted_gloves',
+            top: '/items/enhancers_top',
+            bottoms: '/items/enhancers_bottoms',
+            guzzling: '/items/guzzling_pouch',
+        };
+        const NECK_TIERS = {
+            philo: '/items/philosophers_necklace',
+            speed: '/items/necklace_of_speed',
+        };
+        const RING_TIERS = {
+            philo: '/items/philosophers_ring',
+            rarefind: '/items/ring_of_rare_find',
+        };
+        const EARRING_TIERS = {
+            philo: '/items/philosophers_earrings',
+            rarefind: '/items/earrings_of_rare_find',
+        };
+
+        // Helper to read compound gear setting
+        const getGear = (key, defaults) => {
+            const val = getValue(key, defaults);
+            // Handle both object (new format) and missing/null
+            if (val && typeof val === 'object') return val;
+            return defaults;
+        };
+
+        // Calculate bonuses from each gear slot
+        let equipmentSuccessBonus = 0;
+        let equipmentSpeedBonus = 0;
+        let equipmentRareFind = 0;
+        let equipmentExperience = 0;
+        let drinkConcentration = 0;
+        const slotBreakdown = [];
+
+        // Enhancer
+        const enhancer = getGear('enhanceSim_gear_enhancer', { enabled: true, tier: 'celestial', level: 13 });
+        if (enhancer.enabled) {
+            const hrid = ENHANCER_TIERS[enhancer.tier] || ENHANCER_TIERS.celestial;
+            const bonus = getGearSlotBonus(hrid, enhancer.level, itemDetailMap);
+            equipmentSuccessBonus += bonus.success;
+            equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
+            equipmentExperience += bonus.experience;
+            const details = itemDetailMap[hrid];
+            slotBreakdown.push({
+                name: details?.name || 'Enhancer',
+                enhancementLevel: enhancer.level,
+                success: bonus.success,
+                speed: bonus.speed,
+                rareFind: bonus.rareFind,
+                experience: bonus.experience,
+            });
+        }
+
+        // Gloves
+        const gloves = getGear('enhanceSim_gear_gloves', { enabled: true, level: 10 });
+        if (gloves.enabled) {
+            const bonus = getGearSlotBonus(FIXED_GEAR.gloves, gloves.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentExperience += bonus.experience;
+            const details = itemDetailMap[FIXED_GEAR.gloves];
+            slotBreakdown.push({
+                name: details?.name || 'Gloves',
+                enhancementLevel: gloves.level,
+                success: 0,
+                speed: bonus.speed,
+                rareFind: 0,
+                experience: bonus.experience,
+            });
+        }
+
+        // Top
+        const top = getGear('enhanceSim_gear_top', { enabled: true, level: 10 });
+        if (top.enabled) {
+            const bonus = getGearSlotBonus(FIXED_GEAR.top, top.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
+            equipmentExperience += bonus.experience;
+            const details = itemDetailMap[FIXED_GEAR.top];
+            slotBreakdown.push({
+                name: details?.name || 'Top',
+                enhancementLevel: top.level,
+                success: 0,
+                speed: bonus.speed,
+                rareFind: bonus.rareFind,
+                experience: bonus.experience,
+            });
+        }
+
+        // Bottoms
+        const bottoms = getGear('enhanceSim_gear_bottoms', { enabled: true, level: 10 });
+        if (bottoms.enabled) {
+            const bonus = getGearSlotBonus(FIXED_GEAR.bottoms, bottoms.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentExperience += bonus.experience;
+            const details = itemDetailMap[FIXED_GEAR.bottoms];
+            slotBreakdown.push({
+                name: details?.name || 'Bottoms',
+                enhancementLevel: bottoms.level,
+                success: 0,
+                speed: bonus.speed,
+                rareFind: 0,
+                experience: bonus.experience,
+            });
+        }
+
+        // Neck
+        const neck = getGear('enhanceSim_gear_neck', { enabled: true, tier: 'philo', level: 10 });
+        if (neck.enabled) {
+            const hrid = NECK_TIERS[neck.tier] || NECK_TIERS.philo;
+            const bonus = getGearSlotBonus(hrid, neck.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
+            equipmentExperience += bonus.experience;
+            const details = itemDetailMap[hrid];
+            slotBreakdown.push({
+                name: details?.name || 'Necklace',
+                enhancementLevel: neck.level,
+                success: 0,
+                speed: bonus.speed,
+                rareFind: bonus.rareFind,
+                experience: bonus.experience,
+            });
+        }
+
+        // Ring
+        const ring = getGear('enhanceSim_gear_ring', { enabled: true, tier: 'philo', level: 10 });
+        if (ring.enabled) {
+            const hrid = RING_TIERS[ring.tier] || RING_TIERS.philo;
+            const bonus = getGearSlotBonus(hrid, ring.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
+            equipmentExperience += bonus.experience;
+            const details = itemDetailMap[hrid];
+            slotBreakdown.push({
+                name: details?.name || 'Ring',
+                enhancementLevel: ring.level,
+                success: 0,
+                speed: bonus.speed,
+                rareFind: bonus.rareFind,
+                experience: bonus.experience,
+            });
+        }
+
+        // Earring
+        const earring = getGear('enhanceSim_gear_earring', { enabled: true, tier: 'philo', level: 10 });
+        if (earring.enabled) {
+            const hrid = EARRING_TIERS[earring.tier] || EARRING_TIERS.philo;
+            const bonus = getGearSlotBonus(hrid, earring.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
+            equipmentExperience += bonus.experience;
+            const details = itemDetailMap[hrid];
+            slotBreakdown.push({
+                name: details?.name || 'Earrings',
+                enhancementLevel: earring.level,
+                success: 0,
+                speed: bonus.speed,
+                rareFind: bonus.rareFind,
+                experience: bonus.experience,
+            });
+        }
+
+        // Cape
+        const cape = getGear('enhanceSim_gear_cape', { enabled: true, tier: 'normal', level: 5 });
+        if (cape.enabled) {
+            const hrid = CAPE_TIERS[cape.tier] || CAPE_TIERS.normal;
+            const bonus = getGearSlotBonus(hrid, cape.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentExperience += bonus.experience;
+            const details = itemDetailMap[hrid];
+            slotBreakdown.push({
+                name: details?.name || 'Cape',
+                enhancementLevel: cape.level,
+                success: 0,
+                speed: bonus.speed,
+                rareFind: 0,
+                experience: bonus.experience,
+            });
+        }
+
+        // Guzzling Pouch (provides drink concentration)
+        const guzzling = getGear('enhanceSim_gear_guzzling', { enabled: true, level: 10 });
+        if (guzzling.enabled) {
+            const bonus = getGearSlotBonus(FIXED_GEAR.guzzling, guzzling.level, itemDetailMap);
+            drinkConcentration = bonus.drinkConc;
+        }
+
+        // Charm (provides experience/wisdom bonus)
+        const charm = getGear('enhanceSim_gear_charm', { enabled: true, tier: 'grandmaster', level: 0 });
+        if (charm.enabled) {
+            const hrid = CHARM_TIERS[charm.tier] || CHARM_TIERS.grandmaster;
+            const bonus = getGearSlotBonus(hrid, charm.level, itemDetailMap);
+            equipmentExperience += bonus.experience;
+            const details = itemDetailMap[hrid];
+            slotBreakdown.push({
+                name: details?.name || 'Charm',
+                enhancementLevel: charm.level,
+                success: 0,
+                speed: 0,
+                rareFind: 0,
+                experience: bonus.experience,
+            });
+        }
+
+        // --- COMMUNITY BUFF ---
+        const communityBuff = getGear('enhanceSim_communityBuff', { enabled: true, level: 1 });
+        let communityBuffLevel;
+        if (communityBuff.enabled) {
+            // Checked = auto-detect from game
+            communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+        } else {
+            communityBuffLevel = communityBuff.level;
+        }
+        const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
+
+        // --- ACHIEVEMENT ---
+        const achievementEnabled = getValue('enhanceSim_achievement', false);
+        const achievementSuccessBonus = achievementEnabled ? 0.2 : 0;
+
+        // --- HOUSE BONUSES ---
+        const houseSpeedBonus = houseLevel * 1.0;
+        const houseSuccessBonus = houseLevel * 0.05;
+
+        // House wisdom: 0.05% per level per room (same as auto-detect)
+        const houseRooms = dataManager.getHouseRooms();
+        let houseWisdomBonus = 0;
+        for (const [_hrid, room] of houseRooms) {
+            const level = room.level || 0;
+            if (level >= 1) {
+                houseWisdomBonus += 0.05 * level;
+            }
+        }
+
+        // --- SCALE TEA BONUSES WITH DRINK CONCENTRATION ---
+        const scaledTeaLevelBonus = teaLevelBonus > 0 ? teaLevelBonus * (1 + drinkConcentration / 100) : 0;
+        const scaledTeaSpeedBonus = teaSpeedBonus > 0 ? teaSpeedBonus * (1 + drinkConcentration / 100) : 0;
+
+        // Tea wisdom bonus (Wisdom Tea/Coffee provide 12% wisdom, scales with drink concentration)
+        let baseTeaWisdom = 0;
+        const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
+        if (drinkSlots && drinkSlots.length > 0) {
+            for (const drink of drinkSlots) {
+                if (!drink || !drink.itemHrid) continue;
+                const drinkDetails = itemDetailMap[drink.itemHrid];
+                if (!drinkDetails?.consumableDetail?.buffs) continue;
+                const wisdomBuff = drinkDetails.consumableDetail.buffs.find(
+                    (buff) => buff.typeHrid === '/buff_types/wisdom'
+                );
+                if (wisdomBuff && wisdomBuff.flatBoost) {
+                    baseTeaWisdom += wisdomBuff.flatBoost * 100;
+                }
+            }
+        }
+        const teaWisdomBonus = baseTeaWisdom > 0 ? baseTeaWisdom * (1 + drinkConcentration / 100) : 0;
+
+        // Community wisdom buff
+        const communityWisdomLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
+        const communityWisdomBonus = communityWisdomLevel > 0 ? 20 + (communityWisdomLevel - 1) * 0.5 : 0;
+
+        // Achievement wisdom buff
+        const achievementWisdomBonus =
+            dataManager.getAchievementBuffFlatBoost('/action_types/enhancing', '/buff_types/wisdom') * 100;
+
+        // --- TOTALS ---
+        const totalToolBonus = equipmentSuccessBonus + houseSuccessBonus + achievementSuccessBonus;
+        const totalSpeedBonus = equipmentSpeedBonus + houseSpeedBonus + communitySpeedBonus + scaledTeaSpeedBonus;
+        const totalExperienceBonus =
+            equipmentExperience + houseWisdomBonus + teaWisdomBonus + communityWisdomBonus + achievementWisdomBonus;
+        const guzzlingBonus = 1 + drinkConcentration / 100;
+
+        return {
+            enhancingLevel: baseEnhancingLevel + scaledTeaLevelBonus,
+            houseLevel: houseLevel,
+            toolBonus: totalToolBonus,
+            speedBonus: totalSpeedBonus,
+            rareFindBonus: equipmentRareFind,
+            experienceBonus: totalExperienceBonus,
+            guzzlingBonus: guzzlingBonus,
+            teas: teas,
+
+            // Display info for manual mode
+            toolSlot: null,
+            bodySlot: null,
+            legsSlot: null,
+            handsSlot: null,
+            detectedTeaBonus: scaledTeaLevelBonus,
+            communityBuffLevel: communityBuffLevel,
+            communitySpeedBonus: communitySpeedBonus,
+            teaSpeedBonus: scaledTeaSpeedBonus,
+            equipmentSpeedBonus: equipmentSpeedBonus,
+            houseSpeedBonus: houseSpeedBonus,
+            equipmentSuccessBonus: equipmentSuccessBonus,
+            houseSuccessBonus: houseSuccessBonus,
+            achievementSuccessBonus: achievementSuccessBonus,
+            slotBreakdown: slotBreakdown,
+        };
+    }
+
+    /**
+     * Calculate enhancing bonuses from a single gear slot
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level (0-20)
+     * @param {Object} itemDetailMap - Item details map
+     * @returns {Object} { success, speed, rareFind, experience, drinkConc }
+     */
+    function getGearSlotBonus(itemHrid, enhancementLevel, itemDetailMap) {
+        const itemDetails = itemDetailMap[itemHrid];
+        if (!itemDetails) return { success: 0, speed: 0, rareFind: 0, experience: 0, drinkConc: 0 };
+
+        const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+        const stats = itemDetails.equipmentDetail?.noncombatStats || {};
+
+        return {
+            success: (stats.enhancingSuccess || 0) * 100 * multiplier,
+            speed: ((stats.enhancingSpeed || 0) + (stats.skillingSpeed || 0)) * 100 * multiplier,
+            rareFind: ((stats.enhancingRareFind || 0) + (stats.skillingRareFind || 0)) * 100 * multiplier,
+            experience: ((stats.enhancingExperience || 0) + (stats.skillingExperience || 0)) * 100 * multiplier,
+            drinkConc: (stats.drinkConcentration || 0) * 100 * multiplier,
+        };
+    }
+
+    var enhancementConfig = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        getAutoDetectedParams: getAutoDetectedParams,
+        getDetectedGearSettings: getDetectedGearSettings,
+        getEnhancingParams: getEnhancingParams
+    });
+
+    /**
+     * Material Calculator Utility
+     * Shared calculation logic for material requirements with artisan bonus
+     */
+
+
+    const ARTISAN_MATERIAL_MODE = {
+        EXPECTED: 'expected',
+        WORST_CASE: 'worst-case',
+        HYBRID: 'hybrid',
+    };
+
+    const HYBRID_WORST_CASE_MAX_ACTIONS = 100;
+
+    function normalizeArtisanMode(mode) {
+        if (mode === ARTISAN_MATERIAL_MODE.WORST_CASE || mode === ARTISAN_MATERIAL_MODE.HYBRID) {
+            return mode;
+        }
+        return ARTISAN_MATERIAL_MODE.EXPECTED;
+    }
+
+    /**
+     * Get artisan material mode setting.
+     * @returns {string}
+     */
+    function getArtisanMaterialMode() {
+        const setting = config.getSettingValue('actions_artisanMaterialMode', ARTISAN_MATERIAL_MODE.EXPECTED);
+        return normalizeArtisanMode(setting);
+    }
+    /**
+     * Calculate total materials required, optionally using conservative per-action rounding.
+     * @param {number} basePerAction
+     * @param {number} artisanBonus
+     * @param {number} numActions
+     * @param {string} artisanMode
+     * @returns {number}
+     */
+    function calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode) {
+        const materialsPerAction = basePerAction * (1 - artisanBonus);
+        const useWorstCase =
+            artisanMode === ARTISAN_MATERIAL_MODE.WORST_CASE ||
+            (artisanMode === ARTISAN_MATERIAL_MODE.HYBRID && numActions < HYBRID_WORST_CASE_MAX_ACTIONS);
+        if (useWorstCase) {
+            return Math.ceil(materialsPerAction) * numActions;
+        }
+        return Math.ceil(materialsPerAction * numActions);
+    }
+
+    /**
+     * Calculate materials reserved by queued actions
+     * @param {string} actionHrid - Action HRID to check queue for (optional - if null, calculates for ALL queued actions)
+     * @returns {Map<string, number>} Map of itemHrid -> queued quantity
+     */
+    function calculateQueuedMaterialsForAction(actionHrid = null) {
+        const queuedMaterials = new Map();
+        const gameData = dataManager.getInitClientData();
+
+        if (!gameData) {
+            return queuedMaterials;
+        }
+
+        // Get all queued actions
+        const queuedActions = dataManager.getCurrentActions();
+
+        if (!queuedActions || queuedActions.length === 0) {
+            return queuedMaterials;
+        }
+
+        const artisanMode = getArtisanMaterialMode();
+
+        // Process each queued action
+        for (const queuedAction of queuedActions) {
+            // If actionHrid is specified, only process matching actions
+            if (actionHrid && queuedAction.actionHrid !== actionHrid) {
+                continue;
+            }
+
+            const actionDetails = dataManager.getActionDetails(queuedAction.actionHrid);
+            if (!actionDetails) {
+                continue;
+            }
+
+            // Calculate remaining actions for this queued action
+            // Finite actions: maxCount is target, currentCount is progress
+            // Infinite actions: Skip for now (would require material limit calculation which is complex)
+            let actionCount = 0;
+            if (queuedAction.hasMaxCount) {
+                actionCount = queuedAction.maxCount - queuedAction.currentCount;
+            } else {
+                // Infinite action - skip for now (materials for infinite actions are complex)
+                // User can use the "Ignore queue" setting if they queue many infinite actions
+                continue;
+            }
+
+            if (actionCount <= 0) {
+                continue;
+            }
+
+            // Calculate artisan bonus for this action type
+            const artisanBonus = calculateArtisanBonus(actionDetails);
+
+            // Process regular input items
+            if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
+                for (const input of actionDetails.inputItems) {
+                    const basePerAction = input.count || input.amount || 1;
+
+                    // Calculate total materials needed for this queued action
+                    const totalForAction = calculateTotalRequired(basePerAction, artisanBonus, actionCount, artisanMode);
+
+                    // Add to queued total
+                    const currentQueued = queuedMaterials.get(input.itemHrid) || 0;
+                    queuedMaterials.set(input.itemHrid, currentQueued + totalForAction);
+                }
+            }
+
+            // Process upgrade item (if exists)
+            if (actionDetails.upgradeItemHrid) {
+                // Upgrade items always need exactly 1 per action, no artisan reduction
+                const totalForAction = actionCount;
+
+                const currentQueued = queuedMaterials.get(actionDetails.upgradeItemHrid) || 0;
+                queuedMaterials.set(actionDetails.upgradeItemHrid, currentQueued + totalForAction);
+            }
+        }
+
+        return queuedMaterials;
+    }
+
+    /**
+     * Calculate material requirements for an action
+     * @param {string} actionHrid - Action HRID (e.g., "/actions/crafting/celestial_enhancer")
+     * @param {number} numActions - Number of actions to perform
+     * @param {boolean} accountForQueue - Whether to subtract queued materials from available inventory (default: false)
+     * @returns {Array<Object>} Array of material requirement objects (includes upgrade items)
+     */
+    function calculateMaterialRequirements(actionHrid, numActions, accountForQueue = false) {
+        const actionDetails = dataManager.getActionDetails(actionHrid);
+        const inventory = dataManager.getInventory();
+        const gameData = dataManager.getInitClientData();
+
+        if (!actionDetails) {
+            return [];
+        }
+
+        const artisanMode = getArtisanMaterialMode();
+
+        // Calculate artisan bonus (material reduction from Artisan Tea)
+        const artisanBonus = calculateArtisanBonus(actionDetails);
+
+        // Get queued materials if accounting for queue
+        // Pass null to get materials for ALL queued actions (not just matching actionHrid)
+        const queuedMaterialsMap = accountForQueue ? calculateQueuedMaterialsForAction(null) : new Map();
+
+        const materials = [];
+
+        // Process regular input items first
+        if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
+            for (const input of actionDetails.inputItems) {
+                const basePerAction = input.count || input.amount || 1;
+
+                // Calculate total materials needed for requested actions
+                const totalRequired = calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode);
+
+                // Only count unenhanced items — enhanced copies are distinct items the player
+                // would not want consumed as crafting materials
+                const have = inventory
+                    .filter((i) => i.itemHrid === input.itemHrid && !i.enhancementLevel)
+                    .reduce((sum, i) => sum + (i.count || 0), 0);
+
+                // Calculate queued and available amounts
+                const queued = queuedMaterialsMap.get(input.itemHrid) || 0;
+                const available = Math.max(0, have - queued);
+                const missingAmount = Math.max(0, totalRequired - available);
+
+                const itemDetails = gameData.itemDetailMap[input.itemHrid];
+                if (!itemDetails) {
+                    continue;
+                }
+
+                materials.push({
+                    itemHrid: input.itemHrid,
+                    itemName: itemDetails.name,
+                    required: totalRequired,
+                    have: have,
+                    queued: queued,
+                    available: available,
+                    missing: missingAmount,
+                    isTradeable: itemDetails.isTradable === true, // British spelling
+                    isUpgradeItem: false,
+                });
+            }
+        }
+
+        // Process upgrade item at the end (if exists)
+        if (actionDetails.upgradeItemHrid) {
+            // Upgrade items always need exactly 1 per action, no artisan reduction
+            const totalRequired = numActions;
+
+            const have = inventory
+                .filter((i) => i.itemHrid === actionDetails.upgradeItemHrid && !i.enhancementLevel)
+                .reduce((sum, i) => sum + (i.count || 0), 0);
+
+            // Calculate queued and available amounts
+            const queued = queuedMaterialsMap.get(actionDetails.upgradeItemHrid) || 0;
+            const available = Math.max(0, have - queued);
+            const missingAmount = Math.max(0, totalRequired - available);
+
+            const itemDetails = gameData.itemDetailMap[actionDetails.upgradeItemHrid];
+            if (itemDetails) {
+                materials.push({
+                    itemHrid: actionDetails.upgradeItemHrid,
+                    itemName: itemDetails.name,
+                    required: totalRequired,
+                    have: have,
+                    queued: queued,
+                    available: available,
+                    missing: missingAmount,
+                    isTradeable: itemDetails.isTradable === true, // British spelling
+                    isUpgradeItem: true, // Flag to identify upgrade items
+                });
+            }
+        }
+
+        return materials;
+    }
+
+    /**
+     * Calculate artisan bonus (material reduction) for an action
+     * @param {Object} actionDetails - Action details from game data
+     * @returns {number} Artisan bonus (0-1 decimal, e.g., 0.1129 for 11.29% reduction)
+     */
+    function calculateArtisanBonus(actionDetails) {
+        try {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) {
+                return 0;
+            }
+
+            const { equipment, drinks: activeDrinks } = resolveActionContext(actionDetails.type);
+            const itemDetailMap = gameData.itemDetailMap || {};
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+
+            return parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        } catch (error) {
+            console.error('[Material Calculator] Error calculating artisan bonus:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Returns true if artisan tea is selected in a drink slot but has 0 quantity in inventory.
+     * Used to warn the user that material counts reflect no artisan reduction.
+     * @param {string} actionHrid
+     * @returns {boolean}
+     */
+    function isArtisanTeaOutOfStock(actionHrid) {
+        try {
+            const actionDetails = dataManager.getActionDetails(actionHrid);
+            if (!actionDetails) return false;
+
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) return false;
+
+            const itemDetailMap = gameData.itemDetailMap || {};
+
+            // Raw slotted drinks (ignoring stock)
+            const rawDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+            if (!rawDrinks?.length) return false;
+
+            const context = resolveActionContext(actionDetails.type);
+
+            // A saved loadout can only be selected for calculation when every one of its
+            // consumable slots is confirmed available (Core fails the whole selection closed
+            // to current gear otherwise). So a saved loadout's own configured drinks can never
+            // be "out of stock" here — comparing the character's live drink slots against a
+            // different, independently-configured loadout's drinks is not a stock check.
+            if (context.source === 'saved-loadout') return false;
+
+            // In-stock drinks come from resolveActionContext (already filtered)
+            const { equipment, drinks: inStockDrinks } = context;
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+
+            return (
+                parseArtisanBonus(rawDrinks, itemDetailMap, drinkConcentration) > 0 &&
+                parseArtisanBonus(inStockDrinks, itemDetailMap, drinkConcentration) === 0
+            );
+        } catch (error) {
+            console.error('[Material Calculator] Error checking artisan tea stock:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Calculate material requirements for enhancement actions
+     * Uses Markov chain statistics to determine expected materials needed
+     * @param {string} itemHrid - Item HRID being enhanced
+     * @param {number} startLevel - Current enhancement level (0-19)
+     * @param {number} targetLevel - Target enhancement level (1-20)
+     * @param {string|null} protectionItemHrid - Protection item HRID or null
+     * @param {number} protectFromLevel - Level at which protection begins (0 = never)
+     * @returns {Array<Object>} Array of material requirement objects (same format as calculateMaterialRequirements)
+     */
+    function calculateEnhancementMaterialRequirements(
+        itemHrid,
+        startLevel,
+        targetLevel,
+        protectionItemHrid,
+        protectFromLevel,
+        repeatCount
+    ) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) {
+            return [];
+        }
+
+        const itemDetails = gameData.itemDetailMap[itemHrid];
+        if (!itemDetails) {
+            return [];
+        }
+
+        const enhancementCosts = itemDetails.enhancementCosts || [];
+        if (enhancementCosts.length === 0) {
+            return [];
+        }
+
+        // Get enhancing parameters (level, tool bonus, teas, etc.)
+        const params = getEnhancingParams();
+        const effectiveProtect = protectFromLevel >= 2 && protectFromLevel <= targetLevel ? protectFromLevel : 0;
+
+        // Single Markov chain call for the full level range
+        const calc = calculateEnhancement({
+            enhancingLevel: params.enhancingLevel,
+            houseLevel: params.houseLevel,
+            toolBonus: params.toolBonus,
+            speedBonus: params.speedBonus,
+            itemLevel: itemDetails.itemLevel || 1,
+            targetLevel: targetLevel,
+            startLevel: startLevel,
+            protectFrom: effectiveProtect,
+            blessedTea: params.teas.blessed,
+            guzzlingBonus: params.guzzlingBonus,
+        });
+
+        const inventory = dataManager.getInventory();
+        const materials = [];
+
+        // Process enhancement cost materials
+        for (const cost of enhancementCosts) {
+            // Skip coins — not tradeable, auto-deducted by the game
+            if (cost.itemHrid === '/items/coin') {
+                continue;
+            }
+
+            const matDetails = gameData.itemDetailMap[cost.itemHrid];
+            if (!matDetails) {
+                continue;
+            }
+
+            const totalQuantity = Math.ceil(cost.count * (repeatCount ?? calc.attempts));
+            const have = inventory
+                .filter((i) => i.itemHrid === cost.itemHrid && !i.enhancementLevel)
+                .reduce((sum, i) => sum + (i.count || 0), 0);
+            const missing = Math.max(0, totalQuantity - have);
+
+            materials.push({
+                itemHrid: cost.itemHrid,
+                itemName: matDetails.name,
+                required: totalQuantity,
+                have: have,
+                queued: 0,
+                available: have,
+                missing: missing,
+                isTradeable: matDetails.isTradable === true,
+                isUpgradeItem: false,
+            });
+        }
+
+        // Add protection item if applicable
+        // Skip Philosopher's Mirror — special mechanic, not consumed as standard protection
+        if (calc.protectionCount > 0 && protectionItemHrid && protectionItemHrid !== '/items/philosophers_mirror') {
+            const totalProtection = Math.ceil(calc.protectionCount);
+            const protDetails = gameData.itemDetailMap[protectionItemHrid];
+
+            if (protDetails) {
+                const have = inventory
+                    .filter((i) => i.itemHrid === protectionItemHrid && !i.enhancementLevel)
+                    .reduce((sum, i) => sum + (i.count || 0), 0);
+                const missing = Math.max(0, totalProtection - have);
+
+                materials.push({
+                    itemHrid: protectionItemHrid,
+                    itemName: protDetails.name,
+                    required: totalProtection,
+                    have: have,
+                    queued: 0,
+                    available: have,
+                    missing: missing,
+                    isTradeable: protDetails.isTradable === true,
+                    isUpgradeItem: false,
+                });
+            }
+        }
+
+        return materials;
+    }
+
+    var materialCalculator = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        ARTISAN_MATERIAL_MODE: ARTISAN_MATERIAL_MODE,
+        calculateArtisanBonus: calculateArtisanBonus,
+        calculateEnhancementMaterialRequirements: calculateEnhancementMaterialRequirements,
+        calculateMaterialRequirements: calculateMaterialRequirements,
+        calculateQueuedMaterialsForAction: calculateQueuedMaterialsForAction,
+        calculateTotalRequired: calculateTotalRequired,
+        getArtisanMaterialMode: getArtisanMaterialMode,
+        isArtisanTeaOutOfStock: isArtisanTeaOutOfStock
+    });
+
+    /**
      * Shared warning-icon helper
      * Produces the inline ⚠ markup used throughout Toolasha to flag estimated/overridden values,
      * matching the existing pattern (orange COLOR_WARNING span with a title tooltip).
@@ -3170,10 +4790,12 @@
 
     const _costCache = new Map();
     const _chainTimeCache = new Map();
+    const _craftPlanCache = new Map();
 
     marketAPI.on(() => {
         _costCache.clear();
         _chainTimeCache.clear();
+        _craftPlanCache.clear();
     });
 
     /**
@@ -6110,225 +7732,6 @@ self.onmessage = function (e) {
     });
 
     /**
-     * Action Calculator
-     * Shared calculation logic for action time and efficiency
-     * Used by action-time-display.js and quick-input-buttons.js
-     */
-
-
-    /**
-     * Calculate complete action statistics (time + efficiency)
-     * @param {Object} actionDetails - Action detail object from game data
-     * @param {Object} options - Configuration options
-     * @param {Array} options.skills - Character skills array
-     * @param {Array|Map} options.equipment - Character equipment for legacy callers
-     * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Atomic equipment+drinks
-     *   context. When provided, both fields are used together and no second live/saved context is
-     *   resolved for drinks - prevents mixing e.g. current equipment with saved-loadout drinks.
-     * @param {Object} options.itemDetailMap - Item detail map from game data
-     * @param {string} options.actionHrid - Action HRID for task detection (optional)
-     * @param {boolean} options.includeCommunityBuff - Include community buff in efficiency (default: false)
-     * @param {boolean} options.includeBreakdown - Include detailed breakdown data (default: false)
-     * @param {number} options.levelRequirementOverride - Override base level requirement (e.g., item level for alchemy)
-     * @returns {Object} { actionTime, totalEfficiency, breakdown? }
-     */
-    function calculateActionStats(actionDetails, options = {}) {
-        const {
-            skills,
-            equipment: equipmentOption,
-            actionContext = null,
-            itemDetailMap,
-            actionHrid,
-            includeCommunityBuff = false,
-            includeBreakdown = false,
-            levelRequirementOverride,
-        } = options;
-
-        try {
-            const equipment = actionContext?.equipment ?? equipmentOption;
-            // Calculate base action time
-            const baseTime = actionDetails.baseTimeCost / 1e9; // nanoseconds to seconds
-
-            // Get equipment speed bonus
-            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
-            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
-
-            const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
-            const guildSpeedBonus = guildBuffs.reduce(
-                (sum, b) =>
-                    b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
-                0
-            );
-            const guildEfficiency = guildBuffs.reduce(
-                (sum, b) =>
-                    b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
-                0
-            );
-
-            // Calculate action time with equipment speed
-            let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus + guildSpeedBonus);
-
-            // Apply task speed multiplicatively (if action is an active task)
-            if (actionHrid && dataManager.isTaskAction(actionHrid)) {
-                const taskSpeedBonus = dataManager.getTaskSpeedBonus(); // Returns percentage (e.g., 15 for 15%)
-                actionTime = actionTime / (1 + taskSpeedBonus / 100); // Apply multiplicatively
-            }
-
-            // Enforce game minimum action time
-            actionTime = Math.max(MIN_ACTION_TIME_SECONDS, actionTime);
-
-            // Calculate efficiency
-            const skillLevel = getSkillLevel(skills, actionDetails.type);
-            const baseRequirement = levelRequirementOverride ?? actionDetails.levelRequirement?.level ?? 1;
-
-            // Get drink concentration
-            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-
-            // Keep equipment and drinks atomic when the caller supplied an explicit context. Legacy
-            // callers without actionContext retain the existing loadout-aware drink behavior.
-            const activeDrinks = actionContext?.drinks ?? resolveActionContext(actionDetails.type).drinks;
-
-            // Calculate Action Level bonus from teas
-            const actionLevelBonus = parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);
-
-            // Get Action Level bonus breakdown (if requested)
-            let actionLevelBreakdown = null;
-            if (includeBreakdown) {
-                actionLevelBreakdown = parseActionLevelBonusBreakdown(activeDrinks, itemDetailMap, drinkConcentration);
-            }
-
-            // Calculate effective requirement
-            // Game uses full fractional action level bonus (no flooring)
-            const effectiveRequirement = baseRequirement + actionLevelBonus;
-
-            // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
-            const teaSkillLevelBonus = parseTeaSkillLevelBonus(
-                actionDetails.type,
-                activeDrinks,
-                itemDetailMap,
-                drinkConcentration
-            );
-
-            // Calculate efficiency components
-            // Apply tea skill level bonus to effective player level
-            const effectiveLevel = skillLevel + teaSkillLevelBonus;
-            const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
-            const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
-            const equipmentEfficiency = parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap);
-            const achievementEfficiency =
-                dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
-            const personalEfficiency =
-                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
-
-            // Calculate tea efficiency
-            let teaEfficiency;
-            let teaBreakdown = null;
-            if (includeBreakdown) {
-                // Get detailed breakdown
-                teaBreakdown = parseTeaEfficiencyBreakdown(
-                    actionDetails.type,
-                    activeDrinks,
-                    itemDetailMap,
-                    drinkConcentration
-                );
-                teaEfficiency = teaBreakdown.reduce((sum, tea) => sum + tea.efficiency, 0);
-            } else {
-                // Simple total
-                teaEfficiency = parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
-            }
-
-            // Get community buff efficiency (if requested)
-            let communityEfficiency = 0;
-            if (includeCommunityBuff) {
-                // Production Efficiency buff applies to production skills and alchemy
-                const productionSkills = [
-                    '/action_types/alchemy',
-                    '/action_types/brewing',
-                    '/action_types/cheesesmithing',
-                    '/action_types/cooking',
-                    '/action_types/crafting',
-                    '/action_types/tailoring',
-                ];
-
-                if (productionSkills.includes(actionDetails.type)) {
-                    const communityBuffLevel = dataManager.getCommunityBuffLevel(
-                        '/community_buff_types/production_efficiency'
-                    );
-                    communityEfficiency = communityBuffLevel ? (0.14 + (communityBuffLevel - 1) * 0.003) * 100 : 0;
-                }
-            }
-
-            // Total efficiency (stack all components additively)
-            const totalEfficiency = stackAdditive(
-                levelEfficiency,
-                houseEfficiency,
-                equipmentEfficiency,
-                teaEfficiency,
-                communityEfficiency,
-                achievementEfficiency,
-                personalEfficiency,
-                guildEfficiency
-            );
-
-            // Build result object
-            const result = {
-                actionTime,
-                totalEfficiency,
-            };
-
-            // Add breakdown if requested
-            if (includeBreakdown) {
-                result.efficiencyBreakdown = {
-                    levelEfficiency,
-                    houseEfficiency,
-                    equipmentEfficiency,
-                    teaEfficiency,
-                    teaBreakdown,
-                    communityEfficiency,
-                    achievementEfficiency,
-                    personalEfficiency,
-                    guildEfficiency,
-                    skillLevel,
-                    baseRequirement,
-                    actionLevelBonus,
-                    actionLevelBreakdown,
-                    effectiveRequirement,
-                };
-            }
-
-            return result;
-        } catch (error) {
-            console.error('[Action Calculator] Error calculating action stats:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Get character skill level for a skill type
-     * @param {Array} skills - Character skills array
-     * @param {string} skillType - Skill type HRID (e.g., "/action_types/cheesesmithing")
-     * @returns {number} Skill level
-     */
-    function getSkillLevel(skills, skillType) {
-        // Combat/labyrinth actions don't map to a single skill — efficiency scaling doesn't apply
-        if (skillType === '/action_types/combat' || skillType === '/action_types/labyrinth') {
-            return 1;
-        }
-        // Map action type to skill HRID
-        const skillHrid = skillType.replace('/action_types/', '/skills/');
-        const skill = skills.find((s) => s.skillHrid === skillHrid);
-        if (!skill) {
-            console.error(`[ActionCalculator] Skill not found: ${skillHrid}`);
-        }
-        return skill?.level || 1;
-    }
-
-    var actionCalculator = /*#__PURE__*/Object.freeze({
-        __proto__: null,
-        calculateActionStats: calculateActionStats
-    });
-
-    /**
      * Action Panel Display Helper
      * Utilities for working with action detail panels (gathering, production, enhancement)
      */
@@ -7145,989 +8548,6 @@ self.onmessage = function (e) {
     });
 
     /**
-     * Skill Gear Detector
-     *
-     * Auto-detects gear and buffs from character equipment for any skill.
-     * Originally designed for enhancing, now works generically for all skills.
-     */
-
-
-    /**
-     * Detect best gear for a specific skill by equipment slot
-     * @param {string} skillName - Skill name (e.g., 'enhancing', 'cooking', 'milking')
-     * @param {Map} equipment - Character equipment map (equipped items only)
-     * @param {Object} itemDetailMap - Item details map from init_client_data
-     * @returns {Object} Best gear per slot with bonuses
-     */
-    function detectSkillGear(skillName, equipment, itemDetailMap) {
-        const gear = {
-            // Totals for calculations
-            toolBonus: 0,
-            speedBonus: 0,
-            rareFindBonus: 0,
-            experienceBonus: 0,
-
-            // Per-slot breakdown for display
-            slotBreakdown: [],
-
-            // Best items per slot for display
-            toolSlot: null, // main_hand or two_hand
-            bodySlot: null, // body
-            legsSlot: null, // legs
-            handsSlot: null, // hands
-        };
-
-        // Get items to scan - only use equipment map (already filtered to equipped items only)
-        let itemsToScan = [];
-
-        if (equipment) {
-            // Scan only equipped items from equipment map
-            itemsToScan = Array.from(equipment.values()).filter((item) => item && item.itemHrid);
-        }
-
-        // Track best item per slot (by item level, then enhancement level)
-        const slotCandidates = {
-            tool: [], // main_hand or two_hand or skill-specific tool
-            body: [], // body
-            legs: [], // legs
-            hands: [], // hands
-            neck: [], // neck (accessories have 5× multiplier)
-            ring: [], // ring (accessories have 5× multiplier)
-            earrings: [], // earrings (accessories have 5× multiplier)
-            back: [], // back (capes)
-            charm: [], // charm (5× multiplier)
-        };
-
-        // Dynamic stat names based on skill
-        const successStat = `${skillName}Success`;
-        const speedStat = `${skillName}Speed`;
-        const rareFindStat = `${skillName}RareFind`;
-        const experienceStat = `${skillName}Experience`;
-
-        // Search all items for skill-related bonuses and group by slot
-        for (const item of itemsToScan) {
-            const itemDetails = itemDetailMap[item.itemHrid];
-            if (!itemDetails?.equipmentDetail?.noncombatStats) {
-                continue;
-            }
-
-            const stats = itemDetails.equipmentDetail.noncombatStats;
-            const enhancementLevel = item.enhancementLevel || 0;
-            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
-            const equipmentType = itemDetails.equipmentDetail.type;
-
-            // Generic stat calculation: Loop over ALL stats and apply multiplier
-            const allStats = {};
-            for (const [statName, statValue] of Object.entries(stats)) {
-                if (typeof statValue !== 'number') continue; // Skip non-numeric values
-                allStats[statName] = statValue * 100 * multiplier;
-            }
-
-            // Check if item has any skill-related stats (including universal skills)
-            const hasSkillStats =
-                allStats[successStat] ||
-                allStats[speedStat] ||
-                allStats[rareFindStat] ||
-                allStats[experienceStat] ||
-                allStats.skillingSpeed ||
-                allStats.skillingRareFind ||
-                allStats.skillingExperience;
-
-            if (!hasSkillStats) {
-                continue;
-            }
-
-            // Calculate bonuses for this item (backward-compatible output)
-            const itemBonuses = {
-                item: item,
-                itemDetails: itemDetails,
-                itemLevel: itemDetails.itemLevel || 0,
-                enhancementLevel: enhancementLevel,
-                // Named bonuses (dynamic based on skill)
-                toolBonus: allStats[successStat] || 0,
-                speedBonus: (allStats[speedStat] || 0) + (allStats.skillingSpeed || 0), // Combine speed sources
-                rareFindBonus: (allStats[rareFindStat] || 0) + (allStats.skillingRareFind || 0),
-                experienceBonus: (allStats[experienceStat] || 0) + (allStats.skillingExperience || 0), // Combine experience sources
-                // Generic access to all stats
-                allStats: allStats,
-            };
-
-            // Group by slot
-            // Tool slots: skill-specific tools (e.g., enhancing_tool, cooking_tool) plus main_hand/two_hand
-            const skillToolType = `/equipment_types/${skillName}_tool`;
-            if (
-                equipmentType === skillToolType ||
-                equipmentType === '/equipment_types/main_hand' ||
-                equipmentType === '/equipment_types/two_hand'
-            ) {
-                slotCandidates.tool.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/body') {
-                slotCandidates.body.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/legs') {
-                slotCandidates.legs.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/hands') {
-                slotCandidates.hands.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/neck') {
-                slotCandidates.neck.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/ring') {
-                slotCandidates.ring.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/earrings') {
-                slotCandidates.earrings.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/back') {
-                slotCandidates.back.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/charm') {
-                slotCandidates.charm.push(itemBonuses);
-            }
-        }
-
-        // Select best item per slot (highest item level, then highest enhancement level)
-        const selectBest = (candidates) => {
-            if (candidates.length === 0) return null;
-
-            return candidates.reduce((best, current) => {
-                // Compare by item level first
-                if (current.itemLevel > best.itemLevel) return current;
-                if (current.itemLevel < best.itemLevel) return best;
-
-                // If item levels are equal, compare by enhancement level
-                if (current.enhancementLevel > best.enhancementLevel) return current;
-                return best;
-            });
-        };
-
-        const bestTool = selectBest(slotCandidates.tool);
-        const bestBody = selectBest(slotCandidates.body);
-        const bestLegs = selectBest(slotCandidates.legs);
-        const bestHands = selectBest(slotCandidates.hands);
-        const bestNeck = selectBest(slotCandidates.neck);
-        const bestRing = selectBest(slotCandidates.ring);
-        const bestEarrings = selectBest(slotCandidates.earrings);
-        const bestBack = selectBest(slotCandidates.back);
-        const bestCharm = selectBest(slotCandidates.charm);
-
-        // Add bonuses from best items in each slot
-        const addSlot = (best) => {
-            if (!best) return;
-            gear.toolBonus += best.toolBonus;
-            gear.speedBonus += best.speedBonus;
-            gear.rareFindBonus += best.rareFindBonus;
-            gear.experienceBonus += best.experienceBonus;
-            gear.slotBreakdown.push({
-                itemHrid: best.item?.itemHrid || best.itemDetails?.hrid || '',
-                name: best.itemDetails.name,
-                enhancementLevel: best.enhancementLevel,
-                success: best.toolBonus,
-                speed: best.speedBonus,
-                rareFind: best.rareFindBonus,
-                experience: best.experienceBonus,
-            });
-            return {
-                itemHrid: best.item?.itemHrid || best.itemDetails?.hrid || '',
-                name: best.itemDetails.name,
-                enhancementLevel: best.enhancementLevel,
-            };
-        };
-
-        gear.toolSlot = addSlot(bestTool) || null;
-        gear.bodySlot = addSlot(bestBody) || null;
-        gear.legsSlot = addSlot(bestLegs) || null;
-        gear.handsSlot = addSlot(bestHands) || null;
-        addSlot(bestNeck);
-        addSlot(bestRing);
-        addSlot(bestEarrings);
-        addSlot(bestBack);
-        addSlot(bestCharm);
-
-        return gear;
-    }
-
-    /**
-     * Detect active enhancing teas from drink slots
-     * @param {Array} drinkSlots - Active drink slots for enhancing action type
-     * @param {Object} itemDetailMap - Item details map from init_client_data
-     * @returns {Object} Active teas { enhancing, superEnhancing, ultraEnhancing, blessed }
-     */
-    function detectEnhancingTeas(drinkSlots, _itemDetailMap) {
-        const teas = {
-            enhancing: false, // Enhancing Tea (+3 levels)
-            superEnhancing: false, // Super Enhancing Tea (+6 levels)
-            ultraEnhancing: false, // Ultra Enhancing Tea (+8 levels)
-            blessed: false, // Blessed Tea (1% double jump)
-        };
-
-        if (!drinkSlots || drinkSlots.length === 0) {
-            return teas;
-        }
-
-        // Tea HRIDs to check for
-        const teaMap = {
-            '/items/enhancing_tea': 'enhancing',
-            '/items/super_enhancing_tea': 'superEnhancing',
-            '/items/ultra_enhancing_tea': 'ultraEnhancing',
-            '/items/blessed_tea': 'blessed',
-        };
-
-        for (const drink of drinkSlots) {
-            if (!drink || !drink.itemHrid) continue;
-
-            const teaKey = teaMap[drink.itemHrid];
-            if (teaKey) {
-                teas[teaKey] = true;
-            }
-        }
-
-        return teas;
-    }
-
-    /**
-     * Get enhancing tea level bonus
-     * @param {Object} teas - Active teas from detectEnhancingTeas()
-     * @returns {number} Total level bonus from teas
-     */
-    function getEnhancingTeaLevelBonus(teas) {
-        // Teas don't stack - highest one wins
-        if (teas.ultraEnhancing) return 8;
-        if (teas.superEnhancing) return 6;
-        if (teas.enhancing) return 3;
-
-        return 0;
-    }
-
-    /**
-     * Get enhancing tea speed bonus (base, before concentration)
-     * @param {Object} teas - Active teas from detectEnhancingTeas()
-     * @returns {number} Base speed bonus % from teas
-     */
-    function getEnhancingTeaSpeedBonus(teas) {
-        // Teas don't stack - highest one wins
-        // Base speed bonuses (before drink concentration):
-        if (teas.ultraEnhancing) return 6; // +6% base
-        if (teas.superEnhancing) return 4; // +4% base
-        if (teas.enhancing) return 2; // +2% base
-
-        return 0;
-    }
-
-    /**
-     * Backward-compatible wrapper for enhancing gear detection
-     * @param {Map} equipment - Character equipment map (equipped items only)
-     * @param {Object} itemDetailMap - Item details map from init_client_data
-     * @returns {Object} Best enhancing gear per slot with bonuses
-     */
-    function detectEnhancingGear(equipment, itemDetailMap) {
-        return detectSkillGear('enhancing', equipment, itemDetailMap);
-    }
-
-    var enhancementGearDetector = /*#__PURE__*/Object.freeze({
-        __proto__: null,
-        detectEnhancingGear: detectEnhancingGear,
-        detectEnhancingTeas: detectEnhancingTeas,
-        detectSkillGear: detectSkillGear,
-        getEnhancingTeaLevelBonus: getEnhancingTeaLevelBonus,
-        getEnhancingTeaSpeedBonus: getEnhancingTeaSpeedBonus
-    });
-
-    /**
-     * Enhancement Configuration Manager
-     *
-     * Combines auto-detected enhancing parameters with manual overrides from settings.
-     * Provides single source of truth for enhancement simulator inputs.
-     */
-
-
-    /**
-     * Get enhancing parameters (auto-detected or manual)
-     * @returns {Object} Enhancement parameters for simulator
-     */
-    function getEnhancingParams() {
-        const autoDetect = config.getSettingValue('enhanceSim_autoDetect', false);
-
-        if (autoDetect) {
-            return getAutoDetectedParams();
-        } else {
-            return getManualParams();
-        }
-    }
-
-    /**
-     * Get auto-detected enhancing parameters from character data
-     * @returns {Object} Auto-detected parameters
-     */
-    function getAutoDetectedParams() {
-        // Get character data
-        const equipment = dataManager.getEquipment();
-        const skills = dataManager.getSkills();
-        const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
-        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
-
-        // Detect gear from equipped items only
-        const gear = detectEnhancingGear(equipment, itemDetailMap);
-
-        // Detect drink concentration from equipment (Guzzling Pouch)
-        // IMPORTANT: Only scan equipped items, not entire inventory
-        let drinkConcentration = 0;
-        const itemsToScan = equipment ? Array.from(equipment.values()).filter((item) => item && item.itemHrid) : [];
-
-        for (const item of itemsToScan) {
-            const itemDetails = itemDetailMap[item.itemHrid];
-            if (!itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) continue;
-
-            const concentration = itemDetails.equipmentDetail.noncombatStats.drinkConcentration;
-            const enhancementLevel = item.enhancementLevel || 0;
-            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
-            const scaledConcentration = concentration * 100 * multiplier;
-
-            // Only keep the highest concentration (shouldn't have multiple, but just in case)
-            if (scaledConcentration > drinkConcentration) {
-                drinkConcentration = scaledConcentration;
-            }
-        }
-
-        // Detect teas
-        const teas = detectEnhancingTeas(drinkSlots);
-
-        // Get tea level bonus (base, then scale with concentration)
-        const baseTeaLevel = getEnhancingTeaLevelBonus(teas);
-        const teaLevelBonus = baseTeaLevel > 0 ? baseTeaLevel * (1 + drinkConcentration / 100) : 0;
-
-        // Get tea speed bonus (base, then scale with concentration)
-        const baseTeaSpeed = getEnhancingTeaSpeedBonus(teas);
-        const teaSpeedBonus = baseTeaSpeed > 0 ? baseTeaSpeed * (1 + drinkConcentration / 100) : 0;
-
-        // Get tea wisdom bonus (base, then scale with concentration)
-        // Wisdom Tea/Coffee provide 12% wisdom, scales with drink concentration
-        let baseTeaWisdom = 0;
-        if (drinkSlots && drinkSlots.length > 0) {
-            for (const drink of drinkSlots) {
-                if (!drink || !drink.itemHrid) continue;
-                const drinkDetails = itemDetailMap[drink.itemHrid];
-                if (!drinkDetails?.consumableDetail?.buffs) continue;
-
-                const wisdomBuff = drinkDetails.consumableDetail.buffs.find(
-                    (buff) => buff.typeHrid === '/buff_types/wisdom'
-                );
-
-                if (wisdomBuff && wisdomBuff.flatBoost) {
-                    baseTeaWisdom += wisdomBuff.flatBoost * 100; // Convert to percentage
-                }
-            }
-        }
-        const teaWisdomBonus = baseTeaWisdom > 0 ? baseTeaWisdom * (1 + drinkConcentration / 100) : 0;
-
-        // Get Enhancing skill level
-        const enhancingSkill = skills?.find((s) => s.skillHrid === '/skills/enhancing');
-        if (!enhancingSkill) {
-            console.error('[EnhancementConfig] Skill not found: /skills/enhancing');
-        }
-        const enhancingLevel = enhancingSkill?.level || 1;
-
-        // Get Observatory house room level (enhancing uses observatory, NOT laboratory!)
-        const houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
-
-        // Calculate global house buffs from ALL house rooms
-        // Rare Find: 0.2% base + 0.2% per level (per room, only if level >= 1)
-        // Wisdom: 0.05% base + 0.05% per level (per room, only if level >= 1)
-        const houseRooms = dataManager.getHouseRooms();
-        let houseRareFindBonus = 0;
-        let houseWisdomBonus = 0;
-
-        for (const [_hrid, room] of houseRooms) {
-            const level = room.level || 0;
-            if (level >= 1) {
-                // Each room: 0.2% per level (NOT 0.2% base + 0.2% per level)
-                houseRareFindBonus += 0.2 * level;
-                // Each room: 0.05% per level (NOT 0.05% base + 0.05% per level)
-                houseWisdomBonus += 0.05 * level;
-            }
-        }
-
-        // Get Enhancing Speed community buff level
-        const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
-        // Formula: 20% base + 0.5% per level
-        const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
-
-        // Get Experience (Wisdom) community buff level
-        const communityWisdomLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
-        // Formula: 20% base + 0.5% per level (same as other community buffs)
-        const communityWisdomBonus = communityWisdomLevel > 0 ? 20 + (communityWisdomLevel - 1) * 0.5 : 0;
-
-        const achievementWisdomBonus =
-            dataManager.getAchievementBuffFlatBoost('/action_types/enhancing', '/buff_types/wisdom') * 100;
-        const achievementRareFindBonus =
-            dataManager.getAchievementBuffFlatBoost('/action_types/enhancing', '/buff_types/rare_find') * 100;
-
-        // Calculate total success rate bonus
-        // Equipment + house + achievement
-        const houseSuccessBonus = houseLevel * 0.05; // 0.05% per level for success
-        const equipmentSuccessBonus = gear.toolBonus;
-        const achievementSuccessBonus =
-            dataManager.getAchievementBuffRatioBoost('/action_types/enhancing', '/buff_types/enhancing_success') * 100;
-        const totalSuccessBonus = equipmentSuccessBonus + houseSuccessBonus + achievementSuccessBonus;
-
-        // Calculate total speed bonus
-        // Speed bonus (from equipment) + house bonus (1% per level) + community buff + tea speed
-        const houseSpeedBonus = houseLevel * 1.0; // 1% per level for action speed
-        const totalSpeedBonus = gear.speedBonus + houseSpeedBonus + communitySpeedBonus + teaSpeedBonus;
-
-        // Calculate total experience bonus
-        // Equipment + house wisdom + tea wisdom + community wisdom + achievement wisdom
-        const totalExperienceBonus =
-            gear.experienceBonus + houseWisdomBonus + teaWisdomBonus + communityWisdomBonus + achievementWisdomBonus;
-
-        // Calculate guzzling bonus multiplier (1.0 at level 0, scales with drink concentration)
-        const guzzlingBonus = 1 + drinkConcentration / 100;
-
-        return {
-            // Core values for calculations
-            enhancingLevel: enhancingLevel + teaLevelBonus, // Base level + tea bonus
-            houseLevel: houseLevel,
-            toolBonus: totalSuccessBonus, // Tool + house combined
-            speedBonus: totalSpeedBonus, // Speed + house + community + tea combined
-            rareFindBonus: gear.rareFindBonus + houseRareFindBonus + achievementRareFindBonus, // Rare find (equipment + house rooms + achievements)
-            experienceBonus: totalExperienceBonus, // Experience (equipment + house + tea + community wisdom)
-            guzzlingBonus: guzzlingBonus, // Drink concentration multiplier for blessed tea
-            teas: teas,
-
-            // Display info (for UI) - show best item per slot
-            toolSlot: gear.toolSlot,
-            bodySlot: gear.bodySlot,
-            legsSlot: gear.legsSlot,
-            handsSlot: gear.handsSlot,
-            detectedTeaBonus: teaLevelBonus,
-            communityBuffLevel: communityBuffLevel, // For display (speed)
-            communitySpeedBonus: communitySpeedBonus, // For display
-            communityWisdomLevel: communityWisdomLevel, // For display
-            communityWisdomBonus: communityWisdomBonus, // For display
-            achievementWisdomBonus: achievementWisdomBonus, // For display
-            teaSpeedBonus: teaSpeedBonus, // For display
-            teaWisdomBonus: teaWisdomBonus, // For display
-            drinkConcentration: drinkConcentration, // For display
-            houseRareFindBonus: houseRareFindBonus, // For display
-            achievementRareFindBonus: achievementRareFindBonus, // For display
-            houseWisdomBonus: houseWisdomBonus, // For display
-            equipmentRareFind: gear.rareFindBonus, // For display
-            equipmentExperience: gear.experienceBonus, // For display
-            equipmentSuccessBonus: equipmentSuccessBonus, // For display
-            houseSuccessBonus: houseSuccessBonus, // For display
-            achievementSuccessBonus: achievementSuccessBonus, // For display
-            equipmentSpeedBonus: gear.speedBonus, // For display
-            houseSpeedBonus: houseSpeedBonus, // For display
-            slotBreakdown: gear.slotBreakdown || [], // Per-item breakdown for display
-        };
-    }
-
-    /**
-     * Detect current character's enhancing gear and return values mapped to setting keys.
-     * Used by settings UI to populate gear inputs when auto-detect is toggled on.
-     * @returns {Object} Map of settingId → detected value
-     */
-    function getDetectedGearSettings() {
-        const equipment = dataManager.getEquipment();
-        const skills = dataManager.getSkills();
-        const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
-
-        const result = {};
-
-        // Enhancing level
-        const enhancingSkill = skills?.find((s) => s.skillHrid === '/skills/enhancing');
-        result.enhanceSim_enhancingLevel = enhancingSkill?.level || 1;
-
-        // Observatory
-        result.enhanceSim_houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
-
-        // Community buff
-        const communityLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
-        result.enhanceSim_communityBuff = { enabled: true, level: communityLevel };
-
-        // Achievement
-        const achievementBonus = dataManager.getAchievementBuffRatioBoost(
-            '/action_types/enhancing',
-            '/buff_types/enhancing_success'
-        );
-        result.enhanceSim_achievement = achievementBonus > 0;
-
-        // Tea detection
-        const teaMap = {
-            '/items/ultra_enhancing_tea': 'ultra',
-            '/items/super_enhancing_tea': 'super',
-            '/items/enhancing_tea': 'basic',
-        };
-        let detectedTea = 'none';
-        let hasBlessed = false;
-        if (drinkSlots) {
-            for (const drink of drinkSlots) {
-                if (!drink?.itemHrid) continue;
-                if (teaMap[drink.itemHrid]) detectedTea = teaMap[drink.itemHrid];
-                if (drink.itemHrid === '/items/blessed_tea') hasBlessed = true;
-            }
-        }
-        result.enhanceSim_tea = detectedTea;
-        result.enhanceSim_blessedTea = hasBlessed;
-
-        // Gear detection — match equipped items to known gear HRIDs
-        const ENHANCER_HRIDS = {
-            '/items/cheese_enhancer': 'cheese',
-            '/items/verdant_enhancer': 'verdant',
-            '/items/azure_enhancer': 'azure',
-            '/items/burble_enhancer': 'burble',
-            '/items/crimson_enhancer': 'crimson',
-            '/items/rainbow_enhancer': 'rainbow',
-            '/items/holy_enhancer': 'holy',
-            '/items/celestial_enhancer': 'celestial',
-        };
-        const CAPE_HRIDS = {
-            '/items/chance_cape': 'normal',
-            '/items/chance_cape_refined': 'refined',
-        };
-        const CHARM_HRIDS = {
-            '/items/trainee_enhancing_charm': 'trainee',
-            '/items/basic_enhancing_charm': 'basic',
-            '/items/advanced_enhancing_charm': 'advanced',
-            '/items/expert_enhancing_charm': 'expert',
-            '/items/master_enhancing_charm': 'master',
-            '/items/grandmaster_enhancing_charm': 'grandmaster',
-        };
-        const FIXED_HRIDS = {
-            '/items/enchanted_gloves': 'gloves',
-            '/items/enhancers_top': 'top',
-            '/items/enhancers_bottoms': 'bottoms',
-            '/items/guzzling_pouch': 'guzzling',
-        };
-        const NECK_HRIDS = {
-            '/items/philosophers_necklace': 'philo',
-            '/items/necklace_of_speed': 'speed',
-        };
-        const RING_HRIDS = {
-            '/items/philosophers_ring': 'philo',
-            '/items/ring_of_rare_find': 'rarefind',
-        };
-        const EARRING_HRIDS = {
-            '/items/philosophers_earrings': 'philo',
-            '/items/earrings_of_rare_find': 'rarefind',
-        };
-
-        // Default all gear to disabled (not detected)
-        result.enhanceSim_gear_enhancer = { enabled: false, tier: 'celestial', level: 0 };
-        result.enhanceSim_gear_gloves = { enabled: false, level: 0 };
-        result.enhanceSim_gear_top = { enabled: false, level: 0 };
-        result.enhanceSim_gear_bottoms = { enabled: false, level: 0 };
-        result.enhanceSim_gear_neck = { enabled: false, tier: 'philo', level: 0 };
-        result.enhanceSim_gear_ring = { enabled: false, tier: 'philo', level: 0 };
-        result.enhanceSim_gear_earring = { enabled: false, tier: 'philo', level: 0 };
-        result.enhanceSim_gear_cape = { enabled: false, tier: 'normal', level: 0 };
-        result.enhanceSim_gear_guzzling = { enabled: false, level: 0 };
-        result.enhanceSim_gear_charm = { enabled: false, tier: 'grandmaster', level: 0 };
-
-        if (equipment) {
-            for (const item of equipment.values()) {
-                if (!item?.itemHrid) continue;
-                const hrid = item.itemHrid;
-                const enhLevel = item.enhancementLevel || 0;
-
-                if (ENHANCER_HRIDS[hrid]) {
-                    result.enhanceSim_gear_enhancer = { enabled: true, tier: ENHANCER_HRIDS[hrid], level: enhLevel };
-                } else if (CAPE_HRIDS[hrid]) {
-                    result.enhanceSim_gear_cape = { enabled: true, tier: CAPE_HRIDS[hrid], level: enhLevel };
-                } else if (CHARM_HRIDS[hrid]) {
-                    result.enhanceSim_gear_charm = { enabled: true, tier: CHARM_HRIDS[hrid], level: enhLevel };
-                } else if (NECK_HRIDS[hrid]) {
-                    result.enhanceSim_gear_neck = { enabled: true, tier: NECK_HRIDS[hrid], level: enhLevel };
-                } else if (RING_HRIDS[hrid]) {
-                    result.enhanceSim_gear_ring = { enabled: true, tier: RING_HRIDS[hrid], level: enhLevel };
-                } else if (EARRING_HRIDS[hrid]) {
-                    result.enhanceSim_gear_earring = { enabled: true, tier: EARRING_HRIDS[hrid], level: enhLevel };
-                } else if (FIXED_HRIDS[hrid]) {
-                    const slot = FIXED_HRIDS[hrid];
-                    result[`enhanceSim_gear_${slot}`] = { enabled: true, level: enhLevel };
-                }
-            }
-        }
-
-        return result;
-    }
-
-    /**
-     * Get manual enhancing parameters from gear-based config settings
-     * @returns {Object} Manual parameters
-     */
-    function getManualParams() {
-        const getValue = (key, defaultValue) => {
-            return config.getSettingValue(key, defaultValue);
-        };
-
-        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
-
-        // --- ENHANCING ---
-        const houseLevel = getValue('enhanceSim_houseLevel', 8);
-        const baseEnhancingLevel = getValue('enhanceSim_enhancingLevel', 140);
-
-        // --- TEA ---
-        const teaSelection = getValue('enhanceSim_tea', 'ultra');
-        const teas = {
-            enhancing: teaSelection === 'basic',
-            superEnhancing: teaSelection === 'super',
-            ultraEnhancing: teaSelection === 'ultra',
-            blessed: getValue('enhanceSim_blessedTea', true),
-        };
-        const teaLevelBonus =
-            teaSelection === 'ultra' ? 8 : teaSelection === 'super' ? 6 : teaSelection === 'basic' ? 3 : 0;
-        const teaSpeedBonus =
-            teaSelection === 'ultra' ? 6 : teaSelection === 'super' ? 4 : teaSelection === 'basic' ? 2 : 0;
-
-        // --- GEAR ---
-        const ENHANCER_TIERS = {
-            cheese: '/items/cheese_enhancer',
-            verdant: '/items/verdant_enhancer',
-            azure: '/items/azure_enhancer',
-            burble: '/items/burble_enhancer',
-            crimson: '/items/crimson_enhancer',
-            rainbow: '/items/rainbow_enhancer',
-            holy: '/items/holy_enhancer',
-            celestial: '/items/celestial_enhancer',
-        };
-        const CAPE_TIERS = {
-            normal: '/items/chance_cape',
-            refined: '/items/chance_cape_refined',
-        };
-        const CHARM_TIERS = {
-            trainee: '/items/trainee_enhancing_charm',
-            basic: '/items/basic_enhancing_charm',
-            advanced: '/items/advanced_enhancing_charm',
-            expert: '/items/expert_enhancing_charm',
-            master: '/items/master_enhancing_charm',
-            grandmaster: '/items/grandmaster_enhancing_charm',
-        };
-        const FIXED_GEAR = {
-            gloves: '/items/enchanted_gloves',
-            top: '/items/enhancers_top',
-            bottoms: '/items/enhancers_bottoms',
-            guzzling: '/items/guzzling_pouch',
-        };
-        const NECK_TIERS = {
-            philo: '/items/philosophers_necklace',
-            speed: '/items/necklace_of_speed',
-        };
-        const RING_TIERS = {
-            philo: '/items/philosophers_ring',
-            rarefind: '/items/ring_of_rare_find',
-        };
-        const EARRING_TIERS = {
-            philo: '/items/philosophers_earrings',
-            rarefind: '/items/earrings_of_rare_find',
-        };
-
-        // Helper to read compound gear setting
-        const getGear = (key, defaults) => {
-            const val = getValue(key, defaults);
-            // Handle both object (new format) and missing/null
-            if (val && typeof val === 'object') return val;
-            return defaults;
-        };
-
-        // Calculate bonuses from each gear slot
-        let equipmentSuccessBonus = 0;
-        let equipmentSpeedBonus = 0;
-        let equipmentRareFind = 0;
-        let equipmentExperience = 0;
-        let drinkConcentration = 0;
-        const slotBreakdown = [];
-
-        // Enhancer
-        const enhancer = getGear('enhanceSim_gear_enhancer', { enabled: true, tier: 'celestial', level: 13 });
-        if (enhancer.enabled) {
-            const hrid = ENHANCER_TIERS[enhancer.tier] || ENHANCER_TIERS.celestial;
-            const bonus = getGearSlotBonus(hrid, enhancer.level, itemDetailMap);
-            equipmentSuccessBonus += bonus.success;
-            equipmentSpeedBonus += bonus.speed;
-            equipmentRareFind += bonus.rareFind;
-            equipmentExperience += bonus.experience;
-            const details = itemDetailMap[hrid];
-            slotBreakdown.push({
-                name: details?.name || 'Enhancer',
-                enhancementLevel: enhancer.level,
-                success: bonus.success,
-                speed: bonus.speed,
-                rareFind: bonus.rareFind,
-                experience: bonus.experience,
-            });
-        }
-
-        // Gloves
-        const gloves = getGear('enhanceSim_gear_gloves', { enabled: true, level: 10 });
-        if (gloves.enabled) {
-            const bonus = getGearSlotBonus(FIXED_GEAR.gloves, gloves.level, itemDetailMap);
-            equipmentSpeedBonus += bonus.speed;
-            equipmentExperience += bonus.experience;
-            const details = itemDetailMap[FIXED_GEAR.gloves];
-            slotBreakdown.push({
-                name: details?.name || 'Gloves',
-                enhancementLevel: gloves.level,
-                success: 0,
-                speed: bonus.speed,
-                rareFind: 0,
-                experience: bonus.experience,
-            });
-        }
-
-        // Top
-        const top = getGear('enhanceSim_gear_top', { enabled: true, level: 10 });
-        if (top.enabled) {
-            const bonus = getGearSlotBonus(FIXED_GEAR.top, top.level, itemDetailMap);
-            equipmentSpeedBonus += bonus.speed;
-            equipmentRareFind += bonus.rareFind;
-            equipmentExperience += bonus.experience;
-            const details = itemDetailMap[FIXED_GEAR.top];
-            slotBreakdown.push({
-                name: details?.name || 'Top',
-                enhancementLevel: top.level,
-                success: 0,
-                speed: bonus.speed,
-                rareFind: bonus.rareFind,
-                experience: bonus.experience,
-            });
-        }
-
-        // Bottoms
-        const bottoms = getGear('enhanceSim_gear_bottoms', { enabled: true, level: 10 });
-        if (bottoms.enabled) {
-            const bonus = getGearSlotBonus(FIXED_GEAR.bottoms, bottoms.level, itemDetailMap);
-            equipmentSpeedBonus += bonus.speed;
-            equipmentExperience += bonus.experience;
-            const details = itemDetailMap[FIXED_GEAR.bottoms];
-            slotBreakdown.push({
-                name: details?.name || 'Bottoms',
-                enhancementLevel: bottoms.level,
-                success: 0,
-                speed: bonus.speed,
-                rareFind: 0,
-                experience: bonus.experience,
-            });
-        }
-
-        // Neck
-        const neck = getGear('enhanceSim_gear_neck', { enabled: true, tier: 'philo', level: 10 });
-        if (neck.enabled) {
-            const hrid = NECK_TIERS[neck.tier] || NECK_TIERS.philo;
-            const bonus = getGearSlotBonus(hrid, neck.level, itemDetailMap);
-            equipmentSpeedBonus += bonus.speed;
-            equipmentRareFind += bonus.rareFind;
-            equipmentExperience += bonus.experience;
-            const details = itemDetailMap[hrid];
-            slotBreakdown.push({
-                name: details?.name || 'Necklace',
-                enhancementLevel: neck.level,
-                success: 0,
-                speed: bonus.speed,
-                rareFind: bonus.rareFind,
-                experience: bonus.experience,
-            });
-        }
-
-        // Ring
-        const ring = getGear('enhanceSim_gear_ring', { enabled: true, tier: 'philo', level: 10 });
-        if (ring.enabled) {
-            const hrid = RING_TIERS[ring.tier] || RING_TIERS.philo;
-            const bonus = getGearSlotBonus(hrid, ring.level, itemDetailMap);
-            equipmentSpeedBonus += bonus.speed;
-            equipmentRareFind += bonus.rareFind;
-            equipmentExperience += bonus.experience;
-            const details = itemDetailMap[hrid];
-            slotBreakdown.push({
-                name: details?.name || 'Ring',
-                enhancementLevel: ring.level,
-                success: 0,
-                speed: bonus.speed,
-                rareFind: bonus.rareFind,
-                experience: bonus.experience,
-            });
-        }
-
-        // Earring
-        const earring = getGear('enhanceSim_gear_earring', { enabled: true, tier: 'philo', level: 10 });
-        if (earring.enabled) {
-            const hrid = EARRING_TIERS[earring.tier] || EARRING_TIERS.philo;
-            const bonus = getGearSlotBonus(hrid, earring.level, itemDetailMap);
-            equipmentSpeedBonus += bonus.speed;
-            equipmentRareFind += bonus.rareFind;
-            equipmentExperience += bonus.experience;
-            const details = itemDetailMap[hrid];
-            slotBreakdown.push({
-                name: details?.name || 'Earrings',
-                enhancementLevel: earring.level,
-                success: 0,
-                speed: bonus.speed,
-                rareFind: bonus.rareFind,
-                experience: bonus.experience,
-            });
-        }
-
-        // Cape
-        const cape = getGear('enhanceSim_gear_cape', { enabled: true, tier: 'normal', level: 5 });
-        if (cape.enabled) {
-            const hrid = CAPE_TIERS[cape.tier] || CAPE_TIERS.normal;
-            const bonus = getGearSlotBonus(hrid, cape.level, itemDetailMap);
-            equipmentSpeedBonus += bonus.speed;
-            equipmentExperience += bonus.experience;
-            const details = itemDetailMap[hrid];
-            slotBreakdown.push({
-                name: details?.name || 'Cape',
-                enhancementLevel: cape.level,
-                success: 0,
-                speed: bonus.speed,
-                rareFind: 0,
-                experience: bonus.experience,
-            });
-        }
-
-        // Guzzling Pouch (provides drink concentration)
-        const guzzling = getGear('enhanceSim_gear_guzzling', { enabled: true, level: 10 });
-        if (guzzling.enabled) {
-            const bonus = getGearSlotBonus(FIXED_GEAR.guzzling, guzzling.level, itemDetailMap);
-            drinkConcentration = bonus.drinkConc;
-        }
-
-        // Charm (provides experience/wisdom bonus)
-        const charm = getGear('enhanceSim_gear_charm', { enabled: true, tier: 'grandmaster', level: 0 });
-        if (charm.enabled) {
-            const hrid = CHARM_TIERS[charm.tier] || CHARM_TIERS.grandmaster;
-            const bonus = getGearSlotBonus(hrid, charm.level, itemDetailMap);
-            equipmentExperience += bonus.experience;
-            const details = itemDetailMap[hrid];
-            slotBreakdown.push({
-                name: details?.name || 'Charm',
-                enhancementLevel: charm.level,
-                success: 0,
-                speed: 0,
-                rareFind: 0,
-                experience: bonus.experience,
-            });
-        }
-
-        // --- COMMUNITY BUFF ---
-        const communityBuff = getGear('enhanceSim_communityBuff', { enabled: true, level: 1 });
-        let communityBuffLevel;
-        if (communityBuff.enabled) {
-            // Checked = auto-detect from game
-            communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
-        } else {
-            communityBuffLevel = communityBuff.level;
-        }
-        const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
-
-        // --- ACHIEVEMENT ---
-        const achievementEnabled = getValue('enhanceSim_achievement', false);
-        const achievementSuccessBonus = achievementEnabled ? 0.2 : 0;
-
-        // --- HOUSE BONUSES ---
-        const houseSpeedBonus = houseLevel * 1.0;
-        const houseSuccessBonus = houseLevel * 0.05;
-
-        // House wisdom: 0.05% per level per room (same as auto-detect)
-        const houseRooms = dataManager.getHouseRooms();
-        let houseWisdomBonus = 0;
-        for (const [_hrid, room] of houseRooms) {
-            const level = room.level || 0;
-            if (level >= 1) {
-                houseWisdomBonus += 0.05 * level;
-            }
-        }
-
-        // --- SCALE TEA BONUSES WITH DRINK CONCENTRATION ---
-        const scaledTeaLevelBonus = teaLevelBonus > 0 ? teaLevelBonus * (1 + drinkConcentration / 100) : 0;
-        const scaledTeaSpeedBonus = teaSpeedBonus > 0 ? teaSpeedBonus * (1 + drinkConcentration / 100) : 0;
-
-        // Tea wisdom bonus (Wisdom Tea/Coffee provide 12% wisdom, scales with drink concentration)
-        let baseTeaWisdom = 0;
-        const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
-        if (drinkSlots && drinkSlots.length > 0) {
-            for (const drink of drinkSlots) {
-                if (!drink || !drink.itemHrid) continue;
-                const drinkDetails = itemDetailMap[drink.itemHrid];
-                if (!drinkDetails?.consumableDetail?.buffs) continue;
-                const wisdomBuff = drinkDetails.consumableDetail.buffs.find(
-                    (buff) => buff.typeHrid === '/buff_types/wisdom'
-                );
-                if (wisdomBuff && wisdomBuff.flatBoost) {
-                    baseTeaWisdom += wisdomBuff.flatBoost * 100;
-                }
-            }
-        }
-        const teaWisdomBonus = baseTeaWisdom > 0 ? baseTeaWisdom * (1 + drinkConcentration / 100) : 0;
-
-        // Community wisdom buff
-        const communityWisdomLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
-        const communityWisdomBonus = communityWisdomLevel > 0 ? 20 + (communityWisdomLevel - 1) * 0.5 : 0;
-
-        // Achievement wisdom buff
-        const achievementWisdomBonus =
-            dataManager.getAchievementBuffFlatBoost('/action_types/enhancing', '/buff_types/wisdom') * 100;
-
-        // --- TOTALS ---
-        const totalToolBonus = equipmentSuccessBonus + houseSuccessBonus + achievementSuccessBonus;
-        const totalSpeedBonus = equipmentSpeedBonus + houseSpeedBonus + communitySpeedBonus + scaledTeaSpeedBonus;
-        const totalExperienceBonus =
-            equipmentExperience + houseWisdomBonus + teaWisdomBonus + communityWisdomBonus + achievementWisdomBonus;
-        const guzzlingBonus = 1 + drinkConcentration / 100;
-
-        return {
-            enhancingLevel: baseEnhancingLevel + scaledTeaLevelBonus,
-            houseLevel: houseLevel,
-            toolBonus: totalToolBonus,
-            speedBonus: totalSpeedBonus,
-            rareFindBonus: equipmentRareFind,
-            experienceBonus: totalExperienceBonus,
-            guzzlingBonus: guzzlingBonus,
-            teas: teas,
-
-            // Display info for manual mode
-            toolSlot: null,
-            bodySlot: null,
-            legsSlot: null,
-            handsSlot: null,
-            detectedTeaBonus: scaledTeaLevelBonus,
-            communityBuffLevel: communityBuffLevel,
-            communitySpeedBonus: communitySpeedBonus,
-            teaSpeedBonus: scaledTeaSpeedBonus,
-            equipmentSpeedBonus: equipmentSpeedBonus,
-            houseSpeedBonus: houseSpeedBonus,
-            equipmentSuccessBonus: equipmentSuccessBonus,
-            houseSuccessBonus: houseSuccessBonus,
-            achievementSuccessBonus: achievementSuccessBonus,
-            slotBreakdown: slotBreakdown,
-        };
-    }
-
-    /**
-     * Calculate enhancing bonuses from a single gear slot
-     * @param {string} itemHrid - Item HRID
-     * @param {number} enhancementLevel - Enhancement level (0-20)
-     * @param {Object} itemDetailMap - Item details map
-     * @returns {Object} { success, speed, rareFind, experience, drinkConc }
-     */
-    function getGearSlotBonus(itemHrid, enhancementLevel, itemDetailMap) {
-        const itemDetails = itemDetailMap[itemHrid];
-        if (!itemDetails) return { success: 0, speed: 0, rareFind: 0, experience: 0, drinkConc: 0 };
-
-        const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
-        const stats = itemDetails.equipmentDetail?.noncombatStats || {};
-
-        return {
-            success: (stats.enhancingSuccess || 0) * 100 * multiplier,
-            speed: ((stats.enhancingSpeed || 0) + (stats.skillingSpeed || 0)) * 100 * multiplier,
-            rareFind: ((stats.enhancingRareFind || 0) + (stats.skillingRareFind || 0)) * 100 * multiplier,
-            experience: ((stats.enhancingExperience || 0) + (stats.skillingExperience || 0)) * 100 * multiplier,
-            drinkConc: (stats.drinkConcentration || 0) * 100 * multiplier,
-        };
-    }
-
-    var enhancementConfig = /*#__PURE__*/Object.freeze({
-        __proto__: null,
-        getAutoDetectedParams: getAutoDetectedParams,
-        getDetectedGearSettings: getDetectedGearSettings,
-        getEnhancingParams: getEnhancingParams
-    });
-
-    /**
      * Shared outlier-guard helper for consumers that bypass market-data.js and batch-fetch prices
      * directly via marketAPI.getPricesBatch() for performance (net worth, inventory badges - both
      * price hundreds of items per render and can't afford a per-item market-data.js round trip).
@@ -8350,424 +8770,6 @@ self.onmessage = function (e) {
         setReactInputValue: setReactInputValue,
         setSelectValue: setSelectValue,
         typeIntoReactInput: typeIntoReactInput
-    });
-
-    /**
-     * Material Calculator Utility
-     * Shared calculation logic for material requirements with artisan bonus
-     */
-
-
-    const ARTISAN_MATERIAL_MODE = {
-        EXPECTED: 'expected',
-        WORST_CASE: 'worst-case',
-        HYBRID: 'hybrid',
-    };
-
-    const HYBRID_WORST_CASE_MAX_ACTIONS = 100;
-
-    function normalizeArtisanMode(mode) {
-        if (mode === ARTISAN_MATERIAL_MODE.WORST_CASE || mode === ARTISAN_MATERIAL_MODE.HYBRID) {
-            return mode;
-        }
-        return ARTISAN_MATERIAL_MODE.EXPECTED;
-    }
-
-    /**
-     * Get artisan material mode setting.
-     * @returns {string}
-     */
-    function getArtisanMaterialMode() {
-        const setting = config.getSettingValue('actions_artisanMaterialMode', ARTISAN_MATERIAL_MODE.EXPECTED);
-        return normalizeArtisanMode(setting);
-    }
-    /**
-     * Calculate total materials required, optionally using conservative per-action rounding.
-     * @param {number} basePerAction
-     * @param {number} artisanBonus
-     * @param {number} numActions
-     * @param {string} artisanMode
-     * @returns {number}
-     */
-    function calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode) {
-        const materialsPerAction = basePerAction * (1 - artisanBonus);
-        const useWorstCase =
-            artisanMode === ARTISAN_MATERIAL_MODE.WORST_CASE ||
-            (artisanMode === ARTISAN_MATERIAL_MODE.HYBRID && numActions < HYBRID_WORST_CASE_MAX_ACTIONS);
-        if (useWorstCase) {
-            return Math.ceil(materialsPerAction) * numActions;
-        }
-        return Math.ceil(materialsPerAction * numActions);
-    }
-
-    /**
-     * Calculate materials reserved by queued actions
-     * @param {string} actionHrid - Action HRID to check queue for (optional - if null, calculates for ALL queued actions)
-     * @returns {Map<string, number>} Map of itemHrid -> queued quantity
-     */
-    function calculateQueuedMaterialsForAction(actionHrid = null) {
-        const queuedMaterials = new Map();
-        const gameData = dataManager.getInitClientData();
-
-        if (!gameData) {
-            return queuedMaterials;
-        }
-
-        // Get all queued actions
-        const queuedActions = dataManager.getCurrentActions();
-
-        if (!queuedActions || queuedActions.length === 0) {
-            return queuedMaterials;
-        }
-
-        const artisanMode = getArtisanMaterialMode();
-
-        // Process each queued action
-        for (const queuedAction of queuedActions) {
-            // If actionHrid is specified, only process matching actions
-            if (actionHrid && queuedAction.actionHrid !== actionHrid) {
-                continue;
-            }
-
-            const actionDetails = dataManager.getActionDetails(queuedAction.actionHrid);
-            if (!actionDetails) {
-                continue;
-            }
-
-            // Calculate remaining actions for this queued action
-            // Finite actions: maxCount is target, currentCount is progress
-            // Infinite actions: Skip for now (would require material limit calculation which is complex)
-            let actionCount = 0;
-            if (queuedAction.hasMaxCount) {
-                actionCount = queuedAction.maxCount - queuedAction.currentCount;
-            } else {
-                // Infinite action - skip for now (materials for infinite actions are complex)
-                // User can use the "Ignore queue" setting if they queue many infinite actions
-                continue;
-            }
-
-            if (actionCount <= 0) {
-                continue;
-            }
-
-            // Calculate artisan bonus for this action type
-            const artisanBonus = calculateArtisanBonus(actionDetails);
-
-            // Process regular input items
-            if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
-                for (const input of actionDetails.inputItems) {
-                    const basePerAction = input.count || input.amount || 1;
-
-                    // Calculate total materials needed for this queued action
-                    const totalForAction = calculateTotalRequired(basePerAction, artisanBonus, actionCount, artisanMode);
-
-                    // Add to queued total
-                    const currentQueued = queuedMaterials.get(input.itemHrid) || 0;
-                    queuedMaterials.set(input.itemHrid, currentQueued + totalForAction);
-                }
-            }
-
-            // Process upgrade item (if exists)
-            if (actionDetails.upgradeItemHrid) {
-                // Upgrade items always need exactly 1 per action, no artisan reduction
-                const totalForAction = actionCount;
-
-                const currentQueued = queuedMaterials.get(actionDetails.upgradeItemHrid) || 0;
-                queuedMaterials.set(actionDetails.upgradeItemHrid, currentQueued + totalForAction);
-            }
-        }
-
-        return queuedMaterials;
-    }
-
-    /**
-     * Calculate material requirements for an action
-     * @param {string} actionHrid - Action HRID (e.g., "/actions/crafting/celestial_enhancer")
-     * @param {number} numActions - Number of actions to perform
-     * @param {boolean} accountForQueue - Whether to subtract queued materials from available inventory (default: false)
-     * @returns {Array<Object>} Array of material requirement objects (includes upgrade items)
-     */
-    function calculateMaterialRequirements(actionHrid, numActions, accountForQueue = false) {
-        const actionDetails = dataManager.getActionDetails(actionHrid);
-        const inventory = dataManager.getInventory();
-        const gameData = dataManager.getInitClientData();
-
-        if (!actionDetails) {
-            return [];
-        }
-
-        const artisanMode = getArtisanMaterialMode();
-
-        // Calculate artisan bonus (material reduction from Artisan Tea)
-        const artisanBonus = calculateArtisanBonus(actionDetails);
-
-        // Get queued materials if accounting for queue
-        // Pass null to get materials for ALL queued actions (not just matching actionHrid)
-        const queuedMaterialsMap = accountForQueue ? calculateQueuedMaterialsForAction(null) : new Map();
-
-        const materials = [];
-
-        // Process regular input items first
-        if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
-            for (const input of actionDetails.inputItems) {
-                const basePerAction = input.count || input.amount || 1;
-
-                // Calculate total materials needed for requested actions
-                const totalRequired = calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode);
-
-                // Only count unenhanced items — enhanced copies are distinct items the player
-                // would not want consumed as crafting materials
-                const have = inventory
-                    .filter((i) => i.itemHrid === input.itemHrid && !i.enhancementLevel)
-                    .reduce((sum, i) => sum + (i.count || 0), 0);
-
-                // Calculate queued and available amounts
-                const queued = queuedMaterialsMap.get(input.itemHrid) || 0;
-                const available = Math.max(0, have - queued);
-                const missingAmount = Math.max(0, totalRequired - available);
-
-                const itemDetails = gameData.itemDetailMap[input.itemHrid];
-                if (!itemDetails) {
-                    continue;
-                }
-
-                materials.push({
-                    itemHrid: input.itemHrid,
-                    itemName: itemDetails.name,
-                    required: totalRequired,
-                    have: have,
-                    queued: queued,
-                    available: available,
-                    missing: missingAmount,
-                    isTradeable: itemDetails.isTradable === true, // British spelling
-                    isUpgradeItem: false,
-                });
-            }
-        }
-
-        // Process upgrade item at the end (if exists)
-        if (actionDetails.upgradeItemHrid) {
-            // Upgrade items always need exactly 1 per action, no artisan reduction
-            const totalRequired = numActions;
-
-            const have = inventory
-                .filter((i) => i.itemHrid === actionDetails.upgradeItemHrid && !i.enhancementLevel)
-                .reduce((sum, i) => sum + (i.count || 0), 0);
-
-            // Calculate queued and available amounts
-            const queued = queuedMaterialsMap.get(actionDetails.upgradeItemHrid) || 0;
-            const available = Math.max(0, have - queued);
-            const missingAmount = Math.max(0, totalRequired - available);
-
-            const itemDetails = gameData.itemDetailMap[actionDetails.upgradeItemHrid];
-            if (itemDetails) {
-                materials.push({
-                    itemHrid: actionDetails.upgradeItemHrid,
-                    itemName: itemDetails.name,
-                    required: totalRequired,
-                    have: have,
-                    queued: queued,
-                    available: available,
-                    missing: missingAmount,
-                    isTradeable: itemDetails.isTradable === true, // British spelling
-                    isUpgradeItem: true, // Flag to identify upgrade items
-                });
-            }
-        }
-
-        return materials;
-    }
-
-    /**
-     * Calculate artisan bonus (material reduction) for an action
-     * @param {Object} actionDetails - Action details from game data
-     * @returns {number} Artisan bonus (0-1 decimal, e.g., 0.1129 for 11.29% reduction)
-     */
-    function calculateArtisanBonus(actionDetails) {
-        try {
-            const gameData = dataManager.getInitClientData();
-            if (!gameData) {
-                return 0;
-            }
-
-            const { equipment, drinks: activeDrinks } = resolveActionContext(actionDetails.type);
-            const itemDetailMap = gameData.itemDetailMap || {};
-            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-
-            return parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
-        } catch (error) {
-            console.error('[Material Calculator] Error calculating artisan bonus:', error);
-            return 0;
-        }
-    }
-
-    /**
-     * Returns true if artisan tea is selected in a drink slot but has 0 quantity in inventory.
-     * Used to warn the user that material counts reflect no artisan reduction.
-     * @param {string} actionHrid
-     * @returns {boolean}
-     */
-    function isArtisanTeaOutOfStock(actionHrid) {
-        try {
-            const actionDetails = dataManager.getActionDetails(actionHrid);
-            if (!actionDetails) return false;
-
-            const gameData = dataManager.getInitClientData();
-            if (!gameData) return false;
-
-            const itemDetailMap = gameData.itemDetailMap || {};
-
-            // Raw slotted drinks (ignoring stock)
-            const rawDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-            if (!rawDrinks?.length) return false;
-
-            const context = resolveActionContext(actionDetails.type);
-
-            // A saved loadout can only be selected for calculation when every one of its
-            // consumable slots is confirmed available (Core fails the whole selection closed
-            // to current gear otherwise). So a saved loadout's own configured drinks can never
-            // be "out of stock" here — comparing the character's live drink slots against a
-            // different, independently-configured loadout's drinks is not a stock check.
-            if (context.source === 'saved-loadout') return false;
-
-            // In-stock drinks come from resolveActionContext (already filtered)
-            const { equipment, drinks: inStockDrinks } = context;
-            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-
-            return (
-                parseArtisanBonus(rawDrinks, itemDetailMap, drinkConcentration) > 0 &&
-                parseArtisanBonus(inStockDrinks, itemDetailMap, drinkConcentration) === 0
-            );
-        } catch (error) {
-            console.error('[Material Calculator] Error checking artisan tea stock:', error);
-            return false;
-        }
-    }
-
-    /**
-     * Calculate material requirements for enhancement actions
-     * Uses Markov chain statistics to determine expected materials needed
-     * @param {string} itemHrid - Item HRID being enhanced
-     * @param {number} startLevel - Current enhancement level (0-19)
-     * @param {number} targetLevel - Target enhancement level (1-20)
-     * @param {string|null} protectionItemHrid - Protection item HRID or null
-     * @param {number} protectFromLevel - Level at which protection begins (0 = never)
-     * @returns {Array<Object>} Array of material requirement objects (same format as calculateMaterialRequirements)
-     */
-    function calculateEnhancementMaterialRequirements(
-        itemHrid,
-        startLevel,
-        targetLevel,
-        protectionItemHrid,
-        protectFromLevel,
-        repeatCount
-    ) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData) {
-            return [];
-        }
-
-        const itemDetails = gameData.itemDetailMap[itemHrid];
-        if (!itemDetails) {
-            return [];
-        }
-
-        const enhancementCosts = itemDetails.enhancementCosts || [];
-        if (enhancementCosts.length === 0) {
-            return [];
-        }
-
-        // Get enhancing parameters (level, tool bonus, teas, etc.)
-        const params = getEnhancingParams();
-        const effectiveProtect = protectFromLevel >= 2 && protectFromLevel <= targetLevel ? protectFromLevel : 0;
-
-        // Single Markov chain call for the full level range
-        const calc = calculateEnhancement({
-            enhancingLevel: params.enhancingLevel,
-            houseLevel: params.houseLevel,
-            toolBonus: params.toolBonus,
-            speedBonus: params.speedBonus,
-            itemLevel: itemDetails.itemLevel || 1,
-            targetLevel: targetLevel,
-            startLevel: startLevel,
-            protectFrom: effectiveProtect,
-            blessedTea: params.teas.blessed,
-            guzzlingBonus: params.guzzlingBonus,
-        });
-
-        const inventory = dataManager.getInventory();
-        const materials = [];
-
-        // Process enhancement cost materials
-        for (const cost of enhancementCosts) {
-            // Skip coins — not tradeable, auto-deducted by the game
-            if (cost.itemHrid === '/items/coin') {
-                continue;
-            }
-
-            const matDetails = gameData.itemDetailMap[cost.itemHrid];
-            if (!matDetails) {
-                continue;
-            }
-
-            const totalQuantity = Math.ceil(cost.count * (repeatCount ?? calc.attempts));
-            const have = inventory
-                .filter((i) => i.itemHrid === cost.itemHrid && !i.enhancementLevel)
-                .reduce((sum, i) => sum + (i.count || 0), 0);
-            const missing = Math.max(0, totalQuantity - have);
-
-            materials.push({
-                itemHrid: cost.itemHrid,
-                itemName: matDetails.name,
-                required: totalQuantity,
-                have: have,
-                queued: 0,
-                available: have,
-                missing: missing,
-                isTradeable: matDetails.isTradable === true,
-                isUpgradeItem: false,
-            });
-        }
-
-        // Add protection item if applicable
-        // Skip Philosopher's Mirror — special mechanic, not consumed as standard protection
-        if (calc.protectionCount > 0 && protectionItemHrid && protectionItemHrid !== '/items/philosophers_mirror') {
-            const totalProtection = Math.ceil(calc.protectionCount);
-            const protDetails = gameData.itemDetailMap[protectionItemHrid];
-
-            if (protDetails) {
-                const have = inventory
-                    .filter((i) => i.itemHrid === protectionItemHrid && !i.enhancementLevel)
-                    .reduce((sum, i) => sum + (i.count || 0), 0);
-                const missing = Math.max(0, totalProtection - have);
-
-                materials.push({
-                    itemHrid: protectionItemHrid,
-                    itemName: protDetails.name,
-                    required: totalProtection,
-                    have: have,
-                    queued: 0,
-                    available: have,
-                    missing: missing,
-                    isTradeable: protDetails.isTradable === true,
-                    isUpgradeItem: false,
-                });
-            }
-        }
-
-        return materials;
-    }
-
-    var materialCalculator = /*#__PURE__*/Object.freeze({
-        __proto__: null,
-        ARTISAN_MATERIAL_MODE: ARTISAN_MATERIAL_MODE,
-        calculateArtisanBonus: calculateArtisanBonus,
-        calculateEnhancementMaterialRequirements: calculateEnhancementMaterialRequirements,
-        calculateMaterialRequirements: calculateMaterialRequirements,
-        calculateQueuedMaterialsForAction: calculateQueuedMaterialsForAction,
-        calculateTotalRequired: calculateTotalRequired,
-        getArtisanMaterialMode: getArtisanMaterialMode,
-        isArtisanTeaOutOfStock: isArtisanTeaOutOfStock
     });
 
     /**

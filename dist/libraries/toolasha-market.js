@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.7.1
+ * Version: 3.7.2
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, warningIcon_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, marketplaceSession_js, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
+(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, marketplaceSession_js, actionCalculator_js, materialCalculator_js, warningIcon_js, profitHelpers_js, buffParser_js, equipmentParser_js, tokenValuation_js, storage, enhancementConfig_js, dom, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -199,6 +199,652 @@
     }
 
     /**
+     * Marketplace Buy Modal Autofill Utility
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
+     */
+
+    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+    const MAX_REACT_OWNER_DEPTH = 256;
+
+    function hasMarketplaceStateSignature(state) {
+        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
+    }
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    function normalizeMarketplaceState(state) {
+        if (!hasMarketplaceStateSignature(state)) return null;
+        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
+        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
+        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
+        if (typeof state.isSell !== 'boolean') return null;
+        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
+        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
+        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
+        if (
+            state.enhancementLevelInput !== undefined &&
+            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
+        ) {
+            return null;
+        }
+
+        return {
+            marketTabKey: state.marketTabKey,
+            marketListingsView: state.marketListingsView,
+            itemHrid: state.itemHrid,
+            enhancementLevel: state.enhancementLevel,
+            enhancementLevelInput: state.enhancementLevelInput,
+            isSell: state.isSell,
+            showPostListing: state.showPostListing,
+            isPostNewListing: state.isPostNewListing,
+            isInstantOrder: state.isInstantOrder,
+            quantityInput: state.quantityInput,
+            priceInput: state.priceInput,
+        };
+    }
+
+    /**
+     * Read the live Marketplace React component state from the unique visible Marketplace panel.
+     * The selected component must be on that panel host fiber's bounded return ancestry.
+     *
+     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
+     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
+     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
+     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
+     */
+    function getMarketplaceRuntimeComponentFromElement(element) {
+        let fiber = getReactFiberFromElement(element);
+        let depth = 0;
+        const candidates = [];
+        const seen = new Set();
+
+        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
+            const stateNode = fiber.stateNode;
+            if (
+                stateNode &&
+                !seen.has(stateNode) &&
+                typeof stateNode.setState === 'function' &&
+                typeof stateNode.handleQuantityInputChanged === 'function' &&
+                hasMarketplaceStateSignature(stateNode.state)
+            ) {
+                seen.add(stateNode);
+                candidates.push(stateNode);
+            }
+            fiber = fiber.return;
+            depth += 1;
+        }
+
+        // Fail closed when the ancestry is unexpectedly deeper than the bound or
+        // contains more than one Marketplace-like owner. The quantity input must
+        // identify one exact live component before we write to a controlled input.
+        if (fiber || candidates.length !== 1) return null;
+        return candidates[0];
+    }
+
+    /**
+     * Read Marketplace state from the exact DOM element that belongs to the live component.
+     * @param {HTMLElement} element
+     * @returns {ReturnType<typeof normalizeMarketplaceState>}
+     */
+    function readMarketplaceRuntimeStateFromElement(element) {
+        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
+    }
+
+    /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs, plus locale-independent
+     * resolution via icon sprite references (see below) - prefer the sprite-based functions
+     * over the name-based ones wherever a `<use>` element is reachable, since display names are
+     * translated client-side and the name-based functions below only ever match the client's
+     * English-language data, silently failing on any other game locale.
+     */
+
+
+    /**
+     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
+     * @param {string} name - Original display name
+     * @returns {string[]} Array of alternate names to try (may be empty)
+     */
+    function getRefinedNameVariants(name) {
+        const variants = [];
+        if (name.includes('★')) {
+            variants.push(name.replace(/\s*★/, ' (R)'));
+        }
+        if (name.includes('(R)')) {
+            variants.push(name.replace(/\s*\(R\)/, ' ★'));
+        }
+        return variants;
+    }
+
+    /**
+     * Find an action HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} actionName - Display name of the action
+     * @returns {string|null} Action HRID or null if not found
+     */
+    function getActionHridFromName(actionName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) {
+            return null;
+        }
+
+        // Try exact match first (English or translated)
+        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+            const displayName = getActionName(hrid, detail.name);
+            if (displayName === actionName || detail.name === actionName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(actionName)) {
+            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+                const displayName = getActionName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve an action HRID by walking up the React fiber tree from a DOM element inside the
+     * action detail modal (SkillActionDetail) - unlike the tile list, that modal renders no
+     * hrid-keyed icon of its own, but `this.props.actionDetail.hrid` is set on its own component
+     * instance (confirmed against the client bundle), so this is locale-independent, unlike matching
+     * the modal's translated name text.
+     * @param {HTMLElement} element - Any DOM node inside the action detail modal.
+     * @returns {string|null}
+     */
+    function getActionHridFromFiber(element) {
+        if (!element) return null;
+
+        let f = getReactFiberFromElement(element);
+        while (f) {
+            const hrid = f.memoizedProps?.actionDetail?.hrid;
+            if (hrid) return hrid;
+            f = f.return;
+        }
+        return null;
+    }
+
+    /**
+     * Get the coin cost of an item from the in-game shop.
+     * Returns 0 if the item is not available in the shop or not purchasable with coins.
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Coin cost, or 0 if not available in shop
+     */
+    function getShopCoinCost(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.shopItemDetailMap) return 0;
+
+        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
+            if (shopItem.itemHrid === itemHrid) {
+                if (shopItem.costs && shopItem.costs.length > 0) {
+                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
+                    if (coinCost) {
+                        return coinCost.count;
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Crafting Plan Calculator
+     * Computes the optimal buy-vs-craft plan for a target item by recursively
+     * comparing market price against crafting cost at each material tier.
+     */
+
+
+    const MAX_DEPTH = 15;
+
+    /**
+     * Find the production action that creates a given item.
+     * @param {string} itemHrid
+     * @returns {{ actionHrid: string, action: Object, outputCount: number } | null}
+     */
+    function findProductionAction(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) return null;
+
+        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (!action.outputItems) continue;
+            for (const output of action.outputItems) {
+                if (output.itemHrid === itemHrid) {
+                    return { actionHrid, action, outputCount: output.count || 1 };
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get artisan tea material reduction bonus for an action type.
+     * @param {string} actionType - e.g. '/action_types/brewing'
+     * @returns {number} Reduction as decimal (e.g. 0.112 for 11.2%)
+     */
+    function getArtisanBonus(actionType) {
+        try {
+            const gameData = dataManager.getInitClientData();
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = gameData?.itemDetailMap || {};
+            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+            const activeDrinks = dataManager.getActionDrinkSlots(actionType);
+            return teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * Compute the optimal crafting plan for an item.
+     * At each node, decides whether buying from market or crafting is cheaper.
+     *
+     * @param {string} itemHrid - Target item
+     * @param {number} quantity - How many needed
+     * @param {string} [mode='ask'] - Pricing mode for market lookups
+     * @param {Set} [visited] - Circular dependency guard
+     * @param {Map} [memo] - Memoization cache (unit cost per itemHrid)
+     * @param {number} [depth=0] - Current recursion depth
+     * @param {number} [maxDepth=MAX_DEPTH] - Maximum recursion depth (1 = buy all sub-materials)
+     * @param {boolean} [buyRawOnly=false] - When true, always craft items that have a recipe; only buy uncraftable items
+     * @param {boolean} [forceRootCraft=false] - When true, forces the root item (depth 0) to be crafted
+     * @param {number} [timeCostPerHour=0] - Gold value per hour of player time (0 = disabled)
+     * @param {boolean} [skipProcessing=false] - When true, forces buy for processing actions (single input, no upgrade)
+     * @returns {CraftingPlanNode}
+     */
+    function computeBestCraftingPlan(
+        itemHrid,
+        quantity = 1,
+        mode = 'ask',
+        visited = new Set(),
+        memo = new Map(),
+        depth = 0,
+        maxDepth = MAX_DEPTH,
+        buyRawOnly = false,
+        forceRootCraft = false,
+        timeCostPerHour = 0,
+        skipProcessing = false
+    ) {
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        const itemName = itemDetails?.name || itemHrid.split('/').pop();
+        const isTradable = itemDetails?.isTradable ?? false;
+        const artisanMode = materialCalculator_js.getArtisanMaterialMode();
+
+        // Get market buy price (min of market ask and shop cost)
+        let buyPrice = null;
+        let buyPriceOutlier = false;
+        if (isTradable) {
+            const marketPriceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode, context: 'profit', side: 'buy' });
+            if (marketPriceInfo.value !== null && marketPriceInfo.value > 0) {
+                buyPrice = marketPriceInfo.value;
+                buyPriceOutlier = marketPriceInfo.isOutlier;
+            }
+        }
+        const shopCost = getShopCoinCost(itemHrid);
+        if (shopCost > 0 && (buyPrice === null || shopCost < buyPrice)) {
+            buyPrice = shopCost;
+            buyPriceOutlier = false; // Shop cost is a fixed vendor price, never a market outlier
+        }
+
+        // Coins always cost 1 each
+        if (itemHrid === '/items/coin') {
+            return {
+                itemHrid,
+                itemName: i18n_js.t('craftingPlanCalculator.coinItemName'),
+                quantity,
+                strategy: 'buy',
+                unitCost: 1,
+                totalCost: quantity,
+                buyPrice: 1,
+                isOutlier: false,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Check memo for previously computed unit cost
+        if (memo.has(itemHrid)) {
+            const cachedUnitCost = memo.get(itemHrid);
+            const actionsNeeded =
+                cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0;
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: cachedUnitCost.strategy,
+                unitCost: cachedUnitCost.unitCost,
+                totalCost: cachedUnitCost.unitCost * quantity,
+                buyPrice,
+                isOutlier: buyPriceOutlier,
+                craftCost: cachedUnitCost.craftCost,
+                actionHrid: cachedUnitCost.actionHrid,
+                actionsNeeded,
+                children:
+                    cachedUnitCost.strategy === 'craft'
+                        ? cachedUnitCost.childrenTemplate.map((c) =>
+                              computeBestCraftingPlan(
+                                  c.itemHrid,
+                                  c.isUpgrade
+                                      ? actionsNeeded
+                                      : materialCalculator_js.calculateTotalRequired(
+                                            c.basePerAction,
+                                            cachedUnitCost.artisanBonus,
+                                            actionsNeeded,
+                                            artisanMode
+                                        ),
+                                  mode,
+                                  visited,
+                                  memo,
+                                  depth + 1,
+                                  maxDepth,
+                                  buyRawOnly,
+                                  forceRootCraft,
+                                  timeCostPerHour,
+                                  skipProcessing
+                              )
+                          )
+                        : [],
+            };
+        }
+
+        // Circular dependency or depth limit — must buy
+        if (visited.has(itemHrid) || depth >= maxDepth) {
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost: buyPrice ?? Infinity,
+                totalCost: (buyPrice ?? Infinity) * quantity,
+                buyPrice,
+                isOutlier: buyPriceOutlier,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Find production action
+        const production = findProductionAction(itemHrid);
+        if (!production) {
+            // No recipe — must buy
+            const unitCost = buyPrice ?? 0;
+            memo.set(itemHrid, {
+                strategy: 'buy',
+                unitCost,
+                craftCost: null,
+                actionHrid: null,
+                outputCount: 1,
+                childrenTemplate: [],
+            });
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost,
+                totalCost: unitCost * quantity,
+                buyPrice,
+                isOutlier: buyPriceOutlier,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Skip processing actions if flag is set
+        // Processing = material conversion actions (milk → cheese, fiber → fabric, log → lumber)
+        // Identified by category ending in /material or /lumber (vs equipment crafting like /feet, /crossbow)
+        const isProcessingAction =
+            production.action.category?.endsWith('/material') || production.action.category?.endsWith('/lumber');
+        if (skipProcessing && isProcessingAction) {
+            const unitCost = buyPrice ?? Infinity;
+            memo.set(itemHrid, {
+                strategy: 'buy',
+                unitCost,
+                craftCost: null,
+                actionHrid: null,
+                outputCount: 1,
+                childrenTemplate: [],
+            });
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost,
+                totalCost: unitCost * quantity,
+                buyPrice,
+                isOutlier: buyPriceOutlier,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Recurse into crafting
+        visited.add(itemHrid);
+        const { actionHrid, action, outputCount } = production;
+        const artisanBonus = getArtisanBonus(action.type);
+        const actionsForOne = 1 / outputCount; // actions per 1 output item
+        const actionsNeeded = Math.ceil(quantity / outputCount);
+
+        let craftCostPerUnit = 0;
+        const childrenTemplate = []; // { itemHrid, basePerAction, isUpgrade } for memo reconstruction
+
+        // Input items (affected by artisan bonus)
+        if (action.inputItems) {
+            for (const input of action.inputItems) {
+                const inputCountPerAction = input.count || 1;
+                const qtyPerUnit = inputCountPerAction * (1 - artisanBonus) * actionsForOne;
+
+                const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
+                const childPlan = computeBestCraftingPlan(
+                    input.itemHrid,
+                    inputQty,
+                    mode,
+                    visited,
+                    memo,
+                    depth + 1,
+                    maxDepth,
+                    buyRawOnly,
+                    forceRootCraft,
+                    timeCostPerHour,
+                    skipProcessing
+                );
+
+                craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
+                childrenTemplate.push({ itemHrid: input.itemHrid, basePerAction: inputCountPerAction, isUpgrade: false });
+            }
+        }
+
+        // Upgrade item (NOT affected by artisan bonus)
+        if (action.upgradeItemHrid) {
+            const qtyPerUnit = actionsForOne; // 1 upgrade per action
+            const upgradePlan = computeBestCraftingPlan(
+                action.upgradeItemHrid,
+                actionsNeeded,
+                mode,
+                visited,
+                memo,
+                depth + 1,
+                maxDepth,
+                buyRawOnly,
+                forceRootCraft,
+                timeCostPerHour,
+                skipProcessing
+            );
+
+            craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
+            childrenTemplate.push({ itemHrid: action.upgradeItemHrid, basePerAction: 1, isUpgrade: true });
+        }
+
+        visited.delete(itemHrid);
+
+        // Add time cost to craft cost if enabled
+        if (timeCostPerHour > 0) {
+            const gameData = dataManager.getInitClientData();
+            const actionDetails = gameData?.actionDetailMap?.[actionHrid];
+            if (actionDetails) {
+                const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                    skills: dataManager.getSkills(),
+                    equipment: dataManager.getEquipment(),
+                    itemDetailMap: gameData.itemDetailMap,
+                });
+                const effMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
+                const timePerUnit = (stats.actionTime / effMultiplier) * actionsForOne;
+                craftCostPerUnit += timePerUnit * (timeCostPerHour / 3600);
+            }
+        }
+
+        // Buy vs craft decision
+        // When buyRawOnly is true, always craft (we only reach here if a recipe exists)
+        // When forceRootCraft is true and depth === 0, always craft the root item
+        const shouldBuy =
+            !buyRawOnly && !(forceRootCraft && depth === 0) && buyPrice !== null && buyPrice <= craftCostPerUnit;
+        const strategy = shouldBuy ? 'buy' : 'craft';
+        const unitCost = shouldBuy ? buyPrice : craftCostPerUnit;
+
+        // Cache the decision
+        memo.set(itemHrid, {
+            strategy,
+            unitCost,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            outputCount,
+            artisanBonus,
+            childrenTemplate: strategy === 'craft' ? childrenTemplate : [],
+        });
+
+        // Build children for the actual quantities
+        let children = [];
+        if (!shouldBuy) {
+            children = [];
+            if (action.inputItems) {
+                for (const input of action.inputItems) {
+                    const inputCountPerAction = input.count || 1;
+                    const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
+                    children.push(
+                        computeBestCraftingPlan(
+                            input.itemHrid,
+                            inputQty,
+                            mode,
+                            visited,
+                            memo,
+                            depth + 1,
+                            maxDepth,
+                            buyRawOnly,
+                            forceRootCraft,
+                            timeCostPerHour,
+                            skipProcessing
+                        )
+                    );
+                }
+            }
+            if (action.upgradeItemHrid) {
+                children.push(
+                    computeBestCraftingPlan(
+                        action.upgradeItemHrid,
+                        actionsNeeded,
+                        mode,
+                        visited,
+                        memo,
+                        depth + 1,
+                        maxDepth,
+                        buyRawOnly,
+                        forceRootCraft,
+                        timeCostPerHour,
+                        skipProcessing
+                    )
+                );
+            }
+        }
+
+        return {
+            itemHrid,
+            itemName,
+            quantity,
+            strategy,
+            unitCost,
+            totalCost: unitCost * quantity,
+            buyPrice,
+            isOutlier: buyPriceOutlier,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,
+            children,
+        };
+    }
+
+    /**
      * Enhancement Tooltip Module
      *
      * Provides enhancement analysis for item tooltips.
@@ -213,10 +859,12 @@
 
     const _costCache = new Map();
     const _chainTimeCache = new Map();
+    const _craftPlanCache = new Map();
 
     marketAPI.on(() => {
         _costCache.clear();
         _chainTimeCache.clear();
+        _craftPlanCache.clear();
     });
 
     /**
@@ -284,7 +932,7 @@
         const targetTimes = new Array(currentEnhancementLevel + 1);
         const targetAttempts = new Array(currentEnhancementLevel + 1);
         targetCosts[0] = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
-            ? Math.min(getProductionCost(itemHrid) || Infinity, marketData_js.getItemPrices(itemHrid, 0)?.ask || Infinity) ||
+            ? Math.min(getOptimalCraftingCost(itemHrid) || Infinity, marketData_js.getItemPrices(itemHrid, 0)?.ask || Infinity) ||
               getRealisticBaseItemPrice(itemHrid)
             : getRealisticBaseItemPrice(itemHrid); // Level 0: base item
         targetTimes[0] = 0; // Level 0: no time needed
@@ -330,7 +978,7 @@
                 if (fodderLevel === 0) {
                     fodderCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
                         ? Math.min(
-                              getProductionCost(baseItemHrid) || Infinity,
+                              getOptimalCraftingCost(baseItemHrid) || Infinity,
                               marketData_js.getItemPrices(baseItemHrid, 0)?.ask || Infinity
                           ) || getRealisticBaseItemPrice(baseItemHrid)
                         : getRealisticBaseItemPrice(baseItemHrid);
@@ -808,8 +1456,8 @@
         }
 
         // Base item cost (initial investment) — market price or min(crafting, market) per setting
-        const craftingCostAsk = getProductionCost(itemHrid, 'ask');
-        const craftingCostBid = getProductionCost(itemHrid, 'bid');
+        const craftingCostAsk = getOptimalCraftingCost(itemHrid, 'ask');
+        const craftingCostBid = getOptimalCraftingCost(itemHrid, 'bid');
         const baseItemPrices = marketData_js.getItemPrices(itemHrid, 0);
         const marketAsk = baseItemPrices?.ask > 0 ? baseItemPrices.ask : 0;
         const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
@@ -819,7 +1467,7 @@
         const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
         const baseBidPrice = askIsCrafted
             ? craftingCostBid || craftingCostAsk
-            : marketBid || getProductionCost(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
+            : marketBid || getOptimalCraftingCost(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
         const baseCost = baseAskPrice;
         const baseAskIsCrafted = askIsCrafted;
         const baseBidIsCrafted = askIsCrafted;
@@ -980,6 +1628,55 @@
         }
 
         return totalPrice / outputCount;
+    }
+
+    /**
+     * Get the optimal (recursive buy-vs-craft) cost to obtain the base item, matching the Best
+     * Crafting Plan calculation shown on the item's production action page. Unlike
+     * getProductionCost() above (a shallow walk that only recurses through upgrade-item chains,
+     * pricing every regular input at market value even when crafting that input would be cheaper),
+     * this walks the full material tree and picks whichever is cheaper -- buy or craft -- at every
+     * tier down to raw materials, honoring the same Crafting Plan settings used on the production
+     * page so the two stay consistent.
+     * @param {string} itemHrid
+     * @param {'ask'|'bid'} [mode='ask']
+     * @private
+     */
+    function getOptimalCraftingCost(itemHrid, mode = 'ask') {
+        const cacheKey = `${itemHrid}|${mode}`;
+        if (_craftPlanCache.has(cacheKey)) return _craftPlanCache.get(cacheKey);
+
+        const buyIntermediates = toolashaConfig.getSetting('actionPanel_craftingPlanBuyIntermediates');
+        const noProcessing = toolashaConfig.getSetting('actionPanel_craftingPlanNoProcessing');
+        const taskMode = toolashaConfig.getSetting('actionPanel_craftingPlanTaskMode');
+        const timeCostEnabled = toolashaConfig.getSetting('actionPanel_craftingPlanTimeCost');
+        const goldPerHour = Number(toolashaConfig.getSettingValue('actionPanel_craftingPlanGoldPerHour', 0)) || 0;
+
+        let result = 0;
+        try {
+            const plan = computeBestCraftingPlan(
+                itemHrid,
+                1,
+                mode,
+                new Set(),
+                new Map(),
+                0,
+                undefined,
+                buyIntermediates,
+                taskMode,
+                timeCostEnabled ? goldPerHour : 0,
+                noProcessing
+            );
+            // computeBestCraftingPlan can return Infinity (depth limit reached with no buyable price
+            // anywhere in the chain) - treat that the same as "unknown" (0), matching
+            // getProductionCost()'s own contract, so callers' existing `|| fallback` chains still work.
+            result = Number.isFinite(plan?.totalCost) && plan.totalCost > 0 ? plan.totalCost : 0;
+        } catch (error) {
+            console.error('[Enhancement Tooltip] computeBestCraftingPlan failed for', itemHrid, error);
+        }
+
+        _craftPlanCache.set(cacheKey, result);
+        return result;
     }
 
     /**
@@ -1380,6 +2077,27 @@
             html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
             html += '</tr>';
 
+            // Crafting Cost / Enhancing Cost subtotals - the base item row above is the crafting
+            // leg; materials + protection together are the enhancing leg. Shown separately so the
+            // two don't have to be mentally picked back out of the itemized rows below.
+            const craftingCostAsk = optimalStrategy.baseAskPrice || optimalStrategy.baseCost;
+            const craftingCostBid = optimalStrategy.baseBidPrice || optimalStrategy.baseCost;
+            const enhancingCostAsk = Math.max(0, totalAsk - craftingCostAsk);
+            const enhancingCostBid = Math.max(0, totalBid - craftingCostBid);
+
+            html += '<tr>';
+            html += `<td style="padding: 2px 4px;">${i18n_js.t('tooltipEnhancement.craftingCostSubtotalLabel')}</td>`;
+            html += '<td style="padding: 2px 4px; text-align: center;"></td>';
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(craftingCostAsk)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(craftingCostBid)}</td>`;
+            html += '</tr>';
+            html += '<tr>';
+            html += `<td style="padding: 2px 4px;">${i18n_js.t('tooltipEnhancement.enhancingCostSubtotalLabel')}</td>`;
+            html += '<td style="padding: 2px 4px; text-align: center;"></td>';
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(enhancingCostAsk)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(enhancingCostBid)}</td>`;
+            html += '</tr>';
+
             // Item rows
             for (const row of rows) {
                 html += '<tr>';
@@ -1488,7 +2206,10 @@
             const data = calculateEnhancementPath(itemHrid, level, enhancementConfig);
             if (!data) continue;
 
-            const cost = fmtCost(data.optimalStrategy.totalCost);
+            const craftCost = fmtCost(data.optimalStrategy.baseCost);
+            const enhanceCost = fmtCost(
+                Math.max(0, (data.optimalStrategy.totalCost || 0) - (data.optimalStrategy.baseCost || 0))
+            );
             const xp = data.totalExpectedXP !== null ? fmt(Math.round(data.totalExpectedXP)) : '—';
 
             let ask = '—';
@@ -1499,7 +2220,7 @@
                 bid = fmt(prices?.bid) + warningIcon_js.buildOutlierPriceWarningIcon(prices?.bid > 0 && prices.bidOutlier);
             }
 
-            rows.push({ level, cost, xp, ask, bid });
+            rows.push({ level, craftCost, enhanceCost, xp, ask, bid });
         }
 
         if (rows.length === 0) return '';
@@ -1514,7 +2235,8 @@
         html += '<table style="font-size: 0.9em; border-collapse: collapse; width: 100%;">';
         html += '<thead><tr>';
         html += `<th ${thStyle('left')}>${i18n_js.t('tooltipEnhancement.levelHeader')}</th>`;
-        html += `<th ${thStyle()}>${i18n_js.t('tooltipEnhancement.costHeader')}</th>`;
+        html += `<th ${thStyle()}>${i18n_js.t('tooltipEnhancement.craftCostHeader')}</th>`;
+        html += `<th ${thStyle()}>${i18n_js.t('tooltipEnhancement.enhanceCostHeader')}</th>`;
         if (showPrices) html += `<th ${thStyle()}>${i18n_js.t('tooltipEnhancement.askBidHeader')}</th>`;
         html += `<th ${thStyle()}>${i18n_js.t('tooltipEnhancement.xpHeader')}</th>`;
         html += '</tr></thead><tbody>';
@@ -1522,7 +2244,8 @@
         for (const row of rows) {
             html += '<tr>';
             html += `<td ${tdStyle('left', config.COLOR_TOOLTIP_INFO)}>+${row.level}</td>`;
-            html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.cost}</td>`;
+            html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.craftCost}</td>`;
+            html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.enhanceCost}</td>`;
             if (showPrices) {
                 html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.ask} / ${row.bid}</td>`;
             }
@@ -5474,652 +6197,6 @@ self.onmessage = function (e) {
                 achievementGathering: achievementGathering, // Achievement Tier component (as decimal)
                 personalGathering: personalGathering, // Personal buff (seal) component (as decimal)
             },
-        };
-    }
-
-    /**
-     * Marketplace Buy Modal Autofill Utility
-     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
-     * an instance, then drives it with startSession / arm / exitSession.
-     *
-     * Exported helpers:
-     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
-     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
-     *   createAutofillManager(observerId)
-     */
-
-    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
-    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
-    const MAX_REACT_TREE_FIBERS = 50000;
-    const MAX_REACT_OWNER_DEPTH = 256;
-
-    function hasMarketplaceStateSignature(state) {
-        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
-    }
-
-    function getReactRootFiber() {
-        const rootElement = document.getElementById('root');
-        const rootContainer = rootElement?._reactRootContainer;
-        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
-    }
-
-    function findReactFiberFromRoot(element) {
-        const rootFiber = getReactRootFiber();
-        if (!rootFiber || !element) return null;
-
-        const stack = [rootFiber];
-        const visited = new Set();
-        let matchedFiber = null;
-
-        while (stack.length > 0) {
-            const fiber = stack.pop();
-            if (!fiber || visited.has(fiber)) continue;
-            visited.add(fiber);
-
-            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
-
-            if (fiber.stateNode === element) {
-                if (matchedFiber && matchedFiber !== fiber) return null;
-                matchedFiber = fiber;
-            }
-
-            if (fiber.sibling) stack.push(fiber.sibling);
-            if (fiber.child) stack.push(fiber.child);
-        }
-
-        return matchedFiber;
-    }
-
-    function getReactFiberFromElement(element) {
-        if (!element) return null;
-
-        const directFibers = new Set(
-            Object.getOwnPropertyNames(element)
-                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
-                .map((key) => element[key])
-                .filter(Boolean)
-        );
-        if (directFibers.size > 1) return null;
-        if (directFibers.size === 1) return directFibers.values().next().value;
-
-        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
-        // Resolve the exact host fiber from the public React root instead.
-        return findReactFiberFromRoot(element);
-    }
-
-    function normalizeMarketplaceState(state) {
-        if (!hasMarketplaceStateSignature(state)) return null;
-        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
-        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
-        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
-        if (typeof state.isSell !== 'boolean') return null;
-        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
-        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
-        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
-        if (
-            state.enhancementLevelInput !== undefined &&
-            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
-        ) {
-            return null;
-        }
-
-        return {
-            marketTabKey: state.marketTabKey,
-            marketListingsView: state.marketListingsView,
-            itemHrid: state.itemHrid,
-            enhancementLevel: state.enhancementLevel,
-            enhancementLevelInput: state.enhancementLevelInput,
-            isSell: state.isSell,
-            showPostListing: state.showPostListing,
-            isPostNewListing: state.isPostNewListing,
-            isInstantOrder: state.isInstantOrder,
-            quantityInput: state.quantityInput,
-            priceInput: state.priceInput,
-        };
-    }
-
-    /**
-     * Read the live Marketplace React component state from the unique visible Marketplace panel.
-     * The selected component must be on that panel host fiber's bounded return ancestry.
-     *
-     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
-     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
-     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
-     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
-     */
-    function getMarketplaceRuntimeComponentFromElement(element) {
-        let fiber = getReactFiberFromElement(element);
-        let depth = 0;
-        const candidates = [];
-        const seen = new Set();
-
-        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
-            const stateNode = fiber.stateNode;
-            if (
-                stateNode &&
-                !seen.has(stateNode) &&
-                typeof stateNode.setState === 'function' &&
-                typeof stateNode.handleQuantityInputChanged === 'function' &&
-                hasMarketplaceStateSignature(stateNode.state)
-            ) {
-                seen.add(stateNode);
-                candidates.push(stateNode);
-            }
-            fiber = fiber.return;
-            depth += 1;
-        }
-
-        // Fail closed when the ancestry is unexpectedly deeper than the bound or
-        // contains more than one Marketplace-like owner. The quantity input must
-        // identify one exact live component before we write to a controlled input.
-        if (fiber || candidates.length !== 1) return null;
-        return candidates[0];
-    }
-
-    /**
-     * Read Marketplace state from the exact DOM element that belongs to the live component.
-     * @param {HTMLElement} element
-     * @returns {ReturnType<typeof normalizeMarketplaceState>}
-     */
-    function readMarketplaceRuntimeStateFromElement(element) {
-        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
-    }
-
-    /**
-     * Game Data Lookup Utilities
-     *
-     * Centralized functions for resolving display names to HRIDs, plus locale-independent
-     * resolution via icon sprite references (see below) - prefer the sprite-based functions
-     * over the name-based ones wherever a `<use>` element is reachable, since display names are
-     * translated client-side and the name-based functions below only ever match the client's
-     * English-language data, silently failing on any other game locale.
-     */
-
-
-    /**
-     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
-     * @param {string} name - Original display name
-     * @returns {string[]} Array of alternate names to try (may be empty)
-     */
-    function getRefinedNameVariants(name) {
-        const variants = [];
-        if (name.includes('★')) {
-            variants.push(name.replace(/\s*★/, ' (R)'));
-        }
-        if (name.includes('(R)')) {
-            variants.push(name.replace(/\s*\(R\)/, ' ★'));
-        }
-        return variants;
-    }
-
-    /**
-     * Find an action HRID from its display name.
-     * Tries exact match first, then ★ ↔ (R) variants for refined items.
-     * @param {string} actionName - Display name of the action
-     * @returns {string|null} Action HRID or null if not found
-     */
-    function getActionHridFromName(actionName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) {
-            return null;
-        }
-
-        // Try exact match first (English or translated)
-        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            const displayName = getActionName(hrid, detail.name);
-            if (displayName === actionName || detail.name === actionName) {
-                return hrid;
-            }
-        }
-
-        // Try ★ ↔ (R) variants for refined items
-        for (const variant of getRefinedNameVariants(actionName)) {
-            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-                const displayName = getActionName(hrid, detail.name);
-                if (displayName === variant || detail.name === variant) {
-                    return hrid;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Resolve an action HRID by walking up the React fiber tree from a DOM element inside the
-     * action detail modal (SkillActionDetail) - unlike the tile list, that modal renders no
-     * hrid-keyed icon of its own, but `this.props.actionDetail.hrid` is set on its own component
-     * instance (confirmed against the client bundle), so this is locale-independent, unlike matching
-     * the modal's translated name text.
-     * @param {HTMLElement} element - Any DOM node inside the action detail modal.
-     * @returns {string|null}
-     */
-    function getActionHridFromFiber(element) {
-        if (!element) return null;
-
-        let f = getReactFiberFromElement(element);
-        while (f) {
-            const hrid = f.memoizedProps?.actionDetail?.hrid;
-            if (hrid) return hrid;
-            f = f.return;
-        }
-        return null;
-    }
-
-    /**
-     * Get the coin cost of an item from the in-game shop.
-     * Returns 0 if the item is not available in the shop or not purchasable with coins.
-     * @param {string} itemHrid - Item HRID
-     * @returns {number} Coin cost, or 0 if not available in shop
-     */
-    function getShopCoinCost(itemHrid) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.shopItemDetailMap) return 0;
-
-        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
-            if (shopItem.itemHrid === itemHrid) {
-                if (shopItem.costs && shopItem.costs.length > 0) {
-                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
-                    if (coinCost) {
-                        return coinCost.count;
-                    }
-                }
-            }
-        }
-
-        return 0;
-    }
-
-    /**
-     * Crafting Plan Calculator
-     * Computes the optimal buy-vs-craft plan for a target item by recursively
-     * comparing market price against crafting cost at each material tier.
-     */
-
-
-    const MAX_DEPTH = 15;
-
-    /**
-     * Find the production action that creates a given item.
-     * @param {string} itemHrid
-     * @returns {{ actionHrid: string, action: Object, outputCount: number } | null}
-     */
-    function findProductionAction(itemHrid) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) return null;
-
-        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
-            if (!action.outputItems) continue;
-            for (const output of action.outputItems) {
-                if (output.itemHrid === itemHrid) {
-                    return { actionHrid, action, outputCount: output.count || 1 };
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Get artisan tea material reduction bonus for an action type.
-     * @param {string} actionType - e.g. '/action_types/brewing'
-     * @returns {number} Reduction as decimal (e.g. 0.112 for 11.2%)
-     */
-    function getArtisanBonus(actionType) {
-        try {
-            const gameData = dataManager.getInitClientData();
-            const equipment = dataManager.getEquipment();
-            const itemDetailMap = gameData?.itemDetailMap || {};
-            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
-            const activeDrinks = dataManager.getActionDrinkSlots(actionType);
-            return teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
-        } catch {
-            return 0;
-        }
-    }
-
-    /**
-     * Compute the optimal crafting plan for an item.
-     * At each node, decides whether buying from market or crafting is cheaper.
-     *
-     * @param {string} itemHrid - Target item
-     * @param {number} quantity - How many needed
-     * @param {string} [mode='ask'] - Pricing mode for market lookups
-     * @param {Set} [visited] - Circular dependency guard
-     * @param {Map} [memo] - Memoization cache (unit cost per itemHrid)
-     * @param {number} [depth=0] - Current recursion depth
-     * @param {number} [maxDepth=MAX_DEPTH] - Maximum recursion depth (1 = buy all sub-materials)
-     * @param {boolean} [buyRawOnly=false] - When true, always craft items that have a recipe; only buy uncraftable items
-     * @param {boolean} [forceRootCraft=false] - When true, forces the root item (depth 0) to be crafted
-     * @param {number} [timeCostPerHour=0] - Gold value per hour of player time (0 = disabled)
-     * @param {boolean} [skipProcessing=false] - When true, forces buy for processing actions (single input, no upgrade)
-     * @returns {CraftingPlanNode}
-     */
-    function computeBestCraftingPlan(
-        itemHrid,
-        quantity = 1,
-        mode = 'ask',
-        visited = new Set(),
-        memo = new Map(),
-        depth = 0,
-        maxDepth = MAX_DEPTH,
-        buyRawOnly = false,
-        forceRootCraft = false,
-        timeCostPerHour = 0,
-        skipProcessing = false
-    ) {
-        const itemDetails = dataManager.getItemDetails(itemHrid);
-        const itemName = itemDetails?.name || itemHrid.split('/').pop();
-        const isTradable = itemDetails?.isTradable ?? false;
-        const artisanMode = materialCalculator_js.getArtisanMaterialMode();
-
-        // Get market buy price (min of market ask and shop cost)
-        let buyPrice = null;
-        let buyPriceOutlier = false;
-        if (isTradable) {
-            const marketPriceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode, context: 'profit', side: 'buy' });
-            if (marketPriceInfo.value !== null && marketPriceInfo.value > 0) {
-                buyPrice = marketPriceInfo.value;
-                buyPriceOutlier = marketPriceInfo.isOutlier;
-            }
-        }
-        const shopCost = getShopCoinCost(itemHrid);
-        if (shopCost > 0 && (buyPrice === null || shopCost < buyPrice)) {
-            buyPrice = shopCost;
-            buyPriceOutlier = false; // Shop cost is a fixed vendor price, never a market outlier
-        }
-
-        // Coins always cost 1 each
-        if (itemHrid === '/items/coin') {
-            return {
-                itemHrid,
-                itemName: i18n_js.t('craftingPlanCalculator.coinItemName'),
-                quantity,
-                strategy: 'buy',
-                unitCost: 1,
-                totalCost: quantity,
-                buyPrice: 1,
-                isOutlier: false,
-                craftCost: null,
-                actionHrid: null,
-                actionsNeeded: 0,
-                children: [],
-            };
-        }
-
-        // Check memo for previously computed unit cost
-        if (memo.has(itemHrid)) {
-            const cachedUnitCost = memo.get(itemHrid);
-            const actionsNeeded =
-                cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0;
-            return {
-                itemHrid,
-                itemName,
-                quantity,
-                strategy: cachedUnitCost.strategy,
-                unitCost: cachedUnitCost.unitCost,
-                totalCost: cachedUnitCost.unitCost * quantity,
-                buyPrice,
-                isOutlier: buyPriceOutlier,
-                craftCost: cachedUnitCost.craftCost,
-                actionHrid: cachedUnitCost.actionHrid,
-                actionsNeeded,
-                children:
-                    cachedUnitCost.strategy === 'craft'
-                        ? cachedUnitCost.childrenTemplate.map((c) =>
-                              computeBestCraftingPlan(
-                                  c.itemHrid,
-                                  c.isUpgrade
-                                      ? actionsNeeded
-                                      : materialCalculator_js.calculateTotalRequired(
-                                            c.basePerAction,
-                                            cachedUnitCost.artisanBonus,
-                                            actionsNeeded,
-                                            artisanMode
-                                        ),
-                                  mode,
-                                  visited,
-                                  memo,
-                                  depth + 1,
-                                  maxDepth,
-                                  buyRawOnly,
-                                  forceRootCraft,
-                                  timeCostPerHour,
-                                  skipProcessing
-                              )
-                          )
-                        : [],
-            };
-        }
-
-        // Circular dependency or depth limit — must buy
-        if (visited.has(itemHrid) || depth >= maxDepth) {
-            return {
-                itemHrid,
-                itemName,
-                quantity,
-                strategy: 'buy',
-                unitCost: buyPrice ?? Infinity,
-                totalCost: (buyPrice ?? Infinity) * quantity,
-                buyPrice,
-                isOutlier: buyPriceOutlier,
-                craftCost: null,
-                actionHrid: null,
-                actionsNeeded: 0,
-                children: [],
-            };
-        }
-
-        // Find production action
-        const production = findProductionAction(itemHrid);
-        if (!production) {
-            // No recipe — must buy
-            const unitCost = buyPrice ?? 0;
-            memo.set(itemHrid, {
-                strategy: 'buy',
-                unitCost,
-                craftCost: null,
-                actionHrid: null,
-                outputCount: 1,
-                childrenTemplate: [],
-            });
-            return {
-                itemHrid,
-                itemName,
-                quantity,
-                strategy: 'buy',
-                unitCost,
-                totalCost: unitCost * quantity,
-                buyPrice,
-                isOutlier: buyPriceOutlier,
-                craftCost: null,
-                actionHrid: null,
-                actionsNeeded: 0,
-                children: [],
-            };
-        }
-
-        // Skip processing actions if flag is set
-        // Processing = material conversion actions (milk → cheese, fiber → fabric, log → lumber)
-        // Identified by category ending in /material or /lumber (vs equipment crafting like /feet, /crossbow)
-        const isProcessingAction =
-            production.action.category?.endsWith('/material') || production.action.category?.endsWith('/lumber');
-        if (skipProcessing && isProcessingAction) {
-            const unitCost = buyPrice ?? Infinity;
-            memo.set(itemHrid, {
-                strategy: 'buy',
-                unitCost,
-                craftCost: null,
-                actionHrid: null,
-                outputCount: 1,
-                childrenTemplate: [],
-            });
-            return {
-                itemHrid,
-                itemName,
-                quantity,
-                strategy: 'buy',
-                unitCost,
-                totalCost: unitCost * quantity,
-                buyPrice,
-                isOutlier: buyPriceOutlier,
-                craftCost: null,
-                actionHrid: null,
-                actionsNeeded: 0,
-                children: [],
-            };
-        }
-
-        // Recurse into crafting
-        visited.add(itemHrid);
-        const { actionHrid, action, outputCount } = production;
-        const artisanBonus = getArtisanBonus(action.type);
-        const actionsForOne = 1 / outputCount; // actions per 1 output item
-        const actionsNeeded = Math.ceil(quantity / outputCount);
-
-        let craftCostPerUnit = 0;
-        const childrenTemplate = []; // { itemHrid, basePerAction, isUpgrade } for memo reconstruction
-
-        // Input items (affected by artisan bonus)
-        if (action.inputItems) {
-            for (const input of action.inputItems) {
-                const inputCountPerAction = input.count || 1;
-                const qtyPerUnit = inputCountPerAction * (1 - artisanBonus) * actionsForOne;
-
-                const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
-                const childPlan = computeBestCraftingPlan(
-                    input.itemHrid,
-                    inputQty,
-                    mode,
-                    visited,
-                    memo,
-                    depth + 1,
-                    maxDepth,
-                    buyRawOnly,
-                    forceRootCraft,
-                    timeCostPerHour,
-                    skipProcessing
-                );
-
-                craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
-                childrenTemplate.push({ itemHrid: input.itemHrid, basePerAction: inputCountPerAction, isUpgrade: false });
-            }
-        }
-
-        // Upgrade item (NOT affected by artisan bonus)
-        if (action.upgradeItemHrid) {
-            const qtyPerUnit = actionsForOne; // 1 upgrade per action
-            const upgradePlan = computeBestCraftingPlan(
-                action.upgradeItemHrid,
-                actionsNeeded,
-                mode,
-                visited,
-                memo,
-                depth + 1,
-                maxDepth,
-                buyRawOnly,
-                forceRootCraft,
-                timeCostPerHour,
-                skipProcessing
-            );
-
-            craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
-            childrenTemplate.push({ itemHrid: action.upgradeItemHrid, basePerAction: 1, isUpgrade: true });
-        }
-
-        visited.delete(itemHrid);
-
-        // Add time cost to craft cost if enabled
-        if (timeCostPerHour > 0) {
-            const gameData = dataManager.getInitClientData();
-            const actionDetails = gameData?.actionDetailMap?.[actionHrid];
-            if (actionDetails) {
-                const stats = actionCalculator_js.calculateActionStats(actionDetails, {
-                    skills: dataManager.getSkills(),
-                    equipment: dataManager.getEquipment(),
-                    itemDetailMap: gameData.itemDetailMap,
-                });
-                const effMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
-                const timePerUnit = (stats.actionTime / effMultiplier) * actionsForOne;
-                craftCostPerUnit += timePerUnit * (timeCostPerHour / 3600);
-            }
-        }
-
-        // Buy vs craft decision
-        // When buyRawOnly is true, always craft (we only reach here if a recipe exists)
-        // When forceRootCraft is true and depth === 0, always craft the root item
-        const shouldBuy =
-            !buyRawOnly && !(forceRootCraft && depth === 0) && buyPrice !== null && buyPrice <= craftCostPerUnit;
-        const strategy = shouldBuy ? 'buy' : 'craft';
-        const unitCost = shouldBuy ? buyPrice : craftCostPerUnit;
-
-        // Cache the decision
-        memo.set(itemHrid, {
-            strategy,
-            unitCost,
-            craftCost: craftCostPerUnit,
-            actionHrid: strategy === 'craft' ? actionHrid : null,
-            outputCount,
-            artisanBonus,
-            childrenTemplate: strategy === 'craft' ? childrenTemplate : [],
-        });
-
-        // Build children for the actual quantities
-        let children = [];
-        if (!shouldBuy) {
-            children = [];
-            if (action.inputItems) {
-                for (const input of action.inputItems) {
-                    const inputCountPerAction = input.count || 1;
-                    const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
-                    children.push(
-                        computeBestCraftingPlan(
-                            input.itemHrid,
-                            inputQty,
-                            mode,
-                            visited,
-                            memo,
-                            depth + 1,
-                            maxDepth,
-                            buyRawOnly,
-                            forceRootCraft,
-                            timeCostPerHour,
-                            skipProcessing
-                        )
-                    );
-                }
-            }
-            if (action.upgradeItemHrid) {
-                children.push(
-                    computeBestCraftingPlan(
-                        action.upgradeItemHrid,
-                        actionsNeeded,
-                        mode,
-                        visited,
-                        memo,
-                        depth + 1,
-                        maxDepth,
-                        buyRawOnly,
-                        forceRootCraft,
-                        timeCostPerHour,
-                        skipProcessing
-                    )
-                );
-            }
-        }
-
-        return {
-            itemHrid,
-            itemName,
-            quantity,
-            strategy,
-            unitCost,
-            totalCost: unitCost * quantity,
-            buyPrice,
-            isOutlier: buyPriceOutlier,
-            craftCost: craftCostPerUnit,
-            actionHrid: strategy === 'craft' ? actionHrid : null,
-            actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,
-            children,
         };
     }
 
@@ -38415,4 +38492,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.materialCalculator, Toolasha.Utils.warningIcon, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);

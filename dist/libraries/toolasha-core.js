@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.7.1
+ * Version: 3.7.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8993,9 +8993,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             bidHeader: 'Bid',
             bidSuffixLabel: '(bid)',
             buyItemLabel: 'Buy Item',
-            costHeader: 'Cost',
             countHeader: 'Count',
+            craftCostHeader: 'Craft Cost',
+            craftingCostSubtotalLabel: 'Crafting Cost',
             craftItemLabel: 'Craft Item',
+            enhanceCostHeader: 'Enhance Cost',
+            enhancingCostSubtotalLabel: 'Enhancing Cost',
             expectedAttemptsLine: (p) => `Expected Attempts: ${p.value}`,
             fromLevelLabel: (p) => `From +${p.level}`,
             levelHeader: 'Level',
@@ -12741,9 +12744,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             bidHeader: '买价',
             bidSuffixLabel: '（买价）',
             buyItemLabel: '购买物品',
-            costHeader: '花费',
             countHeader: '数量',
+            craftCostHeader: '制作花费',
+            craftingCostSubtotalLabel: '制作花费',
             craftItemLabel: '制作物品',
+            enhanceCostHeader: '强化花费',
+            enhancingCostSubtotalLabel: '强化花费',
             expectedAttemptsLine: (p) => `预期尝试次数：${p.value}`,
             fromLevelLabel: (p) => `从 +${p.level}`,
             levelHeader: '等级',
