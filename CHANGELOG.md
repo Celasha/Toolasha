@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.9.1](https://github.com/Celasha/Toolasha/compare/v3.9.0...v3.9.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* strip all skilling-tool slots from Metz combat sim export ([ed4b61f](https://github.com/Celasha/Toolasha/commit/ed4b61f44e4a30c67918ad97056f917df8edb561))
+
 ## [3.9.0](https://github.com/Celasha/Toolasha/compare/v3.8.1...v3.9.0) (2026-10-09)
 
 ### Features
