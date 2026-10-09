@@ -8,6 +8,7 @@ import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
+import { getChatChannelHridFromName } from '../../utils/game-lookups.js';
 import mentionPopup from './mention-popup.js';
 import notificationLog from './notification-log.js';
 
@@ -172,18 +173,25 @@ class MentionTracker {
         // Strip trailing numbers (unread counts) from tab name
         const cleanName = tabName.replace(/\d+$/, '');
 
+        // Resolve against the game's channel data, matching both the English
+        // data name and the localized tab label (chatChannelTypeNames namespace),
+        // so non-English clients resolve channels too.
+        const resolved = getChatChannelHridFromName(cleanName);
+        if (resolved) return resolved;
+
+        // Fallback for before chat channel data has loaded: legacy English table.
         const nameMap = {
             Party: '/chat_channel_types/party',
             Guild: '/chat_channel_types/guild',
             Local: '/chat_channel_types/local',
             Whisper: '/chat_channel_types/whisper',
-            Global: '/chat_channel_types/global',
+            Global: '/chat_channel_types/general',
             General: '/chat_channel_types/general',
             Trade: '/chat_channel_types/trade',
             Beginner: '/chat_channel_types/beginner',
             Recruit: '/chat_channel_types/recruit',
             Ironcow: '/chat_channel_types/ironcow',
-            Mod: '/chat_channel_types/mod',
+            Mod: '/chat_channel_types/moderator',
         };
         return nameMap[cleanName] || null;
     }

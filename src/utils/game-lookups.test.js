@@ -8,10 +8,20 @@ vi.mock('../core/data-manager.js', () => ({
     default: { getInitClientData: vi.fn(() => gameData) },
 }));
 
+// Localized (non-English) game strings, keyed "<namespace>.<key>" / "<prefix>.<hrid>".
+const gameI18nTranslations = vi.hoisted(() => ({}));
+
+vi.mock('./game-i18n.js', () => ({
+    getActionName: (hrid, fallback) => gameI18nTranslations[`action.${hrid}`] ?? fallback,
+    getItemName: (hrid, fallback) => gameI18nTranslations[`item.${hrid}`] ?? fallback,
+    translateGameName: (namespace, key, fallback) => gameI18nTranslations[`${namespace}.${key}`] ?? fallback,
+}));
+
 let getActionHridFromIconHref;
 let getSkillHridFromIconHref;
 let getActionHridFromFiber;
 let getQuestFromTaskCard;
+let getChatChannelHridFromName;
 
 beforeEach(async () => {
     // The module caches its fragment->hrid maps on first use for the life of the module
@@ -19,8 +29,16 @@ beforeEach(async () => {
     // cases.
     vi.resetModules();
     document.body.innerHTML = '';
-    ({ getActionHridFromIconHref, getSkillHridFromIconHref, getActionHridFromFiber, getQuestFromTaskCard } =
-        await import('./game-lookups.js'));
+    for (const key of Object.keys(gameI18nTranslations)) {
+        delete gameI18nTranslations[key];
+    }
+    ({
+        getActionHridFromIconHref,
+        getSkillHridFromIconHref,
+        getActionHridFromFiber,
+        getQuestFromTaskCard,
+        getChatChannelHridFromName,
+    } = await import('./game-lookups.js'));
 });
 
 // Builds a minimal React fiber tree rooted at document.getElementById('root') so
@@ -155,5 +173,55 @@ describe('getQuestFromTaskCard', () => {
         attachReactRoot(goBtn, { stateNode: null, child: null, sibling: null, return: null });
 
         expect(getQuestFromTaskCard(card)).toBeNull();
+    });
+});
+
+describe('getChatChannelHridFromName', () => {
+    beforeEach(() => {
+        gameData.chatChannelTypeDetailMap = {
+            '/chat_channel_types/party': { name: 'Party' },
+            '/chat_channel_types/guild': { name: 'Guild' },
+            '/chat_channel_types/general': { name: 'Global' },
+            '/chat_channel_types/moderator': { name: 'Mod' },
+        };
+    });
+
+    test('resolves the English data name, including display-name quirks (Global/Mod)', () => {
+        expect(getChatChannelHridFromName('Party')).toBe('/chat_channel_types/party');
+        // The en data names for these channels differ from their hrid tail segment.
+        expect(getChatChannelHridFromName('Global')).toBe('/chat_channel_types/general');
+        expect(getChatChannelHridFromName('Mod')).toBe('/chat_channel_types/moderator');
+    });
+
+    test('resolves localized (zh-Hans) tab labels from the chatChannelTypeNames namespace', () => {
+        // Real zh-Hans strings from the game's language chunk.
+        gameI18nTranslations['chatChannelTypeNames./chat_channel_types/party'] = '队伍';
+        gameI18nTranslations['chatChannelTypeNames./chat_channel_types/guild'] = '公会';
+        gameI18nTranslations['chatChannelTypeNames./chat_channel_types/general'] = '世界';
+        gameI18nTranslations['chatChannelTypeNames./chat_channel_types/moderator'] = '管理员';
+
+        expect(getChatChannelHridFromName('队伍')).toBe('/chat_channel_types/party');
+        expect(getChatChannelHridFromName('公会')).toBe('/chat_channel_types/guild');
+        expect(getChatChannelHridFromName('世界')).toBe('/chat_channel_types/general');
+        expect(getChatChannelHridFromName('管理员')).toBe('/chat_channel_types/moderator');
+    });
+
+    test('the English data name still resolves when a translation also exists', () => {
+        gameI18nTranslations['chatChannelTypeNames./chat_channel_types/party'] = '队伍';
+
+        expect(getChatChannelHridFromName('Party')).toBe('/chat_channel_types/party');
+        expect(getChatChannelHridFromName('队伍')).toBe('/chat_channel_types/party');
+    });
+
+    test('returns null for an unrecognized or empty name', () => {
+        expect(getChatChannelHridFromName('世界')).toBeNull();
+        expect(getChatChannelHridFromName('')).toBeNull();
+        expect(getChatChannelHridFromName(null)).toBeNull();
+    });
+
+    test('returns null before chat channel data has loaded', () => {
+        delete gameData.chatChannelTypeDetailMap;
+
+        expect(getChatChannelHridFromName('Party')).toBeNull();
     });
 });

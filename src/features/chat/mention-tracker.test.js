@@ -19,6 +19,14 @@ vi.mock('../../core/data-manager.js', () => ({
     },
 }));
 
+const { getChatChannelHridFromNameMock } = vi.hoisted(() => ({
+    getChatChannelHridFromNameMock: vi.fn(),
+}));
+
+vi.mock('../../utils/game-lookups.js', () => ({
+    getChatChannelHridFromName: getChatChannelHridFromNameMock,
+}));
+
 vi.mock('../../core/websocket.js', () => ({
     default: { on: vi.fn(), off: vi.fn() },
 }));
@@ -128,5 +136,51 @@ describe('MentionTracker - mirrors detected mentions into the Log tab', () => {
         const { timestamp } = notificationLog.logMention.mock.calls[0][0];
         expect(typeof timestamp).toBe('number');
         expect(timestamp).toBeGreaterThan(0);
+    });
+});
+
+describe('MentionTracker - getChannelFromTabName', () => {
+    let feature;
+    let getChatChannelHridFromName;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        vi.clearAllMocks();
+        const config = (await import('../../core/config.js')).default;
+        config.getSetting.mockReturnValue(true);
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterName.mockReturnValue('You');
+        ({ getChatChannelHridFromName } = await import('../../utils/game-lookups.js'));
+        // Default: game channel data resolves nothing (e.g. not loaded yet),
+        // exercising the English fallback table.
+        getChatChannelHridFromName.mockReturnValue(null);
+
+        ({ default: feature } = await import('./mention-tracker.js'));
+        await feature.initialize();
+    });
+
+    test('resolves a localized (zh-Hans) tab label through the game channel data', () => {
+        getChatChannelHridFromName.mockReturnValue('/chat_channel_types/party');
+
+        expect(feature.getChannelFromTabName('队伍')).toBe('/chat_channel_types/party');
+    });
+
+    test('strips trailing unread-count digits from the tab name before resolving', () => {
+        getChatChannelHridFromName.mockReturnValue('/chat_channel_types/guild');
+
+        expect(feature.getChannelFromTabName('公会3')).toBe('/chat_channel_types/guild');
+        expect(getChatChannelHridFromName).toHaveBeenCalledWith('公会');
+    });
+
+    test('falls back to the English table before game data has loaded', () => {
+        expect(feature.getChannelFromTabName('Party')).toBe('/chat_channel_types/party');
+        expect(feature.getChannelFromTabName('Guild')).toBe('/chat_channel_types/guild');
+        // These two entries map to channels whose hrid tail differs from the label.
+        expect(feature.getChannelFromTabName('Global')).toBe('/chat_channel_types/general');
+        expect(feature.getChannelFromTabName('Mod')).toBe('/chat_channel_types/moderator');
+    });
+
+    test('returns null for an unrecognized tab name', () => {
+        expect(feature.getChannelFromTabName('某某频道')).toBeNull();
     });
 });
