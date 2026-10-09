@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.7.2](https://github.com/Celasha/Toolasha/compare/v3.7.1...v3.7.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* price enhancement base item via the full crafting plan, split craft/enhance cost ([8bfbfc6](https://github.com/Celasha/Toolasha/commit/8bfbfc60d9b770d16a2a0631805d0e12f90fd1ff))
+
 ## [3.7.1](https://github.com/Celasha/Toolasha/compare/v3.7.0...v3.7.1) (2026-10-09)
 
 ### Bug Fixes
