@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.7.2
+ * Version: 3.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8500,6 +8500,7 @@
             sortProfitLabel: 'Sort: Profit',
             sortProfitXpLabel: 'Sort: Profit/XP',
             sortXpLabel: 'Sort: XP',
+            sortCraftableLabel: 'Sort: Craftable',
         },
         actionTimeDisplay: {
             unknownAction: '[Unknown action]',
@@ -13832,6 +13833,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             sortProfitLabel: '排序：利润',
             sortProfitXpLabel: '排序：利润/经验',
             sortXpLabel: '排序：经验',
+            sortCraftableLabel: '排序：可制作数',
         },
         actionTimeDisplay: {
             unknownAction: '[未知动作]',

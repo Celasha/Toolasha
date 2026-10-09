@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.7.2
+ * Version: 3.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9856,10 +9856,10 @@
 
     class ActionPanelSort {
         constructor() {
-            this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour, expPerHour}
+            this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour, expPerHour, maxProduceable}
             this.pinnedActions = new Set(); // Set of pinned action HRIDs
             this.cachedStats = {}; // actionHrid → { profitPerHour, expPerHour }
-            this.sortMode = 'default'; // 'default' | 'profit' | 'xp' | 'coinsPerXp'
+            this.sortMode = 'default'; // 'default' | 'profit' | 'xp' | 'coinsPerXp' | 'craftable'
             this.sortTimeout = null; // Debounce timer
             this.initialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
@@ -9961,6 +9961,7 @@
                 actionHrid: actionHrid,
                 profitPerHour: profitPerHour,
                 expPerHour: null,
+                maxProduceable: null,
             });
         }
 
@@ -9993,8 +9994,20 @@
         }
 
         /**
+         * Update max produceable count for a registered panel
+         * @param {HTMLElement} actionPanel - The action panel element
+         * @param {number|null} maxProduceable - Max times this action can be performed with current inventory
+         */
+        updateMaxProduceable(actionPanel, maxProduceable) {
+            const data = this.panels.get(actionPanel);
+            if (data) {
+                data.maxProduceable = maxProduceable;
+            }
+        }
+
+        /**
          * Set the active sort mode
-         * @param {'default'|'profit'|'xp'|'coinsPerXp'} mode
+         * @param {'default'|'profit'|'xp'|'coinsPerXp'|'craftable'} mode
          */
         setSortMode(mode) {
             this.sortMode = mode;
@@ -10004,7 +10017,7 @@
 
         /**
          * Get the active sort mode
-         * @returns {'default'|'profit'|'xp'|'coinsPerXp'}
+         * @returns {'default'|'profit'|'xp'|'coinsPerXp'|'craftable'}
          */
         getSortMode() {
             return this.sortMode;
@@ -10170,6 +10183,7 @@
                     panel: actionPanel,
                     profit: data.profitPerHour ?? null,
                     exp: data.expPerHour ?? null,
+                    maxProduceable: data.maxProduceable ?? null,
                     pinned: isPinned,
                     originalIndex: containerMap.get(container).length,
                     actionHrid: data.actionHrid,
@@ -10233,6 +10247,13 @@
                 if (aRatio === null) return 1;
                 if (bRatio === null) return -1;
                 return bRatio - aRatio;
+            }
+
+            if (sortMode === 'craftable') {
+                if (a.maxProduceable === null && b.maxProduceable === null) return 0;
+                if (a.maxProduceable === null) return 1;
+                if (b.maxProduceable === null) return -1;
+                return b.maxProduceable - a.maxProduceable;
             }
 
             // 'default' — sort ascending by required level, falling back to insertion order
@@ -19651,6 +19672,13 @@ self.onmessage = function (e) {
      * unpriced junk items out of the ranking -- its "price" here is the opportunity cost of the
      * cheapest tradeable route to this same credit type, i.e. what you'd otherwise have to pay in
      * gold to get one more of this credit.
+     *
+     * For the token row, `tokenAskEach`/`tokenBidEach` hold the gold-equivalent value of a single
+     * Guild Token (display-only, for the "Ask each"/"Bid each" columns) while `sellGPC`/`buyGPC`
+     * hold the true per-credit cost, run through the exact same (price * itemCount) / creditCount
+     * formula as every other row. `sellPrice`/`buyPrice` stay null for the token row -- those are
+     * what the exchange advisor treats as a real sellable market price, and Guild Token was never
+     * actually sellable on the market.
      * @param {Object} itemDetailMap
      * @param {string} creditHrid
      * @param {Object} [options]
@@ -19685,8 +19713,22 @@ self.onmessage = function (e) {
             const buyInfo = isToken ? null : marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'bid' });
             const sellPrice = isToken ? null : sellInfo.value;
             const buyPrice = isToken ? null : buyInfo.value;
-            const sellGPC = isToken ? tokenAskGPC : sellPrice > 0 ? (sellPrice * conv.itemCount) / conv.creditCount : null;
-            const buyGPC = isToken ? tokenBidGPC : buyPrice > 0 ? (buyPrice * conv.itemCount) / conv.creditCount : null;
+            const tokenAskEach = isToken ? tokenAskGPC : null;
+            const tokenBidEach = isToken ? tokenBidGPC : null;
+            const sellGPC = isToken
+                ? tokenAskGPC !== null
+                    ? (tokenAskGPC * conv.itemCount) / conv.creditCount
+                    : null
+                : sellPrice > 0
+                  ? (sellPrice * conv.itemCount) / conv.creditCount
+                  : null;
+            const buyGPC = isToken
+                ? tokenBidGPC !== null
+                    ? (tokenBidGPC * conv.itemCount) / conv.creditCount
+                    : null
+                : buyPrice > 0
+                  ? (buyPrice * conv.itemCount) / conv.creditCount
+                  : null;
 
             if (sellGPC === null && buyGPC === null) continue;
 
@@ -19697,6 +19739,8 @@ self.onmessage = function (e) {
                 creditCount: conv.creditCount,
                 sellPrice,
                 buyPrice,
+                tokenAskEach,
+                tokenBidEach,
                 sellGPC,
                 buyGPC,
                 sellOutlier: isToken ? tokenSellRow?.isOutlier || false : sellInfo.isOutlier,
@@ -19966,11 +20010,13 @@ self.onmessage = function (e) {
                     const nameDisplay = row.isToken
                         ? `${localizedName} <span style="color:#6b7280;font-size:9px;">${i18n_js.t('guildCreditValue.tokensLabel')}</span>`
                         : localizedName;
+                    const askEach = row.isToken ? row.tokenAskEach : row.sellPrice;
+                    const bidEach = row.isToken ? row.tokenBidEach : row.buyPrice;
                     tr.innerHTML = `
                 <td style="padding:4px 6px; text-align:left;">${nameDisplay}</td>
                 <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatters_js.formatKMB(row.sellPrice) + warningIcon_js.buildOutlierPriceWarningIcon(row.sellOutlier) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatters_js.formatKMB(row.buyPrice) + warningIcon_js.buildOutlierPriceWarningIcon(row.buyOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${askEach ? formatters_js.formatKMB(askEach) + warningIcon_js.buildOutlierPriceWarningIcon(row.sellOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${bidEach ? formatters_js.formatKMB(bidEach) + warningIcon_js.buildOutlierPriceWarningIcon(row.buyOutlier) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right; ${sortKey === 'bid' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.sellGPC ? formatters_js.formatKMB(row.sellGPC) + warningIcon_js.buildOutlierPriceWarningIcon(row.sellOutlier) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right; ${sortKey === 'ask' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.buyGPC ? formatters_js.formatKMB(row.buyGPC) + warningIcon_js.buildOutlierPriceWarningIcon(row.buyOutlier) : '–'}</td>
             `;

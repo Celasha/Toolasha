@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.7.2
+ * Version: 3.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1974,8 +1974,8 @@
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
             html += `<td style="padding: 2px 4px; font-weight: bold;">${i18n_js.t('tooltipEnhancement.totalLabel')}</td>`;
             html += '<td style="padding: 2px 4px; text-align: center;"></td>';
-            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatLargeNumber(totalAsk)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatLargeNumber(totalBid)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
             html += '</tr>';
 
             // Item rows
@@ -1983,8 +1983,8 @@
                 html += '<tr>';
                 html += `<td style="padding: 2px 4px;">${row.name}</td>`;
                 html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(row.count)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.askPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.bidPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(row.askPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(row.bidPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
                 html += '</tr>';
             }
         } else {
@@ -2073,8 +2073,8 @@
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
             html += `<td style="padding: 2px 4px; font-weight: bold;">${i18n_js.t('tooltipEnhancement.totalLabel')}</td>`;
             html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(totalCount)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatLargeNumber(totalAsk)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatLargeNumber(totalBid)}${warningIcon_js.buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
             html += '</tr>';
 
             // Crafting Cost / Enhancing Cost subtotals - the base item row above is the crafting
@@ -2088,14 +2088,14 @@
             html += '<tr>';
             html += `<td style="padding: 2px 4px;">${i18n_js.t('tooltipEnhancement.craftingCostSubtotalLabel')}</td>`;
             html += '<td style="padding: 2px 4px; text-align: center;"></td>';
-            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(craftingCostAsk)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(craftingCostBid)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(craftingCostAsk)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(craftingCostBid)}</td>`;
             html += '</tr>';
             html += '<tr>';
             html += `<td style="padding: 2px 4px;">${i18n_js.t('tooltipEnhancement.enhancingCostSubtotalLabel')}</td>`;
             html += '<td style="padding: 2px 4px; text-align: center;"></td>';
-            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(enhancingCostAsk)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(enhancingCostBid)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(enhancingCostAsk)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(enhancingCostBid)}</td>`;
             html += '</tr>';
 
             // Item rows
@@ -2104,12 +2104,12 @@
                 html += `<td style="padding: 2px 4px;">${row.name}</td>`;
                 if (row.isCoin) {
                     html += '<td style="padding: 2px 4px; text-align: center;">—</td>';
-                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.count)}</td>`;
-                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.count)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(row.count)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(row.count)}</td>`;
                 } else {
                     html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(row.count)}</td>`;
-                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.askPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
-                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.bidPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(row.askPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(row.bidPrice)}${warningIcon_js.buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
                 }
                 html += '</tr>';
             }
@@ -2197,9 +2197,10 @@
 
         const showPrices = config.getSetting('itemTooltip_prices');
         const useKMB = formatters_js.isAbbreviationEnabled();
-        const fmt = (n) => (n != null && n > 0 ? (useKMB ? formatters_js.formatLargeNumber(n, 0) : formatters_js.numberFormatter(Math.round(n))) : '—');
+        const fmtXp = (n) =>
+            n != null && n > 0 ? (useKMB ? formatters_js.formatLargeNumber(n, 0) : formatters_js.numberFormatter(Math.round(n))) : '—';
         const fmtCost = (n) =>
-            n != null && n > 0 ? (useKMB ? formatters_js.formatLargeNumber(n, 1) : formatters_js.numberFormatter(Math.round(n))) : '—';
+            n != null && n > 0 ? (useKMB ? formatters_js.formatLargeNumber(n) : formatters_js.numberFormatter(Math.round(n))) : '—';
 
         const rows = [];
         for (const level of MILESTONE_LEVELS) {
@@ -2210,14 +2211,14 @@
             const enhanceCost = fmtCost(
                 Math.max(0, (data.optimalStrategy.totalCost || 0) - (data.optimalStrategy.baseCost || 0))
             );
-            const xp = data.totalExpectedXP !== null ? fmt(Math.round(data.totalExpectedXP)) : '—';
+            const xp = data.totalExpectedXP !== null ? fmtXp(Math.round(data.totalExpectedXP)) : '—';
 
             let ask = '—';
             let bid = '—';
             if (showPrices) {
                 const prices = marketData_js.getItemPrices(itemHrid, level);
-                ask = fmt(prices?.ask) + warningIcon_js.buildOutlierPriceWarningIcon(prices?.ask > 0 && prices.askOutlier);
-                bid = fmt(prices?.bid) + warningIcon_js.buildOutlierPriceWarningIcon(prices?.bid > 0 && prices.bidOutlier);
+                ask = fmtCost(prices?.ask) + warningIcon_js.buildOutlierPriceWarningIcon(prices?.ask > 0 && prices.askOutlier);
+                bid = fmtCost(prices?.bid) + warningIcon_js.buildOutlierPriceWarningIcon(prices?.bid > 0 && prices.bidOutlier);
             }
 
             rows.push({ level, craftCost, enhanceCost, xp, ask, bid });
@@ -6760,6 +6761,12 @@ self.onmessage = function (e) {
                 map = new Map();
                 for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
                     map.set(item.name, hrid);
+                    // Also register the localized name so tooltips rendered in the
+                    // game's non-English locale (e.g. Chinese) can resolve the HRID.
+                    const localizedName = getItemName(hrid, item.name);
+                    if (localizedName && localizedName !== item.name) {
+                        map.set(localizedName, hrid);
+                    }
                 }
 
                 // Only cache if we got actual entries (avoid poisoning with empty map)
@@ -7905,6 +7912,10 @@ self.onmessage = function (e) {
             const map = new Map();
             for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
                 map.set(item.name, hrid);
+                const localizedName = getItemName(hrid, item.name);
+                if (localizedName && localizedName !== item.name) {
+                    map.set(localizedName, hrid);
+                }
             }
 
             // Only cache if we got actual entries (avoid poisoning with empty map)

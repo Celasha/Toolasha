@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.7.2
+ * Version: 3.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5290,10 +5290,10 @@
 
     class ActionPanelSort {
         constructor() {
-            this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour, expPerHour}
+            this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour, expPerHour, maxProduceable}
             this.pinnedActions = new Set(); // Set of pinned action HRIDs
             this.cachedStats = {}; // actionHrid → { profitPerHour, expPerHour }
-            this.sortMode = 'default'; // 'default' | 'profit' | 'xp' | 'coinsPerXp'
+            this.sortMode = 'default'; // 'default' | 'profit' | 'xp' | 'coinsPerXp' | 'craftable'
             this.sortTimeout = null; // Debounce timer
             this.initialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
@@ -5395,6 +5395,7 @@
                 actionHrid: actionHrid,
                 profitPerHour: profitPerHour,
                 expPerHour: null,
+                maxProduceable: null,
             });
         }
 
@@ -5427,8 +5428,20 @@
         }
 
         /**
+         * Update max produceable count for a registered panel
+         * @param {HTMLElement} actionPanel - The action panel element
+         * @param {number|null} maxProduceable - Max times this action can be performed with current inventory
+         */
+        updateMaxProduceable(actionPanel, maxProduceable) {
+            const data = this.panels.get(actionPanel);
+            if (data) {
+                data.maxProduceable = maxProduceable;
+            }
+        }
+
+        /**
          * Set the active sort mode
-         * @param {'default'|'profit'|'xp'|'coinsPerXp'} mode
+         * @param {'default'|'profit'|'xp'|'coinsPerXp'|'craftable'} mode
          */
         setSortMode(mode) {
             this.sortMode = mode;
@@ -5438,7 +5451,7 @@
 
         /**
          * Get the active sort mode
-         * @returns {'default'|'profit'|'xp'|'coinsPerXp'}
+         * @returns {'default'|'profit'|'xp'|'coinsPerXp'|'craftable'}
          */
         getSortMode() {
             return this.sortMode;
@@ -5604,6 +5617,7 @@
                     panel: actionPanel,
                     profit: data.profitPerHour ?? null,
                     exp: data.expPerHour ?? null,
+                    maxProduceable: data.maxProduceable ?? null,
                     pinned: isPinned,
                     originalIndex: containerMap.get(container).length,
                     actionHrid: data.actionHrid,
@@ -5667,6 +5681,13 @@
                 if (aRatio === null) return 1;
                 if (bRatio === null) return -1;
                 return bRatio - aRatio;
+            }
+
+            if (sortMode === 'craftable') {
+                if (a.maxProduceable === null && b.maxProduceable === null) return 0;
+                if (a.maxProduceable === null) return 1;
+                if (b.maxProduceable === null) return -1;
+                return b.maxProduceable - a.maxProduceable;
             }
 
             // 'default' — sort ascending by required level, falling back to insertion order
@@ -5851,12 +5872,13 @@
             }
 
             // Create sort toggle button
-            const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp'];
+            const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp', 'craftable'];
             const SORT_LABELS = {
                 default: i18n_js.t('actionFilter.sortDefaultLabel'),
                 profit: i18n_js.t('actionFilter.sortProfitLabel'),
                 xp: i18n_js.t('actionFilter.sortXpLabel'),
                 coinsPerXp: i18n_js.t('actionFilter.sortProfitXpLabel'),
+                craftable: i18n_js.t('actionFilter.sortCraftableLabel'),
             };
             const sortBtn = document.createElement('button');
             sortBtn.id = 'mwi-action-sort-toggle';
@@ -15402,6 +15424,9 @@
                     return;
                 }
             }
+
+            // Store max produceable for sorting (null for gathering actions - no inputs to count)
+            actionPanelSort.updateMaxProduceable(actionPanel, maxCrafts);
 
             // Calculate profit/hr (for both gathering and production)
             let profitPerHour = null;
