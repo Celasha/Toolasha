@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.8.0](https://github.com/Celasha/Toolasha/compare/v3.7.2...v3.8.0) (2026-10-09)
+
+
+### Features
+
+* add Craftable sort mode to action panel sort cycle ([da9c09f](https://github.com/Celasha/Toolasha/commit/da9c09faeb008222b5d1ffa1a97eef557ef03f0c))
+
+
+### Bug Fixes
+
+* honor number-format precision setting for enhancement tooltip prices ([5083070](https://github.com/Celasha/Toolasha/commit/5083070159b0c30dadb5a9337567290f1ce5ac46))
+* **i18n:** add localized item names to tooltip HRID lookup maps ([#747](https://github.com/Celasha/Toolasha/issues/747)) ([56a88ff](https://github.com/Celasha/Toolasha/commit/56a88ffb19ae6e7ff96248c57bdddfe9af0dbf41))
+* show per-credit cost, not per-exchange cost, for Guild Token row ([94ace8e](https://github.com/Celasha/Toolasha/commit/94ace8ee78a9a50b81dd81bbab66a9ca0730732b))
+
 ## [3.7.2](https://github.com/Celasha/Toolasha/compare/v3.7.1...v3.7.2) (2026-10-09)
 
 ### Bug Fixes
