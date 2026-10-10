@@ -108,6 +108,44 @@ describe('TaskStatistics.createZoneProgressSection', () => {
 
         root.remove();
     });
+
+    test('row with a planet anchor prefers handleGoToMonster and converts boss counts', () => {
+        const overlay = document.createElement('div');
+        document.body.appendChild(overlay);
+        taskStatistics.overlay = overlay;
+
+        const handleGoToAction = vi.fn();
+        const handleGoToMonster = vi.fn();
+        const root = document.createElement('div');
+        root.id = 'root';
+        root._reactRootContainer = {
+            current: { stateNode: { handleGoToAction, handleGoToMonster }, sibling: null, child: null },
+        };
+        document.body.appendChild(root);
+
+        const section = taskStatistics.createZoneProgressSection(
+            [
+                makeZone({
+                    fightsNeeded: 120,
+                    anchor: { monsterHrid: '/monsters/eye_boss', isBoss: true, battlesPerBoss: 10 },
+                }),
+                makeZone({
+                    fightsNeeded: 77,
+                    anchor: { monsterHrid: '/monsters/unique_spawn', isBoss: false, battlesPerBoss: 1 },
+                }),
+            ],
+            '#ffffff'
+        );
+        const bossRow = section.children[1];
+        const spawnRow = section.children[2];
+        bossRow.onclick();
+        expect(handleGoToMonster).toHaveBeenLastCalledWith('/monsters/eye_boss', 12);
+        spawnRow.onclick();
+        expect(handleGoToMonster).toHaveBeenLastCalledWith('/monsters/unique_spawn', 77);
+        expect(handleGoToAction).not.toHaveBeenCalled();
+
+        root.remove();
+    });
 });
 
 describe('TaskStatistics progressive popup', () => {

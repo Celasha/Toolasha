@@ -872,7 +872,18 @@ class TaskStatistics {
             row.onclick = () => {
                 this.closePopup();
                 const game = getGameObject();
-                if (!game?.handleGoToAction) return;
+                if (!game) return;
+                // The combat page only opens the zone-select window for monster-based jumps;
+                // handleGoToAction merely switches to the combat tab without opening anything.
+                const anchor = zone.anchor;
+                if (typeof game.handleGoToMonster === 'function' && anchor) {
+                    const count = anchor.isBoss
+                        ? Math.max(1, Math.round(zone.fightsNeeded / (anchor.battlesPerBoss || 10)))
+                        : Math.round(zone.fightsNeeded);
+                    game.handleGoToMonster(anchor.monsterHrid, count);
+                    return;
+                }
+                if (!game.handleGoToAction) return;
                 const numActions = Number.isFinite(zone.fightsNeeded) ? Math.round(zone.fightsNeeded) : undefined;
                 game.handleGoToAction(zone.zoneHrid, numActions);
             };

@@ -41,7 +41,12 @@ vi.mock('../../utils/game-i18n.js', () => ({
 }));
 
 import dataManager from '../../core/data-manager.js';
-import { buildZoneSpawnSets, computeAllZoneProgress, findPlanetForMonster } from './task-zone-progress.js';
+import {
+    buildZoneSpawnSets,
+    computeAllZoneProgress,
+    findPlanetAnchorMonster,
+    findPlanetForMonster,
+} from './task-zone-progress.js';
 
 function quest({ monsterHrid, goalCount = 100, currentCount = 0 }) {
     return {
@@ -184,6 +189,83 @@ describe('computeAllZoneProgress', () => {
         // 瓶颈：cyclops 100/100 = 1h；compound_eye 397/50 = 7.94h → 后者是瓶颈
         expect(result[0].hoursNeeded).toBeCloseTo(7.94);
         expect(result[0].fightsNeeded).toBe(Math.round(150 * 7.94));
+        // 锚定怪：compound_eye 是星球独占普通刷怪
+        expect(result[0].anchor).toEqual({
+            monsterHrid: '/monsters/compound_eye',
+            isBoss: false,
+            battlesPerBoss: 1,
+        });
+    });
+});
+
+describe('findPlanetAnchorMonster', () => {
+    const adm = {
+        '/actions/combat/solo_a': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: { randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/shared' }] } },
+            },
+        },
+        '/actions/combat/planet_x': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: {
+                    battlesPerBoss: 10,
+                    randomSpawnInfo: {
+                        spawns: [
+                            { combatMonsterHrid: '/monsters/shared' },
+                            { combatMonsterHrid: '/monsters/unique_spawn' },
+                        ],
+                    },
+                    bossSpawns: [{ combatMonsterHrid: '/monsters/unique_boss' }],
+                },
+            },
+        },
+        '/actions/combat/planet_shared_only': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: {
+                    battlesPerBoss: 10,
+                    randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/shared' }] },
+                    bossSpawns: [{ combatMonsterHrid: '/monsters/shared_boss' }],
+                },
+            },
+        },
+    };
+
+    test('prefers an exclusive regular spawn of the planet', () => {
+        expect(findPlanetAnchorMonster('/actions/combat/planet_x', adm)).toEqual({
+            monsterHrid: '/monsters/unique_spawn',
+            isBoss: false,
+            battlesPerBoss: 1,
+        });
+    });
+
+    test('falls back to the exclusive boss with battlesPerBoss', () => {
+        expect(findPlanetAnchorMonster('/actions/combat/planet_shared_only', adm)).toEqual({
+            monsterHrid: '/monsters/shared_boss',
+            isBoss: true,
+            battlesPerBoss: 10,
+        });
+    });
+
+    test('returns null when the planet has no exclusive monster', () => {
+        const tiny = {
+            '/actions/combat/solo_m': {
+                type: '/action_types/combat',
+                combatZoneInfo: { fightInfo: { randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/m' }] } } },
+            },
+            '/actions/combat/planet_m': {
+                type: '/action_types/combat',
+                combatZoneInfo: {
+                    fightInfo: {
+                        randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/m' }] },
+                        bossSpawns: [{ combatMonsterHrid: '/monsters/m' }],
+                    },
+                },
+            },
+        };
+        expect(findPlanetAnchorMonster('/actions/combat/planet_m', tiny)).toBeNull();
     });
 });
 

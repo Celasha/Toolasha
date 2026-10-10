@@ -86,7 +86,43 @@ export function findPlanetForMonster(monsterHrid, zoneSpawnSets) {
 }
 
 /**
- * @returns {Promise<Array<{zoneHrid: string, zoneName: string, hoursNeeded: number, fightsNeeded: number, bottleneckName: string}>>}
+ * Pick the monster that best anchors a "go fight here" jump for the planet: its game-side
+ * jump handler takes a monster (not a zone), so we need a monster that lives only in this
+ * planet - otherwise the game would open the window centered on a member zone instead.
+ * Regular exclusive spawns win (every fight counts); exclusive bosses are the fallback
+ * (only 1-in-battlesPerBoss fights spawn the boss, so counts must be converted).
+ * @param {string} planetHrid - Planet zone HRID
+ * @param {Object} actionDetailMap - Game data action map
+ * @returns {{monsterHrid: string, isBoss: boolean, battlesPerBoss: number}|null} Anchor, or null when the planet has no exclusive monster
+ */
+export function findPlanetAnchorMonster(planetHrid, actionDetailMap) {
+    const planet = actionDetailMap?.[planetHrid];
+    const fightInfo = planet?.combatZoneInfo?.fightInfo;
+    if (!fightInfo) return null;
+    const spawns = (fightInfo.randomSpawnInfo?.spawns || []).map((s) => s.combatMonsterHrid).filter(Boolean);
+    const bosses = (fightInfo.bossSpawns || []).map((s) => s.combatMonsterHrid).filter(Boolean);
+
+    const others = new Set();
+    for (const [zoneHrid, action] of Object.entries(actionDetailMap || {})) {
+        if (zoneHrid === planetHrid || action?.type !== '/action_types/combat') continue;
+        for (const spawn of action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || []) {
+            if (spawn.combatMonsterHrid) others.add(spawn.combatMonsterHrid);
+        }
+        for (const spawn of action.combatZoneInfo?.fightInfo?.bossSpawns || []) {
+            if (spawn.combatMonsterHrid) others.add(spawn.combatMonsterHrid);
+        }
+    }
+
+    const exclusiveSpawn = spawns.find((monster) => !others.has(monster));
+    if (exclusiveSpawn) return { monsterHrid: exclusiveSpawn, isBoss: false, battlesPerBoss: 1 };
+    const exclusiveBoss = bosses.find((monster) => !others.has(monster));
+    if (exclusiveBoss)
+        return { monsterHrid: exclusiveBoss, isBoss: true, battlesPerBoss: fightInfo.battlesPerBoss || 10 };
+    return null;
+}
+
+/**
+ * @returns {Promise<Array<{zoneHrid: string, zoneName: string, hoursNeeded: number, fightsNeeded: number, bottleneckName: string, anchor: {monsterHrid: string, isBoss: boolean, battlesPerBoss: number}}>>}
  *   Sorted ascending by hoursNeeded (soonest-to-clear zone first). Empty array when there are
  *   no active combat quests - no simulation is run in that case.
  */
@@ -161,6 +197,11 @@ export async function computeAllZoneProgress() {
             hoursNeeded: bottleneck.hoursNeeded,
             fightsNeeded: bottleneck.fightsNeeded,
             bottleneckName,
+            anchor: findPlanetAnchorMonster(zoneHrid, gameData.actionDetailMap) || {
+                monsterHrid: bottleneck.bottleneckHrid,
+                isBoss: false,
+                battlesPerBoss: 1,
+            },
         });
     }
 
