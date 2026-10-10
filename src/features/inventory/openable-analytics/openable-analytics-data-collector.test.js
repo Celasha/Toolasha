@@ -821,4 +821,42 @@ describe('self-heal repair on initialize', () => {
 
         expect(storageMock.setJSON).not.toHaveBeenCalled();
     });
+
+    test('an Expected-partial record is re-valued and regains Luck eligibility via the second repair branch', async () => {
+        // Actual 侧完整且重估不变（sell-side 价与快照一致），只有 expectedValueComplete 翻转驱动
+        // valueChanged —— 专锁 needsRepair 的第二个析取支（EV partial），不与 Actual 分支混淆
+        const evPartial = partialRecord({
+            actualValue: 100,
+            actualValueComplete: true,
+            actualValueBreakdown: [
+                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 100, resolved: true },
+            ],
+            expectedValue: 90,
+            expectedValueAvailable: true,
+            expectedValueComplete: false,
+        });
+        const lifetime = foldRecordIntoAggregate(createEmptyAggregate(), evPartial);
+        expect(lifetime.luckEligibleRecordCount).toBe(0);
+        expect(lifetime.expectedValuePartialEvents).toBe(1);
+        seedStorage([evPartial], { '/items/chimerical_chest': lifetime });
+
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, needsTax: false });
+        // dropRate 行数与可定价 drops 数一致，calculator 内部推导才会翻转为 complete
+        mocks.dropTable = { '/items/chimerical_chest': [{ itemHrid: '/items/coin', dropRate: 1 }] };
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 90,
+            drops: [{ hasPriceData: true }],
+        });
+
+        await reinitialize();
+
+        const history = openableAnalyticsDataCollector.getHistory();
+        expect(history[0].actualValue).toBe(100);
+        expect(history[0].expectedValueComplete).toBe(true);
+        expect(history[0].luckValue).toBe(10);
+
+        const lifetimeAfter = openableAnalyticsDataCollector.getLiveLifetimeAggregate('/items/chimerical_chest');
+        expect(lifetimeAfter.luckEligibleRecordCount).toBe(1);
+        expect(lifetimeAfter.expectedValuePartialEvents).toBe(0);
+    });
 });
