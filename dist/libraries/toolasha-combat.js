@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.10.0
+ * Version: 3.10.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13171,6 +13171,63 @@
     }
 
     /**
+     * Update the badge content and quantity attribute on an existing material tab
+     * @param {HTMLElement} tab - Tab element created by createMaterialTab
+     * @param {Object} material - Updated material data
+     * @param {string} material.itemName - Display name
+     * @param {number} material.missing - Current missing quantity
+     * @param {number} [material.required] - Total required quantity
+     * @param {boolean} material.isTradeable - Whether tradeable
+     * @param {number} [material.queued] - Queued quantity
+     */
+    function updateTabBadge(tab, material) {
+        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+        if (!badgeSpan) return;
+
+        let statusColor;
+        let statusText;
+
+        if (!material.isTradeable) {
+            statusColor = '#888888';
+            statusText = 'Not Tradeable';
+        } else if (material.missing > 0) {
+            statusColor = '#ef4444';
+            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
+            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
+        } else {
+            statusColor = '#4ade80';
+            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
+        }
+
+        const titleCaseName = material.itemName
+            .split(' ')
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+
+        badgeSpan.innerHTML = `
+        <div style="text-align: center;">
+            <div>${titleCaseName}</div>
+            <div style="font-size: 0.75em; color: ${statusColor};">
+                ${statusText}
+            </div>
+        </div>
+    `;
+
+        tab.setAttribute('data-missing-quantity', material.missing.toString());
+
+        const forceActionable = tab.getAttribute('data-mwi-force-actionable') === 'true';
+        if (!material.isTradeable || (material.missing <= 0 && !forceActionable)) {
+            tab.style.opacity = material.isTradeable ? '0.7' : '0.5';
+            tab.style.cursor = 'not-allowed';
+            tab.setAttribute('aria-disabled', 'true');
+        } else {
+            tab.style.opacity = '1';
+            tab.style.cursor = 'pointer';
+            tab.setAttribute('aria-disabled', 'false');
+        }
+    }
+
+    /**
      * Setup marketplace cleanup observer.
      * Uses MutationObserver for prompt close/remount detection, with polling as a fallback.
      *
@@ -13697,7 +13754,7 @@
                 entry.missing = fresh?.missing ?? 0;
                 const tab = currentTabs.find((t) => t.getAttribute('data-item-hrid') === entry.itemHrid);
                 if (tab) {
-                    tab.setAttribute('data-missing-quantity', entry.missing.toString());
+                    updateTabBadge(tab, entry);
                 }
             }
         };

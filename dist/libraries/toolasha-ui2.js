@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.10.0
+ * Version: 3.10.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2416,7 +2416,13 @@
             this.unregisterHandlers = [];
             this.initialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
-            this.processedLogs = new WeakSet();
+            // Maps a rendered row to the `actionCount|endTime` signature it was last injected with,
+            // not just a seen/unseen flag - a row for an action that's still in progress (e.g. an
+            // ongoing "Explore Labyrinth (100)" aggregate) keeps growing in place via React updates
+            // without ever being removed/re-added to the DOM, so a one-shot flag would freeze its
+            // Total Value/XP/Daily Output at whatever tiny partial total existed when the row first
+            // mounted.
+            this.processedLogs = new WeakMap();
             this.currentLootLogData = null;
             this.itemsSpriteUrl = null;
             this.actionsSpriteUrl = null;
@@ -2522,8 +2528,6 @@
          * @param {number} totalCount - Total number of loot log rows currently rendered
          */
         processLootLogElement(lootElem, index, totalCount) {
-            // Skip if already processed
-            if (this.processedLogs.has(lootElem)) return;
             if (index == null || index < 0) return;
 
             // Extract divs
@@ -2539,7 +2543,14 @@
             // a live entry can lag behind its DOM node appearing, and this node won't be re-added
             // to the DOM later for us to retry on.
             if (!logData) return;
-            this.processedLogs.add(lootElem);
+
+            // Re-inject only when this row's underlying action has actually grown since the last
+            // pass (actionCount/endTime both advance as an in-progress aggregate gains more runs) -
+            // skips redundant rebuilds for genuinely finished rows, which would otherwise collapse
+            // the user's expanded Total Value breakdown on every unrelated loot_log_updated event.
+            const signature = `${logData.actionCount}|${logData.endTime}`;
+            if (this.processedLogs.get(lootElem) === signature) return;
+            this.processedLogs.set(lootElem, signature);
 
             // Skip enhancement actions
             if (logData.actionHrid === '/actions/enhancing/enhance') return;
@@ -2570,10 +2581,10 @@
         }
 
         /**
-         * Rewrite a native element's raw-number text node in place using formatLargeNumber. The real
-         * raw value is cached in a data attribute on first pass (this method only ever runs once per
-         * element, since callers are gated by `processedLogs`), so there is no risk of re-parsing an
-         * already-abbreviated string on a later call.
+         * Rewrite a native element's raw-number text node in place using formatLargeNumber. Re-reads
+         * whatever is currently in the text node every call (React may have replaced it with a bigger
+         * raw/natively-abbreviated figure since the last pass, e.g. for a still-growing action), so
+         * this is safe to call repeatedly on the same element.
          * @param {HTMLElement} el - Element whose only text-node child is the raw number
          */
         rewriteNativeNumberText(el) {
