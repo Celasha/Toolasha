@@ -245,6 +245,9 @@ class TaskStatistics {
         for (const key of ['rewards', 'actionProfit', 'completionTime', 'zoneProgress']) {
             const section = this.createSection(placeholderTitles[key]);
             section.style.marginBottom = '0';
+            if (key === 'zoneProgress') {
+                section.style.gridColumn = '1 / -1';
+            }
             section.appendChild(this.createPlaceholderRow());
             this.sections[key] = section;
             content.appendChild(section);
@@ -850,6 +853,8 @@ class TaskStatistics {
      */
     createZoneProgressSection(zoneProgress, textColor) {
         const section = this.createSection(t('taskStatistics.zoneProgressHeader'));
+        // Full-width row in the popup grid: values are long and rows are clickable
+        section.style.gridColumn = '1 / -1';
 
         for (const zone of zoneProgress) {
             const timeStr = Number.isFinite(zone.hoursNeeded)

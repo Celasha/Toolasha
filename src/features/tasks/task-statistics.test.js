@@ -215,6 +215,16 @@ describe('TaskStatistics progressive popup', () => {
         expect(taskStatistics.sections.actionProfit.textContent).toContain('taskStatistics.computeFailedMessage');
         expect(taskStatistics.sections.completionTime.textContent).toContain('taskStatistics.computeFailedMessage');
     });
+
+    test('popup content uses a responsive grid and zone progress spans the full width', async () => {
+        mockComputeAllZoneProgress.mockResolvedValue(makeZoneProgress());
+        await taskStatistics.showPopup();
+
+        const content = taskStatistics.overlay.querySelector('.toolasha-task-stats-content');
+        expect(content.style.display).toBe('grid');
+        expect(content.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(280px, 1fr))');
+        expect(taskStatistics.sections.zoneProgress.style.gridColumn).toBe('1 / -1');
+    });
 });
 
 describe('TaskStatistics combat row hiding', () => {
