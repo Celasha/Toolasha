@@ -45,7 +45,7 @@ function processTimestampNode(span) {
         const [month, day] = datePart.split('/');
         const paddedMonth = month.padStart(2, '0');
         const paddedDay = day.padStart(2, '0');
-        const dateText = dateFormat === 'DD-MM' ? `${paddedDay}/${paddedMonth}` : `${paddedMonth}/${paddedDay}`;
+        const dateText = dateFormat === 'DD-MM' ? `${paddedDay}-${paddedMonth}` : `${paddedMonth}-${paddedDay}`;
         newText = `[${dateText} ${timeText}]`;
     }
 

@@ -79,14 +79,14 @@ describe('Chat 24hr Timestamps', () => {
     test('preserves and reorders the date prefix for Guild/Party/Whisper/Moderator messages', () => {
         const span = makeTimestampSpan('[5/22 9:31:23 PM] ');
         feature.initialize();
-        expect(span.textContent).toBe('[05/22 21:31:23] ');
+        expect(span.textContent).toBe('[05-22 21:31:23] ');
     });
 
     test('respects DD-MM date format setting', () => {
         settingValues.market_listingDateFormat = 'DD-MM';
         const span = makeTimestampSpan('[5/22 9:31:23 PM] ');
         feature.initialize();
-        expect(span.textContent).toBe('[22/05 21:31:23] ');
+        expect(span.textContent).toBe('[22-05 21:31:23] ');
     });
 
     test('keeps 12-hour format when market_listingTimeFormat is 12hour, just normalizing padding', () => {
