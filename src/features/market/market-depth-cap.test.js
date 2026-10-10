@@ -1,12 +1,11 @@
 /* @vitest-environment jsdom */
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, afterEach } from 'vitest';
 
 vi.mock('../../core/data-manager.js', () => ({ default: { on: vi.fn(), off: vi.fn() } }));
 vi.mock('../../core/dom-observer.js', () => ({ default: { onClass: vi.fn(() => () => {}) } }));
 vi.mock('../../core/config.js', () => ({ default: { getSetting: vi.fn(() => true) } }));
-vi.mock('../risk-of-ruin/risk-of-ruin-ui.js', () => ({ default: { getDepthCapContext: vi.fn(() => null) } }));
 
-const { calculateDepthCap } = await import('./market-depth-cap.js');
+const { calculateDepthCap, default: marketDepthCap } = await import('./market-depth-cap.js');
 const { MARKET_TAX } = await import('../../utils/profit-constants.js');
 
 describe('calculateDepthCap', () => {
@@ -85,5 +84,61 @@ describe('calculateDepthCap', () => {
         });
 
         expect(withDefault).toEqual(withExplicit);
+    });
+});
+
+describe('processOrderBook / riskOfRuinUI resolution', () => {
+    afterEach(() => {
+        delete window.Toolasha;
+        marketDepthCap.orderBooksCache = {};
+        marketDepthCap.clearDisplays();
+        document.body.innerHTML = '';
+    });
+
+    function renderButtonContainer() {
+        document.body.innerHTML = `
+            <div class="MarketplacePanel_newListingButtonsContainer__1MhKJ"><button>Create listing</button></div>
+        `;
+        return document.querySelector('.MarketplacePanel_newListingButtonsContainer__1MhKJ');
+    }
+
+    // Regression test for the production bug where market-depth-cap.js statically imported
+    // risk-of-ruin-ui.js: since risk-of-ruin-ui.js is owned by the ui2.js bundle (loaded after
+    // market.js), Rollup bundled a second, independent RiskOfRuinUI instance into the market
+    // bundle whose getDepthCapContext() always returned null. The fix resolves it lazily via
+    // window.Toolasha.UI at call time instead, so this guards against a static import creeping
+    // back in.
+    test('resolves riskOfRuinUI lazily via window.Toolasha.UI and renders the sell-depth label', () => {
+        const buttonContainer = renderButtonContainer();
+        const getDepthCapContext = vi.fn(() => ({
+            costPerAction: 100,
+            items: [{ itemHrid: '/items/test_item', quantityPerAction: 2 }],
+        }));
+        window.Toolasha = { UI: { riskOfRuinUI: { getDepthCapContext } } };
+
+        marketDepthCap.orderBooksCache['/items/test_item'] = {
+            data: { orderBooks: { 0: { bids: [{ price: 1000, quantity: 10 }] } } },
+        };
+        marketDepthCap.getCurrentItemHrid = () => '/items/test_item';
+        marketDepthCap.getCurrentEnhancementLevel = () => 0;
+
+        marketDepthCap.processOrderBook();
+
+        expect(getDepthCapContext).toHaveBeenCalled();
+        expect(buttonContainer.querySelector('.mwi-depth-cap')).not.toBeNull();
+    });
+
+    test('no-ops without throwing when riskOfRuinUI is unavailable on window.Toolasha.UI', () => {
+        const buttonContainer = renderButtonContainer();
+        delete window.Toolasha;
+
+        marketDepthCap.orderBooksCache['/items/test_item'] = {
+            data: { orderBooks: { 0: { bids: [{ price: 1000, quantity: 10 }] } } },
+        };
+        marketDepthCap.getCurrentItemHrid = () => '/items/test_item';
+        marketDepthCap.getCurrentEnhancementLevel = () => 0;
+
+        expect(() => marketDepthCap.processOrderBook()).not.toThrow();
+        expect(buttonContainer.querySelector('.mwi-depth-cap')).toBeNull();
     });
 });

@@ -25,7 +25,6 @@ import { t } from '../../core/i18n.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
-import riskOfRuinUI from '../risk-of-ruin/risk-of-ruin-ui.js';
 
 /**
  * Walk resting bid listings (sorted best-to-worst, as the game sends them) to find how many
@@ -125,7 +124,10 @@ class MarketDepthCap {
         const itemHrid = this.getCurrentItemHrid();
         if (!itemHrid) return;
 
-        const depthContext = riskOfRuinUI.getDepthCapContext();
+        // riskOfRuinUI lives in the ui2.js bundle (loaded after this market.js bundle), so it's
+        // reached lazily via window.Toolasha.UI rather than a static import, which would bundle a
+        // second, independent singleton instance here instead of the one actually running.
+        const depthContext = window.Toolasha?.UI?.riskOfRuinUI?.getDepthCapContext();
         const item = depthContext?.items.find((i) => i.itemHrid === itemHrid);
         const cached = this.orderBooksCache[itemHrid];
         if (!depthContext || !item || !cached) return;
