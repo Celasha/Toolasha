@@ -4,7 +4,7 @@
 
 /* @vitest-environment jsdom */
 
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../core/config.js', () => ({
     default: {
@@ -35,13 +35,17 @@ vi.mock('./task-profit-calculator.js', () => ({
     calculateTaskRewardValue: vi.fn(),
 }));
 vi.mock('./task-profit-display.js', () => ({ calculateTaskCompletionSeconds: vi.fn() }));
-vi.mock('./task-zone-progress.js', () => ({ computeAllZoneProgress: vi.fn(async () => []) }));
+const { mockComputeAllZoneProgress } = vi.hoisted(() => ({ mockComputeAllZoneProgress: vi.fn() }));
+vi.mock('./task-zone-progress.js', () => ({ computeAllZoneProgress: mockComputeAllZoneProgress }));
 vi.mock('../../utils/game-i18n.js', () => ({
     getActionName: (_hrid, fallback) => fallback,
     getMonsterName: (_hrid, fallback) => fallback,
 }));
 
 import taskStatistics from './task-statistics.js';
+import marketAPI from '../../api/marketplace.js';
+import * as taskProfitCalculator from './task-profit-calculator.js';
+import { calculateTaskCompletionSeconds } from './task-profit-display.js';
 
 describe('TaskStatistics.createZoneProgressSection', () => {
     beforeEach(() => {
@@ -103,5 +107,112 @@ describe('TaskStatistics.createZoneProgressSection', () => {
         expect(handleGoToAction).toHaveBeenCalledWith('/actions/combat/zone_a', 120);
 
         root.remove();
+    });
+});
+
+describe('TaskStatistics progressive popup', () => {
+    beforeEach(() => {
+        marketAPI.isLoaded.mockReturnValue(true);
+        marketAPI.fetch.mockResolvedValue(undefined);
+        taskProfitCalculator.calculateTaskTokenValue.mockReturnValue(10);
+        taskProfitCalculator.calculateTaskRewardValue.mockReturnValue({
+            error: false,
+            total: 1000,
+            breakdown: { tokenValue: 10 },
+            taskTokens: 500,
+            purpleGift: 100,
+        });
+        taskProfitCalculator.calculateTaskProfit.mockResolvedValue(null);
+        calculateTaskCompletionSeconds.mockReturnValue(null);
+        mockComputeAllZoneProgress.mockResolvedValue([]);
+        taskStatistics.overlay = null;
+        taskStatistics.popupGeneration = 0;
+    });
+
+    afterEach(() => {
+        taskStatistics.closePopup();
+    });
+
+    function makeZoneProgress() {
+        return [
+            {
+                zoneHrid: '/actions/combat/eye_planet',
+                zoneName: 'Eye Planet',
+                hoursNeeded: 2,
+                fightsNeeded: 120,
+                bottleneckName: 'Compound Eye',
+            },
+        ];
+    }
+
+    test('opening the popup renders the overlay synchronously with placeholder rows', async () => {
+        let resolveZone;
+        mockComputeAllZoneProgress.mockReturnValue(new Promise((resolve) => (resolveZone = resolve)));
+
+        const opening = taskStatistics.showPopup(); // 不 await —— 秒开断言的关键
+
+        expect(taskStatistics.overlay).not.toBeNull();
+        const content = taskStatistics.overlay.querySelector('.toolasha-task-stats-content');
+        expect(content).not.toBeNull();
+        expect(content.textContent).toContain('taskStatistics.computingPlaceholder');
+
+        resolveZone([]);
+        await opening;
+    });
+
+    test('task slots section shows real data immediately (no placeholder)', async () => {
+        const opening = taskStatistics.showPopup();
+        const overflowSection = taskStatistics.sections.overflow;
+        expect(overflowSection.textContent).toContain('taskStatistics.taskSlotsHeader');
+        expect(overflowSection.textContent).not.toContain('taskStatistics.computingPlaceholder');
+        await opening;
+    });
+
+    test('reward sections fill in after calculateRewardsSummary resolves', async () => {
+        await taskStatistics.showPopup();
+
+        expect(taskStatistics.sections.rewards.textContent).toContain('taskStatistics.totalCoinsLabel');
+        expect(taskStatistics.sections.rewards.textContent).not.toContain('taskStatistics.computingPlaceholder');
+        expect(taskStatistics.sections.actionProfit.textContent).not.toContain('taskStatistics.computingPlaceholder');
+        expect(taskStatistics.sections.completionTime.textContent).not.toContain('taskStatistics.computingPlaceholder');
+    });
+
+    test('zone progress section fills on result and is removed when result is empty', async () => {
+        mockComputeAllZoneProgress.mockResolvedValue(makeZoneProgress());
+        await taskStatistics.showPopup();
+        expect(taskStatistics.sections.zoneProgress.textContent).toContain('Eye Planet');
+
+        mockComputeAllZoneProgress.mockResolvedValue([]);
+        await taskStatistics.showPopup();
+        expect(taskStatistics.sections.zoneProgress).toBeNull();
+    });
+
+    test('stale async results from a closed popup never touch the new popup (generation token)', async () => {
+        let resolveFirst;
+        mockComputeAllZoneProgress.mockReturnValue(new Promise((r) => (resolveFirst = r)));
+
+        const first = taskStatistics.showPopup();
+        const firstGeneration = taskStatistics.popupGeneration;
+        taskStatistics.closePopup();
+
+        mockComputeAllZoneProgress.mockResolvedValue(makeZoneProgress());
+        await taskStatistics.showPopup();
+        const secondSectionHtml = taskStatistics.sections.zoneProgress.innerHTML;
+
+        resolveFirst(makeZoneProgress());
+        await first;
+
+        expect(taskStatistics.popupGeneration).toBeGreaterThan(firstGeneration);
+        expect(taskStatistics.sections.zoneProgress.innerHTML).toBe(secondSectionHtml);
+    });
+
+    test('a failing market fetch shows error rows instead of throwing', async () => {
+        marketAPI.isLoaded.mockReturnValue(false);
+        marketAPI.fetch.mockRejectedValue(new Error('network down'));
+
+        await expect(taskStatistics.showPopup()).resolves.not.toThrow();
+        expect(taskStatistics.sections.rewards.textContent).toContain('taskStatistics.computeFailedMessage');
+        expect(taskStatistics.sections.actionProfit.textContent).toContain('taskStatistics.computeFailedMessage');
+        expect(taskStatistics.sections.completionTime.textContent).toContain('taskStatistics.computeFailedMessage');
     });
 });

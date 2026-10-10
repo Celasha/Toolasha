@@ -40,6 +40,8 @@ class TaskStatistics {
         this.isInitialized = false;
         this.overlay = null;
         this.unregisterHandlers = [];
+        this.popupGeneration = 0;
+        this.sections = {};
     }
 
     /**
@@ -124,37 +126,239 @@ class TaskStatistics {
     }
 
     /**
-     * Show statistics popup
+     * Show statistics popup: render the skeleton synchronously, then fill sections
+     * progressively as their data arrives. A generation token discards stale async
+     * results after the popup has been closed and reopened.
      */
     async showPopup() {
         // Close any existing popup
         this.closePopup();
+        const generation = ++this.popupGeneration;
 
-        // Ensure market data is loaded for token valuation
-        if (!marketAPI.isLoaded()) {
-            await marketAPI.fetch();
-        }
+        this.createPopupSkeleton();
 
-        const statsData = await this.calculateAllStatistics();
-        this.createPopup(statsData);
+        await Promise.all([this.fillRewardSections(generation), this.fillZoneProgressSection(generation)]);
     }
 
     /**
-     * Calculate all statistics
-     * @returns {Object} Statistics data
+     * Whether an async filler may still write to the DOM.
+     * @param {number} generation - Generation captured when the filler started
+     * @returns {boolean} True when this popup instance is still the current one
      */
-    async calculateAllStatistics() {
-        const overflowData = this.calculateOverflowTime();
-        const slotStatus = this.calculateSlotStatus();
-        const rewardsSummary = await this.calculateRewardsSummary();
-        const zoneProgress = await computeAllZoneProgress();
+    isGenerationCurrent(generation) {
+        return generation === this.popupGeneration && this.overlay !== null;
+    }
 
-        return {
-            overflow: overflowData,
-            slots: slotStatus,
-            rewards: rewardsSummary,
-            zoneProgress,
+    /**
+     * Build the popup skeleton: overlay, popup, header, grid content, and the five
+     * sections. Task slots are filled synchronously; the rest show placeholders.
+     */
+    createPopupSkeleton() {
+        const textColor = config.COLOR_TEXT_PRIMARY;
+
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'toolasha-task-stats-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+        // Create popup container: responsive width, two columns on wide screens
+        const popup = document.createElement('div');
+        popup.style.cssText = `
+            background: #1a1a1a;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 20px;
+            width: min(860px, 94vw);
+            max-height: 90%;
+            overflow-y: auto;
+            color: ${textColor};
+        `;
+
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3a3a3a;
+            padding-bottom: 10px;
+        `;
+
+        const title = document.createElement('h2');
+        title.textContent = t('taskStatistics.popupTitle');
+        title.style.cssText = `margin: 0; color: ${textColor}; font-size: 24px;`;
+
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '\u00d7';
+        closeButton.style.cssText = `
+            background: none;
+            border: none;
+            color: ${textColor};
+            font-size: 32px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        `;
+        closeButton.onclick = () => this.closePopup();
+
+        header.appendChild(title);
+        header.appendChild(closeButton);
+        popup.appendChild(header);
+
+        // Responsive grid content: two columns on wide screens, one on narrow/mobile
+        const content = document.createElement('div');
+        content.className = 'toolasha-task-stats-content';
+        content.style.cssText = `
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+            align-items: start;
+        `;
+
+        this.sections = {};
+
+        // Task slots: pure sync data, real values immediately
+        const overflowSection = this.createOverflowSection(this.calculateOverflowTime(), textColor);
+        overflowSection.style.marginBottom = '0';
+        this.sections.overflow = overflowSection;
+        content.appendChild(overflowSection);
+
+        // Everything else starts as a placeholder and fills in asynchronously
+        const placeholderTitles = {
+            rewards: t('taskStatistics.expectedRewardsHeader'),
+            actionProfit: this.notApplicableHeader(t('taskStatistics.actionProfitHeader')),
+            completionTime: this.notApplicableHeader(t('taskStatistics.completionTimeHeader')),
+            zoneProgress: t('taskStatistics.zoneProgressHeader'),
         };
+        for (const key of ['rewards', 'actionProfit', 'completionTime', 'zoneProgress']) {
+            const section = this.createSection(placeholderTitles[key]);
+            section.style.marginBottom = '0';
+            section.appendChild(this.createPlaceholderRow());
+            this.sections[key] = section;
+            content.appendChild(section);
+        }
+
+        // Close on overlay click
+        overlay.onclick = (e) => {
+            if (e.target === overlay) {
+                this.closePopup();
+            }
+        };
+
+        popup.appendChild(content);
+        overlay.appendChild(popup);
+        document.body.appendChild(overlay);
+        this.overlay = overlay;
+    }
+
+    /**
+     * Section header for computations that cannot cover combat tasks.
+     * @param {string} titleText - Base section title
+     * @returns {string} Title with the "not applicable to combat" suffix
+     */
+    notApplicableHeader(titleText) {
+        return `${titleText}（${t('taskStatistics.combatNotApplicableLabel')}）`;
+    }
+
+    /**
+     * Placeholder row shown while a section's data is being computed.
+     * @returns {HTMLElement} Row element
+     */
+    createPlaceholderRow() {
+        return this.createRow('', t('taskStatistics.computingPlaceholder'), config.COLOR_TEXT_SECONDARY);
+    }
+
+    /**
+     * Build an error section for a failed async computation.
+     * @param {string} titleText - Section title
+     * @returns {HTMLElement} Section element with an error row
+     */
+    createErrorSection(titleText) {
+        const section = this.createSection(titleText);
+        section.style.marginBottom = '0';
+        section.appendChild(
+            this.createRow(t('marketHistory.columnStatus'), t('taskStatistics.computeFailedMessage'), config.COLOR_LOSS)
+        );
+        return section;
+    }
+
+    /**
+     * Replace a registered section element in the DOM and update the registry.
+     * @param {string} key - Key in this.sections
+     * @param {HTMLElement} newSection - Replacement section
+     */
+    swapSection(key, newSection) {
+        const current = this.sections[key];
+        if (!current) return;
+        current.replaceWith(newSection);
+        this.sections[key] = newSection;
+    }
+
+    /**
+     * Compute the rewards summary and fill the three reward-derived sections.
+     * @param {number} generation - Generation token captured at popup open
+     */
+    async fillRewardSections(generation) {
+        try {
+            // Ensure market data is loaded for token valuation
+            if (!marketAPI.isLoaded()) {
+                await marketAPI.fetch();
+            }
+            const rewardsSummary = await this.calculateRewardsSummary();
+            if (!this.isGenerationCurrent(generation)) return;
+
+            const textColor = config.COLOR_TEXT_PRIMARY;
+            this.swapSection('rewards', this.createRewardsSection(rewardsSummary, textColor));
+            this.swapSection('actionProfit', this.createActionProfitSection(rewardsSummary));
+            this.swapSection('completionTime', this.createCompletionTimeSection(rewardsSummary, textColor));
+        } catch (error) {
+            console.error('[TaskStatistics] Reward sections failed:', error);
+            if (!this.isGenerationCurrent(generation)) return;
+
+            this.swapSection('rewards', this.createErrorSection(t('taskStatistics.expectedRewardsHeader')));
+            this.swapSection(
+                'actionProfit',
+                this.createErrorSection(this.notApplicableHeader(t('taskStatistics.actionProfitHeader')))
+            );
+            this.swapSection(
+                'completionTime',
+                this.createErrorSection(this.notApplicableHeader(t('taskStatistics.completionTimeHeader')))
+            );
+        }
+    }
+
+    /**
+     * Compute per-planet combat task progress and fill (or remove) its section.
+     * @param {number} generation - Generation token captured at popup open
+     */
+    async fillZoneProgressSection(generation) {
+        try {
+            const zoneProgress = await computeAllZoneProgress();
+            if (!this.isGenerationCurrent(generation)) return;
+
+            if (zoneProgress.length === 0) {
+                this.sections.zoneProgress?.remove();
+                this.sections.zoneProgress = null;
+                return;
+            }
+            this.swapSection('zoneProgress', this.createZoneProgressSection(zoneProgress, config.COLOR_TEXT_PRIMARY));
+        } catch (error) {
+            console.error('[TaskStatistics] Zone progress section failed:', error);
+            if (!this.isGenerationCurrent(generation)) return;
+            this.swapSection('zoneProgress', this.createErrorSection(t('taskStatistics.zoneProgressHeader')));
+        }
     }
 
     /**
@@ -355,96 +559,6 @@ class TaskStatistics {
             combinedTotal: rewardValue.total + (hasActionProfit ? totalActionProfit : 0),
             taskDetails,
         };
-    }
-
-    /**
-     * Create and display the statistics popup
-     * @param {Object} statsData - Calculated statistics data
-     */
-    createPopup(statsData) {
-        const textColor = config.COLOR_TEXT_PRIMARY;
-
-        // Create overlay
-        const overlay = document.createElement('div');
-        overlay.className = 'toolasha-task-stats-overlay';
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        `;
-
-        // Create popup container
-        const popup = document.createElement('div');
-        popup.style.cssText = `
-            background: #1a1a1a;
-            border: 2px solid #3a3a3a;
-            border-radius: 8px;
-            padding: 20px;
-            max-width: 500px;
-            max-height: 90%;
-            overflow-y: auto;
-            color: ${textColor};
-            min-width: 360px;
-        `;
-
-        // Header
-        const header = document.createElement('div');
-        header.style.cssText = `
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #3a3a3a;
-            padding-bottom: 10px;
-        `;
-
-        const title = document.createElement('h2');
-        title.textContent = t('taskStatistics.popupTitle');
-        title.style.cssText = `margin: 0; color: ${textColor}; font-size: 24px;`;
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = '\u00d7';
-        closeButton.style.cssText = `
-            background: none;
-            border: none;
-            color: ${textColor};
-            font-size: 32px;
-            cursor: pointer;
-            padding: 0;
-            line-height: 1;
-        `;
-        closeButton.onclick = () => this.closePopup();
-
-        header.appendChild(title);
-        header.appendChild(closeButton);
-        popup.appendChild(header);
-
-        // Content sections
-        popup.appendChild(this.createOverflowSection(statsData.overflow, textColor));
-        popup.appendChild(this.createRewardsSection(statsData.rewards, textColor));
-        popup.appendChild(this.createActionProfitSection(statsData.rewards));
-        popup.appendChild(this.createCompletionTimeSection(statsData.rewards, textColor));
-        if (statsData.zoneProgress.length > 0) {
-            popup.appendChild(this.createZoneProgressSection(statsData.zoneProgress, textColor));
-        }
-
-        // Close on overlay click
-        overlay.onclick = (e) => {
-            if (e.target === overlay) {
-                this.closePopup();
-            }
-        };
-
-        overlay.appendChild(popup);
-        document.body.appendChild(overlay);
-        this.overlay = overlay;
     }
 
     /**
