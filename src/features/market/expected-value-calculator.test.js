@@ -10,6 +10,7 @@ const {
     mockGetItemDetails,
     mockGetSetting,
     mockGetCustomPrice,
+    mockResolveShopRedemptionValue,
 } = vi.hoisted(() => {
     const getItemPrice = vi.fn();
     return {
@@ -20,6 +21,7 @@ const {
         mockGetItemDetails: vi.fn(),
         mockGetSetting: vi.fn(() => true),
         mockGetCustomPrice: vi.fn(() => null),
+        mockResolveShopRedemptionValue: vi.fn(),
     };
 });
 
@@ -28,6 +30,9 @@ vi.mock('../../utils/market-data.js', () => ({
     getItemPriceOutlierInfo: mockGetItemPriceOutlierInfo,
 }));
 vi.mock('../../utils/token-valuation.js', () => ({ calculateDungeonTokenValue: mockCalculateDungeonTokenValue }));
+vi.mock('../../utils/shop-redemption-valuation.js', () => ({
+    resolveShopRedemptionValue: mockResolveShopRedemptionValue,
+}));
 vi.mock('../../core/config.js', () => ({ default: { getSetting: mockGetSetting } }));
 vi.mock('../../core/data-manager.js', () => ({
     default: { getInitClientData: mockGetInitClientData, getItemDetails: mockGetItemDetails },
@@ -42,6 +47,7 @@ describe('resolveSellSideValue', () => {
         mockCalculateDungeonTokenValue.mockReset();
         mockGetSetting.mockReset().mockReturnValue(true);
         mockGetCustomPrice.mockReset().mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReset();
         expectedValueCalculator.containerCache.clear();
     });
 
@@ -127,6 +133,52 @@ describe('resolveSellSideValue', () => {
         const result = expectedValueCalculator.resolveSellSideValue('/items/cheese', 2);
         expect(mockGetCustomPrice).toHaveBeenCalledWith('/items/cheese', 2, 'sell');
         expect(result).toEqual({ value: 777, source: 'custom', needsTax: true, isOutlier: false });
+    });
+
+    test('an unpriced item stays null by default and never consults the redemption chain', () => {
+        mockGetItemPrice.mockReturnValue(null);
+        expect(expectedValueCalculator.resolveSellSideValue('/items/seal_of_efficiency')).toBeNull();
+        expect(mockResolveShopRedemptionValue).not.toHaveBeenCalled();
+    });
+
+    test('allowIndirect resolves an unpriced shop-redeemable item as shopRedemption, never taxed', () => {
+        mockGetItemPrice.mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReturnValue({
+            value: 30000,
+            isOutlier: false,
+            currencyHrid: '/items/labyrinth_token',
+            tokenCost: 30,
+            outputCount: 1,
+        });
+
+        expect(
+            expectedValueCalculator.resolveSellSideValue('/items/seal_of_efficiency', 0, { allowIndirect: true })
+        ).toEqual({ value: 30000, source: 'shopRedemption', needsTax: false, isOutlier: false });
+    });
+
+    test('allowIndirect still returns null when the redemption chain cannot price the currency', () => {
+        mockGetItemPrice.mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+
+        expect(
+            expectedValueCalculator.resolveSellSideValue('/items/seal_of_efficiency', 0, { allowIndirect: true })
+        ).toBeNull();
+    });
+
+    test('a direct market price wins and the redemption chain is not consulted', () => {
+        mockGetItemPrice.mockReturnValue(123);
+        mockResolveShopRedemptionValue.mockReturnValue({
+            value: 30000,
+            isOutlier: false,
+            currencyHrid: '/items/labyrinth_token',
+            tokenCost: 30,
+            outputCount: 1,
+        });
+
+        const result = expectedValueCalculator.resolveSellSideValue('/items/some_item', 0, { allowIndirect: true });
+
+        expect(result.source).toBe('market');
+        expect(mockResolveShopRedemptionValue).not.toHaveBeenCalled();
     });
 });
 

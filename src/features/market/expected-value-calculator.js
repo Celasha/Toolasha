@@ -8,6 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { calculateDungeonTokenValue } from '../../utils/token-valuation.js';
 import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import { resolveShopRedemptionValue } from '../../utils/shop-redemption-valuation.js';
 import { getCustomPrice } from '../settings/custom-price-overrides.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { calculateEVBatch } from '../../utils/ev-worker-manager.js';
@@ -251,9 +252,12 @@ class ExpectedValueCalculator {
      * should apply `calculatePriceAfterTax` when `needsTax` is true and the item is tradeable.
      * @param {string} itemHrid - Item HRID
      * @param {number} [enhancementLevel=0] - Enhancement level (ignored for special currencies)
+     * @param {Object} [options] - Options
+     * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for
+     *     items with no direct market price. Default off keeps existing behavior untouched.
      * @returns {{value: number, source: string, needsTax: boolean}|null} Resolved value or null
      */
-    resolveSellSideValue(itemHrid, enhancementLevel = 0) {
+    resolveSellSideValue(itemHrid, enhancementLevel = 0, { allowIndirect = false } = {}) {
         // Special case: Coin (face value = 1, never taxed)
         if (itemHrid === this.COIN_HRID) {
             return { value: 1, source: 'coin', needsTax: false, isOutlier: false };
@@ -305,7 +309,20 @@ class ExpectedValueCalculator {
         // Regular market item - get price based on pricing mode (sell side - you're selling drops)
         const dropPriceInfo = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
         const dropPrice = dropPriceInfo.value;
-        if (!(dropPrice > 0)) return null;
+        if (!(dropPrice > 0)) {
+            // Opt-in fallback: derive an implied value through the official special-currency shop
+            // redemption chain (e.g. a seal bought with labyrinth tokens). Never consulted unless
+            // the caller explicitly passes `allowIndirect` (only Openable Analytics does today).
+            if (!allowIndirect) return null;
+            const indirect = resolveShopRedemptionValue(itemHrid);
+            if (!indirect) return null;
+            return {
+                value: indirect.value,
+                source: 'shopRedemption',
+                needsTax: false,
+                isOutlier: indirect.isOutlier || false,
+            };
+        }
         const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;
         return {
             value: dropPrice,
