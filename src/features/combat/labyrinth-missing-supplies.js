@@ -20,6 +20,7 @@ import {
     clickMarketplaceNavigationButton,
     MARKETPLACE_REMOUNT_GRACE_MS,
     isMarketplaceMarketListingsSelected,
+    updateTabBadge,
 } from '../../utils/marketplace-tabs.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { translateGameName } from '../../utils/game-i18n.js';
@@ -362,7 +363,7 @@ function setupInventoryListener() {
             entry.missing = fresh?.missing ?? 0;
             const tab = currentTabs.find((t) => t.getAttribute('data-item-hrid') === entry.itemHrid);
             if (tab) {
-                tab.setAttribute('data-missing-quantity', entry.missing.toString());
+                updateTabBadge(tab, entry);
             }
         }
     };

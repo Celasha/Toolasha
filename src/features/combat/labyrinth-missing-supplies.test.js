@@ -27,11 +27,20 @@ const mockMarketplaceSession = vi.hoisted(() => ({
     end: vi.fn(),
 }));
 
+function renderBadgeText(tab, material) {
+    const badge = document.createElement('span');
+    badge.className = 'TabsComponent_badge';
+    badge.textContent = material.missing > 0 ? `Missing: ${material.missing}` : `Sufficient (${material.required})`;
+    tab.innerHTML = '';
+    tab.appendChild(badge);
+    tab.setAttribute('data-missing-quantity', material.missing.toString());
+}
+
 const mockMarketplaceTabs = vi.hoisted(() => ({
     createMaterialTab: vi.fn((material, referenceTab) => {
         const tab = referenceTab.cloneNode(true);
         tab.setAttribute('data-item-hrid', material.itemHrid);
-        tab.setAttribute('data-missing-quantity', material.missing.toString());
+        renderBadgeText(tab, material);
         return tab;
     }),
     removeMaterialTabsForOwner: vi.fn(),
@@ -42,6 +51,7 @@ const mockMarketplaceTabs = vi.hoisted(() => ({
     clickMarketplaceNavigationButton: vi.fn(() => true),
     MARKETPLACE_REMOUNT_GRACE_MS: 350,
     isMarketplaceMarketListingsSelected: vi.fn(() => true),
+    updateTabBadge: vi.fn((tab, material) => renderBadgeText(tab, material)),
 }));
 
 const mockAutofillManager = vi.hoisted(() => ({
@@ -263,5 +273,75 @@ describe('handleClick', () => {
 
         expect(mockMarketplaceTabs.clickMarketplaceNavigationButton).not.toHaveBeenCalled();
         expect(mockMarketplaceSession.start).not.toHaveBeenCalled();
+    });
+});
+
+describe('inventory update while the marketplace tabs are open', () => {
+    let tabsContainer;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockMarketplaceSession.isActive.mockReturnValue(true);
+        mockMarketplaceSession.start.mockReturnValue(1);
+        mockMarketplaceTabs.clickMarketplaceNavigationButton.mockReturnValue(true);
+        mockMarketplaceTabs.navigateToMarketplace.mockReturnValue(true);
+        mockMarketplaceTabs.isMarketplaceMarketListingsSelected.mockReturnValue(true);
+        mockAutofillManager.arm.mockReturnValue(true);
+
+        const referenceTab = document.createElement('button');
+        referenceTab.textContent = 'My Listings';
+        tabsContainer = document.createElement('div');
+        tabsContainer.appendChild(referenceTab);
+        mockMarketplaceTabs.getVisibleMarketplaceTabContainer.mockReturnValue(tabsContainer);
+
+        fakeDataManager.characterData = {
+            characterSetting: { labyrinthTorchHrid: '/items/expert_torch' },
+            characterInfo: { labyrinthTorchCap: 100 },
+        };
+        fakeDataManager.getInitClientData.mockReturnValue({
+            itemDetailMap: { '/items/expert_torch': { name: 'Expert Torch', isTradable: true } },
+        });
+    });
+
+    // Regression test: a purchase while the tabs stay open must repaint the visible "Missing: N"
+    // badge text via updateTabBadge, not just update the data-missing-quantity attribute used
+    // internally for the click-time guard and autofill quantity.
+    test('repaints the visible badge text (not just the data attribute) after a purchase', async () => {
+        fakeDataManager.getInventory.mockReturnValue([
+            { itemHrid: '/items/expert_torch', enhancementLevel: 0, count: 3 },
+        ]);
+
+        await handleClick();
+
+        const tab = tabsContainer.querySelector('[data-item-hrid="/items/expert_torch"]');
+        expect(tab.textContent).toContain('Missing: 97');
+
+        fakeDataManager.getInventory.mockReturnValue([
+            { itemHrid: '/items/expert_torch', enhancementLevel: 0, count: 60 },
+        ]);
+        fakeDataManager.emit('items_updated', {});
+
+        expect(mockMarketplaceTabs.updateTabBadge).toHaveBeenCalled();
+        expect(tab.textContent).toContain('Missing: 40');
+        expect(tab.textContent).not.toContain('Missing: 97');
+        expect(tab.getAttribute('data-missing-quantity')).toBe('40');
+    });
+
+    test('repaints to "Sufficient" once the purchase fully covers the cap', async () => {
+        fakeDataManager.getInventory.mockReturnValue([
+            { itemHrid: '/items/expert_torch', enhancementLevel: 0, count: 3 },
+        ]);
+
+        await handleClick();
+
+        const tab = tabsContainer.querySelector('[data-item-hrid="/items/expert_torch"]');
+
+        fakeDataManager.getInventory.mockReturnValue([
+            { itemHrid: '/items/expert_torch', enhancementLevel: 0, count: 100 },
+        ]);
+        fakeDataManager.emit('items_updated', {});
+
+        expect(tab.textContent).toContain('Sufficient (100)');
+        expect(tab.getAttribute('data-missing-quantity')).toBe('0');
     });
 });
