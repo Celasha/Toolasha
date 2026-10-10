@@ -156,6 +156,21 @@ describe('resolveSellSideValue', () => {
         ).toEqual({ value: 30000, source: 'shopRedemption', needsTax: false, isOutlier: false });
     });
 
+    test('allowIndirect propagates the outlier flag from the redemption chain', () => {
+        mockGetItemPrice.mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReturnValue({
+            value: 30000,
+            isOutlier: true,
+            currencyHrid: '/items/labyrinth_token',
+            tokenCost: 30,
+            outputCount: 1,
+        });
+
+        expect(
+            expectedValueCalculator.resolveSellSideValue('/items/seal_of_efficiency', 0, { allowIndirect: true })
+        ).toEqual({ value: 30000, source: 'shopRedemption', needsTax: false, isOutlier: true });
+    });
+
     test('allowIndirect still returns null when the redemption chain cannot price the currency', () => {
         mockGetItemPrice.mockReturnValue(null);
         mockResolveShopRedemptionValue.mockReturnValue(null);

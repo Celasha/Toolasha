@@ -312,7 +312,8 @@ class ExpectedValueCalculator {
         if (!(dropPrice > 0)) {
             // Opt-in fallback: derive an implied value through the official special-currency shop
             // redemption chain (e.g. a seal bought with labyrinth tokens). Never consulted unless
-            // the caller explicitly passes `allowIndirect` (only Openable Analytics does today).
+            // the caller explicitly passes `allowIndirect` (opt-in: Openable Analytics' calculator
+            // wiring is the intended consumer).
             if (!allowIndirect) return null;
             const indirect = resolveShopRedemptionValue(itemHrid);
             if (!indirect) return null;
