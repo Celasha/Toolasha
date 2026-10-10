@@ -145,6 +145,7 @@ describe('resolveShopRedemptionValue', () => {
             return { value: null, isOutlier: false };
         });
         resolveShopRedemptionValue('/items/seal_of_efficiency');
+        expect(mocks.getItemPriceOutlierInfo).toHaveBeenCalled();
     });
 
     test('returns null for an item with no official shop purchase', () => {

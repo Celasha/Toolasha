@@ -18,8 +18,9 @@ const RESPECT_MODE_SETTING = 'expectedValue_respectPricingMode';
 /**
  * Value one special currency at its best tradeable redemption across the special-currency shops.
  * Dungeon tokens reuse `calculateDungeonTokenValue` (outlier clamping + essence fallback); every
- * other currency takes the highest (price × outputCount ÷ tokenCost) over its own shop entries,
- * mirroring the dungeon-token formula so all currencies share one convention.
+ * other currencies take the highest (price × outputCount ÷ tokenCost) over their own shop entries -
+ * the same shape as the dungeon-token formula, which omits outputCount only because every dungeon
+ * shop entry yields a single output.
  * @param {string} currencyHrid - e.g. '/items/labyrinth_token'
  * @returns {{value: number, isOutlier: boolean}|null} Value per currency unit, or null
  */
