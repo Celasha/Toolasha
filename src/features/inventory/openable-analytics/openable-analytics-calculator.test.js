@@ -510,9 +510,7 @@ describe('opt-in indirect pricing (allowIndirect)', () => {
     test('a shop-redeemable gain (seal) keeps Actual complete and produces a real Luck value', () => {
         dataManager.getItemDetails.mockReturnValue({ isTradable: false });
         expectedValueCalculator.resolveSellSideValue.mockImplementation((_itemHrid, _level, opts) =>
-            opts?.allowIndirect
-                ? { value: 30000, source: 'shopRedemption', needsTax: false, isOutlier: false }
-                : null
+            opts?.allowIndirect ? { value: 30000, source: 'shopRedemption', needsTax: false, isOutlier: false } : null
         );
         expectedValueCalculator.calculateExpectedValue.mockImplementation((_itemHrid, opts) =>
             opts?.allowIndirect
