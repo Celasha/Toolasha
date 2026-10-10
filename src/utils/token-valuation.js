@@ -25,7 +25,8 @@ export const DUNGEON_TOKEN_HRIDS = new Set([
  * Conservative/Patient Buy (buy-side-cheap convention), ask for Hybrid/Optimistic - or always
  * bid when mode-respect is disabled.
  * @param {string} pricingModeSetting - Config setting key for pricing mode
- * @param {string|null} respectModeSetting - Config setting key for the respect-mode flag (null disables respect)
+ * @param {string|null} respectModeSetting - Config setting key for the respect-mode flag (an unknown key or
+ *     absent setting falls back to true, i.e. the pricing mode is respected)
  * @returns {'bid'|'ask'} The selected market price side
  */
 export function resolvePricingSide(pricingModeSetting, respectModeSetting) {
