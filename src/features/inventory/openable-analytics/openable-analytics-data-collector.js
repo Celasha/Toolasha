@@ -18,6 +18,7 @@ import {
     loadImports,
     saveImports,
     foldRecordIntoAggregate,
+    subtractRecordFromAggregate,
     createEmptyAggregate,
     mergeAggregates,
     resetAll as storageResetAll,
@@ -98,6 +99,22 @@ class OpenableAnalyticsDataCollector {
         this.imports = imports;
         this.session = {};
         this.latestRecord = null;
+
+        // Self-heal (OA-REPAIR): re-value incomplete history records with current prices so a
+        // transient pricing gap at open time cannot freeze a container's Luck forever. Complete
+        // records keep their event-time valuations. Runs synchronously before the loot_opened
+        // handler is registered; any repair persists through the ordered queue below.
+        if (this.repairPartialHistory()) {
+            const repairCharacterId = characterId;
+            const historySnapshot = this.history;
+            const lifetimeSnapshot = this.lifetime;
+            this.enqueuePersistence(async () => {
+                const historyOk = await saveHistory(repairCharacterId, historySnapshot);
+                const lifetimeOk = await saveLifetime(repairCharacterId, lifetimeSnapshot);
+                return historyOk && lifetimeOk;
+            });
+            this.notifyStateChange();
+        }
 
         this.lootOpenedHandler = (event) => {
             this.onLootOpened(event, generation).catch((error) => {
@@ -201,6 +218,65 @@ class OpenableAnalyticsDataCollector {
         }
 
         return record;
+    }
+
+    /**
+     * Re-value incomplete history records with current prices and incrementally repair the
+     * lifetime aggregates they fed: subtract each record's stored contributions, re-run
+     * `buildOpeningRecord` on its raw inputs, and fold the rebuilt record back in. A transient
+     * pricing gap at open time (e.g. a brand-new item whose market snapshot had not landed)
+     * therefore heals on the next load instead of freezing Luck as unavailable forever.
+     * Complete records are never touched - they keep their event-time valuations, and market
+     * drift must never silently rewrite history. Records with `sourceDataComplete: false` may
+     * gain values but stay incomplete (their missing items are genuinely absent data). Imported
+     * aggregates are out of scope here - re-importing replaces them wholesale.
+     * Synchronous by design: it runs inside initialize() before the loot_opened handler is
+     * registered, under the captured lifecycle generation, so it cannot race a live opening.
+     * @returns {boolean} Whether any record/aggregates actually changed
+     */
+    repairPartialHistory() {
+        const generation = this.lifecycleGeneration;
+        let changed = false;
+
+        for (let i = 0; i < this.history.length; i++) {
+            const record = this.history[i];
+            const needsRepair =
+                record.actualValueComplete === false ||
+                (record.expectedValueAvailable && record.expectedValueComplete === false);
+            if (!needsRepair) continue;
+
+            const rebuilt = buildOpeningRecord({
+                containerHrid: record.containerHrid,
+                containerCount: record.containerCount,
+                gainedItems: record.gainedItems,
+                grantedBuffs: record.grantedBuffs,
+                timestamp: record.timestamp,
+                characterId: record.characterId,
+                source: record.source,
+                sourceDataComplete: record.sourceDataComplete !== false,
+            });
+
+            const valueChanged =
+                rebuilt.actualValue !== record.actualValue ||
+                rebuilt.expectedValue !== record.expectedValue ||
+                rebuilt.actualValueComplete !== record.actualValueComplete ||
+                rebuilt.expectedValueAvailable !== record.expectedValueAvailable ||
+                rebuilt.expectedValueComplete !== record.expectedValueComplete ||
+                rebuilt.luckValue !== record.luckValue;
+            if (!valueChanged) continue;
+
+            this.lifetime = {
+                ...this.lifetime,
+                [record.containerHrid]: foldRecordIntoAggregate(
+                    subtractRecordFromAggregate(this.lifetime[record.containerHrid], record),
+                    rebuilt
+                ),
+            };
+            this.history[i] = rebuilt;
+            changed = true;
+        }
+
+        return changed && generation === this.lifecycleGeneration;
     }
 
     /**
