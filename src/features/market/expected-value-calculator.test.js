@@ -11,6 +11,7 @@ const {
     mockGetSetting,
     mockGetCustomPrice,
     mockResolveShopRedemptionValue,
+    mockResolveCurrencyValue,
 } = vi.hoisted(() => {
     const getItemPrice = vi.fn();
     return {
@@ -22,6 +23,7 @@ const {
         mockGetSetting: vi.fn(() => true),
         mockGetCustomPrice: vi.fn(() => null),
         mockResolveShopRedemptionValue: vi.fn(),
+        mockResolveCurrencyValue: vi.fn(),
     };
 });
 
@@ -32,6 +34,7 @@ vi.mock('../../utils/market-data.js', () => ({
 vi.mock('../../utils/token-valuation.js', () => ({ calculateDungeonTokenValue: mockCalculateDungeonTokenValue }));
 vi.mock('../../utils/shop-redemption-valuation.js', () => ({
     resolveShopRedemptionValue: mockResolveShopRedemptionValue,
+    resolveCurrencyValue: mockResolveCurrencyValue,
 }));
 vi.mock('../../core/config.js', () => ({ default: { getSetting: mockGetSetting } }));
 vi.mock('../../core/data-manager.js', () => ({
@@ -48,6 +51,7 @@ describe('resolveSellSideValue', () => {
         mockGetSetting.mockReset().mockReturnValue(true);
         mockGetCustomPrice.mockReset().mockReturnValue(null);
         mockResolveShopRedemptionValue.mockReset();
+        mockResolveCurrencyValue.mockReset();
         expectedValueCalculator.containerCache.clear();
     });
 
@@ -180,6 +184,45 @@ describe('resolveSellSideValue', () => {
         ).toBeNull();
     });
 
+    test('allowIndirect prices a dropped shop currency itself at its best tradeable redemption', () => {
+        mockGetItemPrice.mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+        mockResolveCurrencyValue.mockReturnValue({ value: 6725, isOutlier: false });
+
+        expect(
+            expectedValueCalculator.resolveSellSideValue('/items/labyrinth_token', 0, { allowIndirect: true })
+        ).toEqual({ value: 6725, source: 'specialCurrency', needsTax: false, isOutlier: false });
+    });
+
+    test('allowIndirect propagates the outlier flag from the currency valuation', () => {
+        mockGetItemPrice.mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+        mockResolveCurrencyValue.mockReturnValue({ value: 6725, isOutlier: true });
+
+        expect(
+            expectedValueCalculator.resolveSellSideValue('/items/labyrinth_token', 0, { allowIndirect: true })
+        ).toEqual({ value: 6725, source: 'specialCurrency', needsTax: false, isOutlier: true });
+    });
+
+    test('an unpriced non-currency item stays null when both indirect paths fail', () => {
+        mockGetItemPrice.mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+        mockResolveCurrencyValue.mockReturnValue(null);
+
+        expect(
+            expectedValueCalculator.resolveSellSideValue('/items/some_unpriced_item', 0, { allowIndirect: true })
+        ).toBeNull();
+    });
+
+    test('the specialCurrency fallback is opt-in like the rest of the indirect path', () => {
+        mockGetItemPrice.mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+        mockResolveCurrencyValue.mockReturnValue({ value: 6725, isOutlier: false });
+
+        expect(expectedValueCalculator.resolveSellSideValue('/items/labyrinth_token')).toBeNull();
+        expect(mockResolveCurrencyValue).not.toHaveBeenCalled();
+    });
+
     test('a direct market price wins and the redemption chain is not consulted', () => {
         mockGetItemPrice.mockReturnValue(123);
         mockResolveShopRedemptionValue.mockReturnValue({
@@ -204,6 +247,7 @@ describe('allowIndirect threading through the EV path', () => {
         mockGetItemDetails.mockReset();
         mockGetCustomPrice.mockReset().mockReturnValue(null);
         mockResolveShopRedemptionValue.mockReset();
+        mockResolveCurrencyValue.mockReset();
         expectedValueCalculator.containerCache.clear();
         expectedValueCalculator.isInitialized = true;
         mockGetItemDetails.mockImplementation((hrid) =>

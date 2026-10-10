@@ -8,7 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { calculateDungeonTokenValue } from '../../utils/token-valuation.js';
 import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
-import { resolveShopRedemptionValue } from '../../utils/shop-redemption-valuation.js';
+import { resolveShopRedemptionValue, resolveCurrencyValue } from '../../utils/shop-redemption-valuation.js';
 import { getCustomPrice } from '../settings/custom-price-overrides.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { calculateEVBatch } from '../../utils/ev-worker-manager.js';
@@ -316,12 +316,24 @@ class ExpectedValueCalculator {
             // wiring is the intended consumer).
             if (!allowIndirect) return null;
             const indirect = resolveShopRedemptionValue(itemHrid);
-            if (!indirect) return null;
+            if (indirect) {
+                return {
+                    value: indirect.value,
+                    source: 'shopRedemption',
+                    needsTax: false,
+                    isOutlier: indirect.isOutlier || false,
+                };
+            }
+            // Mirror case: the dropped item is itself a shop currency (e.g. labyrinth tokens from
+            // Purdora's boxes) - value it at its own best tradeable redemption. Shop currencies are
+            // not market-relistable, so no tax applies (same contract as shopRedemption above).
+            const currency = resolveCurrencyValue(itemHrid);
+            if (!currency) return null;
             return {
-                value: indirect.value,
-                source: 'shopRedemption',
+                value: currency.value,
+                source: 'specialCurrency',
                 needsTax: false,
-                isOutlier: indirect.isOutlier || false,
+                isOutlier: currency.isOutlier || false,
             };
         }
         const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;

@@ -17,7 +17,7 @@ vi.mock('./market-data.js', () => ({
 }));
 
 // 特意不 mock token-valuation / special-currency-shop：真实模块 + 可控 gameData 做轻集成
-import { resolveShopRedemptionValue } from './shop-redemption-valuation.js';
+import { resolveCurrencyValue, resolveShopRedemptionValue } from './shop-redemption-valuation.js';
 
 function resetGameData() {
     mocks.gameData = {
@@ -162,5 +162,27 @@ describe('resolveShopRedemptionValue', () => {
         mocks.gameData = null;
 
         expect(resolveShopRedemptionValue('/items/seal_of_efficiency')).toBeNull();
+    });
+});
+
+describe('resolveCurrencyValue', () => {
+    test('prices a dropped shop currency itself at its best tradeable redemption', () => {
+        mocks.getItemPriceOutlierInfo.mockImplementation((itemHrid) => {
+            if (itemHrid === '/items/labyrinth_essence') return { value: 100, isOutlier: false }; // 100×10/1 = 1000/token
+            if (itemHrid === '/items/pathbreaker_lodestone') return { value: 50000, isOutlier: false }; // 50000/1000 = 50/token
+            return { value: null, isOutlier: false };
+        });
+
+        expect(resolveCurrencyValue('/items/labyrinth_token')).toEqual({ value: 1000, isOutlier: false });
+    });
+
+    test('stays null for a currency whose every redemption output is itself unpriced (task token)', () => {
+        expect(resolveCurrencyValue('/items/task_token')).toBeNull();
+    });
+
+    test('stays null when game data is unavailable', () => {
+        mocks.gameData = null;
+
+        expect(resolveCurrencyValue('/items/labyrinth_token')).toBeNull();
     });
 });

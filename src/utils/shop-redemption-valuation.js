@@ -3,9 +3,10 @@
  * Indirect pricing for items with no direct market price but an official special-currency shop
  * purchase (e.g. seals bought with labyrinth tokens): implied value = currency value × tokenCost
  * ÷ outputCount, where the currency itself is valued at its best tradeable redemption across the
- * special-currency shops. Consumers opt in through expected-value-calculator's `allowIndirect`
- * flag. This module must never import expected-value-calculator (circular dependency: it already
- * imports token-valuation).
+ * special-currency shops. `resolveCurrencyValue` is also exported for the mirror case - a dropped
+ * item that is itself a shop currency (e.g. labyrinth tokens from Purdora's boxes). Consumers opt
+ * in through expected-value-calculator's `allowIndirect` flag. This module must never import
+ * expected-value-calculator (circular dependency: it already imports token-valuation).
  */
 
 import { getItemPriceOutlierInfo } from './market-data.js';
@@ -20,11 +21,13 @@ const RESPECT_MODE_SETTING = 'expectedValue_respectPricingMode';
  * Dungeon tokens reuse `calculateDungeonTokenValue` (outlier clamping + essence fallback); every
  * other currency takes the highest (price × outputCount ÷ tokenCost) over its own shop entries -
  * the same shape as the dungeon-token formula, which omits outputCount only because every dungeon
- * shop entry yields a single output.
+ * shop entry yields a single output. Exported so expected-value-calculator can price a dropped
+ * item that is itself a shop currency (e.g. labyrinth tokens). Currencies whose every redemption
+ * output is itself unpriced (e.g. task tokens, whose chests have no market price) stay null.
  * @param {string} currencyHrid - e.g. '/items/labyrinth_token'
  * @returns {{value: number, isOutlier: boolean}|null} Value per currency unit, or null
  */
-function resolveCurrencyValue(currencyHrid) {
+export function resolveCurrencyValue(currencyHrid) {
     if (DUNGEON_TOKEN_HRIDS.has(currencyHrid)) {
         return calculateDungeonTokenValue(currencyHrid, PRICING_MODE_SETTING, RESPECT_MODE_SETTING);
     }
