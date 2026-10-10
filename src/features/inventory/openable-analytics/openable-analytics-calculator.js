@@ -20,7 +20,9 @@ import { MARKET_TAX } from '../../../utils/profit-constants.js';
  * @returns {{value: number, resolved: boolean}} Value contribution and whether it could be priced
  */
 function valueGainedItemStack(itemHrid, enhancementLevel, count) {
-    const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel || 0);
+    const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel || 0, {
+        allowIndirect: true,
+    });
     if (!resolved) {
         return { value: 0, resolved: false };
     }
@@ -85,7 +87,7 @@ export function calculateExpectedValueForOpening(containerHrid, containerCount) 
         return { value: null, available: false, complete: false };
     }
 
-    const ev = expectedValueCalculator.calculateExpectedValue(containerHrid);
+    const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, { allowIndirect: true });
     if (!ev || !(ev.expectedValue >= 0)) {
         return { value: null, available: false, complete: false };
     }
