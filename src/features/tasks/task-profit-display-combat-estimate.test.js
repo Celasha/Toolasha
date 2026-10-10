@@ -174,7 +174,7 @@ describe('TaskProfitDisplay combat estimate (#750 review follow-up)', () => {
         expect(container.innerHTML).not.toContain('monsterName=null');
     });
 
-    test('combat result path renders the localized Purple\'s Gift name', async () => {
+    test("combat result path renders the localized Purple's Gift name", async () => {
         gameI18n.translations['itemNames./items/purples_gift'] = '小紫牛的礼物';
 
         const container = document.createElement('div');
@@ -199,7 +199,7 @@ describe('TaskProfitDisplay combat estimate (#750 review follow-up)', () => {
         expect(container.innerHTML).not.toContain("Purple's Gift");
     });
 
-    test('skilling breakdown path renders the localized Purple\'s Gift name (no error branch)', () => {
+    test("skilling breakdown path renders the localized Purple's Gift name (no error branch)", () => {
         gameI18n.translations['itemNames./items/purples_gift'] = '小紫牛的礼物';
 
         const html = feature.buildBreakdownHTML({
@@ -241,7 +241,7 @@ describe('TaskProfitDisplay combat estimate (#750 review follow-up)', () => {
         expect(html).toContain('taskProfitDisplay.loadingEllipsis');
     });
 
-    test('without translations the English Purple\'s Gift fallback still renders', () => {
+    test("without translations the English Purple's Gift fallback still renders", () => {
         const html = feature.buildBreakdownHTML({
             type: 'production',
             hasMissingPrices: false,
