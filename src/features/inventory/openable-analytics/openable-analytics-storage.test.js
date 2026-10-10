@@ -30,6 +30,7 @@ const {
     saveImports,
     createEmptyAggregate,
     foldRecordIntoAggregate,
+    subtractRecordFromAggregate,
     mergeAggregates,
     resetContainer,
     resetAll,
@@ -433,5 +434,47 @@ describe('mergeAggregates', () => {
 
     test('returns an empty aggregate when called with no real aggregates', () => {
         expect(mergeAggregates()).toEqual(createEmptyAggregate());
+    });
+});
+
+describe('subtractRecordFromAggregate', () => {
+    test('is the exact inverse of foldRecordIntoAggregate for a fully-populated record', () => {
+        const record = makeRecord({
+            grantedBuffs: [{ typeHrid: '/buff_types/efficiency', duration: 300 }],
+            actualValueBreakdown: [
+                { itemHrid: '/items/coin', enhancementLevel: 0, count: 100, value: 100, resolved: true },
+            ],
+            expectedValueComplete: true,
+            luckValue: 10,
+            luckPercent: 11.1,
+            source: 'loot_opened',
+        });
+        const original = createEmptyAggregate();
+        const restored = subtractRecordFromAggregate(foldRecordIntoAggregate(original, record), record);
+        expect(restored).toEqual(original);
+    });
+
+    test('an imported record never touches eventsCount in either direction', () => {
+        const record = makeRecord({ source: 'import:edible' });
+        const original = createEmptyAggregate();
+        const folded = foldRecordIntoAggregate(original, record);
+        expect(folded.eventsCount).toBe(0);
+        expect(subtractRecordFromAggregate(folded, record).eventsCount).toBe(0);
+    });
+
+    test('a pre-breakdown record (no actualValueBreakdown) never touches itemValueTotals', () => {
+        const record = makeRecord();
+        const aggregate = createEmptyAggregate();
+        aggregate.itemValueTotals['/items/coin'] = 500;
+        expect(subtractRecordFromAggregate(aggregate, record).itemValueTotals['/items/coin']).toBe(500);
+    });
+
+    test('counters clamp at zero but totals keep the raw difference when subtracting from empty', () => {
+        const record = makeRecord({ containerCount: 5 });
+        const restored = subtractRecordFromAggregate(createEmptyAggregate(), record);
+        expect(restored.containersOpened).toBe(0);
+        expect(restored.valuationRecordCount).toBe(0);
+        expect(restored.luckEligibleRecordCount).toBe(0);
+        expect(restored.actualValueTotal).toBe(-100);
     });
 });

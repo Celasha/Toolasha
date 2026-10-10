@@ -172,6 +172,71 @@ export function foldRecordIntoAggregate(aggregate, record) {
 }
 
 /**
+ * Exact inverse of `foldRecordIntoAggregate`: subtract one previously-folded record's
+ * contributions from an aggregate, returning a new aggregate object. Never mutates the input.
+ * Used by the self-heal repair path, which re-values incomplete history records and re-folds
+ * them - lifetime = fold(pre-history) + fold(history), so subtracting only history records never
+ * touches pre-history contributions. Mirrors fold's skip conditions field-by-field: imported
+ * records never touched eventsCount, and records without actualValueBreakdown never contributed
+ * to itemValueTotals. Counters clamp at zero defensively; monetary totals keep the raw
+ * difference (in the repair flow the fold/subtract invariant makes them non-negative anyway).
+ * @param {Object} aggregate
+ * @param {Object} record - The record previously folded into `aggregate`
+ * @returns {Object} New aggregate with the record's contributions removed
+ */
+export function subtractRecordFromAggregate(aggregate, record) {
+    const base = aggregate || createEmptyAggregate();
+    const itemTotals = { ...base.itemTotals };
+    const itemValueTotals = { ...base.itemValueTotals };
+
+    for (const item of record.gainedItems || []) {
+        const remaining = (itemTotals[item.itemHrid] || 0) - item.count;
+        if (remaining > 0) {
+            itemTotals[item.itemHrid] = remaining;
+        } else {
+            delete itemTotals[item.itemHrid];
+        }
+    }
+    for (const item of record.actualValueBreakdown || []) {
+        if (!item.resolved) continue;
+        const remaining = (itemValueTotals[item.itemHrid] || 0) - item.value;
+        if (remaining > 0) {
+            itemValueTotals[item.itemHrid] = remaining;
+        } else {
+            delete itemValueTotals[item.itemHrid];
+        }
+    }
+
+    const isImported = typeof record.source === 'string' && record.source.startsWith('import:');
+    const expectedPartial = record.expectedValueAvailable && record.expectedValueComplete === false;
+    const luckEligible = record.luckValue !== null && record.luckValue !== undefined;
+
+    return {
+        eventsCount: Math.max(0, base.eventsCount - (isImported ? 0 : 1)),
+        containersOpened: Math.max(0, base.containersOpened - record.containerCount),
+        actualValueTotal: base.actualValueTotal - record.actualValue,
+        actualValueCompleteEvents: Math.max(0, base.actualValueCompleteEvents - (record.actualValueComplete ? 1 : 0)),
+        actualValuePartialEvents: Math.max(0, base.actualValuePartialEvents - (record.actualValueComplete ? 0 : 1)),
+        expectedValueTotal: base.expectedValueTotal - (record.expectedValueAvailable ? record.expectedValue : 0),
+        expectedValueAvailableEvents: Math.max(
+            0,
+            base.expectedValueAvailableEvents - (record.expectedValueAvailable ? 1 : 0)
+        ),
+        expectedValueUnavailableEvents: Math.max(
+            0,
+            base.expectedValueUnavailableEvents - (record.expectedValueAvailable ? 0 : 1)
+        ),
+        expectedValuePartialEvents: Math.max(0, (base.expectedValuePartialEvents || 0) - (expectedPartial ? 1 : 0)),
+        valuationRecordCount: Math.max(0, (base.valuationRecordCount || 0) - 1),
+        luckEligibleRecordCount: Math.max(0, (base.luckEligibleRecordCount || 0) - (luckEligible ? 1 : 0)),
+        hasImportedData: Boolean(base.hasImportedData),
+        grantedBuffEvents: Math.max(0, base.grantedBuffEvents - (record.grantedBuffs?.length > 0 ? 1 : 0)),
+        itemTotals,
+        itemValueTotals,
+    };
+}
+
+/**
  * Load bulk-imported aggregates (Edible Tools / MWI Combat Suite / future sources) for one
  * character. Shape: `{ [source]: { [containerHrid]: aggregate } }`.
  * @param {string} characterId
