@@ -27,6 +27,12 @@ vi.mock('../../utils/game-lookups.js', () => ({
     getChatChannelHridFromName: getChatChannelHridFromNameMock,
 }));
 
+const gameI18n = vi.hoisted(() => ({ translations: {} }));
+
+vi.mock('../../utils/game-i18n.js', () => ({
+    translateGameName: (ns, hrid, fallback = '') => gameI18n.translations[`${ns}.${hrid}`] ?? fallback,
+}));
+
 vi.mock('../../core/websocket.js', () => ({
     default: { on: vi.fn(), off: vi.fn() },
 }));
@@ -182,5 +188,44 @@ describe('MentionTracker - getChannelFromTabName', () => {
 
     test('returns null for an unrecognized tab name', () => {
         expect(feature.getChannelFromTabName('某某频道')).toBeNull();
+    });
+});
+
+describe('MentionTracker - channel display names (#750 review follow-up)', () => {
+    let feature;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        vi.clearAllMocks();
+        gameI18n.translations = {};
+        document.body.innerHTML = '';
+        const config = (await import('../../core/config.js')).default;
+        config.getSetting.mockReturnValue(true);
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterName.mockReturnValue('You');
+
+        ({ default: feature } = await import('./mention-tracker.js'));
+        await feature.initialize();
+    });
+
+    test('resolves general/moderator/trade via the game chatChannelTypeNames localization', () => {
+        gameI18n.translations['chatChannelTypeNames./chat_channel_types/general'] = '综合';
+        gameI18n.translations['chatChannelTypeNames./chat_channel_types/moderator'] = '版主';
+        gameI18n.translations['chatChannelTypeNames./chat_channel_types/trade'] = '交易';
+
+        expect(feature.getChannelDisplayName('/chat_channel_types/general')).toBe('综合');
+        expect(feature.getChannelDisplayName('/chat_channel_types/moderator')).toBe('版主');
+        expect(feature.getChannelDisplayName('/chat_channel_types/trade')).toBe('交易');
+    });
+
+    test('falls back to the static Toolasha label when game i18n has no data', () => {
+        expect(feature.getChannelDisplayName('/chat_channel_types/party')).toBe('Party');
+        expect(feature.getChannelDisplayName('/chat_channel_types/guild')).toBe('Guild');
+    });
+
+    test('unknown channel falls back to the raw hrid', () => {
+        expect(feature.getChannelDisplayName('/chat_channel_types/nonexistent')).toBe(
+            '/chat_channel_types/nonexistent'
+        );
     });
 });

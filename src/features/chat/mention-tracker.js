@@ -9,6 +9,7 @@ import webSocketHook from '../../core/websocket.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { getChatChannelHridFromName } from '../../utils/game-lookups.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 import mentionPopup from './mention-popup.js';
 import notificationLog from './notification-log.js';
 
@@ -118,6 +119,15 @@ class MentionTracker {
      * @returns {string} Display name
      */
     getChannelDisplayName(channel) {
+        // Prefer the game's own chat-channel label: identical to the in-game chat tab
+        // names, covers every channel (general/moderator/trade/...) and future ones
+        // without per-language maintenance. Returns the fallback when the game i18n
+        // instance is unavailable or the key is missing.
+        const gameName = translateGameName('chatChannelTypeNames', channel, null);
+        if (gameName) return gameName;
+
+        // Legacy Toolasha labels: cover pre-data-load rendering and the dead
+        // '/chat_channel_types/global' hrid left over from older builds.
         const channelMap = {
             '/chat_channel_types/party': t('mentionTracker.channelParty'),
             '/chat_channel_types/guild': t('mentionTracker.channelGuild'),
@@ -125,6 +135,7 @@ class MentionTracker {
             '/chat_channel_types/whisper': t('mentionTracker.channelWhisper'),
             '/chat_channel_types/global': t('mentionTracker.channelGlobal'),
         };
+
         return channelMap[channel] || channel;
     }
 
