@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.10.1
+ * Version: 3.11.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -22379,9 +22379,22 @@ ${starCSS}
 .${QUEUE_EDIT_MENU_MARKER_CLASS} [class^="QueuedActions_action__"] {
     flex-wrap: wrap;
 }
+/* flex-basis:0 (via the flex:1 1 0% shorthand) makes the browser's line-fit check treat this
+   column as trivially small regardless of its actual text content, so a row only reaches the
+   flex-wrap fallback above in genuinely extreme cases - normal rows keep text/buttons on one
+   line and let the text wrap internally instead (TLA-079: a next-day completion date made the
+   "Complete at MM-DD HH:MM:SS" line just long enough to force the whole row to wrap, stranding
+   the delete button on its own line, left-aligned instead of at the row's right edge). */
 .${QUEUE_EDIT_MENU_MARKER_CLASS} [class*="QueuedActions_actionText"] {
+    flex: 1 1 0%;
     min-width: 0;
     overflow-wrap: anywhere;
+}
+/* Safety net for whatever rare case still forces a wrap (e.g. an extremely narrow popup): keep
+   the delete button pinned to the row's right edge on whichever line it lands on, instead of
+   falling to flex-start on a line of its own. */
+.${QUEUE_EDIT_MENU_MARKER_CLASS} [class^="QueuedActions_action__"] [class*="Button_warning__"] {
+    margin-left: auto;
 }
 `;
 

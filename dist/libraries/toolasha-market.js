@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.10.1
+ * Version: 3.11.0
  * License: CC-BY-NC-SA-4.0
  */
 

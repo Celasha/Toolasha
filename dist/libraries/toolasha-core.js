@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.10.1
+ * Version: 3.11.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7843,8 +7843,8 @@
             tooltipEffectiveLevel: 'Effective Level: {{level}} (base {{baseLevel}} + {{bonus}})',
             tooltipRoomLevelXp: 'Room Level: {{roomLevel}} | XP/room: {{xp}}',
             tooltipEnhancingTarget: 'Target: +{{targetLevel}} | Effective Level: {{level}}',
-            tooltipRoomLevel: 'Room Level: {{roomLevel}}',
             tooltipCombatWinRate: 'Win Rate: {{winRate}}% | Avg Fight: {{avgFight}}s',
+            tooltipCombatXp: 'Expected XP: {{xp}} per room',
             tooltipCombatMonsterRoom: 'Monster: {{monster}} | Room Level: {{roomLevel}}',
             tooltipCombatLoadout: 'Loadout: "{{loadout}}"',
             tooltipFallback: 'Clear: {{pct}}% | Expected: {{time}} | Room level: {{roomLevel}}',
@@ -12348,8 +12348,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             tooltipEffectiveLevel: '有效等级：{{level}}（基础 {{baseLevel}} + {{bonus}}）',
             tooltipRoomLevelXp: '房间等级：{{roomLevel}} | 每房经验：{{xp}}',
             tooltipEnhancingTarget: '目标：+{{targetLevel}} | 有效等级：{{level}}',
-            tooltipRoomLevel: '房间等级：{{roomLevel}}',
             tooltipCombatWinRate: '胜率：{{winRate}}% | 平均战斗时长：{{avgFight}} 秒',
+            tooltipCombatXp: '预期经验：每房 {{xp}}',
             tooltipCombatMonsterRoom: '怪物：{{monster}} | 房间等级：{{roomLevel}}',
             tooltipCombatLoadout: '配装："{{loadout}}"',
             tooltipFallback: '通关率：{{pct}}% | 预期用时：{{time}} | 房间等级：{{roomLevel}}',
