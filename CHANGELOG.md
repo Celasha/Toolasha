@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.10.1](https://github.com/Celasha/Toolasha/compare/v3.10.0...v3.10.1) (2026-10-10)
+
+### Bug Fixes
+
+- **labyrinth:** repaint missing-supplies badge text after a purchase ([225f113](https://github.com/Celasha/Toolasha/commit/225f113e3470105b37c860e9e89562cd6622e61b))
+- **loot-log:** stop Total XP/Value freezing on still-in-progress rows ([4fe8e8b](https://github.com/Celasha/Toolasha/commit/4fe8e8bc11fd3fb6b0bfeb0a2573f48627d510d5))
+- **market:** resolve riskOfRuinUI lazily to stop duplicate singleton in market bundle ([c8b0717](https://github.com/Celasha/Toolasha/commit/c8b07178951383413d5ec162a15ef762b0bd18d6))
+
+### Miscellaneous Chores
+
+- pin supported Node range to guard against Node &gt;=26's localStorage shim ([7fb27d9](https://github.com/Celasha/Toolasha/commit/7fb27d9553cb91501729ad99ac26134db17fbe91))
+
 ## [3.10.0](https://github.com/Celasha/Toolasha/compare/v3.9.1...v3.10.0) (2026-10-10)
 
 ### Features
