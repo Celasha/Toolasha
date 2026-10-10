@@ -220,7 +220,7 @@ export default {
         buffCooldown: '冷却',
         buffTorch: '火把',
         buffShroud: '斗篷',
-        buffBeacon: '信标',
+        buffBeacon: '探照灯',
         buffAutomation: '自动化',
         statusLoadoutUnavailable: (p) => `所选战斗配装不可用：${p.name}，请选择其他配装或当前装备。`,
         statusSelectMonsterFirst: '请先选择一个怪物。',
