@@ -862,6 +862,22 @@ describe('ActionTimeDisplay Queued Actions edit-menu width stability (TLA-040)',
         expect(css).toContain(`.${MARKER_CLASS} [class*="QueuedActions_actionText"]`);
     });
 
+    test('TLA-079: the text column has a trivial flex-basis so a long completion date does not force the whole row to wrap, and the delete button stays right-aligned if it ever does', () => {
+        instance.initializeQueueObserver();
+        const css = document.getElementById(STYLE_ID).textContent;
+
+        // flex-basis:0 (via the shorthand) keeps the row's line-fit check from treating the text
+        // column's content length as a reason to wrap the whole row - only genuinely extreme
+        // cases should ever reach the flex-wrap fallback above.
+        expect(css).toContain(`.${MARKER_CLASS} [class*="QueuedActions_actionText"]`);
+        expect(css).toContain('flex: 1 1 0%;');
+
+        // If a wrap ever still happens, the delete ("warning" colored) button must stay pinned
+        // to the row's right edge instead of landing left-aligned on its own line.
+        expect(css).toContain(`.${MARKER_CLASS} [class^="QueuedActions_action__"] [class*="Button_warning__"]`);
+        expect(css).toContain('margin-left: auto;');
+    });
+
     test('QW-15: no global MUI tooltip/popper selector, and the separate hover-tooltip surface, is touched', () => {
         instance.initializeQueueObserver();
         const css = document.getElementById(STYLE_ID).textContent;
