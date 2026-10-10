@@ -268,11 +268,13 @@ class TaskStatistics {
 
     /**
      * Section header for computations that cannot cover combat tasks.
+     * The bracketed suffix is part of the localized string itself (each locale
+     * supplies its own punctuation/spacing), so nothing is hardcoded here.
      * @param {string} titleText - Base section title
      * @returns {string} Title with the "not applicable to combat" suffix
      */
     notApplicableHeader(titleText) {
-        return `${titleText}（${t('taskStatistics.combatNotApplicableLabel')}）`;
+        return `${titleText}${t('taskStatistics.combatNotApplicableLabel')}`;
     }
 
     /**

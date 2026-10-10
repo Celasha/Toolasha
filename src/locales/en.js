@@ -2120,7 +2120,7 @@ export default {
         purpleGiftLabel: "Purple's Gift",
         totalRewardValueLabel: 'Total Reward Value',
         actionProfitHeader: 'Action Profit',
-        combatNotApplicableLabel: 'N/A (combat)',
+        combatNotApplicableLabel: ' (N/A for combat)',
         totalActionProfitLabel: 'Total Action Profit',
         combinedTotalLabel: 'Combined Total',
         completionTimeHeader: 'Completion Time',

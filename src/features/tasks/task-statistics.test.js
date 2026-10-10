@@ -310,7 +310,7 @@ describe('TaskStatistics combat row hiding', () => {
             rewards([detail(), detail({ name: 'Dragon', isCombat: true, actionProfit: null })])
         );
         expect(section.children[0].textContent).toBe(
-            'taskStatistics.actionProfitHeader（taskStatistics.combatNotApplicableLabel）'
+            'taskStatistics.actionProfitHeadertaskStatistics.combatNotApplicableLabel'
         );
         const labels = rowLabels(section);
         expect(labels).toContain('Forage');
@@ -337,5 +337,17 @@ describe('TaskStatistics combat row hiding', () => {
         );
         expect(profitSection.children).toHaveLength(1);
         expect(timeSection.children).toHaveLength(1);
+    });
+});
+
+describe('combatNotApplicableLabel locale format', () => {
+    // The suffix must carry its own punctuation/spacing: code concatenates it
+    // verbatim onto the section title, so a bare label would lose the brackets.
+    test.each([
+        ['zh', '（不适用于战斗）'],
+        ['en', ' (N/A for combat)'],
+    ])('%s suffix is self-contained', async (locale, expected) => {
+        const { default: dict } = await import(`../../locales/${locale === 'zh' ? 'zh/batch-e.js' : 'en.js'}`);
+        expect(dict.taskStatistics.combatNotApplicableLabel).toBe(expected);
     });
 });

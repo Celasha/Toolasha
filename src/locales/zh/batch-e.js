@@ -383,7 +383,7 @@ export default {
         purpleGiftLabel: '紫色礼物',
         totalRewardValueLabel: '奖励总价值',
         actionProfitHeader: '动作利润',
-        combatNotApplicableLabel: '不适用（战斗）',
+        combatNotApplicableLabel: '（不适用于战斗）',
         totalActionProfitLabel: '动作总利润',
         combinedTotalLabel: '合计',
         completionTimeHeader: '完成时间',
