@@ -190,6 +190,46 @@ describe('LootLogStats position-based matching', () => {
 
         expect(row.querySelector('.mwi-loot-log-value')).toBe(firstInjection);
     });
+
+    test('refreshes Total XP/Value when the same still-in-progress row grows in place', () => {
+        // A long-running aggregated action (e.g. "Explore Labyrinth (100)") keeps the same DOM
+        // row and index/totalCount the whole time - React just updates its props as more runs
+        // complete. The injected stats must track that growth, not freeze at whatever partial
+        // total existed when the row first mounted.
+        const row = buildActionLootRow();
+        document.body.append(row);
+        instance.currentLootLogData = [
+            {
+                startTime: '2026-10-10T11:08:08Z',
+                endTime: '2026-10-10T11:09:08Z',
+                actionCount: 1,
+                actionHrid: '/actions/labyrinth/explore',
+                drops: { '/items/radiant_fabric': 1 },
+                xpGains: { '/skills/stamina': 100 },
+            },
+        ];
+
+        instance.processLootLogElement(row, 0, 1);
+        expect(row.querySelector('.mwi-loot-log-value').textContent).toContain('Total XP: 100');
+
+        // Same ongoing action, 100 runs later: actionCount/endTime/drops/xpGains have all grown,
+        // but it's still the one and only (topmost) row, so index and totalCount are unchanged.
+        instance.currentLootLogData = [
+            {
+                startTime: '2026-10-10T11:08:08Z',
+                endTime: '2026-10-10T12:11:35Z',
+                actionCount: 100,
+                actionHrid: '/actions/labyrinth/explore',
+                drops: { '/items/radiant_fabric': 142 },
+                xpGains: { '/skills/stamina': 692362 },
+            },
+        ];
+        instance.processLootLogElement(row, 0, 1);
+
+        const text = row.querySelector('.mwi-loot-log-value').textContent;
+        expect(text).toContain('Total XP: 692.4K');
+        expect(text).not.toContain('Total XP: 100');
+    });
 });
 
 describe('LootLogStats rewriteNativeNumberText', () => {
