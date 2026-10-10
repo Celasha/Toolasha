@@ -738,25 +738,29 @@ class TaskStatistics {
      * @returns {HTMLElement} Section element
      */
     createActionProfitSection(rewards) {
-        const section = this.createSection(t('taskStatistics.actionProfitHeader'));
+        const section = this.createSection(this.notApplicableHeader(t('taskStatistics.actionProfitHeader')));
 
-        for (const detail of rewards.taskDetails) {
-            const profitStr = detail.isCombat
-                ? t('taskStatistics.combatNotApplicableLabel')
-                : detail.actionProfit !== null
-                  ? formatKMB(Math.round(detail.actionProfit))
-                  : t('combatSimUi.notAvailableLabel');
+        // Combat tasks cannot produce action profit; they are represented by the
+        // header suffix instead of individual N/A rows.
+        const nonCombatDetails = rewards.taskDetails.filter((detail) => !detail.isCombat);
 
-            const profitColor = detail.isCombat
-                ? config.COLOR_TEXT_SECONDARY
-                : detail.actionProfit !== null && detail.actionProfit >= 0
-                  ? config.COLOR_PROFIT
-                  : detail.actionProfit !== null
-                    ? config.COLOR_LOSS
-                    : config.COLOR_TEXT_SECONDARY;
+        for (const detail of nonCombatDetails) {
+            const profitStr =
+                detail.actionProfit !== null
+                    ? formatKMB(Math.round(detail.actionProfit))
+                    : t('combatSimUi.notAvailableLabel');
+
+            const profitColor =
+                detail.actionProfit !== null && detail.actionProfit >= 0
+                    ? config.COLOR_PROFIT
+                    : detail.actionProfit !== null
+                      ? config.COLOR_LOSS
+                      : config.COLOR_TEXT_SECONDARY;
 
             section.appendChild(this.createRow(detail.name, profitStr, profitColor));
         }
+
+        if (nonCombatDetails.length === 0) return section;
 
         // Separator and total
         const separator = document.createElement('div');
@@ -799,28 +803,27 @@ class TaskStatistics {
      * @returns {HTMLElement} Section element
      */
     createCompletionTimeSection(rewards, textColor) {
-        const section = this.createSection(t('taskStatistics.completionTimeHeader'));
+        const section = this.createSection(this.notApplicableHeader(t('taskStatistics.completionTimeHeader')));
 
-        for (const detail of rewards.taskDetails) {
-            const timeStr = detail.isCombat
-                ? t('taskStatistics.combatNotApplicableLabel')
-                : detail.completionSeconds !== null
-                  ? timeReadable(detail.completionSeconds)
-                  : t('combatSimUi.notAvailableLabel');
+        // Combat tasks cannot produce completion time estimates; they are represented
+        // by the header suffix instead of individual N/A rows.
+        const nonCombatDetails = rewards.taskDetails.filter((detail) => !detail.isCombat);
+
+        for (const detail of nonCombatDetails) {
+            const timeStr =
+                detail.completionSeconds !== null
+                    ? timeReadable(detail.completionSeconds)
+                    : t('combatSimUi.notAvailableLabel');
 
             const progressStr =
                 detail.currentCount > 0
                     ? t('taskStatistics.progressSuffix', { current: detail.currentCount, goal: detail.goalCount })
                     : '';
 
-            section.appendChild(
-                this.createRow(
-                    detail.name + progressStr,
-                    timeStr,
-                    detail.isCombat ? config.COLOR_TEXT_SECONDARY : textColor
-                )
-            );
+            section.appendChild(this.createRow(detail.name + progressStr, timeStr, textColor));
         }
+
+        if (nonCombatDetails.length === 0) return section;
 
         // Separator and total
         const separator = document.createElement('div');

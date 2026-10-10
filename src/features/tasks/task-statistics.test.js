@@ -216,3 +216,78 @@ describe('TaskStatistics progressive popup', () => {
         expect(taskStatistics.sections.completionTime.textContent).toContain('taskStatistics.computeFailedMessage');
     });
 });
+
+describe('TaskStatistics combat row hiding', () => {
+    beforeEach(() => {
+        taskStatistics.overlay = null;
+    });
+
+    afterEach(() => {
+        taskStatistics.closePopup();
+    });
+
+    function detail(overrides = {}) {
+        return {
+            name: 'Forage',
+            isCombat: false,
+            coinReward: 100,
+            tokenReward: 5,
+            actionProfit: 500,
+            completionSeconds: 3600,
+            goalCount: 10,
+            currentCount: 0,
+            ...overrides,
+        };
+    }
+
+    function rewards(taskDetails) {
+        return {
+            totalCoins: 0,
+            totalTokens: 0,
+            tokenValue: 10,
+            rewardValue: { error: false, total: 0, breakdown: { tokenValue: 10 }, taskTokens: 0, purpleGift: 0 },
+            totalActionProfit: 500,
+            totalCompletionSeconds: 3600,
+            combinedTotal: 500,
+            taskDetails,
+        };
+    }
+
+    function rowLabels(section) {
+        return [...section.querySelectorAll('div > span:first-child')].map((s) => s.textContent);
+    }
+
+    test('action profit header carries the not-applicable suffix and combat rows are hidden', () => {
+        const section = taskStatistics.createActionProfitSection(
+            rewards([detail(), detail({ name: 'Dragon', isCombat: true, actionProfit: null })])
+        );
+        expect(section.children[0].textContent).toBe(
+            'taskStatistics.actionProfitHeader（taskStatistics.combatNotApplicableLabel）'
+        );
+        const labels = rowLabels(section);
+        expect(labels).toContain('Forage');
+        expect(labels).not.toContain('Dragon');
+    });
+
+    test('completion time hides combat rows too', () => {
+        const section = taskStatistics.createCompletionTimeSection(
+            rewards([detail(), detail({ name: 'Dragon', isCombat: true, completionSeconds: null })]),
+            '#ffffff'
+        );
+        const labels = rowLabels(section);
+        expect(labels).toContain('Forage');
+        expect(labels).not.toContain('Dragon');
+    });
+
+    test('all-combat task list renders only the section title', () => {
+        const profitSection = taskStatistics.createActionProfitSection(
+            rewards([detail({ name: 'D', isCombat: true, actionProfit: null })])
+        );
+        const timeSection = taskStatistics.createCompletionTimeSection(
+            rewards([detail({ name: 'D', isCombat: true, completionSeconds: null })]),
+            '#ffffff'
+        );
+        expect(profitSection.children).toHaveLength(1);
+        expect(timeSection.children).toHaveLength(1);
+    });
+});
