@@ -236,7 +236,10 @@ function mergeDropsByItem(drops) {
  * @returns {string}
  */
 function buildExpectedBreakdownContent(containerHrid, amount, spriteUrl) {
-    const drops = mergeDropsByItem(expectedValueCalculator.getDropBreakdown(containerHrid));
+    // Same valuation basis as the Expected income total (calculateExpectedValueForOpening):
+    // without `allowIndirect` shop-redemption-priced drops (seals, labyrinth tokens) would show
+    // "(no price yet)" here while the total above them was computed from exactly those prices.
+    const drops = mergeDropsByItem(expectedValueCalculator.getDropBreakdown(containerHrid, { allowIndirect: true }));
     if (!drops.length) {
         return `<div>${t('openableAnalytics.noDropDataMessage')}</div>`;
     }
