@@ -10,6 +10,7 @@
 import skillExperiencePercentage from '../features/ui/skill-experience-percentage.js';
 import hideGuildBadge from '../features/ui/hide-guild-badge.js';
 import draggableModals from '../features/ui/draggable-modals.js';
+import shopMaxBuyButton from '../features/shop/shop-max-buy-button.js';
 
 // Navigation features
 import collectionNavigation from '../features/collection/collection-navigation.js';
@@ -66,6 +67,7 @@ toolashaRoot.UI = {
     skillExperiencePercentage,
     hideGuildBadge,
     draggableModals,
+    shopMaxBuyButton,
     collectionNavigation,
     collectionFilters,
     chatCommands,

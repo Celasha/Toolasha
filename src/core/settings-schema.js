@@ -71,6 +71,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Reformats chat message timestamps using your Market date/time format settings instead of the browser default',
             },
+            shop_maxBuyButton: {
+                id: 'shop_maxBuyButton',
+                label: "Shop: Add 'Max' buy buttons",
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a Max button to Shop, Task Shop, Labyrinth Shop, and Cowbell Store buy dialogs that fills in the most you can afford',
+            },
             notificationLog_maxEntries: {
                 id: 'notificationLog_maxEntries',
                 label: 'Chat: Max notifications to keep',

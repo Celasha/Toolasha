@@ -273,6 +273,9 @@ export default {
         sellOrdersLabel: '卖单：',
         unclaimedTooltip: '待领取的金币',
     },
+    shopMaxBuyButton: {
+        buttonLabel: '最多',
+    },
     marketFilter: {
         levelMinLabel: '等级 ≥ ',
         levelMaxLabel: '等级 < ',

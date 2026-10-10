@@ -1804,6 +1804,9 @@ export default {
         sellOrdersLabel: 'SO:',
         unclaimedTooltip: 'Unclaimed coins (waiting to be collected)',
     },
+    shopMaxBuyButton: {
+        buttonLabel: 'Max',
+    },
     craftingPlanDisplay: {
         pricingModeInstantBuy: 'Instant Buy',
         pricingModeInstantBuyPatientSell: 'Instant Buy / Patient Sell',

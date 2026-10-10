@@ -647,6 +647,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'shop_maxBuyButton',
+            name: 'Shop Max Buy Button',
+            category: 'Shop',
+            module: UI.shopMaxBuyButton,
+            async: false,
+        },
+        {
             key: 'taskProfitDisplay',
             name: 'Task Profit Display',
             category: 'Tasks',
