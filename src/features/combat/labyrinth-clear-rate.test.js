@@ -1159,6 +1159,91 @@ describe('skilling/enhancing success chance floor matches the in-game guide mini
     });
 });
 
+describe('labyrinth room tooltips show expected XP for every room type we can compute it for', () => {
+    test('computeEnhancingClear sets xpPerRoom using the same roomLevel-based estimate as skilling rooms', () => {
+        const feature = new LabyrinthClearRate();
+        feature.getSkillingMetrics = vi.fn(() => ({
+            skillLevelBonus: 0,
+            efficiencyBonus: 0,
+            actionSpeedBonus: 0,
+            successBonus: 0,
+            doubleProgressBonus: 0,
+        }));
+
+        const result = feature.computeEnhancingClear(204);
+
+        expect(result.xpPerRoom).toBe(204 * 50);
+    });
+
+    test('formatTooltip for an enhancing result shows "Room Level: N | XP/room: N" instead of the old bare room-level line', () => {
+        const feature = new LabyrinthClearRate();
+        const tooltip = feature.formatTooltip(
+            {
+                type: 'enhancing',
+                successChance: 0.187,
+                doubleChance: 0.13,
+                attempts: 20,
+                actionSeconds: 5.88,
+                targetLevel: 5,
+                effectiveLevel: 113,
+                roomLevel: 204,
+                xpPerRoom: 10200,
+            },
+            204
+        );
+
+        expect(tooltip).toContain('Room Level: 204 | XP/room: 10200');
+        expect(tooltip).not.toMatch(/Room Level: 204(?! \|)/);
+    });
+
+    test('computeCombatClear sums simulated per-skill XP and averages it over every room attempt (win or lose), matching how winRate is derived', async () => {
+        const feature = new LabyrinthClearRate();
+        feature.isInitialized = true;
+        feature.getLabyrinthLoadoutId = vi.fn(() => 123);
+        feature.buildLabyrinthPlayerDTO = vi.fn(() => ({ hrid: 'player1' }));
+        feature.getCrateHrids = vi.fn(() => []);
+        feature.getLabyrinthCombatBuffs = vi.fn(() => []);
+
+        combatAdapter.buildGameDataPayload.mockReturnValue({});
+        dataManager.getInitClientData.mockReturnValue({ combatMonsterDetailMap: {} });
+        loadoutState.getUsableSnapshotById.mockReturnValue({ name: 'Loadout' });
+
+        // 2 room attempts total, only one of which actually killed the monster (the other timed
+        // out/lost and contributed no XP) - real sim-tracked XP split across combat skills.
+        simRunner.runLabyrinthSimulation.mockResolvedValueOnce({
+            labyAttemptCount: 2,
+            encounters: 1,
+            simulatedTime: 20e9,
+            experienceGained: {
+                player1: { stamina: 30, attack: 90, melee: 30, defense: 0, intelligence: 0, ranged: 0, magic: 0 },
+            },
+        });
+
+        const result = await feature.computeCombatClear('/monsters/test', 100);
+
+        // Total XP (30+90+30=150) averaged over 2 attempts, not just the 1 that succeeded.
+        expect(result.xpPerRoom).toBe(75);
+    });
+
+    test('formatTooltip for a combat result includes an "Expected XP: N per room" line', () => {
+        const feature = new LabyrinthClearRate();
+        const tooltip = feature.formatTooltip(
+            {
+                type: 'combat',
+                winRate: 0.75,
+                avgFightSeconds: 12,
+                xpPerRoom: 1234.6,
+                monsterName: 'Test Monster',
+                roomLevel: 100,
+                loadoutName: 'Loadout',
+            },
+            100
+        );
+
+        expect(tooltip).toContain('Expected XP: 1235 per room');
+    });
+});
+
 describe('updateBadge — grid overlay text does not overflow the ~46px room tile', () => {
     test('below 100% clear chance, splits percent and time onto two lines instead of one long line', () => {
         const feature = new LabyrinthClearRate();

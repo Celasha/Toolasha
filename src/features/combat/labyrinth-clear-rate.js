@@ -582,6 +582,7 @@ class LabyrinthClearRate {
         result.actionSeconds = actionSeconds;
         result.targetLevel = targetLevel;
         result.roomLevel = roomLevel;
+        result.xpPerRoom = roomLevel * 50;
         return result;
     }
 
@@ -996,6 +997,13 @@ class LabyrinthClearRate {
             const totalTime = simResult.simulatedTime / 1e9;
             const avgTime = totalTime / attempts;
 
+            // Real sim-tracked combat XP (per skill, already split by primary/focus training and
+            // every active buff), not an estimate - averaged over every room attempt in the sim
+            // run (win or lose) to match how winRate already accounts for failed/timed-out rooms.
+            const xpBySkill = simResult.experienceGained?.[dto.hrid] || {};
+            const totalXp = Object.values(xpBySkill).reduce((sum, xp) => sum + xp, 0);
+            const xpPerRoom = totalXp / attempts;
+
             const gameDataLocal = dataManager.getInitClientData();
             const monsterDetail = gameDataLocal?.combatMonsterDetailMap?.[monsterHrid];
             const monsterName = getMonsterName(
@@ -1012,6 +1020,7 @@ class LabyrinthClearRate {
                 type: 'combat',
                 winRate,
                 avgFightSeconds: avgTime,
+                xpPerRoom,
                 monsterName,
                 loadoutName,
                 roomLevel,
@@ -2084,7 +2093,10 @@ class LabyrinthClearRate {
                     targetLevel: result.targetLevel,
                     level: Math.floor(result.effectiveLevel),
                 }),
-                t('labyrinthClearRate.tooltipRoomLevel', { roomLevel: result.roomLevel }),
+                t('labyrinthClearRate.tooltipRoomLevelXp', {
+                    roomLevel: result.roomLevel,
+                    xp: result.xpPerRoom,
+                }),
             ].join('\n');
         }
 
@@ -2094,6 +2106,7 @@ class LabyrinthClearRate {
                     winRate: pct(result.winRate),
                     avgFight: Math.round(result.avgFightSeconds),
                 }),
+                t('labyrinthClearRate.tooltipCombatXp', { xp: Math.round(result.xpPerRoom) }),
                 t('labyrinthClearRate.tooltipCombatMonsterRoom', {
                     monster: result.monsterName,
                     roomLevel: result.roomLevel,
@@ -2257,6 +2270,7 @@ class LabyrinthClearRate {
         result.actionSeconds = actionSeconds;
         result.targetLevel = targetLevel;
         result.roomLevel = roomLevel;
+        result.xpPerRoom = roomLevel * 50;
         return result;
     }
 
