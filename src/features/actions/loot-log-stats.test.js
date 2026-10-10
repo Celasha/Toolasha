@@ -12,6 +12,7 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import dataManager from '../../core/data-manager.js';
 
 const itemPrices = {};
 
@@ -43,6 +44,32 @@ vi.mock('../../core/data-manager.js', () => ({
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrices: vi.fn((hrid) => itemPrices[hrid] || null),
 }));
+
+// Controllable game-i18n dictionary for translation-resolution tests.
+// vi.mock factories are hoisted before module evaluation, so the shared dict
+// must live in vi.hoisted; factories look up gameI18nDict[ns] dynamically so
+// beforeEach can swap the objects wholesale. Unmocked exports keep the real
+// implementation, which returns its fallback under jsdom - the same semantics
+// the pre-existing assertions rely on.
+const gameI18nDict = vi.hoisted(() => ({
+    actionNames: {},
+    actionCategoryNames: {},
+    skillNames: {},
+}));
+
+vi.mock('../../utils/game-i18n.js', async (importOriginal) => {
+    const actual = await importOriginal();
+    const fromDict =
+        (ns) =>
+        (hrid, fb = '') =>
+            gameI18nDict[ns][hrid] ?? fb ?? '';
+    return {
+        ...actual,
+        getActionName: vi.fn(fromDict('actionNames')),
+        getActionCategoryName: vi.fn(fromDict('actionCategoryNames')),
+        getSkillName: vi.fn(fromDict('skillNames')),
+    };
+});
 
 vi.mock('../market/expected-value-calculator.js', () => ({
     default: { isInitialized: false },
@@ -397,5 +424,41 @@ describe('LootLogStats Analytics (pivot table) button and panel', () => {
 
         expect(document.querySelector('.mwi-loot-log-analytics-btn')).toBeNull();
         expect(document.querySelector('.mwi-loot-log-analytics-overlay')).toBeNull();
+    });
+});
+
+describe('LootLogStats getActionCategory game-i18n resolution', () => {
+    let instance;
+
+    beforeEach(async () => {
+        document.body.innerHTML = '';
+        gameI18nDict.actionNames = {};
+        gameI18nDict.actionCategoryNames = {};
+        gameI18nDict.skillNames = {};
+        dataManager.getActionDetails.mockReset();
+        dataManager.getActionDetails.mockReturnValue(null);
+        instance = await lootLogStatsFeature.initialize();
+    });
+
+    test('layer 1: prefers actionCategoryNames via the action detail category HRID', () => {
+        gameI18nDict.actionCategoryNames['/action_categories/labyrinth/labyrinth'] = '迷宫';
+        // Even if skillNames also has a translation, layer 1 must win.
+        gameI18nDict.skillNames['/skills/labyrinth'] = 'WRONG_LAYER';
+        dataManager.getActionDetails.mockReturnValue({
+            category: '/action_categories/labyrinth/labyrinth',
+        });
+
+        expect(instance.getActionCategory('/actions/labyrinth/explore')).toBe('迷宫');
+    });
+
+    test('layer 2: falls back to skillNames (/skills/<category segment>) when detail has no category', () => {
+        gameI18nDict.skillNames['/skills/cooking'] = '烹饪';
+
+        expect(instance.getActionCategory('/actions/cooking/donut')).toBe('烹饪');
+    });
+
+    test('layer 3: falls back to capitalized English HRID segment when both dictionaries miss', () => {
+        expect(instance.getActionCategory('/actions/foraging/good')).toBe('Foraging');
+        expect(instance.getActionCategory('/actions/labyrinth/explore')).toBe('Labyrinth');
     });
 });
