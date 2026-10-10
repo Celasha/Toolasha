@@ -329,6 +329,27 @@ describe('OpenableAnalyticsSidePanel expandable breakdown rows', () => {
         expect(content.style.display).toBe('none');
     });
 
+    test('"Expected income" breakdown is priced on the same basis as the Expected income total (allowIndirect)', () => {
+        expectedValueCalculator.getDropBreakdown.mockReturnValue([
+            {
+                itemHrid: '/items/foo',
+                itemName: 'Foo',
+                dropRate: 0.5,
+                avgCount: 2,
+                priceEach: 100,
+                expectedValue: 100,
+                hasPriceData: true,
+            },
+        ]);
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        const toggle = document.querySelector('[data-toggle-key="current-expected"]');
+        toggle.click();
+
+        expect(expectedValueCalculator.getDropBreakdown).toHaveBeenCalledWith('/items/chest', { allowIndirect: true });
+    });
+
     test('"Expected income" breakdown merges multiple drop-table rows for the same item into one', () => {
         expectedValueCalculator.getDropBreakdown.mockReturnValue([
             {
