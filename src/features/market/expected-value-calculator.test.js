@@ -197,6 +197,67 @@ describe('resolveSellSideValue', () => {
     });
 });
 
+describe('allowIndirect threading through the EV path', () => {
+    beforeEach(() => {
+        mockGetItemPrice.mockReset().mockReturnValue(null);
+        mockGetInitClientData.mockReset();
+        mockGetItemDetails.mockReset();
+        mockGetCustomPrice.mockReset().mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReset();
+        expectedValueCalculator.containerCache.clear();
+        expectedValueCalculator.isInitialized = true;
+        mockGetItemDetails.mockImplementation((hrid) =>
+            hrid === '/items/chest'
+                ? { name: 'Test Chest', isOpenable: true }
+                : { name: 'Seal of Efficiency', isTradable: false, isOpenable: false }
+        );
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/chest': [{ itemHrid: '/items/seal_of_efficiency', dropRate: 1, minCount: 1, maxCount: 1 }],
+            },
+        });
+    });
+
+    test('getDropPrice resolves an unpriced shop-redeemable drop when allowIndirect is on', () => {
+        mockResolveShopRedemptionValue.mockReturnValue({ value: 30000, isOutlier: false });
+
+        expect(expectedValueCalculator.getDropPrice('/items/seal_of_efficiency', { allowIndirect: true })).toBe(30000);
+    });
+
+    test('getDropPriceInfo resolves an unpriced shop-redeemable drop when allowIndirect is on', () => {
+        mockResolveShopRedemptionValue.mockReturnValue({ value: 30000, isOutlier: true });
+
+        expect(expectedValueCalculator.getDropPriceInfo('/items/seal_of_efficiency', { allowIndirect: true })).toEqual({
+            value: 30000,
+            isOutlier: true,
+        });
+    });
+
+    test('calculateExpectedValue marks a shop-redeemable drop as priced when allowIndirect is on', () => {
+        mockResolveShopRedemptionValue.mockReturnValue({
+            value: 30000,
+            isOutlier: false,
+            currencyHrid: '/items/labyrinth_token',
+            tokenCost: 30,
+            outputCount: 1,
+        });
+
+        const ev = expectedValueCalculator.calculateExpectedValue('/items/chest', { allowIndirect: true });
+
+        expect(ev.drops[0].hasPriceData).toBe(true);
+        // 1 * 1 * 30000, no tax - untradeable drops are never taxed
+        expect(ev.drops[0].expectedValue).toBe(30000);
+        expect(ev.expectedValue).toBe(30000);
+    });
+
+    test('the same drop stays hasPriceData:false by default (opt-in only)', () => {
+        const ev = expectedValueCalculator.calculateExpectedValue('/items/chest');
+
+        expect(ev.drops[0].hasPriceData).toBe(false);
+        expect(mockResolveShopRedemptionValue).not.toHaveBeenCalled();
+    });
+});
+
 describe('resolveBuySideValue', () => {
     beforeEach(() => {
         mockGetItemPrice.mockReset();

@@ -382,20 +382,22 @@ class ExpectedValueCalculator {
      * Get price for a drop item
      * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
      * @param {string} itemHrid - Item HRID
+     * @param {Object} [opts] - Options forwarded to resolveSellSideValue (e.g. { allowIndirect })
      * @returns {number|null} Price or null if unavailable
      */
-    getDropPrice(itemHrid) {
-        return this.resolveSellSideValue(itemHrid)?.value ?? null;
+    getDropPrice(itemHrid, opts) {
+        return this.resolveSellSideValue(itemHrid, 0, opts)?.value ?? null;
     }
 
     /**
      * Get price and outlier-guard status for a drop item - the mirror of `getDropPrice()` for
      * callers that want to show a warning icon when the price was substituted.
      * @param {string} itemHrid - Item HRID
+     * @param {Object} [opts] - Options forwarded to resolveSellSideValue (e.g. { allowIndirect })
      * @returns {{value: number|null, isOutlier: boolean}}
      */
-    getDropPriceInfo(itemHrid) {
-        const resolved = this.resolveSellSideValue(itemHrid);
+    getDropPriceInfo(itemHrid, opts) {
+        const resolved = this.resolveSellSideValue(itemHrid, 0, opts);
         return resolved
             ? { value: resolved.value, isOutlier: resolved.isOutlier || false }
             : { value: null, isOutlier: false };
@@ -404,9 +406,12 @@ class ExpectedValueCalculator {
     /**
      * Calculate expected value for an openable container
      * @param {string} itemHrid - Container item HRID
+     * @param {Object} [options] - Options
+     * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
+     *     with no direct market price. Default off keeps existing behavior untouched.
      * @returns {Object|null} EV data or null
      */
-    calculateExpectedValue(itemHrid) {
+    calculateExpectedValue(itemHrid, { allowIndirect = false } = {}) {
         if (!this.isInitialized) {
             console.warn('[ExpectedValueCalculator] Not initialized');
             return null;
@@ -424,7 +429,7 @@ class ExpectedValueCalculator {
         }
 
         // Get detailed drop breakdown (calculates with fresh market prices)
-        const drops = this.getDropBreakdown(itemHrid);
+        const drops = this.getDropBreakdown(itemHrid, { allowIndirect });
 
         // Calculate total expected value from fresh drop data
         const expectedReturn = drops.reduce((sum, drop) => sum + drop.expectedValue, 0);
@@ -450,9 +455,12 @@ class ExpectedValueCalculator {
     /**
      * Get detailed drop breakdown for display
      * @param {string} containerHrid - Container HRID
+     * @param {Object} [options] - Options
+     * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
+     *     with no direct market price. Default off keeps existing behavior untouched.
      * @returns {Array} Array of drop objects
      */
-    getDropBreakdown(containerHrid) {
+    getDropBreakdown(containerHrid, { allowIndirect = false } = {}) {
         const initData = dataManager.getInitClientData();
         if (!initData || !initData.openableLootDropMap) {
             return [];
@@ -485,7 +493,7 @@ class ExpectedValueCalculator {
             const avgCount = (minCount + maxCount) / 2;
 
             // Get price
-            const priceInfo = this.getDropPriceInfo(itemHrid);
+            const priceInfo = this.getDropPriceInfo(itemHrid, { allowIndirect });
             const price = priceInfo.value;
 
             // Calculate expected value for this drop
