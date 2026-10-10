@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.10.0](https://github.com/Celasha/Toolasha/compare/v3.9.1...v3.10.0) (2026-10-10)
+
+### Features
+
+- add Max buy button to Shop, Task Shop, Labyrinth Shop, and Cowbell Store ([4c534e2](https://github.com/Celasha/Toolasha/commit/4c534e2064983968ffa530d685114fe1fc48b017))
+
+### Bug Fixes
+
+- **chat:** resolve mention channel display names via game localization ([#757](https://github.com/Celasha/Toolasha/issues/757)) ([bc5a2b8](https://github.com/Celasha/Toolasha/commit/bc5a2b8ee2fdc8baf4080218112addbc1bb326db))
+- match chat 24hr timestamp date separator to Market date/time settings ([eb32ffc](https://github.com/Celasha/Toolasha/commit/eb32ffccc4c8cc30e599dda3f16dcd9fd92ef473))
+
+### Tests
+
+- add regression tests for [#750](https://github.com/Celasha/Toolasha/issues/750) zh display fixes ([#756](https://github.com/Celasha/Toolasha/issues/756)) ([e895091](https://github.com/Celasha/Toolasha/commit/e895091dcc3c11554d186739a1df7abd6d250085))
+
 ## [3.9.1](https://github.com/Celasha/Toolasha/compare/v3.9.0...v3.9.1) (2026-10-09)
 
 ### Bug Fixes
