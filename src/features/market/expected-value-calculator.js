@@ -497,6 +497,9 @@ class ExpectedValueCalculator {
             const price = priceInfo.value;
 
             // Calculate expected value for this drop
+            // Tax is gated on tradability here (what a drop would actually fetch when sold), not on the
+            // price source's `needsTax` contract - shop-redemption-priced drops that were somehow
+            // tradeable would still be taxed in this breakdown, by design.
             const itemCanBeSold = itemDetails.isTradable !== false;
 
             // Special case: Coin never has market tax (it's currency, not a market item)
