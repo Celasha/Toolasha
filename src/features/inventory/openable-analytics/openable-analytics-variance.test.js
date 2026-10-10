@@ -116,6 +116,28 @@ describe('calculatePerOpeningVariance', () => {
         // 230400 (gem, taxed) + 25 (coin, untaxed)
         expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(230425);
     });
+
+    test('variance sampling uses the same indirect pricing as the expected-income figure', () => {
+        dataManager.getItemDetails.mockReturnValue({ isTradable: false });
+        dataManager.getInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/box': [{ itemHrid: '/items/seal', dropRate: 0.5, minCount: 10, maxCount: 10 }],
+            },
+        });
+        // Seal-type items have no direct market price; resolveSellSideValue only prices them when
+        // indirect (shop-redemption) pricing is allowed - the same flag the E[income] figure uses.
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((_itemHrid, _level, opts) =>
+            opts?.allowIndirect ? { value: 30000, source: 'shopRedemption', needsTax: false, isOutlier: false } : null
+        );
+
+        const variance = calculatePerOpeningVariance('/items/box');
+
+        expect(expectedValueCalculator.resolveSellSideValue).toHaveBeenCalledWith('/items/seal', 0, {
+            allowIndirect: true,
+        });
+        // perUnit = 30000 (non-tradable, untaxed); Var = 30000^2 * (0.5*0 + 0.5*0.5*10^2) = 2.25e10
+        expect(variance).toBeCloseTo(22500000000);
+    });
 });
 
 describe('calculateIncomeStdDev', () => {

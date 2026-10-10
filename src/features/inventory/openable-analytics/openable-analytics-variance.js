@@ -32,7 +32,7 @@ function dropValueVariance(drop) {
     const countVariance = n > 1 ? (n * n - 1) / 12 : 0;
     const avgCount = (minCount + maxCount) / 2;
 
-    const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid);
+    const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid, 0, { allowIndirect: true });
     if (!resolved) return 0;
 
     const itemDetails = dataManager.getItemDetails(drop.itemHrid);

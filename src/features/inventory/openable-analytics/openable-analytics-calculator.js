@@ -87,6 +87,9 @@ export function calculateExpectedValueForOpening(containerHrid, containerCount) 
         return { value: null, available: false, complete: false };
     }
 
+    // Indirect shop-redemption pricing so seal-type items price on both the Actual and Expected
+    // sides (Luck stays computable); the variance sampler passes the same flag so E[income] and
+    // its stdDev share one value basis.
     const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, { allowIndirect: true });
     if (!ev || !(ev.expectedValue >= 0)) {
         return { value: null, available: false, complete: false };
