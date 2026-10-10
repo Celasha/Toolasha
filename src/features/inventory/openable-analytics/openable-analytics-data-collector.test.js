@@ -740,6 +740,52 @@ describe('self-heal repair on initialize', () => {
         expect(lifetimeAfter.actualValueTotal).toBe(50);
     });
 
+    test('pre-history contributions outside the history window survive the repair', async () => {
+        // A complete record that has already fallen off the 500-event history window: its
+        // contributions live only in the lifetime aggregate. The repair must swap only the
+        // history record's stored contribution for the rebuilt one - never rebuild lifetime
+        // from history alone (which would silently drop pre-history contributions).
+        const preHistory = partialRecord({
+            timestamp: 0,
+            containerCount: 4,
+            gainedItems: [
+                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1 },
+                { itemHrid: '/items/relic', enhancementLevel: 0, count: 2 },
+            ],
+            actualValue: 200,
+            actualValueComplete: true,
+            actualValueBreakdown: [
+                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 100, resolved: true },
+                { itemHrid: '/items/relic', enhancementLevel: 0, count: 2, value: 100, resolved: true },
+            ],
+            luckValue: -10,
+            luckPercent: -10,
+        });
+        const old = partialRecord();
+        const lifetime = foldRecordIntoAggregate(foldRecordIntoAggregate(createEmptyAggregate(), preHistory), old);
+        seedStorage([old], { '/items/chimerical_chest': lifetime });
+
+        mocks.dropTable = { '/items/chimerical_chest': [{ itemHrid: '/items/coin', dropRate: 1 }] };
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((itemHrid) =>
+            itemHrid === '/items/mystery' ? { value: 50, needsTax: false } : { value: 10, needsTax: false }
+        );
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 90,
+            drops: [{ hasPriceData: true }],
+        });
+
+        await reinitialize();
+
+        const lifetimeAfter = openableAnalyticsDataCollector.getLiveLifetimeAggregate('/items/chimerical_chest');
+        // Pre-history contributions survive...
+        expect(lifetimeAfter.containersOpened).toBe(5);
+        expect(lifetimeAfter.itemTotals['/items/relic']).toBe(2);
+        expect(lifetimeAfter.itemValueTotals['/items/relic']).toBe(100);
+        // ...and only the history record's contribution was swapped for the rebuilt one (50 instead of 0).
+        expect(lifetimeAfter.actualValueTotal).toBe(250);
+        expect(lifetimeAfter.luckEligibleRecordCount).toBe(2);
+    });
+
     test('a complete record keeps its event-time valuation untouched', async () => {
         const complete = partialRecord({
             actualValue: 100,
