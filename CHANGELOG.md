@@ -2,15 +2,13 @@
 
 ## [3.11.0](https://github.com/Celasha/Toolasha/compare/v3.10.1...v3.11.0) (2026-10-10)
 
-
 ### Features
 
-* **labyrinth:** show expected XP on enhancing and combat room tooltips ([aff1e02](https://github.com/Celasha/Toolasha/commit/aff1e026250f18201fe3e89db958f1c33f0aed3f))
-
+- **labyrinth:** show expected XP on enhancing and combat room tooltips ([aff1e02](https://github.com/Celasha/Toolasha/commit/aff1e026250f18201fe3e89db958f1c33f0aed3f))
 
 ### Bug Fixes
 
-* **actions:** stop queue-edit-menu delete button stranding left on wrap ([68d86cb](https://github.com/Celasha/Toolasha/commit/68d86cbce37264f26b7c0b6d60628de25f52dfe7))
+- **actions:** stop queue-edit-menu delete button stranding left on wrap ([68d86cb](https://github.com/Celasha/Toolasha/commit/68d86cbce37264f26b7c0b6d60628de25f52dfe7))
 
 ## [3.10.1](https://github.com/Celasha/Toolasha/compare/v3.10.0...v3.10.1) (2026-10-10)
 
