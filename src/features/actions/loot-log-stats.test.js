@@ -451,7 +451,20 @@ describe('LootLogStats getActionCategory game-i18n resolution', () => {
         expect(instance.getActionCategory('/actions/labyrinth/explore')).toBe('迷宫');
     });
 
-    test('layer 2: falls back to skillNames (/skills/<category segment>) when detail has no category', () => {
+    test('layer 1 degrade: detail category present but actionCategoryNames misses -> falls through to skillNames', () => {
+        gameI18nDict.skillNames['/skills/labyrinth'] = '迷宫技能';
+        dataManager.getActionDetails.mockReturnValue({
+            category: '/action_categories/labyrinth/labyrinth',
+        });
+
+        expect(instance.getActionCategory('/actions/labyrinth/explore')).toBe('迷宫技能');
+    });
+
+    test('detail present but without a category field falls through to the English fallback cleanly', () => {
+        expect(instance.getActionCategory('/actions/foraging/good')).toBe('Foraging');
+    });
+
+    test('layer 2: falls back to skillNames (/skills/<category segment>) when the action detail is missing', () => {
         gameI18nDict.skillNames['/skills/cooking'] = '烹饪';
 
         expect(instance.getActionCategory('/actions/cooking/donut')).toBe('烹饪');
