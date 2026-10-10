@@ -623,7 +623,7 @@ export default {
         guildTrialStarted: '你的公会试用期已开始！',
         houseConstructed: '已建造 {{level}} 级 $t(houseRoomNames.{{roomHrid}})',
         kickedGuildMember: '已踢出公会成员：{{name}}',
-        labyrinthShroudFailed: '遮罩失败！房间等级超出了遮罩的有效范围。',
+        labyrinthShroudFailed: '斗篷失败！房间等级超出了斗篷的有效范围。',
         listingPegged: '$t(itemNames.{{itemHrid}}){{enhancement}} 当前挂单价为 {{boundary}} — 你设置的限制：{{limit}}',
         loadoutCreated: '配装已创建',
         loadoutDeleted: '配装已删除',
