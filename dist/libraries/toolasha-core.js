@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.9.1
+ * Version: 3.10.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -750,6 +750,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Reformats chat message timestamps using your Market date/time format settings instead of the browser default',
+                },
+                shop_maxBuyButton: {
+                    id: 'shop_maxBuyButton',
+                    label: "Shop: Add 'Max' buy buttons",
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a Max button to Shop, Task Shop, Labyrinth Shop, and Cowbell Store buy dialogs that fills in the most you can afford',
                 },
                 notificationLog_maxEntries: {
                     id: 'notificationLog_maxEntries',
@@ -8317,6 +8324,9 @@
             sellOrdersLabel: 'SO:',
             unclaimedTooltip: 'Unclaimed coins (waiting to be collected)',
         },
+        shopMaxBuyButton: {
+            buttonLabel: 'Max',
+        },
         craftingPlanDisplay: {
             pricingModeInstantBuy: 'Instant Buy',
             pricingModeInstantBuyPatientSell: 'Instant Buy / Patient Sell',
@@ -13243,6 +13253,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             sellOrdersTooltip: '卖单（税后预期收益）',
             sellOrdersLabel: '卖单：',
             unclaimedTooltip: '待领取的金币',
+        },
+        shopMaxBuyButton: {
+            buttonLabel: '最多',
         },
         marketFilter: {
             levelMinLabel: '等级 ≥ ',

@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.9.1
+ * Version: 3.10.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, marketplaceSession_js, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
+(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketplaceSession_js, reactInput_js, marketAPI, efficiency_js, webSocketHook, selectors_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
     'use strict';
 
     /**
@@ -446,6 +446,583 @@
     };
 
     /**
+     * Game i18n Bridge
+     *
+     * Obtains the game's i18next instance from the React fiber tree and provides
+     * locale-independent translation of game data names (items, actions, monsters,
+     * skills, etc.). Falls back to the English name when the i18n instance is
+     * unavailable or the key is missing.
+     */
+
+    let cachedI18n = null;
+
+    /**
+     * Walk the React fiber tree from #root to find the i18next instance.
+     * @returns {import('i18next').i18n | null}
+     */
+    function getGameI18n() {
+        if (cachedI18n) return cachedI18n;
+        if (typeof document === 'undefined') return null;
+
+        const root = document.getElementById('root');
+        const fiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+        if (!fiber) return null;
+
+        const stack = [fiber];
+        while (stack.length > 0) {
+            const f = stack.pop();
+            if (!f) continue;
+            try {
+                const props = f.memoizedProps || {};
+                if (props.i18n && typeof props.i18n.t === 'function') {
+                    cachedI18n = props.i18n;
+                    return cachedI18n;
+                }
+                if (props.value?.i18n && typeof props.value.i18n.t === 'function') {
+                    cachedI18n = props.value.i18n;
+                    return cachedI18n;
+                }
+            } catch (error) {
+                console.error('[GameI18n] Fiber access error during tree walk:', error);
+            }
+            if (f.sibling) stack.push(f.sibling);
+            if (f.child) stack.push(f.child);
+        }
+        return null;
+    }
+
+    /**
+     * Translate a game data name via the game's i18next instance.
+     * @param {string} namespace - i18n namespace (e.g. 'itemNames')
+     * @param {string} hrid - Game data HRID (e.g. '/items/abyssal_essence')
+     * @param {string} [fallback=''] - English name to fall back to
+     * @returns {string} Translated name or fallback
+     */
+    function translateGameName(namespace, hrid, fallback = '') {
+        if (!hrid) return fallback;
+        const i18n = getGameI18n();
+        if (!i18n) return fallback;
+
+        const key = `${namespace}.${hrid}`;
+        try {
+            const translated = i18n.t(key);
+            // i18next returns the key itself when no translation exists
+            if (translated === key) return fallback;
+            return translated;
+        } catch (error) {
+            console.error('[GameI18n] i18n.t() failed for key:', key, error);
+            return fallback;
+        }
+    }
+
+    const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);
+    const getActionName = (hrid, fallback = '') => translateGameName('actionNames', hrid, fallback);
+    const getActionTypeName = (hrid, fallback = '') => translateGameName('actionTypeNames', hrid, fallback);
+    const getMonsterName = (hrid, fallback = '') => translateGameName('monsterNames', hrid, fallback);
+    const getSkillName = (hrid, fallback = '') => translateGameName('skillNames', hrid, fallback);
+    const getAbilityName = (hrid, fallback = '') => translateGameName('abilityNames', hrid, fallback);
+
+    /**
+     * Marketplace Buy Modal Autofill Utility
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
+     */
+
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs, plus locale-independent
+     * resolution via icon sprite references (see below) - prefer the sprite-based functions
+     * over the name-based ones wherever a `<use>` element is reachable, since display names are
+     * translated client-side and the name-based functions below only ever match the client's
+     * English-language data, silently failing on any other game locale.
+     */
+
+
+    /**
+     * Extract the last path segment from an hrid, e.g. "/actions/gathering/milking" -> "milking".
+     * This is the fragment MWI's sprite sheets key icons by, for both actions and skills.
+     * @param {string} hrid
+     * @returns {string}
+     */
+    function lastHridSegment(hrid) {
+        return hrid.slice(hrid.lastIndexOf('/') + 1);
+    }
+    let skillFragmentToHridMap = null;
+    let chatChannelNameToHridCache = null;
+    let chatChannelNameToHridCacheSource = null;
+
+    /**
+     * Resolve a skill HRID from its icon sprite `<use>` href (e.g.
+     * ".../skills_sprite.<hash>.svg#milking"), which is locale-independent - the href's fragment is
+     * always the skill's last hrid segment, unlike the nav bar's rendered label text.
+     * @param {string|null|undefined} href
+     * @returns {string|null}
+     */
+    function getSkillHridFromIconHref(href) {
+        if (!href || !href.includes('skills_sprite')) return null;
+        const fragment = href.split('#')[1];
+        if (!fragment) return null;
+
+        if (!skillFragmentToHridMap) {
+            skillFragmentToHridMap = new Map();
+            const gameData = dataManager.getInitClientData();
+            for (const hrid of Object.keys(gameData?.skillDetailMap || {})) {
+                skillFragmentToHridMap.set(lastHridSegment(hrid), hrid);
+            }
+        }
+
+        return skillFragmentToHridMap.get(fragment) || null;
+    }
+
+    /**
+     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
+     * @param {string} name - Original display name
+     * @returns {string[]} Array of alternate names to try (may be empty)
+     */
+    function getRefinedNameVariants(name) {
+        const variants = [];
+        if (name.includes('★')) {
+            variants.push(name.replace(/\s*★/, ' (R)'));
+        }
+        if (name.includes('(R)')) {
+            variants.push(name.replace(/\s*\(R\)/, ' ★'));
+        }
+        return variants;
+    }
+
+    /**
+     * Resolve a task card's underlying quest object (which carries actionHrid/monsterHrid directly)
+     * by walking the React fiber tree from the card's own "Go"/success button up to the component
+     * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
+     * "SkillType - TaskName" text.
+     * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
+     * @returns {Object|null} The characterQuest object, or null if not found.
+     */
+    function getQuestFromTaskCard(taskCard) {
+        const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
+        if (!goBtn) return null;
+
+        let f = getReactFiberFromElement(goBtn)?.return;
+        while (f) {
+            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                return f.memoizedProps.characterQuest;
+            }
+            f = f.return;
+        }
+        return null;
+    }
+
+    /**
+     * Find an action HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} actionName - Display name of the action
+     * @returns {string|null} Action HRID or null if not found
+     */
+    function getActionHridFromName(actionName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) {
+            return null;
+        }
+
+        // Try exact match first (English or translated)
+        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+            const displayName = getActionName(hrid, detail.name);
+            if (displayName === actionName || detail.name === actionName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(actionName)) {
+            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+                const displayName = getActionName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find an item HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} itemName - Display name of the item
+     * @returns {string|null} Item HRID or null if not found
+     */
+    function getItemHridFromName(itemName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) {
+            return null;
+        }
+
+        // Try exact match first (English or translated)
+        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+            const displayName = getItemName(hrid, detail.name);
+            if (displayName === itemName || detail.name === itemName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(itemName)) {
+            for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+                const displayName = getItemName(hrid, detail.name);
+                if (displayName === variant || detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a chat channel HRID from a tab display name (e.g. "Party", "队伍").
+     * Chat tab labels are rendered by the game via the i18next `chatChannelTypeNames`
+     * namespace (verified against the client bundle), so the cache indexes both the
+     * English data name from `chatChannelTypeDetailMap` and the localized name.
+     * @param {string} name - Tab display name (strip trailing unread-count digits first)
+     * @returns {string|null} Channel HRID or null if not found
+     */
+    function getChatChannelHridFromName(name) {
+        if (!name) return null;
+        const detailMap = dataManager.getInitClientData()?.chatChannelTypeDetailMap;
+        if (!detailMap) return null;
+
+        if (!chatChannelNameToHridCache || chatChannelNameToHridCacheSource !== detailMap) {
+            const map = new Map();
+            for (const [hrid, detail] of Object.entries(detailMap)) {
+                const englishName = detail?.name;
+                if (englishName) map.set(englishName, hrid);
+                const translated = translateGameName('chatChannelTypeNames', hrid, englishName || '');
+                if (translated && translated !== englishName) map.set(translated, hrid);
+            }
+            chatChannelNameToHridCache = map;
+            chatChannelNameToHridCacheSource = detailMap;
+        }
+
+        return chatChannelNameToHridCache.get(name) || null;
+    }
+
+    /**
+     * Shop Max Buy Helper
+     * Pure functions for resolving a buy modal's cost line(s) to item hrids and computing the
+     * most affordable quantity. Used by shop-max-buy-button.js's "Max" button injection.
+     *
+     * Cost-line detection is purely structural (the cost row is always the quantity input's next
+     * sibling) rather than matching an English "You Pay" string, so it keeps working on non-English
+     * clients - the same class of bug fixed in PR #750 for other name/HRID lookups.
+     */
+
+
+    const INVENTORY_LOCATION = '/item_locations/inventory';
+    const AMOUNT_RE = /\d[\d.,\s]*\d|\d/;
+
+    /**
+     * Resolve the owned count of an item from inventory, summed across all enhancement levels.
+     * @param {string} itemHrid
+     * @returns {number}
+     */
+    function getOwnedCount(itemHrid) {
+        const inventory = dataManager.getInventory();
+        if (!inventory) return 0;
+
+        let total = 0;
+        for (const item of inventory) {
+            if (item?.itemHrid === itemHrid && item.itemLocationHrid === INVENTORY_LOCATION) {
+                total += item.count || 0;
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Parse a locale-formatted amount (digits plus thousands separators/whitespace) into an integer.
+     * @param {string} text
+     * @returns {{amount: number, matchEnd: number}|null}
+     */
+    function matchAmount(text) {
+        const match = text.match(AMOUNT_RE);
+        if (!match) return null;
+
+        const digitsOnly = match[0].replace(/[.,\s]/g, '');
+        const amount = parseInt(digitsOnly, 10);
+        if (!Number.isFinite(amount)) return null;
+
+        return { amount, matchEnd: match.index + match[0].length };
+    }
+
+    /**
+     * Find the innermost divs inside the cost row that contain a digit (one per currency the
+     * item costs). "Innermost" excludes any div whose descendant div also contains a digit, so a
+     * wrapper around multiple cost lines doesn't get treated as one.
+     * @param {Element} costContainer
+     * @returns {Array<Element>}
+     */
+    function getCandidateRows(costContainer) {
+        const divs = Array.from(costContainer.querySelectorAll('div'));
+        const pool = divs.length ? divs : [costContainer];
+
+        return pool.filter((el) => {
+            if (!/\d/.test(el.textContent || '')) return false;
+            return !Array.from(el.querySelectorAll('div')).some((d) => /\d/.test(d.textContent || ''));
+        });
+    }
+
+    /**
+     * Resolve a buy modal's cost line(s) to item hrids + per-unit amounts.
+     * @param {Element} inputContainer - the *Panel_inputContainer element the Max button is attached to
+     * @param {'text'|'icon'} costStyle - 'text' for Shop tab ("You Pay: 5,000 Coin" as plain text),
+     *   'icon' for Task Shop/Labyrinth Shop/Cowbell Store ("You Pay: 50" + a currency sprite icon)
+     * @returns {Array<{itemHrid: string, perUnitAmount: number}>}
+     */
+    function resolveCostLines(inputContainer, costStyle) {
+        const costContainer = inputContainer?.nextElementSibling;
+        if (!costContainer) return [];
+
+        const lines = [];
+
+        for (const row of getCandidateRows(costContainer)) {
+            const parsed = matchAmount(row.textContent);
+            if (!parsed) continue;
+
+            if (costStyle === 'icon') {
+                const use = row.querySelector('svg use');
+                const href = use?.getAttribute('href') || use?.getAttribute('xlink:href');
+                const fragment = href?.split('#')[1];
+                if (!fragment) continue;
+
+                lines.push({ itemHrid: `/items/${fragment}`, perUnitAmount: parsed.amount });
+            } else {
+                const itemName = row.textContent.slice(parsed.matchEnd).trim();
+                const itemHrid = itemName ? getItemHridFromName(itemName) : null;
+                if (!itemHrid) continue;
+
+                lines.push({ itemHrid, perUnitAmount: parsed.amount });
+            }
+        }
+
+        return lines;
+    }
+
+    /**
+     * Compute the max quantity affordable across every cost line (min of each line's
+     * floor(owned / perUnitAmount)), clamped to >= 1.
+     * @param {Array<{itemHrid: string, perUnitAmount: number}>} costLines
+     * @returns {number|null} null if there are no resolvable cost lines, or owned < 1 unit's cost
+     *   on any line (the caller should leave the input untouched in that case).
+     */
+    function computeMaxAffordable(costLines) {
+        if (!costLines.length) return null;
+
+        let max = Infinity;
+        for (const { itemHrid, perUnitAmount } of costLines) {
+            if (!perUnitAmount || perUnitAmount <= 0) return null;
+            const owned = getOwnedCount(itemHrid);
+            max = Math.min(max, Math.floor(owned / perUnitAmount));
+        }
+
+        return max >= 1 ? max : null;
+    }
+
+    /**
+     * Shop Max Buy Button
+     * Adds a "Max" button to Shop, Task Shop, Labyrinth Shop, and Cowbell Store buy dialogs that
+     * fills in the most of the item the player can afford - mirroring Marketplace's and Guild
+     * Shop's existing native Max/All buttons for the surfaces that don't have one.
+     */
+
+
+    const BUTTON_CLASS = 'toolasha-shop-max-buy-button';
+
+    // Each panel is its own React component with its own CSS-module class prefix, but all share
+    // the same inner structure: <label>Quantity</label> + <input type="number"> + an empty error
+    // <div>, then a cost line, then the Buy <button>. Prefixes survive game rebuilds; the hash
+    // suffix after them does not.
+    const PANEL_CONFIGS = [
+        { key: 'shop', inputContainerClass: 'ShopPanel_inputContainer', costStyle: 'text' },
+        { key: 'tasks', inputContainerClass: 'TasksPanel_inputContainer', costStyle: 'icon' },
+        { key: 'labyrinth', inputContainerClass: 'LabyrinthPanel_inputContainer', costStyle: 'icon' },
+        // Cowbell Store's MooPass (cowbell tier), Community Buffs, and Convenience tabs all render
+        // through this same component/class - one target covers all three.
+        { key: 'cowbellStore', inputContainerClass: 'CowbellStorePanel_inputContainer', costStyle: 'icon' },
+    ];
+
+    function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+
+    class ShopMaxBuyButton {
+        constructor() {
+            this.isInitialized = false;
+            this.unregisterHandlers = [];
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('shop_maxBuyButton')) return;
+
+            this.isInitialized = true;
+
+            for (const panelConfig of PANEL_CONFIGS) {
+                const unregister = domObserver.onClass(
+                    `shop-max-buy-${panelConfig.key}`,
+                    panelConfig.inputContainerClass,
+                    (container) => this.injectButton(container, panelConfig)
+                );
+                this.unregisterHandlers.push(unregister);
+            }
+        }
+
+        disable() {
+            this.unregisterHandlers.forEach((unregister) => unregister());
+            this.unregisterHandlers = [];
+            this.isInitialized = false;
+        }
+
+        /**
+         * @param {Element} container - the *Panel_inputContainer element
+         * @param {{costStyle: 'text'|'icon'}} panelConfig
+         */
+        injectButton(container, panelConfig) {
+            if (container.querySelector(`.${BUTTON_CLASS}`)) return;
+
+            const input = container.querySelector('input[type="number"]');
+            const inputWrapper = container.querySelector('[class*="Input_inputContainer"]');
+            if (!input || !inputWrapper) return;
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = BUTTON_CLASS;
+            button.textContent = i18n_js.t('shopMaxBuyButton.buttonLabel');
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                this.handleMaxClick(container, input, panelConfig.costStyle);
+            });
+
+            inputWrapper.insertAdjacentElement('afterend', button);
+        }
+
+        /**
+         * @param {Element} container
+         * @param {HTMLInputElement} input
+         * @param {'text'|'icon'} costStyle
+         */
+        async handleMaxClick(container, input, costStyle) {
+            const costLines = resolveCostLines(container, costStyle);
+            const candidate = computeMaxAffordable(costLines);
+            if (candidate === null) return;
+
+            await this.fillAndVerify(container, input, candidate);
+        }
+
+        /**
+         * Fill the input with `candidate`, then - since some purchases (e.g. Cowbell Store's
+         * Convenience tab) enforce a cap beyond raw affordability that isn't readable from the DOM -
+         * treat the Buy button's disabled state as the oracle and binary-search downward until a
+         * valid quantity is found. This also self-corrects any currency misidentification instead
+         * of silently leaving an invalid quantity filled in.
+         * @param {Element} container
+         * @param {HTMLInputElement} input
+         * @param {number} candidate
+         */
+        async fillAndVerify(container, input, candidate) {
+            const buyButton = () => container.parentElement?.querySelector('button[class*="Button_success"]');
+
+            const setAndCheckDisabled = async (value) => {
+                reactInput_js.setReactInputValue(input, value, { focus: false });
+                await nextFrame();
+                const button = buyButton();
+                return button ? button.disabled : true;
+            };
+
+            if (!(await setAndCheckDisabled(candidate))) return;
+
+            let low = 1;
+            let high = candidate - 1;
+            let best = null;
+            while (low <= high) {
+                const mid = Math.floor((low + high) / 2);
+                if (await setAndCheckDisabled(mid)) {
+                    high = mid - 1;
+                } else {
+                    best = mid;
+                    low = mid + 1;
+                }
+            }
+
+            if (best !== null) {
+                await setAndCheckDisabled(best);
+            }
+            // else: nothing affordable even at quantity 1 - leave the input as last probed and let
+            // the game's own validation messaging explain why, same as if the user had typed it.
+        }
+    }
+
+    const shopMaxBuyButton = new ShopMaxBuyButton();
+
+    /**
      * Item Navigation Utilities
      * Handles Alt+click navigation to crafting/gathering actions or item dictionary
      */
@@ -540,83 +1117,6 @@
 
         return false;
     }
-
-    /**
-     * Game i18n Bridge
-     *
-     * Obtains the game's i18next instance from the React fiber tree and provides
-     * locale-independent translation of game data names (items, actions, monsters,
-     * skills, etc.). Falls back to the English name when the i18n instance is
-     * unavailable or the key is missing.
-     */
-
-    let cachedI18n = null;
-
-    /**
-     * Walk the React fiber tree from #root to find the i18next instance.
-     * @returns {import('i18next').i18n | null}
-     */
-    function getGameI18n() {
-        if (cachedI18n) return cachedI18n;
-        if (typeof document === 'undefined') return null;
-
-        const root = document.getElementById('root');
-        const fiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
-        if (!fiber) return null;
-
-        const stack = [fiber];
-        while (stack.length > 0) {
-            const f = stack.pop();
-            if (!f) continue;
-            try {
-                const props = f.memoizedProps || {};
-                if (props.i18n && typeof props.i18n.t === 'function') {
-                    cachedI18n = props.i18n;
-                    return cachedI18n;
-                }
-                if (props.value?.i18n && typeof props.value.i18n.t === 'function') {
-                    cachedI18n = props.value.i18n;
-                    return cachedI18n;
-                }
-            } catch (error) {
-                console.error('[GameI18n] Fiber access error during tree walk:', error);
-            }
-            if (f.sibling) stack.push(f.sibling);
-            if (f.child) stack.push(f.child);
-        }
-        return null;
-    }
-
-    /**
-     * Translate a game data name via the game's i18next instance.
-     * @param {string} namespace - i18n namespace (e.g. 'itemNames')
-     * @param {string} hrid - Game data HRID (e.g. '/items/abyssal_essence')
-     * @param {string} [fallback=''] - English name to fall back to
-     * @returns {string} Translated name or fallback
-     */
-    function translateGameName(namespace, hrid, fallback = '') {
-        if (!hrid) return fallback;
-        const i18n = getGameI18n();
-        if (!i18n) return fallback;
-
-        const key = `${namespace}.${hrid}`;
-        try {
-            const translated = i18n.t(key);
-            // i18next returns the key itself when no translation exists
-            if (translated === key) return fallback;
-            return translated;
-        } catch (error) {
-            console.error('[GameI18n] i18n.t() failed for key:', key, error);
-            return fallback;
-        }
-    }
-
-    const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);
-    const getActionName = (hrid, fallback = '') => translateGameName('actionNames', hrid, fallback);
-    const getActionTypeName = (hrid, fallback = '') => translateGameName('actionTypeNames', hrid, fallback);
-    const getMonsterName = (hrid, fallback = '') => translateGameName('monsterNames', hrid, fallback);
-    const getSkillName = (hrid, fallback = '') => translateGameName('skillNames', hrid, fallback);
-    const getAbilityName = (hrid, fallback = '') => translateGameName('abilityNames', hrid, fallback);
 
     /**
      * Collection Navigation
@@ -2654,249 +3154,6 @@ ${starCSS}
     };
 
     /**
-     * Marketplace Buy Modal Autofill Utility
-     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
-     * an instance, then drives it with startSession / arm / exitSession.
-     *
-     * Exported helpers:
-     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
-     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
-     *   createAutofillManager(observerId)
-     */
-
-    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
-    const MAX_REACT_TREE_FIBERS = 50000;
-
-    function getReactRootFiber() {
-        const rootElement = document.getElementById('root');
-        const rootContainer = rootElement?._reactRootContainer;
-        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
-    }
-
-    function findReactFiberFromRoot(element) {
-        const rootFiber = getReactRootFiber();
-        if (!rootFiber || !element) return null;
-
-        const stack = [rootFiber];
-        const visited = new Set();
-        let matchedFiber = null;
-
-        while (stack.length > 0) {
-            const fiber = stack.pop();
-            if (!fiber || visited.has(fiber)) continue;
-            visited.add(fiber);
-
-            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
-
-            if (fiber.stateNode === element) {
-                if (matchedFiber && matchedFiber !== fiber) return null;
-                matchedFiber = fiber;
-            }
-
-            if (fiber.sibling) stack.push(fiber.sibling);
-            if (fiber.child) stack.push(fiber.child);
-        }
-
-        return matchedFiber;
-    }
-
-    function getReactFiberFromElement(element) {
-        if (!element) return null;
-
-        const directFibers = new Set(
-            Object.getOwnPropertyNames(element)
-                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
-                .map((key) => element[key])
-                .filter(Boolean)
-        );
-        if (directFibers.size > 1) return null;
-        if (directFibers.size === 1) return directFibers.values().next().value;
-
-        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
-        // Resolve the exact host fiber from the public React root instead.
-        return findReactFiberFromRoot(element);
-    }
-
-    /**
-     * Game Data Lookup Utilities
-     *
-     * Centralized functions for resolving display names to HRIDs, plus locale-independent
-     * resolution via icon sprite references (see below) - prefer the sprite-based functions
-     * over the name-based ones wherever a `<use>` element is reachable, since display names are
-     * translated client-side and the name-based functions below only ever match the client's
-     * English-language data, silently failing on any other game locale.
-     */
-
-
-    /**
-     * Extract the last path segment from an hrid, e.g. "/actions/gathering/milking" -> "milking".
-     * This is the fragment MWI's sprite sheets key icons by, for both actions and skills.
-     * @param {string} hrid
-     * @returns {string}
-     */
-    function lastHridSegment(hrid) {
-        return hrid.slice(hrid.lastIndexOf('/') + 1);
-    }
-    let skillFragmentToHridMap = null;
-    let chatChannelNameToHridCache = null;
-    let chatChannelNameToHridCacheSource = null;
-
-    /**
-     * Resolve a skill HRID from its icon sprite `<use>` href (e.g.
-     * ".../skills_sprite.<hash>.svg#milking"), which is locale-independent - the href's fragment is
-     * always the skill's last hrid segment, unlike the nav bar's rendered label text.
-     * @param {string|null|undefined} href
-     * @returns {string|null}
-     */
-    function getSkillHridFromIconHref(href) {
-        if (!href || !href.includes('skills_sprite')) return null;
-        const fragment = href.split('#')[1];
-        if (!fragment) return null;
-
-        if (!skillFragmentToHridMap) {
-            skillFragmentToHridMap = new Map();
-            const gameData = dataManager.getInitClientData();
-            for (const hrid of Object.keys(gameData?.skillDetailMap || {})) {
-                skillFragmentToHridMap.set(lastHridSegment(hrid), hrid);
-            }
-        }
-
-        return skillFragmentToHridMap.get(fragment) || null;
-    }
-
-    /**
-     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
-     * @param {string} name - Original display name
-     * @returns {string[]} Array of alternate names to try (may be empty)
-     */
-    function getRefinedNameVariants(name) {
-        const variants = [];
-        if (name.includes('★')) {
-            variants.push(name.replace(/\s*★/, ' (R)'));
-        }
-        if (name.includes('(R)')) {
-            variants.push(name.replace(/\s*\(R\)/, ' ★'));
-        }
-        return variants;
-    }
-
-    /**
-     * Resolve a task card's underlying quest object (which carries actionHrid/monsterHrid directly)
-     * by walking the React fiber tree from the card's own "Go"/success button up to the component
-     * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
-     * "SkillType - TaskName" text.
-     * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
-     * @returns {Object|null} The characterQuest object, or null if not found.
-     */
-    function getQuestFromTaskCard(taskCard) {
-        const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
-        if (!goBtn) return null;
-
-        let f = getReactFiberFromElement(goBtn)?.return;
-        while (f) {
-            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
-                return f.memoizedProps.characterQuest;
-            }
-            f = f.return;
-        }
-        return null;
-    }
-
-    /**
-     * Find an action HRID from its display name.
-     * Tries exact match first, then ★ ↔ (R) variants for refined items.
-     * @param {string} actionName - Display name of the action
-     * @returns {string|null} Action HRID or null if not found
-     */
-    function getActionHridFromName(actionName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) {
-            return null;
-        }
-
-        // Try exact match first (English or translated)
-        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            const displayName = getActionName(hrid, detail.name);
-            if (displayName === actionName || detail.name === actionName) {
-                return hrid;
-            }
-        }
-
-        // Try ★ ↔ (R) variants for refined items
-        for (const variant of getRefinedNameVariants(actionName)) {
-            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-                const displayName = getActionName(hrid, detail.name);
-                if (displayName === variant || detail.name === variant) {
-                    return hrid;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Find an item HRID from its display name.
-     * Tries exact match first, then ★ ↔ (R) variants for refined items.
-     * @param {string} itemName - Display name of the item
-     * @returns {string|null} Item HRID or null if not found
-     */
-    function getItemHridFromName(itemName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.itemDetailMap) {
-            return null;
-        }
-
-        // Try exact match first (English or translated)
-        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-            const displayName = getItemName(hrid, detail.name);
-            if (displayName === itemName || detail.name === itemName) {
-                return hrid;
-            }
-        }
-
-        // Try ★ ↔ (R) variants for refined items
-        for (const variant of getRefinedNameVariants(itemName)) {
-            for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-                const displayName = getItemName(hrid, detail.name);
-                if (displayName === variant || detail.name === variant) {
-                    return hrid;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Resolve a chat channel HRID from a tab display name (e.g. "Party", "队伍").
-     * Chat tab labels are rendered by the game via the i18next `chatChannelTypeNames`
-     * namespace (verified against the client bundle), so the cache indexes both the
-     * English data name from `chatChannelTypeDetailMap` and the localized name.
-     * @param {string} name - Tab display name (strip trailing unread-count digits first)
-     * @returns {string|null} Channel HRID or null if not found
-     */
-    function getChatChannelHridFromName(name) {
-        if (!name) return null;
-        const detailMap = dataManager.getInitClientData()?.chatChannelTypeDetailMap;
-        if (!detailMap) return null;
-
-        if (!chatChannelNameToHridCache || chatChannelNameToHridCacheSource !== detailMap) {
-            const map = new Map();
-            for (const [hrid, detail] of Object.entries(detailMap)) {
-                const englishName = detail?.name;
-                if (englishName) map.set(englishName, hrid);
-                const translated = translateGameName('chatChannelTypeNames', hrid, englishName || '');
-                if (translated && translated !== englishName) map.set(translated, hrid);
-            }
-            chatChannelNameToHridCache = map;
-            chatChannelNameToHridCacheSource = detailMap;
-        }
-
-        return chatChannelNameToHridCache.get(name) || null;
-    }
-
-    /**
      * Floating Panel Z-Index Manager
      * Manages bring-to-front ordering for persistent floating panels.
      * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
@@ -4102,6 +4359,15 @@ ${starCSS}
          * @returns {string} Display name
          */
         getChannelDisplayName(channel) {
+            // Prefer the game's own chat-channel label: identical to the in-game chat tab
+            // names, covers every channel (general/moderator/trade/...) and future ones
+            // without per-language maintenance. Returns the fallback when the game i18n
+            // instance is unavailable or the key is missing.
+            const gameName = translateGameName('chatChannelTypeNames', channel, null);
+            if (gameName) return gameName;
+
+            // Legacy Toolasha labels: cover pre-data-load rendering and the dead
+            // '/chat_channel_types/global' hrid left over from older builds.
             const channelMap = {
                 '/chat_channel_types/party': i18n_js.t('mentionTracker.channelParty'),
                 '/chat_channel_types/guild': i18n_js.t('mentionTracker.channelGuild'),
@@ -4109,6 +4375,7 @@ ${starCSS}
                 '/chat_channel_types/whisper': i18n_js.t('mentionTracker.channelWhisper'),
                 '/chat_channel_types/global': i18n_js.t('mentionTracker.channelGlobal'),
             };
+
             return channelMap[channel] || channel;
         }
 
@@ -5892,7 +6159,7 @@ ${starCSS}
             const [month, day] = datePart.split('/');
             const paddedMonth = month.padStart(2, '0');
             const paddedDay = day.padStart(2, '0');
-            const dateText = dateFormat === 'DD-MM' ? `${paddedDay}/${paddedMonth}` : `${paddedMonth}/${paddedDay}`;
+            const dateText = dateFormat === 'DD-MM' ? `${paddedDay}-${paddedMonth}` : `${paddedMonth}-${paddedDay}`;
             newText = `[${dateText} ${timeText}]`;
         }
 
@@ -25990,6 +26257,7 @@ ${starCSS}
         skillExperiencePercentage,
         hideGuildBadge,
         draggableModals: draggableModals$1,
+        shopMaxBuyButton,
         collectionNavigation: collectionNavigation$1,
         collectionFilters,
         chatCommands,
@@ -26019,4 +26287,4 @@ ${starCSS}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Core, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);
