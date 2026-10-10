@@ -2127,6 +2127,8 @@ export default {
         progressSuffix: (p) => ` (${p.current}/${p.goal})`,
         totalNonCombatLabel: 'Total (non-combat)',
         characterInfoNotAvailable: 'Character info not available',
+        computingPlaceholder: 'Computing…',
+        computeFailedMessage: 'Failed to compute — reopen the popup to retry',
         zoneProgressHeader: 'Zone Task Progress',
         zoneProgressRowValue: (p) => `~${p.fights} fights | ${p.time} (bottleneck: ${p.bottleneckName})`,
     },

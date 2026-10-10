@@ -390,6 +390,8 @@ export default {
         progressSuffix: (p) => `（${p.current}/${p.goal}）`,
         totalNonCombatLabel: '合计（非战斗）',
         characterInfoNotAvailable: '角色信息不可用',
+        computingPlaceholder: '计算中…',
+        computeFailedMessage: '计算失败，请重开弹窗重试',
         zoneProgressHeader: '区域任务进度',
         zoneProgressRowValue: (p) => `约 ${p.fights} 场战斗 | ${p.time}（瓶颈：${p.bottleneckName}）`,
     },
