@@ -73,13 +73,13 @@ describe('calculateActualValue', () => {
         expect(complete).toBe(true);
     });
 
-    test('does not tax non-tradable items even when needsTax is true', () => {
-        dataManager.getItemDetails.mockReturnValue({ isTradable: false });
+    test('taxes market-priced items even when isTradable is omitted - needsTax is the sole tax authority', () => {
+        dataManager.getItemDetails.mockReturnValue({ name: 'X' });
         expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, source: 'market', needsTax: true });
 
         const { value } = calculateActualValue([{ itemHrid: '/items/x', enhancementLevel: 0, count: 1 }]);
 
-        expect(value).toBe(100);
+        expect(value).toBeCloseTo(96);
     });
 
     test('does not tax coin (needsTax: false)', () => {

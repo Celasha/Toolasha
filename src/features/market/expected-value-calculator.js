@@ -213,26 +213,18 @@ class ExpectedValueCalculator {
             // Calculate average drop count
             const avgCount = (minCount + maxCount) / 2;
 
-            // Get price for this drop
-            const price = this.getDropPrice(itemHrid);
+            // Resolve price together with the tax contract - tax strictly follows needsTax,
+            // never item tradability (real game data omits isTradable for untradeable items).
+            const resolved = this.resolveSellSideValue(itemHrid, 0);
 
-            if (price === null) {
+            if (!resolved) {
                 _missingDataCount++;
                 continue; // Skip drops with missing data
             }
 
-            // Check if item is tradeable (for tax calculation)
-            const itemDetails = dataManager.getItemDetails(itemHrid);
-            const canBeSold = itemDetails?.isTradable !== false;
-
-            // Special case: Coin never has market tax (it's currency, not a market item)
-            const isCoin = itemHrid === this.COIN_HRID;
-
-            const dropValue = isCoin
-                ? avgCount * dropRate * price // No tax for coins
-                : canBeSold
-                  ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                  : avgCount * dropRate * price;
+            const dropValue = resolved.needsTax
+                ? calculatePriceAfterTax(avgCount * dropRate * resolved.value, this.MARKET_TAX)
+                : avgCount * dropRate * resolved.value;
             totalExpectedValue += dropValue;
         }
 
@@ -247,9 +239,11 @@ class ExpectedValueCalculator {
     /**
      * Resolve a sell-side economic value for an item, applying the same special-case rules
      * (Coin, Cowbell, dungeon tokens, cached container EV, ordinary market item) used for drop
-     * valuation, plus metadata describing the source and whether market tax still needs to be
-     * applied by the caller. Callers valuing an actual sale (e.g. drop valuation, offline gains)
-     * should apply `calculatePriceAfterTax` when `needsTax` is true and the item is tradeable.
+     * plus metadata describing the source and whether market tax still needs to be
+     * applied by the caller. `needsTax` is the sole tax authority: callers valuing an actual
+     * sale (e.g. drop valuation, offline gains) should apply `calculatePriceAfterTax` exactly
+     * when it is true - never gate on item tradability, which real game data omits entirely
+     * for untradeable items.
      * @param {string} itemHrid - Item HRID
      * @param {number} [enhancementLevel=0] - Enhancement level (ignored for special currencies)
      * @param {Object} [options] - Options
@@ -402,17 +396,18 @@ class ExpectedValueCalculator {
     }
 
     /**
-     * Get price and outlier-guard status for a drop item - the mirror of `getDropPrice()` for
-     * callers that want to show a warning icon when the price was substituted.
+     * Get price, outlier-guard status, and tax contract for a drop item - the mirror of
+     * `getDropPrice()` for callers that want to show a warning icon when the price was
+     * substituted, or to apply tax consistently with the resolver's contract.
      * @param {string} itemHrid - Item HRID
      * @param {Object} [opts] - Options forwarded to resolveSellSideValue (e.g. { allowIndirect })
-     * @returns {{value: number|null, isOutlier: boolean}}
+     * @returns {{value: number|null, isOutlier: boolean, needsTax: boolean}}
      */
     getDropPriceInfo(itemHrid, opts) {
         const resolved = this.resolveSellSideValue(itemHrid, 0, opts);
         return resolved
-            ? { value: resolved.value, isOutlier: resolved.isOutlier || false }
-            : { value: null, isOutlier: false };
+            ? { value: resolved.value, isOutlier: resolved.isOutlier || false, needsTax: resolved.needsTax || false }
+            : { value: null, isOutlier: false, needsTax: false };
     }
 
     /**
@@ -508,22 +503,13 @@ class ExpectedValueCalculator {
             const priceInfo = this.getDropPriceInfo(itemHrid, { allowIndirect });
             const price = priceInfo.value;
 
-            // Calculate expected value for this drop
-            // Tax is gated on tradability here (what a drop would actually fetch when sold), not on the
-            // price source's `needsTax` contract - shop-redemption-priced drops that were somehow
-            // tradeable would still be taxed in this breakdown, by design.
-            const itemCanBeSold = itemDetails.isTradable !== false;
-
-            // Special case: Coin never has market tax (it's currency, not a market item)
-            const isCoin = itemHrid === this.COIN_HRID;
-
+            // Tax strictly follows the resolver's needsTax contract - never item tradability,
+            // which real game data omits entirely for untradeable items.
             const dropValue =
                 price !== null
-                    ? isCoin
-                        ? avgCount * dropRate * price // No tax for coins
-                        : itemCanBeSold
-                          ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                          : avgCount * dropRate * price
+                    ? priceInfo.needsTax
+                        ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
+                        : avgCount * dropRate * price
                     : 0;
 
             drops.push({

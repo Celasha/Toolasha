@@ -27,10 +27,9 @@ function valueGainedItemStack(itemHrid, enhancementLevel, count) {
         return { value: 0, resolved: false };
     }
 
-    const itemDetails = dataManager.getItemDetails(itemHrid);
-    const isTradable = itemDetails?.isTradable !== false;
-    const perUnit =
-        resolved.needsTax && isTradable ? calculatePriceAfterTax(resolved.value, MARKET_TAX) : resolved.value;
+    // Tax strictly follows the resolver's needsTax contract - never item tradability, which
+    // real game data omits entirely for untradeable items.
+    const perUnit = resolved.needsTax ? calculatePriceAfterTax(resolved.value, MARKET_TAX) : resolved.value;
 
     return { value: perUnit * (count || 0), resolved: true };
 }

@@ -34,7 +34,7 @@ describe('calculatePerOpeningVariance', () => {
                 '/items/box': [{ itemHrid: '/items/gem', dropRate: 1, minCount: 5, maxCount: 5 }],
             },
         });
-        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10, needsTax: true });
 
         expect(calculatePerOpeningVariance('/items/box')).toBe(0);
     });
@@ -45,7 +45,7 @@ describe('calculatePerOpeningVariance', () => {
                 '/items/box': [{ itemHrid: '/items/gem', dropRate: 0.5, minCount: 10, maxCount: 10 }],
             },
         });
-        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, needsTax: true });
 
         // perUnit = 100 * 0.96 = 96; Var = 96^2 * (0.5*0 + 0.5*0.5*10^2) = 9216 * 25 = 230400
         expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(230400);
@@ -57,7 +57,7 @@ describe('calculatePerOpeningVariance', () => {
                 '/items/box': [{ itemHrid: '/items/gem', dropRate: 1, minCount: 0, maxCount: 2 }],
             },
         });
-        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10, needsTax: true });
 
         // perUnit = 10 * 0.96 = 9.6; n=3, Var[Q] = (9-1)/12 = 0.6667
         // Var = 9.6^2 * (1*0.6667 + 1*0*1) ≈ 61.44
@@ -70,20 +70,20 @@ describe('calculatePerOpeningVariance', () => {
                 '/items/box': [{ itemHrid: '/items/coin', dropRate: 0.5, minCount: 10, maxCount: 10 }],
             },
         });
-        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 1 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 1, needsTax: false });
 
         // perUnit = 1 (no tax); Var = 1^2 * (0.5*0.5*100) = 25
         expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(25);
     });
 
-    test('non-tradable items are never taxed', () => {
-        dataManager.getItemDetails.mockReturnValue({ isTradable: false });
+    test('needsTax:false resolutions are never taxed, even when isTradable is omitted (real data shape)', () => {
+        dataManager.getItemDetails.mockReturnValue({ name: 'Gem' });
         dataManager.getInitClientData.mockReturnValue({
             openableLootDropMap: {
                 '/items/box': [{ itemHrid: '/items/gem', dropRate: 0.5, minCount: 10, maxCount: 10 }],
             },
         });
-        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, needsTax: false });
 
         // perUnit = 100 (no tax); Var = 100^2 * (0.5*0.5*100) = 250000
         expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(250000);
@@ -110,7 +110,7 @@ describe('calculatePerOpeningVariance', () => {
             },
         });
         expectedValueCalculator.resolveSellSideValue.mockImplementation((hrid) =>
-            hrid === '/items/coin' ? { value: 1 } : { value: 100 }
+            hrid === '/items/coin' ? { value: 1, needsTax: false } : { value: 100, needsTax: true }
         );
 
         // 230400 (gem, taxed) + 25 (coin, untaxed)
@@ -147,7 +147,7 @@ describe('calculateIncomeStdDev', () => {
                 '/items/box': [{ itemHrid: '/items/gem', dropRate: 0.5, minCount: 10, maxCount: 10 }],
             },
         });
-        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, needsTax: true });
 
         const oneOpening = calculateIncomeStdDev('/items/box', 1);
         const fourOpenings = calculateIncomeStdDev('/items/box', 4);

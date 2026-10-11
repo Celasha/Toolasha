@@ -274,6 +274,7 @@ describe('allowIndirect threading through the EV path', () => {
         expect(expectedValueCalculator.getDropPriceInfo('/items/seal_of_efficiency', { allowIndirect: true })).toEqual({
             value: 30000,
             isOutlier: true,
+            needsTax: false,
         });
     });
 
@@ -299,6 +300,23 @@ describe('allowIndirect threading through the EV path', () => {
 
         expect(ev.drops[0].hasPriceData).toBe(false);
         expect(mockResolveShopRedemptionValue).not.toHaveBeenCalled();
+    });
+
+    test('an indirect-priced drop is untaxed even when isTradable is omitted (real data shape)', () => {
+        // Real itemDetailMap data omits isTradable entirely for untradeable items instead of
+        // setting false, so tax gating must come from the resolver's needsTax contract alone.
+        mockGetItemDetails.mockImplementation((hrid) =>
+            hrid === '/items/chest'
+                ? { name: 'Test Chest', isOpenable: true }
+                : { name: 'Seal of Efficiency', isOpenable: false }
+        );
+        mockResolveShopRedemptionValue.mockReturnValue({ value: 30000, isOutlier: false });
+
+        const ev = expectedValueCalculator.calculateExpectedValue('/items/chest', { allowIndirect: true });
+
+        expect(ev.drops[0].hasPriceData).toBe(true);
+        expect(ev.drops[0].expectedValue).toBe(30000);
+        expect(ev.expectedValue).toBe(30000);
     });
 });
 
@@ -482,6 +500,31 @@ describe('getDropBreakdown (regression - tax application unchanged by the resolv
 
         expect(drops[0].isOutlier).toBe(true);
     });
+
+    test('special-currency drops are untaxed even when isTradable is omitted (real data shape)', () => {
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/test_chest': [{ itemHrid: '/items/sinister_token', dropRate: 1, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockGetItemDetails.mockReturnValue({ name: 'Sinister Token', isOpenable: false });
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 7, isOutlier: false });
+
+        const drops = expectedValueCalculator.getDropBreakdown('/items/test_chest');
+
+        expect(drops[0].expectedValue).toBe(7);
+    });
+
+    test('calculateSingleContainer keeps the same needsTax basis when isTradable is omitted', () => {
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/test_chest': [{ itemHrid: '/items/sinister_token', dropRate: 1, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 7, isOutlier: false });
+
+        expect(expectedValueCalculator.calculateSingleContainer('/items/test_chest')).toBe(7);
+    });
 });
 
 describe('getDropPriceInfo', () => {
@@ -493,7 +536,11 @@ describe('getDropPriceInfo', () => {
 
     test('returns the resolved value and isOutlier flag together', () => {
         mockGetItemPriceOutlierInfo.mockReturnValue({ value: 42, isOutlier: true });
-        expect(expectedValueCalculator.getDropPriceInfo('/items/cheese')).toEqual({ value: 42, isOutlier: true });
+        expect(expectedValueCalculator.getDropPriceInfo('/items/cheese')).toEqual({
+            value: 42,
+            isOutlier: true,
+            needsTax: true,
+        });
     });
 
     test('returns a null value with isOutlier false when the drop is unresolvable', () => {
@@ -501,6 +548,7 @@ describe('getDropPriceInfo', () => {
         expect(expectedValueCalculator.getDropPriceInfo('/items/unpriced')).toEqual({
             value: null,
             isOutlier: false,
+            needsTax: false,
         });
     });
 });
