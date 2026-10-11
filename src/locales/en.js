@@ -3644,7 +3644,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             combatStatsChatMessage: {
                 label: 'Combat Statistics: Chat message format',
-                help: 'Message format when Ctrl+clicking player card in Statistics. Click "Edit Template" to customize.',
+                help: 'Message format when Ctrl+clicking player card in Statistics. Click "Edit Template" to customize. The default template is generated in your game language when first created and never changes afterward; "Restore to Default" regenerates it in the then-current language.',
             },
             taskProfitCalculator: { label: 'Show total profit for gathering/production tasks' },
             taskSpeedBreakdown: {

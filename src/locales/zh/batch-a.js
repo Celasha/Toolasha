@@ -884,7 +884,17 @@ export default {
             },
             combatStatsChatMessage: {
                 label: '战斗统计：聊天消息格式',
-                help: '在统计面板中按住 Ctrl 点击玩家卡片时使用的消息格式。点击“编辑模板”进行自定义。',
+                help: '在统计面板中按住 Ctrl 点击玩家卡片时使用的消息格式。点击“编辑模板”进行自定义。默认模板在首次生成时按游戏语言固定，之后不随语言变化；“恢复默认”会按当时语言重新生成。',
+                variables: {
+                    duration: { label: '时长', description: '战斗场次时长' },
+                    encountersPerHour: { label: '场次/时', description: '每小时遇到怪物/事件的次数（EPH）' },
+                    income: { label: '总收入', description: '战斗期间的总收入' },
+                    dailyIncome: { label: '日收入', description: '折算每日的收入' },
+                    dailyConsumableCosts: { label: '日消耗品花费', description: '每日消耗品花费' },
+                    dailyProfit: { label: '日利润', description: '每日利润' },
+                    exp: { label: '经验/时', description: '每小时经验' },
+                    deathCount: { label: '死亡', description: '死亡次数' },
+                },
             },
             taskProfitCalculator: { label: '显示采集/生产任务的总利润' },
             taskSpeedBreakdown: {
