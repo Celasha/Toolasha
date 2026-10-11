@@ -14,7 +14,13 @@ import dataManager from '../core/data-manager.js';
 import loadoutState from '../core/loadout-state.js';
 import featureRegistry from '../core/feature-registry.js';
 import settingsStorage from '../core/settings-storage.js';
-import { settingsGroups } from '../core/settings-schema.js';
+import {
+    settingsGroups,
+    resolveSettingDefault,
+    resolveTemplateItems,
+    resolveTemplateVariableLabel,
+    resolveTemplateVariableDescription,
+} from '../core/settings-schema.js';
 import { setCurrentProfile, getCurrentProfile, clearCurrentProfile } from '../core/profile-manager.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../core/marketplace-session.js';
 import tooltipObserver from '../core/tooltip-observer.js';
@@ -43,6 +49,10 @@ toolashaRoot.Core = {
     featureRegistry,
     settingsStorage,
     settingsGroups,
+    resolveSettingDefault,
+    resolveTemplateItems,
+    resolveTemplateVariableLabel,
+    resolveTemplateVariableDescription,
     tooltipObserver,
     i18n,
     profileManager: {
