@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.15.0](https://github.com/Celasha/Toolasha/compare/v3.14.0...v3.15.0) (2026-10-11)
+
+
+### Features
+
+* **chat:** show dates and age-based color in notification log timestamps ([19ddc31](https://github.com/Celasha/Toolasha/commit/19ddc31b2adae82f8998de5516bf307cb5ab6e4f))
+
+
+### Bug Fixes
+
+* **core:** expose settings-schema template helpers on the Core library ([20b4989](https://github.com/Celasha/Toolasha/commit/20b4989ff3e558e7f259f5432ce7bcb9a6a3769a))
+* **tasks:** keep combat task estimates accurate as progress changes ([f2015d6](https://github.com/Celasha/Toolasha/commit/f2015d6da494994b96524fc5cef47197f00682f7))
+
 ## [3.14.0](https://github.com/Celasha/Toolasha/compare/v3.13.0...v3.14.0) (2026-10-11)
 
 ### Features
