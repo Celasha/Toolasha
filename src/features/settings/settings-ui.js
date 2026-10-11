@@ -17,6 +17,7 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import scrollSimulatorUI from '../combat/scroll-simulator-ui.js';
 import ironCowMode, { IRON_COW_SETTINGS } from './iron-cow-mode.js';
 import { getDetectedGearSettings, getEnhancingParams } from '../../utils/enhancement-config.js';
+import { getItemName } from '../../utils/game-i18n.js';
 import pformancePanel from '../dev/pformance-panel.js';
 import {
     getCustomPriceOverrides,
@@ -2037,10 +2038,10 @@ class SettingsUI {
         const itemDetailMap = gameData?.itemDetailMap || {};
 
         // Build item list for search
-        const allItems = Object.entries(itemDetailMap).map(([hrid, detail]) => ({
-            hrid,
-            name: detail.name || hrid.replace('/items/', ''),
-        }));
+        const allItems = Object.entries(itemDetailMap).map(([hrid, detail]) => {
+            const enName = detail.name || hrid.replace('/items/', '');
+            return { hrid, name: getItemName(hrid, enName), enName };
+        });
 
         // Get sprite URL for item icons
         const spriteEl = document.querySelector('use[href*="items_sprite"]');
@@ -2235,7 +2236,9 @@ class SettingsUI {
                 return;
             }
 
-            const matches = allItems.filter((item) => item.name.toLowerCase().includes(query)).slice(0, 15);
+            const matches = allItems
+                .filter((item) => item.name.toLowerCase().includes(query) || item.enName.toLowerCase().includes(query))
+                .slice(0, 15);
 
             if (matches.length === 0) {
                 dropdown.style.display = 'none';
@@ -2332,7 +2335,7 @@ class SettingsUI {
                 const [itemHrid, enhLevel] = key.split(':');
                 const enhNum = parseInt(enhLevel) || 0;
                 const itemDetail = itemDetailMap[itemHrid];
-                const itemName = itemDetail?.name || itemHrid.replace('/items/', '');
+                const itemName = getItemName(itemHrid, itemDetail?.name || itemHrid.replace('/items/', ''));
                 const enhSuffix = enhNum > 0 ? ` +${enhNum}` : '';
 
                 const row = document.createElement('div');
@@ -2453,7 +2456,9 @@ class SettingsUI {
             if (!selection.itemHrid) {
                 // Try exact match from search text
                 const searchText = searchInput.value.toLowerCase().trim();
-                const exactMatch = allItems.find((item) => item.name.toLowerCase() === searchText);
+                const exactMatch = allItems.find(
+                    (item) => item.name.toLowerCase() === searchText || item.enName.toLowerCase() === searchText
+                );
                 if (exactMatch) {
                     selection.itemHrid = exactMatch.hrid;
                 } else {
