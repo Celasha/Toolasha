@@ -11,6 +11,7 @@
 import dataManager from '../core/data-manager.js';
 import { t } from '../core/i18n.js';
 import { formatWithSeparator } from './formatters.js';
+import { translateGameName } from './game-i18n.js';
 
 /** Variable names whose values are plain quantities, not names/codes/hrids - format with thousand separators. */
 const NUMERIC_VARS = new Set(['count', 'coins', 'filled', 'total', 'minutes', 'level', 'days', 'limit', 'boundary']);
@@ -99,18 +100,33 @@ for (const [category, keys] of Object.entries(CATEGORIES)) {
     }
 }
 
-/** Nested `$t(table.{{var}})` resolvers, backed by dataManager's detail maps. */
-const NESTED_TABLES = {
-    itemNames: (hrid) => dataManager.getItemDetails(hrid)?.name,
-    houseRoomNames: (hrid) => dataManager.getInitClientData()?.houseRoomDetailMap?.[hrid]?.name,
-    buyableUpgradeNames: (hrid) => dataManager.getInitClientData()?.buyableUpgradeDetailMap?.[hrid]?.name,
-    communityBuffTypeNames: (hrid) => dataManager.getInitClientData()?.communityBuffTypeDetailMap?.[hrid]?.name,
-    guildCharacterRoleNames: (role) => dataManager.getInitClientData()?.guildCharacterRoleDetailMap?.[role]?.name,
-    skillNames: (hrid) => dataManager.getInitClientData()?.skillDetailMap?.[hrid]?.name,
-    achievementNames: (hrid) => dataManager.getInitClientData()?.achievementDetailMap?.[hrid]?.name,
-    // No detail map with a "name" field exists for chat icons or name colors (verified against
-    // the game's static definitions), so these always fall through to humanizeHrid below.
+/**
+ * Nested `$t(table.{{var}})` resolvers, keyed by the game's own i18next namespace (identical to
+ * the table name in the templates). Each resolves the game-localized name via the game-i18n
+ * bridge, falling back to the English name from the init client data maps — or '' where no
+ * detail map with a "name" field exists (chat icons and name colors, verified against the
+ * game's static definitions) — and ultimately to humanizeHrid in resolveNestedName(). A
+ * namespace the game i18n doesn't know degrades to the English fallback, same as before this
+ * bridge existed.
+ */
+const NESTED_TABLE_LOOKUPS = {
+    itemNames: (hrid) => dataManager.getItemDetails(hrid)?.name ?? '',
+    houseRoomNames: (hrid) => dataManager.getInitClientData()?.houseRoomDetailMap?.[hrid]?.name ?? '',
+    buyableUpgradeNames: (hrid) => dataManager.getInitClientData()?.buyableUpgradeDetailMap?.[hrid]?.name ?? '',
+    communityBuffTypeNames: (hrid) => dataManager.getInitClientData()?.communityBuffTypeDetailMap?.[hrid]?.name ?? '',
+    guildCharacterRoleNames: (role) => dataManager.getInitClientData()?.guildCharacterRoleDetailMap?.[role]?.name ?? '',
+    skillNames: (hrid) => dataManager.getInitClientData()?.skillDetailMap?.[hrid]?.name ?? '',
+    achievementNames: (hrid) => dataManager.getInitClientData()?.achievementDetailMap?.[hrid]?.name ?? '',
+    chatIconNames: () => '',
+    nameColorNames: () => '',
 };
+
+const NESTED_TABLES = Object.fromEntries(
+    Object.entries(NESTED_TABLE_LOOKUPS).map(([namespace, lookup]) => [
+        namespace,
+        (hrid) => translateGameName(namespace, hrid, lookup(hrid)),
+    ])
+);
 
 /**
  * Turn a hrid (or any slash/underscore-separated identifier) into a readable label.
