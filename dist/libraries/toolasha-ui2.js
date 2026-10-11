@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.12.0
+ * Version: 3.13.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6891,7 +6891,7 @@
 
     const TRANSMUTE_ACTION_HRID = '/actions/alchemy/transmute';
     const COIN_ITEM_HRID$2 = '/items/coin';
-    const STORAGE_KEY$2 = 'transmuteSessions';
+    const STORAGE_KEY$3 = 'transmuteSessions';
     const STORAGE_STORE$3 = 'alchemyHistory';
 
     class TransmuteHistoryTracker {
@@ -6908,7 +6908,7 @@
         }
 
         getStorageKey() {
-            return this.characterId ? `${STORAGE_KEY$2}_${this.characterId}` : STORAGE_KEY$2;
+            return this.characterId ? `${STORAGE_KEY$3}_${this.characterId}` : STORAGE_KEY$3;
         }
 
         /**
@@ -7275,7 +7275,7 @@
     const COIN_ITEM_HRID$1 = '/items/coin';
     const CATALYST_OF_COINIFICATION_HRID$1 = '/items/catalyst_of_coinification';
     const PRIME_CATALYST_HRID$2 = '/items/prime_catalyst';
-    const STORAGE_KEY$1 = 'coinifySessions';
+    const STORAGE_KEY$2 = 'coinifySessions';
     const STORAGE_STORE$2 = 'alchemyHistory';
 
     class CoinifyHistoryTracker {
@@ -7292,7 +7292,7 @@
         }
 
         getStorageKey() {
-            return this.characterId ? `${STORAGE_KEY$1}_${this.characterId}` : STORAGE_KEY$1;
+            return this.characterId ? `${STORAGE_KEY$2}_${this.characterId}` : STORAGE_KEY$2;
         }
 
         /**
@@ -7648,7 +7648,7 @@
     const CATALYST_OF_DECOMPOSITION_HRID$1 = '/items/catalyst_of_decomposition';
     const PRIME_CATALYST_HRID$1 = '/items/prime_catalyst';
     const COIN_ITEM_HRID = '/items/coin';
-    const STORAGE_KEY = 'decomposeSessions';
+    const STORAGE_KEY$1 = 'decomposeSessions';
     const STORAGE_STORE$1 = 'alchemyHistory';
 
     class DecomposeHistoryTracker {
@@ -7665,7 +7665,7 @@
         }
 
         getStorageKey() {
-            return this.characterId ? `${STORAGE_KEY}_${this.characterId}` : STORAGE_KEY;
+            return this.characterId ? `${STORAGE_KEY$1}_${this.characterId}` : STORAGE_KEY$1;
         }
 
         /**
@@ -16495,6 +16495,115 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Protection Substitute Lookup
+     * Detects items that are real, data-backed substitutes for enhancement-protection consumables
+     * (e.g. a dungeon-chest drop that can be sacrificed as protection instead of buying a Mirror of
+     * Protection), and suggests a proxy sell price for them when they have no direct market price.
+     */
+
+
+    /**
+     * Always a valid protection sacrifice for ANY equipment, per its own item description
+     * ("functions as a copy of any equipment for enhancing protection") - confirmed it never
+     * appears in any item's own protectionItemHrids list (that field only enumerates item-specific
+     * substitutes), so it can't be found by the reverse lookup below and must be special-cased.
+     * Philosopher's Mirror exists too but is a guaranteed-success item worth ~50x more - not a
+     * meaningful "basic protection" cost baseline, so it's deliberately excluded here.
+     */
+    const UNIVERSAL_PROTECTION_ITEM_HRID = '/items/mirror_of_protection';
+
+    function getSubstituteHrids() {
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+        const hrids = new Set();
+        for (const details of Object.values(itemDetailMap)) {
+            for (const hrid of details.protectionItemHrids || []) {
+                hrids.add(hrid);
+            }
+        }
+        return hrids;
+    }
+
+    /**
+     * @param {string} itemHrid
+     * @returns {boolean} True if itemHrid appears in some other item's protectionItemHrids list,
+     *      i.e. it's a real substitute for that item's enhancement protection.
+     */
+    function isProtectionSubstitute(itemHrid) {
+        return getSubstituteHrids().has(itemHrid);
+    }
+
+    /**
+     * Suggest a proxy sell price for an unpriceable item that's a real protection substitute,
+     * based on the universal protection item's own current sell price - same pricing mode/outlier
+     * handling as every other row in the same EV table, via expectedValueCalculator.
+     * @param {string} itemHrid
+     * @returns {{price: number, isOutlier: boolean, viaItemHrid: string}|null} null when itemHrid
+     *      isn't a known protection substitute, or the universal item itself has no price data.
+     */
+    function suggestProtectionSubstituteProxyPrice(itemHrid) {
+        if (!isProtectionSubstitute(itemHrid)) return null;
+
+        const priceInfo = expectedValueCalculator.getDropPriceInfo(UNIVERSAL_PROTECTION_ITEM_HRID);
+        if (priceInfo.value === null) return null;
+
+        return {
+            price: priceInfo.value,
+            isOutlier: priceInfo.isOutlier,
+            viaItemHrid: UNIVERSAL_PROTECTION_ITEM_HRID,
+        };
+    }
+
+    /**
+     * Custom Price Overrides
+     * Manages user-defined buy/sell price overrides for profit calculations.
+     * Overrides are stored in IndexedDB and cached in memory.
+     */
+
+
+    const STORAGE_KEY = 'Toolasha_customPriceOverrides';
+
+    /** @type {Object|null} In-memory cache of overrides */
+    let overridesCache = null;
+
+    /**
+     * Load overrides from storage into cache
+     * @returns {Promise<Object>} The overrides object
+     */
+    async function loadOverrides() {
+        if (overridesCache === null) {
+            overridesCache = (await storage.getJSON(STORAGE_KEY, 'settings', {})) || {};
+        }
+        return overridesCache;
+    }
+
+    /**
+     * Set a custom price override for an item
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level
+     * @param {number|null} buy - Buy price override (null to clear)
+     * @param {number|null} sell - Sell price override (null to clear)
+     */
+    async function setCustomPriceOverride(itemHrid, enhancementLevel, buy, sell) {
+        const overrides = await loadOverrides();
+        const key = `${itemHrid}:${enhancementLevel}`;
+
+        const entry = {};
+        if (sell !== null && sell !== undefined && sell !== '') {
+            entry.sell = Number(sell);
+        }
+
+        if (Object.keys(entry).length === 0) {
+            // Both empty — remove the override
+            delete overrides[key];
+        } else {
+            overrides[key] = entry;
+        }
+
+        overridesCache = overrides;
+        await storage.setJSON(STORAGE_KEY, overrides, 'settings', true);
+    }
+
+    /**
      * Risk of Ruin Calculator UI
      *
      * Standalone floating panel (same pattern as XPHCalculator) answering "how likely am I to hit
@@ -16668,9 +16777,27 @@ self.onmessage = function (e) {
 
             this.panel.querySelector('#mwi-ror-mode').addEventListener('change', () => this._renderModeInputs());
             this.panel.querySelector('#mwi-ror-run').addEventListener('click', () => this._run());
+            this.panel.addEventListener('click', (e) => this._handleApplySubstitutePriceClick(e));
 
             this._populateItemLists();
             this._renderModeInputs();
+        }
+
+        /**
+         * Delegated handler for the "Apply" button rendered next to a detected protection-substitute
+         * drop's suggested price. Saves the suggestion via the existing Custom Price Overrides
+         * mechanism (same path a manually-entered override takes) and reruns the calculation so the
+         * cost/EV/depth-cap context all recompute with the newly-set price.
+         * @param {MouseEvent} e
+         */
+        async _handleApplySubstitutePriceClick(e) {
+            const button = e.target.closest('.mwi-ror-apply-substitute-price');
+            if (!button) return;
+
+            const itemHrid = button.dataset.itemHrid;
+            const price = Number(button.dataset.suggestedPrice);
+            await setCustomPriceOverride(itemHrid, 0, null, price);
+            this._run();
         }
 
         _bodyHTML() {
@@ -16837,7 +16964,11 @@ self.onmessage = function (e) {
          * The last computed cost-per-action + per-item output quantities, for market-depth-cap.js to
          * check the currently-viewed marketplace item against. Null when the enhanced item is
          * untradeable, or nothing has been calculated yet.
-         * @returns {{costPerAction: number, items: Array<{itemHrid: string, quantityPerAction: number}>}|null}
+         * @returns {{costPerAction: number, items: Array<{itemHrid: string, quantityPerAction: number, costShare?: number}>}|null}
+         *   costShare, when present (chest/alchemy modes), is this item's share of costPerAction
+         *   attributed by its share of total expected value - market-depth-cap.js prefers it over the
+         *   shared costPerAction, since no single multi-output drop alone needs to recoup the whole
+         *   action cost. Absent for single-output modes (enhancement), where the full cost is correct.
          */
         getDepthCapContext() {
             return this.lastDepthCapContext;
@@ -16895,9 +17026,7 @@ self.onmessage = function (e) {
                 };
                 this.lastDepthCapContext = {
                     costPerAction: chestModel.cost,
-                    items: dropBreakdown
-                        .filter((d) => d.dropRate > 0 && d.avgCount > 0)
-                        .map((d) => ({ itemHrid: d.itemHrid, quantityPerAction: d.avgCount * d.dropRate })),
+                    items: this._chestDepthCapItems(dropBreakdown, chestModel.cost),
                 };
                 optimalCommit = calculateOptimalCommit({
                     outcomeDistribution: chestModel.outcomeDistribution,
@@ -16929,7 +17058,7 @@ self.onmessage = function (e) {
                 detailInfo = { mode: 'alchemy', breakdown: alchemyModel.breakdown };
                 this.lastDepthCapContext = {
                     costPerAction: alchemyModel.cost,
-                    items: this._alchemyDepthCapItems(alchemyModel.breakdown),
+                    items: this._alchemyDepthCapItems(alchemyModel.breakdown, alchemyModel.cost),
                 };
                 detailInfo.untrackedOutputs = this._findUntrackedAlchemyOutputs(hrid, alchemyModel.breakdown);
                 optimalCommit = calculateOptimalCommit({
@@ -17016,26 +17145,65 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Build depth-cap tracking items for chest mode, attributing costPerAction to each item in
+         * proportion to its share of total expected value, rather than charging the full action cost
+         * to every item independently - correct for a single-output action but meant every item
+         * failed its threshold for a multi-output chest, since no single drop alone recoups the whole
+         * cost. Reduces to the original single-item full-cost-recoup threshold exactly when there is
+         * only one tracked item. Items with no resolvable price are excluded (a zero-EV item would
+         * otherwise get a zero cost share and a zero threshold, falsely appearing to have unlimited
+         * sell depth).
+         * @param {Array} dropBreakdown - expectedValueCalculator.getDropBreakdown() output.
+         * @param {number} costPerAction
+         * @returns {Array<{itemHrid: string, quantityPerAction: number, costShare: number}>}
+         */
+        _chestDepthCapItems(dropBreakdown, costPerAction) {
+            const tracked = dropBreakdown.filter((d) => d.dropRate > 0 && d.avgCount > 0 && d.hasPriceData);
+            const totalEV = tracked.reduce((sum, d) => sum + d.expectedValue, 0);
+            return tracked.map((d) => ({
+                itemHrid: d.itemHrid,
+                quantityPerAction: d.avgCount * d.dropRate,
+                costShare: totalEV > 0 ? costPerAction * (d.expectedValue / totalEV) : costPerAction,
+            }));
+        }
+
+        /**
          * Recover the raw per-attempt output quantity for each item a Transmute attempt can produce,
          * for market-depth-cap.js — main branches are conditional on success (successRate * dropRate),
          * bonus drops (essence/rare) are independent per-attempt Bernoulli events already unconditional.
+         * Also attributes costPerAction to each item by its share of total expected value, same
+         * reasoning as _chestDepthCapItems() above - branch/bonus `payout` is a per-occurrence value,
+         * so multiplying back by its own trigger probability recovers the item's true per-action EV.
          * @param {Object} breakdown - alchemyModel.breakdown from buildAlchemyTransmuteModel().
-         * @returns {Array<{itemHrid: string, quantityPerAction: number}>}
+         * @param {number} costPerAction
+         * @returns {Array<{itemHrid: string, quantityPerAction: number, costShare: number}>}
          */
-        _alchemyDepthCapItems(breakdown) {
-            const items = [];
+        _alchemyDepthCapItems(breakdown, costPerAction) {
+            const candidates = [];
             for (const branch of breakdown.mainBranches) {
                 if (branch.isSelfReturn || !(branch.count > 0)) continue;
-                items.push({
+                candidates.push({
                     itemHrid: branch.itemHrid,
                     quantityPerAction: breakdown.successRate * branch.dropRate * branch.count,
+                    expectedValue: branch.payout * breakdown.successRate * branch.dropRate,
                 });
             }
             for (const bonus of breakdown.bonusDrops) {
                 if (!(bonus.count > 0)) continue;
-                items.push({ itemHrid: bonus.itemHrid, quantityPerAction: bonus.dropRate * bonus.count });
+                candidates.push({
+                    itemHrid: bonus.itemHrid,
+                    quantityPerAction: bonus.dropRate * bonus.count,
+                    expectedValue: bonus.payout * bonus.dropRate,
+                });
             }
-            return items;
+
+            const tracked = candidates.filter((c) => c.expectedValue > 0);
+            const totalEV = tracked.reduce((sum, c) => sum + c.expectedValue, 0);
+            return tracked.map((c) => ({
+                itemHrid: c.itemHrid,
+                quantityPerAction: c.quantityPerAction,
+                costShare: totalEV > 0 ? costPerAction * (c.expectedValue / totalEV) : costPerAction,
+            }));
         }
 
         /**
@@ -17253,7 +17421,9 @@ self.onmessage = function (e) {
                         }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(drop.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.avgCount}</td>
-                        <td style="padding:2px 6px; text-align:right;">${drop.hasPriceData ? fmtGold(drop.priceEach) : '—'}</td>
+                        <td style="padding:2px 6px; text-align:right;">${
+                            drop.hasPriceData ? fmtGold(drop.priceEach) : this._protectionSubstituteCellHTML(drop)
+                        }</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.expectedValue)}</td>
                     </tr>`
                 )
@@ -17275,6 +17445,33 @@ self.onmessage = function (e) {
                         true
                     )
             );
+        }
+
+        /**
+         * For an unpriced drop that's a known enhancement-protection substitute (e.g. a quiver
+         * usable in place of a Mirror of Protection), suggest a proxy sell price derived from the
+         * universal protection item's own current price, with a one-click Apply button that saves
+         * it via the existing Custom Price Overrides mechanism and recomputes - no new pricing/tax
+         * logic, this only ever calls the same path a manually-entered override already takes.
+         * @param {Object} drop - A dropBreakdown entry with hasPriceData === false.
+         * @returns {string}
+         */
+        _protectionSubstituteCellHTML(drop) {
+            const suggestion = suggestProtectionSubstituteProxyPrice(drop.itemHrid);
+            if (!suggestion) return '—';
+
+            const viaName = getItemName(
+                suggestion.viaItemHrid,
+                dataManager.getItemDetails(suggestion.viaItemHrid)?.name || suggestion.viaItemHrid
+            );
+            return `<span style="color:#888; font-style:italic;" title="${i18n_js.t('riskOfRuinUi.protectionSubstituteTooltip')}">${i18n_js.t(
+            'riskOfRuinUi.protectionSubstituteSuggestionLabel',
+            { price: fmtGold(suggestion.price), itemName: viaName }
+        )}</span>
+        <button type="button" class="mwi-ror-apply-substitute-price" data-item-hrid="${drop.itemHrid}" data-suggested-price="${suggestion.price}" style="
+            margin-left:4px; font-size:10px; padding:1px 5px; cursor:pointer;
+            background:rgba(96,165,250,0.15); border:1px solid rgba(96,165,250,0.4); border-radius:4px; color:#60a5fa;
+        ">${i18n_js.t('riskOfRuinUi.applyProtectionSubstitutePriceButton')}</button>`;
         }
 
         _alchemyDetailsHTML({ breakdown }, startingBalance, maxSinglePossibleLoss, minActions) {

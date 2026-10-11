@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.12.0
+ * Version: 3.13.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6737,7 +6737,7 @@
             cumulativeItemsHeader: 'Cumulative items received across all lifetime openings:',
             currentCardTitle: 'Current',
             dropValuationHeader: (p) =>
-                `What this container can drop, valued at today's market prices for ${p.amount} opened:`,
+                `What this container can drop, valued at today's market or shop-redemption prices for ${p.amount} opened:`,
             expectedIncomeLabel: 'Expected income',
             gainedItemPartialTooltip: 'One or more gained items could not be priced.',
             historyCardTitle: 'History',
@@ -7361,6 +7361,10 @@
             colPrice: 'Price',
             colEv: 'EV',
             totalEvPerOpenLabel: 'Total EV per open',
+            protectionSubstituteSuggestionLabel: (p) => `≈ ${p.price} via ${p.itemName}`,
+            protectionSubstituteTooltip:
+                "This item has no market price, but it's a known substitute for this enhancement-protection item, so it has real value - click Apply to use that as its price.",
+            applyProtectionSubstitutePriceButton: 'Apply',
             successRateLine: (p) => `Success rate: ${p.rate}`,
             materialCostLine: (p) => `Material cost (paid every attempt): ${p.cost}`,
             coinCostLine: (p) => `Coin cost (paid every attempt): ${p.cost}`,
@@ -7725,6 +7729,8 @@
             minutesShort: (p) => `${p.n}m`,
             secondsShort: (p) => `${p.n}s`,
             hms: (p) => `${p.h}h ${p.m}m ${p.s}s`,
+            justNow: 'Just now',
+            moreThan30Days: '30+ days',
             separator: ' ',
         },
         xphCalculator: {
@@ -8810,6 +8816,8 @@
         },
         marketDepthCap: {
             sellDepthLabel: (p) => `Sell depth: ${p.hitBookEnd ? 'at least ' : '~'}${p.count} actions`,
+            sellDepthNotApplicable: (p) =>
+                `Sell depth: not applicable — best bid ${p.bestBid} is below the ${p.threshold} break-even price`,
             tooltipEstimate:
                 "Estimated number of actions worth of this item the visible order book can absorb before the marginal sale price drops below cost. Ignores the marketplace's tradable range floor (not exposed in game data), so a large sell-off may hit that floor and queue with a delay before this estimate suggests.",
             tooltipHitBookEnd:
@@ -12435,7 +12443,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             clickForDetailsTooltip: '点击查看详情',
             cumulativeItemsHeader: '所有历史开启累计获得的物品：',
             currentCardTitle: '当前',
-            dropValuationHeader: (p) => `开启 ${p.amount} 次该容器时，可能掉落物品按今日市价计算的价值：`,
+            dropValuationHeader: (p) => `开启 ${p.amount} 次该容器时，可能掉落物品按今日市价或商店兑换价计算的价值：`,
             expectedIncomeLabel: '预期收入',
             gainedItemPartialTooltip: '一件或多件获得物品无法计价。',
             historyCardTitle: '历史',
@@ -12551,6 +12559,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             colPrice: '价格',
             colEv: '期望值',
             totalEvPerOpenLabel: '每次开箱总期望值',
+            protectionSubstituteSuggestionLabel: (p) => `≈ ${p.price}（参考 ${p.itemName}）`,
+            protectionSubstituteTooltip:
+                '该物品没有市场价格，但它是这个强化保护物品的已知替代品，因此具有实际价值——点击"应用"将其作为价格使用。',
+            applyProtectionSubstitutePriceButton: '应用',
             successRateLine: (p) => `成功率：${p.rate}`,
             materialCostLine: (p) => `材料成本（每次尝试都支付）：${p.cost}`,
             coinCostLine: (p) => `金币成本（每次尝试都支付）：${p.cost}`,
@@ -12829,6 +12841,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             minutesShort: (p) => `${p.n} 分`,
             secondsShort: (p) => `${p.n} 秒`,
             hms: (p) => `${p.h} 时 ${p.m} 分 ${p.s} 秒`,
+            justNow: '刚刚',
+            moreThan30Days: '30+ 天',
             separator: ' ',
         },
         xphCalculator: {
@@ -13295,6 +13309,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         },
         marketDepthCap: {
             sellDepthLabel: (p) => `出售深度：${p.hitBookEnd ? '至少 ' : '约'}${p.count} 次操作`,
+            sellDepthNotApplicable: (p) => `出售深度：不适用——当前最高买单 ${p.bestBid} 低于 ${p.threshold} 的保本价`,
             tooltipEstimate:
                 '预估可见订单簿在边际卖价跌破成本前，能够吸纳的该物品操作次数。未计入市场可交易范围的下限（游戏数据未公开），因此大规模抛售可能会先触及该下限、进入队列延迟，早于本估算的提示。',
             tooltipHitBookEnd:

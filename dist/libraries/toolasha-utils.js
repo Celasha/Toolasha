@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.12.0
+ * Version: 3.13.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -348,8 +348,8 @@
         const days = Math.floor(hours / 24);
 
         // Edge cases
-        if (minutes < 1) return 'Just now';
-        if (days > 30) return '30+ days';
+        if (minutes < 1) return i18n.t('timeUnits.justNow');
+        if (days > 30) return i18n.t('timeUnits.moreThan30Days');
 
         // Format based on age
         if (days > 7) return `${days}d`;
@@ -6140,6 +6140,21 @@
     ]);
 
     /**
+     * Resolve which market price side the current pricing-mode settings select: bid for
+     * Conservative/Patient Buy (buy-side-cheap convention), ask for Hybrid/Optimistic - or always
+     * bid when mode-respect is disabled.
+     * @param {string} pricingModeSetting - Config setting key for pricing mode
+     * @param {string|null} respectModeSetting - Config setting key for the respect-mode flag (an unknown key or
+     *     absent setting falls back to true, i.e. the pricing mode is respected)
+     * @returns {'bid'|'ask'} The selected market price side
+     */
+    function resolvePricingSide(pricingModeSetting, respectModeSetting) {
+        const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
+        const respectPricingMode = config.getSettingValue(respectModeSetting, true);
+        return !respectPricingMode ? 'bid' : pricingMode === 'conservative' || pricingMode === 'patientBuy' ? 'bid' : 'ask';
+    }
+
+    /**
      * Calculate dungeon token value based on best shop item value
      * Uses "best market value per token" approach: finds the shop item with highest (market price / token cost)
      * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
@@ -6171,16 +6186,7 @@
             const itemHrid = shopItem.itemHrid;
             const tokenCost = shopItem.costs[0].count;
 
-            // Use pricing mode to determine which price side to use
-            const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
-            const respectPricingMode = config.getSettingValue(respectModeSetting, true);
-
-            // Conservative/Patient Buy: Bid, Hybrid/Optimistic: Ask
-            const mode = !respectPricingMode
-                ? 'bid'
-                : pricingMode === 'conservative' || pricingMode === 'patientBuy'
-                  ? 'bid'
-                  : 'ask';
+            const mode = resolvePricingSide(pricingModeSetting, respectModeSetting);
             const priceInfo = getItemPriceOutlierInfo(itemHrid, { mode });
             const marketPrice = priceInfo.value || 0;
             if (marketPrice <= 0) continue;
@@ -6206,14 +6212,7 @@
 
             const essenceHrid = essenceMap[tokenHrid];
             if (essenceHrid) {
-                const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
-                const respectPricingMode = config.getSettingValue(respectModeSetting, true);
-
-                const mode = !respectPricingMode
-                    ? 'bid'
-                    : pricingMode === 'conservative' || pricingMode === 'patientBuy'
-                      ? 'bid'
-                      : 'ask';
+                const mode = resolvePricingSide(pricingModeSetting, respectModeSetting);
                 const essencePriceInfo = getItemPriceOutlierInfo(essenceHrid, { mode });
                 const marketPrice = essencePriceInfo.value || 0;
 
@@ -6257,8 +6256,181 @@
         __proto__: null,
         DUNGEON_TOKEN_HRIDS: DUNGEON_TOKEN_HRIDS,
         calculateDungeonTokenValue: calculateDungeonTokenValue,
-        calculateTaskTokenValue: calculateTaskTokenValue
+        calculateTaskTokenValue: calculateTaskTokenValue,
+        resolvePricingSide: resolvePricingSide
     });
+
+    /**
+     * Special-Currency Shop Data (TLA-041E)
+     *
+     * Pure data normalization over the game's official special-currency shops
+     * (`shopItemDetailMap` for dungeon tokens, `taskShopItemDetailMap`, `labyrinthShopItemDetailMap`).
+     * No valuation logic lives here (no Ask/EV/opportunity math) - just "what can be bought, with which
+     * currency, at what cost/outputCount" - so both Profile Score's acquisition resolver and the
+     * existing Token Tooltip feature can read the same shop facts without duplicating the map-scanning.
+     */
+
+
+    let cachedEntries = null;
+    let cachedSource = null;
+
+    /**
+     * @param {Object} shopItem
+     * @param {string} costItemHrid
+     * @param {number} costCount
+     * @param {number} outputCount
+     * @param {Object} itemDetailMap
+     * @returns {{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}}
+     */
+    function normalizeEntry(shopItem, costItemHrid, costCount, outputCount, itemDetailMap) {
+        return {
+            itemHrid: shopItem.itemHrid,
+            currencyHrid: costItemHrid,
+            tokenCost: costCount,
+            outputCount: outputCount || 1,
+            isOpenable: !!itemDetailMap?.[shopItem.itemHrid]?.isOpenable,
+        };
+    }
+
+    /**
+     * @param {Object} gameData
+     * @returns {Array<{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}>}
+     */
+    function computeEntries(gameData) {
+        const itemDetailMap = gameData.itemDetailMap || {};
+        const entries = [];
+
+        for (const shopItem of Object.values(gameData.shopItemDetailMap || {})) {
+            const cost = shopItem.costs?.[0];
+            if (!cost || !cost.itemHrid || cost.itemHrid === '/items/coin' || !(cost.count > 0)) continue;
+            entries.push(normalizeEntry(shopItem, cost.itemHrid, cost.count, shopItem.outputCount, itemDetailMap));
+        }
+
+        for (const shopItem of Object.values(gameData.taskShopItemDetailMap || {})) {
+            const cost = shopItem.cost;
+            if (!cost?.itemHrid || !(cost.count > 0)) continue;
+            entries.push(normalizeEntry(shopItem, cost.itemHrid, cost.count, shopItem.outputCount, itemDetailMap));
+        }
+
+        for (const shopItem of Object.values(gameData.labyrinthShopItemDetailMap || {})) {
+            const cost = shopItem.cost;
+            if (!cost?.itemHrid || !(cost.count > 0)) continue;
+            entries.push(normalizeEntry(shopItem, cost.itemHrid, cost.count, shopItem.outputCount, itemDetailMap));
+        }
+
+        return entries;
+    }
+
+    /**
+     * All official special-currency shop outputs across dungeon/task/labyrinth shops, normalized to one
+     * shape. Cached per game-data snapshot (invalidated automatically when `dataManager` hands out a new
+     * client-data object, e.g. on character switch), since these are static shop facts, not market prices.
+     * @returns {Array<{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}>}
+     */
+    function getAllSpecialCurrencyShopEntries() {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return [];
+
+        if (cachedSource === gameData) return cachedEntries;
+
+        cachedEntries = computeEntries(gameData);
+        cachedSource = gameData;
+        return cachedEntries;
+    }
+
+    /**
+     * @param {string} currencyHrid - e.g. '/items/task_token'
+     * @returns {Array<{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}>}
+     */
+    function getShopEntriesForCurrency(currencyHrid) {
+        return getAllSpecialCurrencyShopEntries().filter((entry) => entry.currencyHrid === currencyHrid);
+    }
+
+    /**
+     * Look up an item's own official special-currency purchase, if it is directly buyable from any of
+     * the three special-currency shops.
+     * @param {string} itemHrid
+     * @returns {{currencyHrid: string, tokenCost: number, outputCount: number}|null}
+     */
+    function findShopPurchaseInfo(itemHrid) {
+        const entry = getAllSpecialCurrencyShopEntries().find((e) => e.itemHrid === itemHrid);
+        if (!entry) return null;
+        return { currencyHrid: entry.currencyHrid, tokenCost: entry.tokenCost, outputCount: entry.outputCount };
+    }
+
+    /**
+     * Shop Redemption Valuation
+     * Indirect pricing for items with no direct market price but an official special-currency shop
+     * purchase (e.g. seals bought with labyrinth tokens): implied value = currency value × tokenCost
+     * ÷ outputCount, where the currency itself is valued at its best tradeable redemption across the
+     * special-currency shops. `resolveCurrencyValue` is also exported for the mirror case - a dropped
+     * item that is itself a shop currency (e.g. labyrinth tokens from Purdora's boxes). Consumers opt
+     * in through expected-value-calculator's `allowIndirect` flag. This module must never import
+     * expected-value-calculator (circular dependency: it already imports token-valuation).
+     */
+
+
+    const PRICING_MODE_SETTING = 'profitCalc_pricingMode';
+    const RESPECT_MODE_SETTING = 'expectedValue_respectPricingMode';
+
+    /**
+     * Value one special currency at its best tradeable redemption across the special-currency shops.
+     * Dungeon tokens reuse `calculateDungeonTokenValue` (outlier clamping + essence fallback); every
+     * other currency takes the highest (price × outputCount ÷ tokenCost) over its own shop entries -
+     * the same shape as the dungeon-token formula, which omits outputCount only because every dungeon
+     * shop entry yields a single output. Exported so expected-value-calculator can price a dropped
+     * item that is itself a shop currency (e.g. labyrinth tokens). Currencies whose every redemption
+     * output is itself unpriced (e.g. task tokens, whose chests have no market price) stay null.
+     * @param {string} currencyHrid - e.g. '/items/labyrinth_token'
+     * @returns {{value: number, isOutlier: boolean}|null} Value per currency unit, or null
+     */
+    function resolveCurrencyValue(currencyHrid) {
+        if (DUNGEON_TOKEN_HRIDS.has(currencyHrid)) {
+            return calculateDungeonTokenValue(currencyHrid, PRICING_MODE_SETTING, RESPECT_MODE_SETTING);
+        }
+
+        const mode = resolvePricingSide(PRICING_MODE_SETTING, RESPECT_MODE_SETTING);
+        let bestValuePerToken = 0;
+        let bestIsOutlier = false;
+
+        for (const entry of getShopEntriesForCurrency(currencyHrid)) {
+            const priceInfo = getItemPriceOutlierInfo(entry.itemHrid, { mode });
+            const marketPrice = priceInfo.value || 0;
+            if (marketPrice <= 0) continue;
+            const valuePerToken = (marketPrice * (entry.outputCount || 1)) / entry.tokenCost;
+            if (valuePerToken > bestValuePerToken) {
+                bestValuePerToken = valuePerToken;
+                bestIsOutlier = priceInfo.isOutlier;
+            }
+        }
+
+        return bestValuePerToken > 0 ? { value: bestValuePerToken, isOutlier: bestIsOutlier } : null;
+    }
+
+    /**
+     * Resolve an item's implied value through its official special-currency shop purchase. Returns
+     * null (never a fake zero) when the item is not shop-purchased or its currency cannot be priced.
+     * The implied value is not taxed - shop-redeemed items cannot be relisted on the market, mirroring
+     * how the dungeon-token special case is treated upstream.
+     * @param {string} itemHrid - e.g. '/items/seal_of_efficiency'
+     * @returns {{value: number, isOutlier: boolean, currencyHrid: string, tokenCost: number, outputCount: number}|null}
+     */
+    function resolveShopRedemptionValue(itemHrid) {
+        const purchase = findShopPurchaseInfo(itemHrid);
+        if (!purchase) return null;
+
+        const currencyValue = resolveCurrencyValue(purchase.currencyHrid);
+        if (!currencyValue || !(currencyValue.value > 0)) return null;
+
+        const outputCount = purchase.outputCount || 1;
+        return {
+            value: (currencyValue.value * purchase.tokenCost) / outputCount,
+            isOutlier: currencyValue.isOutlier || false,
+            currencyHrid: purchase.currencyHrid,
+            tokenCost: purchase.tokenCost,
+            outputCount,
+        };
+    }
 
     /**
      * Worker Pool Manager
@@ -6466,7 +6638,7 @@ const evCache = new Map();
  * @returns {Object} {containerHrid, ev}
  */
 function calculateContainerEV(data) {
-    const { containerHrid, dropTable, priceMap, COIN_HRID, MARKET_TAX } = data;
+    const { containerHrid, dropTable, priceMap, MARKET_TAX } = data;
 
     if (!dropTable || dropTable.length === 0) {
         return { containerHrid, ev: null };
@@ -6496,15 +6668,13 @@ function calculateContainerEV(data) {
         }
 
         const price = priceData.price;
-        const canBeSold = priceData.canBeSold;
-        const isCoin = itemHrid === COIN_HRID;
+        const needsTax = priceData.needsTax;
 
-        // Calculate drop value with tax
-        const dropValue = isCoin
-            ? avgCount * dropRate * price
-            : canBeSold
-              ? avgCount * dropRate * price * (1 - MARKET_TAX)
-              : avgCount * dropRate * price;
+        // Tax strictly follows the resolver's needsTax contract - never item tradability
+        // (real game data omits isTradable for untradeable items like dungeon tokens/cowbells).
+        const dropValue = needsTax
+            ? avgCount * dropRate * price * (1 - MARKET_TAX)
+            : avgCount * dropRate * price;
 
         totalExpectedValue += dropValue;
     }
@@ -6704,7 +6874,6 @@ self.onmessage = function (e) {
                     containerHrid,
                     dropTable: initData.openableLootDropMap[containerHrid],
                     priceMap,
-                    COIN_HRID: this.COIN_HRID,
                     MARKET_TAX: this.MARKET_TAX,
                 }));
 
@@ -6735,7 +6904,7 @@ self.onmessage = function (e) {
          * Build price map for all items needed for container calculations
          * @param {Array} containerHrids - Array of container HRIDs
          * @param {Object} initData - Game data
-         * @returns {Object} Map of itemHrid to {price, canBeSold}
+         * @returns {Object} Map of itemHrid to {price, needsTax}
          */
         buildPriceMap(containerHrids, initData) {
             const priceMap = {};
@@ -6751,14 +6920,13 @@ self.onmessage = function (e) {
                     if (processedItems.has(itemHrid)) continue;
                     processedItems.add(itemHrid);
 
-                    // Get price and tradeable status
-                    const price = this.getDropPrice(itemHrid);
-                    const itemDetails = dataManager.getItemDetails(itemHrid);
-                    const canBeSold = itemDetails?.isTradable !== false;
+                    // Resolve price together with the tax contract - tax strictly follows needsTax,
+                    // never item tradability (real game data omits isTradable for untradeable items).
+                    const resolved = this.resolveSellSideValue(itemHrid, 0);
 
                     priceMap[itemHrid] = {
-                        price,
-                        canBeSold,
+                        price: resolved ? resolved.value : null,
+                        needsTax: resolved ? resolved.needsTax || false : false,
                     };
                 }
             }
@@ -6804,25 +6972,17 @@ self.onmessage = function (e) {
                 // Calculate average drop count
                 const avgCount = (minCount + maxCount) / 2;
 
-                // Get price for this drop
-                const price = this.getDropPrice(itemHrid);
+                // Resolve price together with the tax contract - tax strictly follows needsTax,
+                // never item tradability (real game data omits isTradable for untradeable items).
+                const resolved = this.resolveSellSideValue(itemHrid, 0);
 
-                if (price === null) {
+                if (!resolved) {
                     continue; // Skip drops with missing data
                 }
 
-                // Check if item is tradeable (for tax calculation)
-                const itemDetails = dataManager.getItemDetails(itemHrid);
-                const canBeSold = itemDetails?.isTradable !== false;
-
-                // Special case: Coin never has market tax (it's currency, not a market item)
-                const isCoin = itemHrid === this.COIN_HRID;
-
-                const dropValue = isCoin
-                    ? avgCount * dropRate * price // No tax for coins
-                    : canBeSold
-                      ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                      : avgCount * dropRate * price;
+                const dropValue = resolved.needsTax
+                    ? calculatePriceAfterTax(avgCount * dropRate * resolved.value, this.MARKET_TAX)
+                    : avgCount * dropRate * resolved.value;
                 totalExpectedValue += dropValue;
             }
 
@@ -6837,14 +6997,19 @@ self.onmessage = function (e) {
         /**
          * Resolve a sell-side economic value for an item, applying the same special-case rules
          * (Coin, Cowbell, dungeon tokens, cached container EV, ordinary market item) used for drop
-         * valuation, plus metadata describing the source and whether market tax still needs to be
-         * applied by the caller. Callers valuing an actual sale (e.g. drop valuation, offline gains)
-         * should apply `calculatePriceAfterTax` when `needsTax` is true and the item is tradeable.
+         * plus metadata describing the source and whether market tax still needs to be
+         * applied by the caller. `needsTax` is the sole tax authority: callers valuing an actual
+         * sale (e.g. drop valuation, offline gains) should apply `calculatePriceAfterTax` exactly
+         * when it is true - never gate on item tradability, which real game data omits entirely
+         * for untradeable items.
          * @param {string} itemHrid - Item HRID
          * @param {number} [enhancementLevel=0] - Enhancement level (ignored for special currencies)
+         * @param {Object} [options] - Options
+         * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for
+         *     items with no direct market price. Default off keeps existing behavior untouched.
          * @returns {{value: number, source: string, needsTax: boolean}|null} Resolved value or null
          */
-        resolveSellSideValue(itemHrid, enhancementLevel = 0) {
+        resolveSellSideValue(itemHrid, enhancementLevel = 0, { allowIndirect = false } = {}) {
             // Special case: Coin (face value = 1, never taxed)
             if (itemHrid === this.COIN_HRID) {
                 return { value: 1, source: 'coin', needsTax: false, isOutlier: false };
@@ -6896,7 +7061,33 @@ self.onmessage = function (e) {
             // Regular market item - get price based on pricing mode (sell side - you're selling drops)
             const dropPriceInfo = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
             const dropPrice = dropPriceInfo.value;
-            if (!(dropPrice > 0)) return null;
+            if (!(dropPrice > 0)) {
+                // Opt-in fallback: derive an implied value through the official special-currency shop
+                // redemption chain (e.g. a seal bought with labyrinth tokens). Never consulted unless
+                // the caller explicitly passes `allowIndirect` (opt-in: Openable Analytics' calculator
+                // wiring is the intended consumer).
+                if (!allowIndirect) return null;
+                const indirect = resolveShopRedemptionValue(itemHrid);
+                if (indirect) {
+                    return {
+                        value: indirect.value,
+                        source: 'shopRedemption',
+                        needsTax: false,
+                        isOutlier: indirect.isOutlier || false,
+                    };
+                }
+                // Mirror case: the dropped item is itself a shop currency (e.g. labyrinth tokens from
+                // Purdora's boxes) - value it at its own best tradeable redemption. Shop currencies are
+                // not market-relistable, so no tax applies (same contract as shopRedemption above).
+                const currency = resolveCurrencyValue(itemHrid);
+                if (!currency) return null;
+                return {
+                    value: currency.value,
+                    source: 'specialCurrency',
+                    needsTax: false,
+                    isOutlier: currency.isOutlier || false,
+                };
+            }
             const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;
             return {
                 value: dropPrice,
@@ -6955,31 +7146,37 @@ self.onmessage = function (e) {
          * Get price for a drop item
          * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
          * @param {string} itemHrid - Item HRID
+         * @param {Object} [opts] - Options forwarded to resolveSellSideValue (e.g. { allowIndirect })
          * @returns {number|null} Price or null if unavailable
          */
-        getDropPrice(itemHrid) {
-            return this.resolveSellSideValue(itemHrid)?.value ?? null;
+        getDropPrice(itemHrid, opts) {
+            return this.resolveSellSideValue(itemHrid, 0, opts)?.value ?? null;
         }
 
         /**
-         * Get price and outlier-guard status for a drop item - the mirror of `getDropPrice()` for
-         * callers that want to show a warning icon when the price was substituted.
+         * Get price, outlier-guard status, and tax contract for a drop item - the mirror of
+         * `getDropPrice()` for callers that want to show a warning icon when the price was
+         * substituted, or to apply tax consistently with the resolver's contract.
          * @param {string} itemHrid - Item HRID
-         * @returns {{value: number|null, isOutlier: boolean}}
+         * @param {Object} [opts] - Options forwarded to resolveSellSideValue (e.g. { allowIndirect })
+         * @returns {{value: number|null, isOutlier: boolean, needsTax: boolean}}
          */
-        getDropPriceInfo(itemHrid) {
-            const resolved = this.resolveSellSideValue(itemHrid);
+        getDropPriceInfo(itemHrid, opts) {
+            const resolved = this.resolveSellSideValue(itemHrid, 0, opts);
             return resolved
-                ? { value: resolved.value, isOutlier: resolved.isOutlier || false }
-                : { value: null, isOutlier: false };
+                ? { value: resolved.value, isOutlier: resolved.isOutlier || false, needsTax: resolved.needsTax || false }
+                : { value: null, isOutlier: false, needsTax: false };
         }
 
         /**
          * Calculate expected value for an openable container
          * @param {string} itemHrid - Container item HRID
+         * @param {Object} [options] - Options
+         * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
+         *     with no direct market price. Default off keeps existing behavior untouched.
          * @returns {Object|null} EV data or null
          */
-        calculateExpectedValue(itemHrid) {
+        calculateExpectedValue(itemHrid, { allowIndirect = false } = {}) {
             if (!this.isInitialized) {
                 console.warn('[ExpectedValueCalculator] Not initialized');
                 return null;
@@ -6997,7 +7194,7 @@ self.onmessage = function (e) {
             }
 
             // Get detailed drop breakdown (calculates with fresh market prices)
-            const drops = this.getDropBreakdown(itemHrid);
+            const drops = this.getDropBreakdown(itemHrid, { allowIndirect });
 
             // Calculate total expected value from fresh drop data
             const expectedReturn = drops.reduce((sum, drop) => sum + drop.expectedValue, 0);
@@ -7023,9 +7220,12 @@ self.onmessage = function (e) {
         /**
          * Get detailed drop breakdown for display
          * @param {string} containerHrid - Container HRID
+         * @param {Object} [options] - Options
+         * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
+         *     with no direct market price. Default off keeps existing behavior untouched.
          * @returns {Array} Array of drop objects
          */
-        getDropBreakdown(containerHrid) {
+        getDropBreakdown(containerHrid, { allowIndirect = false } = {}) {
             const initData = dataManager.getInitClientData();
             if (!initData || !initData.openableLootDropMap) {
                 return [];
@@ -7058,22 +7258,16 @@ self.onmessage = function (e) {
                 const avgCount = (minCount + maxCount) / 2;
 
                 // Get price
-                const priceInfo = this.getDropPriceInfo(itemHrid);
+                const priceInfo = this.getDropPriceInfo(itemHrid, { allowIndirect });
                 const price = priceInfo.value;
 
-                // Calculate expected value for this drop
-                const itemCanBeSold = itemDetails.isTradable !== false;
-
-                // Special case: Coin never has market tax (it's currency, not a market item)
-                const isCoin = itemHrid === this.COIN_HRID;
-
+                // Tax strictly follows the resolver's needsTax contract - never item tradability,
+                // which real game data omits entirely for untradeable items.
                 const dropValue =
                     price !== null
-                        ? isCoin
-                            ? avgCount * dropRate * price // No tax for coins
-                            : itemCanBeSold
-                              ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                              : avgCount * dropRate * price
+                        ? priceInfo.needsTax
+                            ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
+                            : avgCount * dropRate * price
                         : 0;
 
                 drops.push({

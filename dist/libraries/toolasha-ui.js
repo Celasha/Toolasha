@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.12.0
+ * Version: 3.13.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -216,7 +216,7 @@
      */
 
 
-    const STYLE_ID$2 = 'mwi-hide-guild-badge';
+    const STYLE_ID$3 = 'mwi-hide-guild-badge';
     const CSS$2 = `
     [class*="NavigationBar_nav__"]:has(svg[aria-label="navigationBar.guild"]) [class*="NavigationBar_badge"]:not([class*="NavigationBar_ocean"]) {
         display: none !important;
@@ -228,11 +228,11 @@
             if (!config.getSetting('hideGuildBadge')) {
                 return;
             }
-            dom_js.addStyles(CSS$2, STYLE_ID$2);
+            dom_js.addStyles(CSS$2, STYLE_ID$3);
         },
 
         disable() {
-            dom_js.removeStyles(STYLE_ID$2);
+            dom_js.removeStyles(STYLE_ID$3);
         },
     };
 
@@ -895,18 +895,59 @@
 
 
     const BUTTON_CLASS = 'toolasha-shop-max-buy-button';
+    const STYLE_ID$2 = 'mwi-shop-max-buy-button-style';
+
+    // Dark-theme "injected action button next to native UI" look already established by
+    // labyrinth-missing-supplies.js's button, for visual consistency with that precedent.
+    const SHOP_MAX_BUY_BUTTON_CSS = `
+    .${BUTTON_CLASS} {
+        margin-left: 4px;
+        padding: 4px 10px;
+        background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
+        color: #ffffff;
+        border: 1px solid rgba(91, 141, 239, 0.4);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .${BUTTON_CLASS}:hover {
+        background: linear-gradient(180deg, rgba(91, 141, 239, 0.3) 0%, rgba(91, 141, 239, 0.15) 100%);
+    }
+`;
 
     // Each panel is its own React component with its own CSS-module class prefix, but all share
     // the same inner structure: <label>Quantity</label> + <input type="number"> + an empty error
     // <div>, then a cost line, then the Buy <button>. Prefixes survive game rebuilds; the hash
-    // suffix after them does not.
+    // suffix after them does not. modalContentClass scopes the Buy-button oracle lookup to this
+    // panel's own dialog, confirmed present on all four panels directly in the client bundle.
     const PANEL_CONFIGS = [
-        { key: 'shop', inputContainerClass: 'ShopPanel_inputContainer', costStyle: 'text' },
-        { key: 'tasks', inputContainerClass: 'TasksPanel_inputContainer', costStyle: 'icon' },
-        { key: 'labyrinth', inputContainerClass: 'LabyrinthPanel_inputContainer', costStyle: 'icon' },
+        {
+            key: 'shop',
+            inputContainerClass: 'ShopPanel_inputContainer',
+            modalContentClass: 'ShopPanel_modalContent',
+            costStyle: 'text',
+        },
+        {
+            key: 'tasks',
+            inputContainerClass: 'TasksPanel_inputContainer',
+            modalContentClass: 'TasksPanel_modalContent',
+            costStyle: 'icon',
+        },
+        {
+            key: 'labyrinth',
+            inputContainerClass: 'LabyrinthPanel_inputContainer',
+            modalContentClass: 'LabyrinthPanel_modalContent',
+            costStyle: 'icon',
+        },
         // Cowbell Store's MooPass (cowbell tier), Community Buffs, and Convenience tabs all render
         // through this same component/class - one target covers all three.
-        { key: 'cowbellStore', inputContainerClass: 'CowbellStorePanel_inputContainer', costStyle: 'icon' },
+        {
+            key: 'cowbellStore',
+            inputContainerClass: 'CowbellStorePanel_inputContainer',
+            modalContentClass: 'CowbellStorePanel_modalContent',
+            costStyle: 'icon',
+        },
     ];
 
     function nextFrame() {
@@ -924,6 +965,7 @@
             if (!config.getSetting('shop_maxBuyButton')) return;
 
             this.isInitialized = true;
+            dom_js.addStyles(SHOP_MAX_BUY_BUTTON_CSS, STYLE_ID$2);
 
             for (const panelConfig of PANEL_CONFIGS) {
                 const unregister = domObserver.onClass(
@@ -939,11 +981,12 @@
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
             this.isInitialized = false;
+            dom_js.removeStyles(STYLE_ID$2);
         }
 
         /**
          * @param {Element} container - the *Panel_inputContainer element
-         * @param {{costStyle: 'text'|'icon'}} panelConfig
+         * @param {{costStyle: 'text'|'icon', modalContentClass: string}} panelConfig
          */
         injectButton(container, panelConfig) {
             if (container.querySelector(`.${BUTTON_CLASS}`)) return;
@@ -958,7 +1001,7 @@
             button.textContent = i18n_js.t('shopMaxBuyButton.buttonLabel');
             button.addEventListener('click', (event) => {
                 event.preventDefault();
-                this.handleMaxClick(container, input, panelConfig.costStyle);
+                this.handleMaxClick(container, input, panelConfig);
             });
 
             inputWrapper.insertAdjacentElement('afterend', button);
@@ -967,14 +1010,14 @@
         /**
          * @param {Element} container
          * @param {HTMLInputElement} input
-         * @param {'text'|'icon'} costStyle
+         * @param {{costStyle: 'text'|'icon', modalContentClass: string}} panelConfig
          */
-        async handleMaxClick(container, input, costStyle) {
-            const costLines = resolveCostLines(container, costStyle);
+        async handleMaxClick(container, input, panelConfig) {
+            const costLines = resolveCostLines(container, panelConfig.costStyle);
             const candidate = computeMaxAffordable(costLines);
             if (candidate === null) return;
 
-            await this.fillAndVerify(container, input, candidate);
+            await this.fillAndVerify(container, input, candidate, panelConfig.modalContentClass);
         }
 
         /**
@@ -983,28 +1026,47 @@
          * treat the Buy button's disabled state as the oracle and binary-search downward until a
          * valid quantity is found. This also self-corrects any currency misidentification instead
          * of silently leaving an invalid quantity filled in.
+         *
+         * The Buy button is looked up scoped to this panel's own modal content root (not merely
+         * container.parentElement - Button_success is a generic shared class reused by every
+         * success-colored button game-wide, so a too-narrow or too-wide scope can silently match
+         * the wrong button), and only trusted as an oracle when exactly one visible match is found
+         * in that scope. An ambiguous (zero or multiple) match means there's no reliable oracle, so
+         * verification stops immediately and the quantity already filled is left as-is - the same
+         * fail-safe already used when nothing is affordable at all.
          * @param {Element} container
          * @param {HTMLInputElement} input
          * @param {number} candidate
+         * @param {string} modalContentClass
          */
-        async fillAndVerify(container, input, candidate) {
-            const buyButton = () => container.parentElement?.querySelector('button[class*="Button_success"]');
-
-            const setAndCheckDisabled = async (value) => {
-                reactInput_js.setReactInputValue(input, value, { focus: false });
-                await nextFrame();
-                const button = buyButton();
-                return button ? button.disabled : true;
+        async fillAndVerify(container, input, candidate, modalContentClass) {
+            const modalRoot = container.closest(`[class*="${modalContentClass}"]`) || document;
+            const findBuyButton = () => {
+                const matches = [...modalRoot.querySelectorAll('button[class*="Button_success"]')].filter(
+                    (button) => button.offsetParent !== null
+                );
+                return matches.length === 1 ? matches[0] : null;
             };
 
-            if (!(await setAndCheckDisabled(candidate))) return;
+            // true: unambiguously found and disabled (keep searching smaller). false: unambiguously
+            // found and enabled (this quantity works). null: no reliable oracle - stop and leave as-is.
+            const setAndCheck = async (value) => {
+                reactInput_js.setReactInputValue(input, value, { focus: false });
+                await nextFrame();
+                const button = findBuyButton();
+                return button ? button.disabled : null;
+            };
+
+            if ((await setAndCheck(candidate)) !== true) return;
 
             let low = 1;
             let high = candidate - 1;
             let best = null;
             while (low <= high) {
                 const mid = Math.floor((low + high) / 2);
-                if (await setAndCheckDisabled(mid)) {
+                const result = await setAndCheck(mid);
+                if (result === null) break; // lost the oracle mid-search - stop rather than guess
+                if (result) {
                     high = mid - 1;
                 } else {
                     best = mid;
@@ -1013,7 +1075,7 @@
             }
 
             if (best !== null) {
-                await setAndCheckDisabled(best);
+                await setAndCheck(best);
             }
             // else: nothing affordable even at quantity 1 - leave the input as last probed and let
             // the game's own validation messaging explain why, same as if the user had typed it.
