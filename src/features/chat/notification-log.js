@@ -19,6 +19,7 @@ import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import { t } from '../../core/i18n.js';
 import { addStyles, removeStyles } from '../../utils/dom.js';
+import { translateGameName } from '../../utils/game-i18n.js';
 import { GAME } from '../../utils/selectors.js';
 import {
     formatNotificationMessage,
@@ -157,9 +158,11 @@ function getCategoryLabel(category) {
  */
 function formatEntryText(entry) {
     if (entry.type === 'mention') {
+        const channelName =
+            translateGameName('chatChannelTypeNames', entry.channel, entry.channelName || '') || entry.channel;
         return t('notificationLog.mentionedByLine', {
             sender: entry.sName,
-            channel: entry.channelName,
+            channel: channelName,
             text: entry.text,
         });
     }

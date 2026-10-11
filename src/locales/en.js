@@ -1937,7 +1937,7 @@ export default {
     notificationLog: {
         tabLabel: 'Log',
         tabTooltip: 'Log of item trades, level-ups, guild events, and other notifications',
-        mentionedByLine: (p) => `Mentioned by ${p.sender} in ${p.channel}: ${p.text}`,
+        mentionedByLine: (p) => `Mentioned by ${p.sender} in the ${p.channel} channel: ${p.text}`,
         clearAllTooltip: 'Delete all logged notifications',
         clearAllConfirm: (p) => `Delete all ${p.count} logged notifications? This cannot be undone.`,
         noEntriesMatchFilters: 'No notifications match the current filters.',

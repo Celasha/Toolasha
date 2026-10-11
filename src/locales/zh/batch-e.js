@@ -310,7 +310,7 @@ export default {
     notificationLog: {
         tabLabel: '日志',
         tabTooltip: '物品交易、升级、公会事件等通知的记录',
-        mentionedByLine: (p) => `${p.sender} 在 ${p.channel} 中提到了你：${p.text}`,
+        mentionedByLine: (p) => `${p.sender} 在${p.channel}频道中提到了你：${p.text}`,
         clearAllTooltip: '删除所有已记录的通知',
         clearAllConfirm: (p) => `确定删除全部 ${p.count} 条已记录的通知吗？此操作无法撤销。`,
         noEntriesMatchFilters: '没有符合当前筛选条件的通知。',
