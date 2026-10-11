@@ -3,6 +3,96 @@
  * Organizes all script settings into logical groups for the settings UI
  */
 
+import i18n, { t } from './i18n.js';
+
+const COMBAT_STATS_CHAT_TEMPLATE_EN = [
+    { type: 'text', value: 'Combat Stats: ' },
+    { type: 'variable', key: '{duration}', label: 'Duration' },
+    { type: 'text', value: ' duration | ' },
+    { type: 'variable', key: '{encountersPerHour}', label: 'Encounters/Hour' },
+    { type: 'text', value: ' EPH | ' },
+    { type: 'variable', key: '{income}', label: 'Total Income' },
+    { type: 'text', value: ' income | ' },
+    { type: 'variable', key: '{dailyIncome}', label: 'Daily Income' },
+    { type: 'text', value: ' income/d | ' },
+    { type: 'variable', key: '{dailyConsumableCosts}', label: 'Daily Consumable Costs' },
+    { type: 'text', value: ' consumables/d | ' },
+    { type: 'variable', key: '{dailyProfit}', label: 'Daily Profit' },
+    { type: 'text', value: ' profit/d | ' },
+    { type: 'variable', key: '{exp}', label: 'EXP/Hour' },
+    { type: 'text', value: ' exp/h | ' },
+    { type: 'variable', key: '{deathCount}', label: 'Deaths' },
+    { type: 'text', value: ' deaths' },
+];
+
+const COMBAT_STATS_CHAT_TEMPLATE_ZH = [
+    { type: 'text', value: '战斗统计：' },
+    { type: 'variable', key: '{duration}' },
+    { type: 'text', value: ' 时长 | ' },
+    { type: 'variable', key: '{encountersPerHour}' },
+    { type: 'text', value: ' 场次/时 | ' },
+    { type: 'variable', key: '{income}' },
+    { type: 'text', value: ' 总收入 | ' },
+    { type: 'variable', key: '{dailyIncome}' },
+    { type: 'text', value: ' 日收入 | ' },
+    { type: 'variable', key: '{dailyConsumableCosts}' },
+    { type: 'text', value: ' 日消耗 | ' },
+    { type: 'variable', key: '{dailyProfit}' },
+    { type: 'text', value: ' 日利润 | ' },
+    { type: 'variable', key: '{exp}' },
+    { type: 'text', value: ' 经验/时 | ' },
+    { type: 'variable', key: '{deathCount}' },
+    { type: 'text', value: ' 死亡' },
+];
+
+/**
+ * Build the default combat stats chat template for a locale.
+ * Returns a deep clone each call; callers may mutate freely.
+ * @param {'en'|'zh'} [locale] - Defaults to the effective UI locale. Raw tags like 'zh-CN' are accepted
+ *   (case-insensitive 'zh' prefix match); other values fall back to English.
+ * @returns {Array<{type: string, value?: string, key?: string, label?: string}>}
+ */
+export function buildCombatStatsChatTemplate(locale = i18n.getLocale()) {
+    const isZh = typeof locale === 'string' && locale.toLowerCase().startsWith('zh');
+    const source = isZh ? COMBAT_STATS_CHAT_TEMPLATE_ZH : COMBAT_STATS_CHAT_TEMPLATE_EN;
+    return JSON.parse(JSON.stringify(source));
+}
+
+/**
+ * Resolve a setting's default, evaluating factory defaults at call time.
+ * @param {Object} settingDef - Setting definition from settingsGroups
+ * @returns {*} Resolved default value
+ */
+export function resolveSettingDefault(settingDef) {
+    const d = settingDef?.default;
+    return typeof d === 'function' ? d() : d;
+}
+
+/**
+ * Normalize a stored template-setting value into template items.
+ * Canonical storage shape is a JSON string of items; every reader of a
+ * template setting must go through this helper so the shape contract has a
+ * single implementation (raw arrays only exist as a legacy early-build shape).
+ * @param {*} stored - Raw value from storage or an in-memory settings map
+ * @returns {Array<{type: string, value?: string, key?: string, label?: string}>|null}
+ *   Template items array, or null when the value does not encode items
+ *   (plain-text fallbacks are reported as null, not wrapped).
+ */
+export function resolveTemplateItems(stored) {
+    if (Array.isArray(stored)) {
+        return stored;
+    }
+    if (typeof stored !== 'string') {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(stored);
+        return Array.isArray(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
 export const settingsGroups = {
     ironCow: {
         title: 'Iron Cow Mode',
@@ -1937,25 +2027,7 @@ export const settingsGroups = {
                 id: 'combatStatsChatMessage',
                 label: 'Combat Statistics: Chat message format',
                 type: 'template',
-                default: [
-                    { type: 'text', value: 'Combat Stats: ' },
-                    { type: 'variable', key: '{duration}', label: 'Duration' },
-                    { type: 'text', value: ' duration | ' },
-                    { type: 'variable', key: '{encountersPerHour}', label: 'Encounters/Hour' },
-                    { type: 'text', value: ' EPH | ' },
-                    { type: 'variable', key: '{income}', label: 'Total Income' },
-                    { type: 'text', value: ' income | ' },
-                    { type: 'variable', key: '{dailyIncome}', label: 'Daily Income' },
-                    { type: 'text', value: ' income/d | ' },
-                    { type: 'variable', key: '{dailyConsumableCosts}', label: 'Daily Consumable Costs' },
-                    { type: 'text', value: ' consumables/d | ' },
-                    { type: 'variable', key: '{dailyProfit}', label: 'Daily Profit' },
-                    { type: 'text', value: ' profit/d | ' },
-                    { type: 'variable', key: '{exp}', label: 'EXP/Hour' },
-                    { type: 'text', value: ' exp/h | ' },
-                    { type: 'variable', key: '{deathCount}', label: 'Deaths' },
-                    { type: 'text', value: ' deaths' },
-                ],
+                default: () => buildCombatStatsChatTemplate(),
                 help: 'Message format when Ctrl+clicking player card in Statistics. Click "Edit Template" to customize.',
                 templateVariables: [
                     { key: '{duration}', label: 'Duration', description: 'Combat session duration' },
@@ -2699,4 +2771,53 @@ export function getSettingDefinition(settingId) {
 export function getSettingDependencies(settingId) {
     const def = getSettingDefinition(settingId);
     return def?.dependencies || [];
+}
+
+const TEMPLATE_VARIABLE_KEY_PATTERN = /[{}]/g;
+
+/**
+ * Resolve a template variable item's display label: locale pack entry first
+ * (keyed by the bare variable key), then the definition/stored label, then the
+ * raw key. Works for both templateVariables definitions and stored items.
+ * @param {Object} settingDef - Setting definition (uses id + templateVariables)
+ * @param {{type?: string, key?: string, label?: string}} item - Variable item or definition
+ * @returns {string} Display label ('' when the item has no key)
+ */
+export function resolveTemplateVariableLabel(settingDef, item) {
+    if (!item?.key) {
+        return '';
+    }
+    const def = settingDef?.templateVariables?.find((v) => v.key === item.key);
+    if (!def) {
+        return item.label || item.key;
+    }
+    const bareKey = def.key.replace(TEMPLATE_VARIABLE_KEY_PATTERN, '');
+    const labelKey = `settingsSchema.settings.${settingDef.id}.variables.${bareKey}.label`;
+    const translated = t(labelKey);
+    if (translated !== labelKey) {
+        return translated;
+    }
+    return def.label || item.label || item.key;
+}
+
+/**
+ * Resolve a template variable item's display description: locale pack entry
+ * first, then the definition/stored description, else ''.
+ * @param {Object} settingDef - Setting definition (uses id + templateVariables)
+ * @param {{type?: string, key?: string, description?: string}} item - Variable item or definition
+ * @returns {string} Display description ('' when unknown)
+ */
+export function resolveTemplateVariableDescription(settingDef, item) {
+    if (!item?.key) {
+        return '';
+    }
+    const def = settingDef?.templateVariables?.find((v) => v.key === item.key);
+    const fallback = def?.description || item.description || '';
+    if (!def) {
+        return fallback;
+    }
+    const bareKey = def.key.replace(TEMPLATE_VARIABLE_KEY_PATTERN, '');
+    const descKey = `settingsSchema.settings.${settingDef.id}.variables.${bareKey}.description`;
+    const translated = t(descKey);
+    return translated !== descKey ? translated : fallback;
 }

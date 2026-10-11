@@ -4,7 +4,8 @@
  */
 
 import storage from './storage.js';
-import { settingsGroups } from './settings-schema.js';
+import i18n from './i18n.js';
+import { settingsGroups, resolveSettingDefault, buildCombatStatsChatTemplate } from './settings-schema.js';
 
 // Task-related storage keys that are scoped per-character by a `_<charId>` suffix, outside
 // the main schema settings blob (see task-reroll-protection.js / task-auto-reroll.js).
@@ -80,7 +81,7 @@ class SettingsStorage {
                 if (settingDef.type === 'checkbox') {
                     settings[settingId].isTrue = settingDef.default ?? false;
                 } else {
-                    settings[settingId].value = settingDef.default ?? '';
+                    settings[settingId].value = resolveSettingDefault(settingDef) ?? '';
                 }
 
                 // Copy other properties
@@ -131,6 +132,12 @@ class SettingsStorage {
             }
         }
 
+        // Locale-aware template defaults: create once per character in the current game
+        // language, then frozen (user-owned content). Only resets regenerate.
+        if (this._materializeCombatStatsChatTemplate(settings, saved)) {
+            await this.saveSettings(settings);
+        }
+
         return settings;
     }
 
@@ -153,7 +160,7 @@ class SettingsStorage {
                 if (settingDef.type === 'checkbox') {
                     settings[settingId].isTrue = settingDef.default ?? false;
                 } else {
-                    settings[settingId].value = settingDef.default ?? '';
+                    settings[settingId].value = resolveSettingDefault(settingDef) ?? '';
                 }
 
                 if (settingDef.options) {
@@ -172,6 +179,69 @@ class SettingsStorage {
         }
 
         return settings;
+    }
+
+    /**
+     * Materialize the locale-aware combat stats chat template default.
+     * Storage shape contract: the template value is persisted as a JSON STRING
+     * (exactly what the settings UI editor saves), never a bare array.
+     *
+     * Once-per-entry semantics via the frozenLocale stamp on the saved entry:
+     * - Stamped entry = user-owned or already materialized: never rewritten.
+     * - Missing key = first creation: write the current-locale template as a
+     *   JSON string + stamp.
+     * - Unstamped content equal to the legacy English default (compared
+     *   shape-agnostically: strings are parsed, arrays accepted) = never
+     *   customized, migrate once to the current locale + stamp.
+     * - Anything else unstamped = pre-freeze user-owned content: stamp without
+     *   touching the value so future loads are no-ops.
+     * @param {Object} settings - Fully merged settings map (mutated in place)
+     * @param {Object|null} saved - Raw saved blob for the current character
+     * @returns {boolean} True when the entry changed and must persist
+     * @private
+     */
+    _materializeCombatStatsChatTemplate(settings, saved) {
+        const setting = settings.combatStatsChatMessage;
+        if (!setting) {
+            return false;
+        }
+        const savedEntry = saved ? saved.combatStatsChatMessage : undefined;
+        if (savedEntry && savedEntry.frozenLocale) {
+            return false;
+        }
+        const current = this._parseTemplateValue(setting.value);
+        const isLegacyDefault =
+            current !== null && JSON.stringify(current) === JSON.stringify(buildCombatStatsChatTemplate('en'));
+        if (savedEntry && !isLegacyDefault) {
+            // Pre-freeze user-owned content: stamp it so future loads are no-ops.
+            setting.frozenLocale = i18n.getLocale();
+            return true;
+        }
+        setting.value = JSON.stringify(buildCombatStatsChatTemplate());
+        setting.frozenLocale = i18n.getLocale();
+        return true;
+    }
+
+    /**
+     * Parse a stored template value into its item array, accepting both the
+     * canonical JSON-string form and the legacy bare-array form.
+     * @param {*} value - Stored template value
+     * @returns {Array|null} Item array, or null when unparseable
+     * @private
+     */
+    _parseTemplateValue(value) {
+        if (Array.isArray(value)) {
+            return value;
+        }
+        if (typeof value !== 'string') {
+            return null;
+        }
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : null;
+        } catch {
+            return null;
+        }
     }
 
     /**

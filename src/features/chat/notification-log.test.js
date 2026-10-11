@@ -43,6 +43,10 @@ vi.mock('../../core/websocket.js', () => ({
     default: { on: vi.fn(), off: vi.fn() },
 }));
 
+vi.mock('../../utils/game-i18n.js', () => ({
+    translateGameName: vi.fn((namespace, hrid, fallback = '') => fallback),
+}));
+
 function buildChatDom() {
     document.body.innerHTML = `
         <div class="GamePage_chatPanel__abc">
@@ -375,7 +379,33 @@ describe('NotificationLog - @mentions (logMention)', () => {
         });
 
         const rowText = feature.listEl.querySelector('.mwi-notiflog-row-text').textContent;
-        expect(rowText).toBe('Mentioned by Someone in Guild: hey @You check this out');
+        expect(rowText).toBe('Mentioned by Someone in the Guild channel: hey @You check this out');
+    });
+
+    test('a mention channel is translated at render time via the game i18n bridge', async () => {
+        const gameI18n = await import('../../utils/game-i18n.js');
+        gameI18n.translateGameName.mockImplementation((namespace, hrid, fallback = '') =>
+            namespace === 'chatChannelTypeNames' ? '中文' : fallback
+        );
+
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        // Captured before the game i18n was ready: the raw HRID got frozen into channelName.
+        feature.logMention({
+            channel: '/chat_channel_types/chinese',
+            channelName: '/chat_channel_types/chinese',
+            sName: 'Someone',
+            text: 'hey @You check this out',
+            timestamp: 1000,
+        });
+
+        const rowText = feature.listEl.querySelector('.mwi-notiflog-row-text').textContent;
+        expect(rowText).toBe('Mentioned by Someone in the 中文 channel: hey @You check this out');
     });
 
     test('mentions and info notifications share the same max-entries cap', async () => {

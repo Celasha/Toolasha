@@ -7,7 +7,13 @@
 import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
-import { settingsGroups } from '../../core/settings-schema.js';
+import {
+    settingsGroups,
+    resolveSettingDefault,
+    resolveTemplateItems,
+    resolveTemplateVariableLabel,
+    resolveTemplateVariableDescription,
+} from '../../core/settings-schema.js';
 import settingsStorage from '../../core/settings-storage.js';
 import storage from '../../core/storage.js';
 import settingsCSS from './settings-styles.css?raw';
@@ -620,9 +626,14 @@ class SettingsUI {
             }
 
             case 'template': {
-                const value = currentSetting?.value ?? settingDef.default ?? [];
-                // Store as JSON string
-                const jsonValue = JSON.stringify(value);
+                // Stored value is a JSON string of template items (legacy early
+                // builds stored a raw array) — normalize before serializing into
+                // the hidden input so the editor reads back the same items.
+                const items =
+                    resolveTemplateItems(currentSetting?.value) ??
+                    resolveTemplateItems(resolveSettingDefault(settingDef)) ??
+                    [];
+                const jsonValue = JSON.stringify(items);
                 const escapedValue = jsonValue.replace(/"/g, '&quot;');
 
                 return `
@@ -1677,8 +1688,8 @@ class SettingsUI {
                 cursor: pointer;
                 font-size: 13px;
             `;
-            chip.title = v.description || '';
-            chip.textContent = v.label;
+            chip.title = resolveTemplateVariableDescription(setting, v);
+            chip.textContent = resolveTemplateVariableLabel(setting, v);
             chip.onclick = () => {
                 const start = textarea.selectionStart;
                 const end = textarea.selectionEnd;
@@ -1744,14 +1755,16 @@ class SettingsUI {
         }
 
         const input = document.getElementById(settingId);
-        let currentValue = setting.default;
+        let currentValue = resolveSettingDefault(setting);
 
-        // Try to parse stored value
+        // Hidden input holds a JSON string of items. Try the single-encoded
+        // shape first; fall back to one unwrap for pages rendered before the
+        // storage-shape fix (double-encoded string).
         if (input && input.value) {
             try {
-                const parsed = JSON.parse(input.value);
-                if (Array.isArray(parsed)) {
-                    currentValue = parsed;
+                const items = resolveTemplateItems(input.value) ?? resolveTemplateItems(JSON.parse(input.value));
+                if (items) {
+                    currentValue = items;
                 }
             } catch (e) {
                 console.error('[Settings] Failed to parse template value:', e);
@@ -1760,7 +1773,7 @@ class SettingsUI {
 
         // Ensure currentValue is an array
         if (!Array.isArray(currentValue)) {
-            currentValue = setting.default || [];
+            currentValue = resolveSettingDefault(setting) || [];
         }
 
         // Deep clone to avoid mutating original
@@ -1840,7 +1853,7 @@ class SettingsUI {
         const renderList = () => {
             listContainer.innerHTML = '';
             templateItems.forEach((item, index) => {
-                const itemEl = this.createTemplateListItem(item, index, templateItems, renderList);
+                const itemEl = this.createTemplateListItem(item, index, templateItems, renderList, setting);
                 listContainer.appendChild(itemEl);
             });
         };
@@ -1863,8 +1876,8 @@ class SettingsUI {
         for (const variable of setting.templateVariables) {
             const chip = document.createElement('button');
             chip.type = 'button';
-            chip.textContent = '+  ' + variable.label;
-            chip.title = variable.description;
+            chip.textContent = '+ ' + resolveTemplateVariableLabel(setting, variable);
+            chip.title = resolveTemplateVariableDescription(setting, variable);
             chip.style.cssText = `
                 background: #2a2a2a;
                 border: 1px solid #4a4a4a;
@@ -1956,7 +1969,7 @@ class SettingsUI {
             if (confirm(t('settings.resetTemplateConfirm'))) {
                 // Reset to default
                 templateItems.length = 0;
-                const defaultTemplate = setting.default || [];
+                const defaultTemplate = resolveSettingDefault(setting) || [];
                 templateItems.push(...JSON.parse(JSON.stringify(defaultTemplate)));
                 renderList();
             }
@@ -2604,9 +2617,10 @@ class SettingsUI {
      * @param {number} index - Item index
      * @param {Array} items - All items
      * @param {Function} renderList - Callback to re-render list
+     * @param {Object} settingDef - Setting definition for variable label resolution
      * @returns {HTMLElement} List item element
      */
-    createTemplateListItem(item, index, items, renderList) {
+    createTemplateListItem(item, index, items, renderList, settingDef) {
         const itemEl = document.createElement('div');
         itemEl.draggable = true;
         itemEl.dataset.index = index;
@@ -2637,7 +2651,8 @@ class SettingsUI {
         content.style.cssText = 'flex: 1; color: #e0e0e0; font-size: 13px;';
 
         if (item.type === 'variable') {
-            content.innerHTML = `<strong style="color: #4a9eff;">${item.label}</strong> <span style="color: #666; font-family: monospace;">${item.key}</span>`;
+            const displayLabel = resolveTemplateVariableLabel(settingDef, item);
+            content.innerHTML = `<strong style="color: #4a9eff;">${displayLabel}</strong> <span style="color: #666; font-family: monospace;">${item.key}</span>`;
         } else {
             // Editable text
             const textInput = document.createElement('input');
