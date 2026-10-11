@@ -551,7 +551,11 @@ class AlchemyBestItems {
         // Filter
         let filtered = this.profitableOnly ? rankings.filter((r) => r.profitPerHour > 0) : rankings;
         if (this.searchQuery) {
-            filtered = filtered.filter((r) => r.name.toLowerCase().includes(this.searchQuery));
+            filtered = filtered.filter(
+                (r) =>
+                    r.name.toLowerCase().includes(this.searchQuery) ||
+                    getItemName(r.itemHrid, r.name).toLowerCase().includes(this.searchQuery)
+            );
         }
         if (this.filterProfitMin !== null) {
             filtered = filtered.filter((r) => r.profitPerHour >= this.filterProfitMin);
