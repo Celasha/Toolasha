@@ -7,7 +7,12 @@
 import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
-import { settingsGroups, resolveSettingDefault } from '../../core/settings-schema.js';
+import {
+    settingsGroups,
+    resolveSettingDefault,
+    resolveTemplateVariableLabel,
+    resolveTemplateVariableDescription,
+} from '../../core/settings-schema.js';
 import settingsStorage from '../../core/settings-storage.js';
 import storage from '../../core/storage.js';
 import settingsCSS from './settings-styles.css?raw';
@@ -1676,8 +1681,8 @@ class SettingsUI {
                 cursor: pointer;
                 font-size: 13px;
             `;
-            chip.title = v.description || '';
-            chip.textContent = v.label;
+            chip.title = resolveTemplateVariableDescription(setting, v);
+            chip.textContent = resolveTemplateVariableLabel(setting, v);
             chip.onclick = () => {
                 const start = textarea.selectionStart;
                 const end = textarea.selectionEnd;
@@ -1839,7 +1844,7 @@ class SettingsUI {
         const renderList = () => {
             listContainer.innerHTML = '';
             templateItems.forEach((item, index) => {
-                const itemEl = this.createTemplateListItem(item, index, templateItems, renderList);
+                const itemEl = this.createTemplateListItem(item, index, templateItems, renderList, setting);
                 listContainer.appendChild(itemEl);
             });
         };
@@ -1862,8 +1867,8 @@ class SettingsUI {
         for (const variable of setting.templateVariables) {
             const chip = document.createElement('button');
             chip.type = 'button';
-            chip.textContent = '+  ' + variable.label;
-            chip.title = variable.description;
+            chip.textContent = '+ ' + resolveTemplateVariableLabel(setting, variable);
+            chip.title = resolveTemplateVariableDescription(setting, variable);
             chip.style.cssText = `
                 background: #2a2a2a;
                 border: 1px solid #4a4a4a;
@@ -2599,9 +2604,10 @@ class SettingsUI {
      * @param {number} index - Item index
      * @param {Array} items - All items
      * @param {Function} renderList - Callback to re-render list
+     * @param {Object} settingDef - Setting definition for variable label resolution
      * @returns {HTMLElement} List item element
      */
-    createTemplateListItem(item, index, items, renderList) {
+    createTemplateListItem(item, index, items, renderList, settingDef) {
         const itemEl = document.createElement('div');
         itemEl.draggable = true;
         itemEl.dataset.index = index;
@@ -2632,7 +2638,8 @@ class SettingsUI {
         content.style.cssText = 'flex: 1; color: #e0e0e0; font-size: 13px;';
 
         if (item.type === 'variable') {
-            content.innerHTML = `<strong style="color: #4a9eff;">${item.label}</strong> <span style="color: #666; font-family: monospace;">${item.key}</span>`;
+            const displayLabel = resolveTemplateVariableLabel(settingDef, item);
+            content.innerHTML = `<strong style="color: #4a9eff;">${displayLabel}</strong> <span style="color: #666; font-family: monospace;">${item.key}</span>`;
         } else {
             // Editable text
             const textInput = document.createElement('input');
