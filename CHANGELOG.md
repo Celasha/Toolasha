@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.14.0](https://github.com/Celasha/Toolasha/compare/v3.13.0...v3.14.0) (2026-10-11)
+
+
+### Features
+
+* **settings:** locale-aware combat stats chat template defaults ([#773](https://github.com/Celasha/Toolasha/issues/773)) ([111b123](https://github.com/Celasha/Toolasha/commit/111b1237936bcefe38f9c55278e6b81ee67db6a9))
+
+
+### Bug Fixes
+
+* **i18n:** bilingual matching for game item search (price overrides, alchemy best-items, custom tabs) ([#772](https://github.com/Celasha/Toolasha/issues/772)) ([db33eb4](https://github.com/Celasha/Toolasha/commit/db33eb4b101122bd9a245f9f9f5b67922e600d66))
+* **i18n:** localize marketplace material tab badges ([#769](https://github.com/Celasha/Toolasha/issues/769)) ([05e0c24](https://github.com/Celasha/Toolasha/commit/05e0c2414e14b389f98685e1d51e73e784ac3198))
+* resolve chat-timestamp day/month ambiguity causing bogus run durations ([5e68c9e](https://github.com/Celasha/Toolasha/commit/5e68c9e661a427d0586ac9c1042a609d8028cef3))
+
 ## [3.13.0](https://github.com/Celasha/Toolasha/compare/v3.12.0...v3.13.0) (2026-10-11)
 
 ### Features
