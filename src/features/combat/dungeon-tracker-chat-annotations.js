@@ -11,6 +11,7 @@ import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { translateGameName } from '../../utils/game-i18n.js';
+import { parseChatTimestamp } from '../../utils/chat-timestamp.js';
 
 const PARTY_CHANNEL_HRID = '/chat_channel_types/party';
 // Inactive chat tab panels render their channel HRID as bare text (e.g. "/chat_channel_types/party")
@@ -524,7 +525,7 @@ class DungeonTrackerChatAnnotations {
                         // loadRunCountsFromStorage — adding their time again would cause
                         // the average to climb on every annotation pass regardless of
                         // actual run performance.
-                        if (!chatRunsMatchedStorage[statsKey]?.has(msgTs)) {
+                        if (!chatRunsMatchedStorage[statsKey]?.has(msgTs) && !this._isOutlierDiff(diff, dungeonStats)) {
                             dungeonStats.runCount++;
                             dungeonStats.totalTime += diff;
                         }
@@ -750,6 +751,12 @@ class DungeonTrackerChatAnnotations {
         const events = [];
         const markers = this._getChatMarkers();
 
+        // Anchor for disambiguating an ambiguous date (see parseChatTimestamp) - advances to
+        // each message's own timestamp as the scan proceeds, so a message deep in historical
+        // scrollback is disambiguated against its chronological neighbor instead of the
+        // current wall-clock time, which could be arbitrarily far away by the time this runs.
+        let referenceDate = new Date();
+
         for (const node of nodes) {
             if (node.dataset.processed === '1') continue;
 
@@ -759,11 +766,12 @@ class DungeonTrackerChatAnnotations {
             // Battle started message
             const battleStartedPrefix = markers.battleStarted.find((prefix) => text.includes(prefix));
             if (battleStartedPrefix) {
-                const timestamp = this.getTimestampFromMessage(node);
+                const timestamp = this.getTimestampFromMessage(node, false, referenceDate);
                 if (!timestamp) {
                     console.warn('[Dungeon Tracker Debug] Battle started message has no timestamp:', text);
                     continue;
                 }
+                referenceDate = timestamp;
 
                 const dungeonName = text.split(battleStartedPrefix)[1]?.split(']')[0]?.trim();
                 if (dungeonName) {
@@ -782,8 +790,9 @@ class DungeonTrackerChatAnnotations {
             }
             // Key counts message (warn if timestamp fails - these should always have timestamps)
             else if (markers.keyCounts.some((prefix) => text.includes(prefix))) {
-                const timestamp = this.getTimestampFromMessage(node, true);
+                const timestamp = this.getTimestampFromMessage(node, true, referenceDate);
                 if (!timestamp) continue;
+                referenceDate = timestamp;
 
                 const team = this.getTeamFromMessage(node);
                 if (!team.length) continue;
@@ -797,8 +806,9 @@ class DungeonTrackerChatAnnotations {
             }
             // Party failed message
             else if (markers.waveFailed.some((regex) => regex.test(text))) {
-                const timestamp = this.getTimestampFromMessage(node);
+                const timestamp = this.getTimestampFromMessage(node, false, referenceDate);
                 if (!timestamp) continue;
+                referenceDate = timestamp;
 
                 events.push({
                     type: 'fail',
@@ -809,8 +819,9 @@ class DungeonTrackerChatAnnotations {
             }
             // Battle ended (canceled/fled)
             else if (markers.battleEnded.some((prefix) => text.includes(prefix))) {
-                const timestamp = this.getTimestampFromMessage(node);
+                const timestamp = this.getTimestampFromMessage(node, false, referenceDate);
                 if (!timestamp) continue;
+                referenceDate = timestamp;
 
                 events.push({
                     type: 'cancel',
@@ -876,61 +887,26 @@ class DungeonTrackerChatAnnotations {
 
     /**
      * Get timestamp from message DOM element
-     * Handles American (M/D HH:MM:SS AM/PM), international (DD-M HH:MM:SS),
-     * and European dot (D.M. HH:MM:SS) formats
      * @param {HTMLElement} msg - Message element
      * @param {boolean} warnOnFailure - Whether to log warning if parsing fails (default: false)
+     * @param {Date} [referenceDate] - Anchor time used to disambiguate an ambiguous date and
+     *      pick the year; callers scanning chat in chronological order should pass the previously
+     *      parsed message's timestamp so stale wall-clock time never has to stand in for it
      * @returns {Date|null} Parsed timestamp or null
      */
-    getTimestampFromMessage(msg, warnOnFailure = false) {
+    getTimestampFromMessage(msg, warnOnFailure = false, referenceDate = new Date()) {
         const text = msg.textContent.trim();
+        const timestamp = parseChatTimestamp(text, referenceDate);
 
-        // Unified across every separator the game sends (American "/", international "-",
-        // European "." with an optional trailing dot) with an optional AM/PM suffix that can
-        // appear regardless of separator - e.g. "[10-10 7:34:50 PM]" combines a hyphen date
-        // with a 12-hour clock, which the old separate-regex-per-format approach never matched
-        // (the hyphen branch had no AM/PM group at all). Mirrors the already-correct pattern
-        // dungeon-tracker.js uses for the same "Key counts:" messages. \s* (not \s+) preserves
-        // this method's existing leniency for spacing variations in dungeon chat.
-        const match = text.match(/\[(\d{1,2})([-/.])(\d{1,2})\.?\s*(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/);
-
-        if (!match) {
+        if (!timestamp && warnOnFailure) {
             // Only warn if explicitly requested (for important messages like "Key counts:")
-            if (warnOnFailure) {
-                console.warn(
-                    '[Dungeon Tracker] Found key counts but could not parse timestamp from:',
-                    text.match(/\[.*?\]/)?.[0]
-                );
-            }
-            return null;
+            console.warn(
+                '[Dungeon Tracker] Found key counts but could not parse timestamp from:',
+                text.match(/\[.*?\]/)?.[0]
+            );
         }
 
-        const [, part1, separator, part2, hourStr, minStr, secStr, period] = match;
-        let month, day;
-
-        if (separator === '/') {
-            // American format: M/D — but if first part > 12 it must be DD/MM (e.g. "16/07")
-            month = parseInt(part1, 10);
-            day = parseInt(part2, 10);
-            if (month > 12) {
-                [month, day] = [day, month];
-            }
-        } else {
-            // International/European format: D-M or D.M.
-            day = parseInt(part1, 10);
-            month = parseInt(part2, 10);
-        }
-
-        let hour = parseInt(hourStr, 10);
-        const min = parseInt(minStr, 10);
-        const sec = parseInt(secStr, 10);
-
-        // Handle AM/PM conversion, whichever separator the date used
-        if (period === 'PM' && hour < 12) hour += 12;
-        if (period === 'AM' && hour === 12) hour = 0;
-
-        const now = new Date();
-        return new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+        return timestamp;
     }
 
     /**
@@ -983,6 +959,24 @@ class DungeonTrackerChatAnnotations {
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
         return `${minutes}m ${seconds}s`;
+    }
+
+    /**
+     * Decide whether a run duration is anomalous enough that it shouldn't feed the running
+     * average used for the live cumulative average and color-vs-average display - mirrors the
+     * median*3 threshold dungeonTrackerStorage.scrubOutlierRuns() already applies to persisted
+     * runs, using the running mean as the live equivalent of a median once there's enough
+     * history to trust it. Guards against a single wildly-anomalous diff (e.g. a parse edge
+     * case) visibly distorting the average for many subsequent messages.
+     * @param {number} diff - Candidate run duration in milliseconds
+     * @param {{runCount: number, totalTime: number}} dungeonStats - Running stats for this team+dungeon
+     * @returns {boolean}
+     * @private
+     */
+    _isOutlierDiff(diff, dungeonStats) {
+        if (dungeonStats.runCount < 5) return false;
+        const priorAvg = dungeonStats.totalTime / dungeonStats.runCount;
+        return diff > priorAvg * 3;
     }
 
     /**

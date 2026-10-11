@@ -85,21 +85,6 @@ const I18N_HELPERS = new Set([
 const ALLOWLIST = [
     // --- known bugs tracked in ZH-I18N-REMAINING-ISSUES.md (remove entry when fixed) ---
     {
-        file: 'src/features/combat/dungeon-tracker-chat-annotations.js',
-        literal: String.raw`/\[(\d{1,2})([-/.])(\d{1,2})\.?\s*(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/`,
-        reason: 'to-verify: zh chat timestamp format (上午/下午 vs AM/PM)',
-    },
-    {
-        file: 'src/features/combat/dungeon-tracker.js',
-        literal: String.raw`/\[(\d{1,2})([-/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/`,
-        reason: 'to-verify: zh chat timestamp format (上午/下午 vs AM/PM)',
-    },
-    {
-        file: 'src/features/combat/dungeon-tracker.js',
-        literal: String.raw`/\[(\d{1,2})([-/.])(\d{1,2})\.?\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/`,
-        reason: 'to-verify: zh chat timestamp format (上午/下午 vs AM/PM)',
-    },
-    {
         file: 'src/features/guild/guild-credit-value.js',
         literal: String.raw`/Lv\.(\d+)/`,
         reason: 'to-verify: zh trial level format',
@@ -117,16 +102,6 @@ const ALLOWLIST = [
     },
     {
         file: 'src/features/abilities/ability-tooltip-timing.js',
-        literal: 'Cooldown:',
-        reason: "known: '#27' English line prefix never matches zh tooltip (冷却：)",
-    },
-    {
-        file: 'src/features/abilities/ability-tooltip-timing.js',
-        literal: 'Cast Time:',
-        reason: "known: '#27' English line prefix never matches zh tooltip (施法时间：)",
-    },
-    {
-        file: 'src/features/abilities/ability-tooltip-timing.js',
         literal: 'map:map',
         reason: "known: '#26' ability name→hrid map keyed by English .name only",
     },
@@ -139,11 +114,6 @@ const ALLOWLIST = [
         file: 'src/features/actions/action-time-display.js',
         literal: 'itemHrid',
         reason: "known: '#28' DOM slug matched against primaryItemHash",
-    },
-    {
-        file: 'src/features/actions/action-time-display.js',
-        literal: 'actionDetails.name',
-        reason: "known: '#28' English data name compared to localized queue text",
     },
     {
         file: 'src/features/chat/mention-tracker.js',

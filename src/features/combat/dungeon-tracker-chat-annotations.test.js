@@ -157,4 +157,38 @@ describe('DungeonTrackerChatAnnotations — getTimestampFromMessage', () => {
         expect(warnSpy).toHaveBeenCalled();
         warnSpy.mockRestore();
     });
+
+    test('resolves an ambiguous hyphen date toward the reference date instead of a hard-coded day-month order (real reported bug)', () => {
+        // Real reported sequence: a run ending "[10-10 11:48:26 PM]" followed by the next run's
+        // start "[10-11 12:05:07 AM]" - both digits of "10-11" are <=12, so the old hard-coded
+        // "hyphen always means day-month" assumption misread it as November 10th, producing a
+        // ~30-day diff instead of the real ~17 minutes.
+        const reference = new Date(2026, 9, 10, 23, 48, 26); // Oct 10, 2026, 11:48:26 PM
+        const msg = msgWithText('[10-11 12:05:07 AM] Key counts: [Smelly - 156]');
+
+        const result = dungeonTrackerChatAnnotations.getTimestampFromMessage(msg, true, reference);
+
+        expect(result.getMonth()).toBe(9); // October, not November
+        expect(result.getDate()).toBe(11);
+        expect(result.getTime() - reference.getTime()).toBeLessThan(60 * 60 * 1000); // under an hour apart
+    });
+});
+
+describe('DungeonTrackerChatAnnotations — _isOutlierDiff (live average corruption guard)', () => {
+    test('never flags an outlier before there is enough history to trust the average', () => {
+        const dungeonStats = { runCount: 2, totalTime: 2 * 16 * 60 * 1000 };
+        // Even a huge diff shouldn't be flagged yet - too little history to call it anomalous.
+        expect(dungeonTrackerChatAnnotations._isOutlierDiff(60 * 60 * 1000, dungeonStats)).toBe(false);
+    });
+
+    test('does not flag a normal run close to the running average', () => {
+        const dungeonStats = { runCount: 10, totalTime: 10 * 16 * 60 * 1000 }; // avg = 16m
+        expect(dungeonTrackerChatAnnotations._isOutlierDiff(17 * 60 * 1000, dungeonStats)).toBe(false);
+    });
+
+    test('flags a diff more than 3x the running average once there is enough history', () => {
+        const dungeonStats = { runCount: 10, totalTime: 10 * 16 * 60 * 1000 }; // avg = 16m
+        // The exact reported case: ~43276 minutes against a ~16m38s average.
+        expect(dungeonTrackerChatAnnotations._isOutlierDiff(43276 * 60 * 1000, dungeonStats)).toBe(true);
+    });
 });

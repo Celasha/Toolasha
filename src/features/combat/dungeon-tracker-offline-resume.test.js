@@ -632,43 +632,6 @@ describe('Fresh-start false-completion guard: wavesCompleted, not startTime trut
     });
 });
 
-describe('buildTimestampFromParts: year-rollover for DOM-reconstructed chat timestamps', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-    });
-
-    test('a message from December is attributed to the previous year when parsed in January', () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date(2027, 0, 5, 12, 0, 0)); // "now" = Jan 5, 2027
-
-        const timestamp = dungeonTracker.buildTimestampFromParts(12, 20, 18, 30, 0); // Dec 20, no year in source
-
-        expect(timestamp.getFullYear()).toBe(2026);
-        expect(timestamp.getMonth()).toBe(11); // December
-        expect(timestamp.getDate()).toBe(20);
-    });
-
-    test('an ordinary same-year message is not shifted', () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date(2026, 5, 15, 12, 0, 0)); // "now" = June 15, 2026
-
-        const timestamp = dungeonTracker.buildTimestampFromParts(6, 10, 9, 0, 0); // June 10, same year
-
-        expect(timestamp.getFullYear()).toBe(2026);
-        expect(timestamp.getMonth()).toBe(5);
-        expect(timestamp.getDate()).toBe(10);
-    });
-
-    test('a timestamp exactly equal to now is not shifted to the previous year', () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date(2026, 5, 15, 12, 0, 0));
-
-        const timestamp = dungeonTracker.buildTimestampFromParts(6, 15, 12, 0, 0);
-
-        expect(timestamp.getFullYear()).toBe(2026);
-    });
-});
-
 describe('Wave-number monotonicity guard', () => {
     test('startWave ignores a wave number that goes backward', async () => {
         await dungeonTracker.onNewBattle({ wave: 3, battleId: 900, combatStartTime: 1000 });

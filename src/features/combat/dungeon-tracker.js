@@ -10,6 +10,7 @@ import storage from '../../core/storage.js';
 import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { translateGameName } from '../../utils/game-i18n.js';
+import { parseChatTimestamp } from '../../utils/chat-timestamp.js';
 
 // Locale-aware markers for the party system chat messages this module parses
 // when scanning the chat DOM (the WebSocket path uses message.m keys, which are
@@ -440,6 +441,11 @@ class DungeonTracker {
             if (!latestKeyCountsMap) {
                 const messages = document.querySelectorAll('[class^="ChatMessage_chatMessage"]');
 
+                // Anchor for disambiguating an ambiguous date (see parseChatTimestamp) - advances
+                // to each message's own timestamp as the scan proceeds, so later messages are
+                // disambiguated against their chronological neighbor instead of wall-clock time.
+                let referenceDate = new Date();
+
                 // Scan all messages to find Battle started and most recent key counts
                 for (const msg of messages) {
                     const text = msg.textContent || '';
@@ -458,44 +464,10 @@ class DungeonTracker {
 
                     // Look for "Battle started:" messages (locale-aware)
                     if (isBattleStartedText(text)) {
-                        // Try to extract timestamp
-                        // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
-                        const timestampMatch = text.match(
-                            /\[(\d{1,2})([-/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
-                        );
+                        const timestamp = parseChatTimestamp(text, referenceDate);
 
-                        if (timestampMatch) {
-                            const part1 = parseInt(timestampMatch[1], 10);
-                            const separator = timestampMatch[2];
-                            const part2 = parseInt(timestampMatch[3], 10);
-                            let hour = parseInt(timestampMatch[4], 10);
-                            const min = parseInt(timestampMatch[5], 10);
-                            const sec = parseInt(timestampMatch[6], 10);
-                            const period = timestampMatch[7];
-
-                            // Determine format based on separator
-                            let month, day;
-                            if (separator === '/') {
-                                // MM/DD format — but if first part > 12 it must be DD/MM (e.g. "16/07")
-                                if (part1 > 12) {
-                                    day = part1;
-                                    month = part2;
-                                } else {
-                                    month = part1;
-                                    day = part2;
-                                }
-                            } else {
-                                // DD-M format (dash separator)
-                                day = part1;
-                                month = part2;
-                            }
-
-                            // Handle AM/PM if present
-                            if (period === 'PM' && hour < 12) hour += 12;
-                            if (period === 'AM' && hour === 12) hour = 0;
-
-                            const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
-
+                        if (timestamp) {
+                            referenceDate = timestamp;
                             this.battleStartedTimestamp = timestamp.getTime();
                             battleStartedFound = true;
                         }
@@ -507,44 +479,10 @@ class DungeonTracker {
                         const keyCountsMap = this.parseKeyCountsFromMessage(text);
 
                         if (Object.keys(keyCountsMap).length > 0) {
-                            // Try to extract timestamp from message display format:
-                            // [MM/DD HH:MM:SS AM/PM], [DD-M HH:MM:SS], or [D.M. HH:MM:SS]
-                            const timestampMatch = text.match(
-                                /\[(\d{1,2})([-/.])(\d{1,2})\.?\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
-                            );
+                            const timestamp = parseChatTimestamp(text, referenceDate);
 
-                            if (timestampMatch) {
-                                const part1 = parseInt(timestampMatch[1], 10);
-                                const separator = timestampMatch[2];
-                                const part2 = parseInt(timestampMatch[3], 10);
-                                let hour = parseInt(timestampMatch[4], 10);
-                                const min = parseInt(timestampMatch[5], 10);
-                                const sec = parseInt(timestampMatch[6], 10);
-                                const period = timestampMatch[7];
-
-                                // Determine format based on separator
-                                let month, day;
-                                if (separator === '/') {
-                                    // MM/DD format — but if first part > 12 it must be DD/MM (e.g. "16/07")
-                                    if (part1 > 12) {
-                                        day = part1;
-                                        month = part2;
-                                    } else {
-                                        month = part1;
-                                        day = part2;
-                                    }
-                                } else {
-                                    // DD-M format (dash separator)
-                                    day = part1;
-                                    month = part2;
-                                }
-
-                                // Handle AM/PM if present
-                                if (period === 'PM' && hour < 12) hour += 12;
-                                if (period === 'AM' && hour === 12) hour = 0;
-
-                                const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
-
+                            if (timestamp) {
+                                referenceDate = timestamp;
                                 // Keep this as the latest (will be overwritten if we find a newer one)
                                 latestKeyCountsMap = keyCountsMap;
                                 latestTimestamp = timestamp.getTime();
@@ -913,25 +851,6 @@ class DungeonTracker {
         }
 
         return keyCountsMap;
-    }
-
-    /**
-     * Reconstruct a Date from chat-message display parts (no year in the source text). Chat
-     * messages are always in the past, so if assuming the current year would put the timestamp
-     * in the future, the message must actually be from the previous year (e.g. a message sent in
-     * December, parsed after the new year rolled over).
-     * @param {number} month - 1-indexed month
-     * @param {number} day
-     * @param {number} hour
-     * @param {number} min
-     * @param {number} sec
-     * @returns {Date}
-     */
-    buildTimestampFromParts(month, day, hour, min, sec) {
-        const now = new Date();
-        const year = now.getFullYear();
-        const timestamp = new Date(year, month - 1, day, hour, min, sec, 0);
-        return timestamp.getTime() > now.getTime() ? new Date(year - 1, month - 1, day, hour, min, sec, 0) : timestamp;
     }
 
     /**
@@ -1567,6 +1486,11 @@ class DungeonTracker {
             const messages = document.querySelectorAll('[class^="ChatMessage_chatMessage"]');
             const events = [];
 
+            // Anchor for disambiguating an ambiguous date (see parseChatTimestamp) - advances to
+            // each message's own timestamp as the scan proceeds, so later messages are
+            // disambiguated against their chronological neighbor instead of wall-clock time.
+            let referenceDate = new Date();
+
             // Extract all relevant events: key counts, party failed, battle ended, battle started
             for (const msg of messages) {
                 const text = msg.textContent || '';
@@ -1583,37 +1507,9 @@ class DungeonTracker {
                     continue; // Skip player messages
                 }
 
-                // Parse timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
-                const timestampMatch = text.match(
-                    /\[(\d{1,2})([-/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
-                );
-                if (!timestampMatch) continue;
-
-                const part1 = parseInt(timestampMatch[1], 10);
-                const separator = timestampMatch[2];
-                const part2 = parseInt(timestampMatch[3], 10);
-                let hour = parseInt(timestampMatch[4], 10);
-                const min = parseInt(timestampMatch[5], 10);
-                const sec = parseInt(timestampMatch[6], 10);
-                const period = timestampMatch[7];
-
-                // Determine format based on separator
-                let month, day;
-                if (separator === '/') {
-                    // MM/DD format
-                    month = part1;
-                    day = part2;
-                } else {
-                    // DD-M format (dash separator)
-                    day = part1;
-                    month = part2;
-                }
-
-                // Handle AM/PM if present
-                if (period === 'PM' && hour < 12) hour += 12;
-                if (period === 'AM' && hour === 12) hour = 0;
-
-                const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
+                const timestamp = parseChatTimestamp(text, referenceDate);
+                if (!timestamp) continue;
+                referenceDate = timestamp;
 
                 // Extract "Battle started:" messages (locale-aware)
                 if (isBattleStartedText(text)) {
