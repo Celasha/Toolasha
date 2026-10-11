@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.13.0](https://github.com/Celasha/Toolasha/compare/v3.12.0...v3.13.0) (2026-10-11)
+
+
+### Features
+
+* **openable-analytics:** resolve indirect exchange prices for unpriceable items so Luck stays computable ([#761](https://github.com/Celasha/Toolasha/issues/761)) ([f8b860b](https://github.com/Celasha/Toolasha/commit/f8b860bbbba77c8e777f6e92ce2bd342f16565fc))
+
+
+### Bug Fixes
+
+* **dungeon-tracker:** parse chat timestamps combining a hyphen date with AM/PM ([ff3696f](https://github.com/Celasha/Toolasha/commit/ff3696f9a526dc6e4d8f670a44fd437be3bc6fa9))
+* **i18n:** localize formatRelativeTime edge cases (Just now / 30+ days) ([#765](https://github.com/Celasha/Toolasha/issues/765)) ([c0273a5](https://github.com/Celasha/Toolasha/commit/c0273a5de999b40c468479893847c00334133ec2))
+* **market:** attribute sell-depth cost by each item's EV share, not full cost ([8ab9609](https://github.com/Celasha/Toolasha/commit/8ab9609af26ee9a832cf60a17a60dc4cf6ba4401))
+* **openable-analytics:** self-heal aggregates from under-priced history so transient gaps don't freeze Luck forever ([#762](https://github.com/Celasha/Toolasha/issues/762)) ([277f9d7](https://github.com/Celasha/Toolasha/commit/277f9d718403250c3ca97bf9b163626f50c31ca5))
+
 ## [3.12.0](https://github.com/Celasha/Toolasha/compare/v3.11.0...v3.12.0) (2026-10-11)
 
 ### Features
