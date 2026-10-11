@@ -4,6 +4,7 @@
  * Creates marketplace tabs for each queued item; tabs auto-close when item count hits 0.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
@@ -118,7 +119,7 @@ function injectTabs(tabsContainer = getVisibleMarketplaceTabContainer(), session
             MARKETPLACE_OWNER.SELL_QUEUE
         );
         const badge = tab.querySelector('[class*="TabsComponent_badge"]');
-        if (badge) badge.innerHTML = buildBadgeHtml(entry.itemName, count);
+        if (badge) badge.innerHTML = buildBadgeHtml(entry.itemHrid, entry.itemName, count);
         tabsContainer.appendChild(tab);
         currentTabs.push(tab);
     }
@@ -128,17 +129,18 @@ function injectTabs(tabsContainer = getVisibleMarketplaceTabContainer(), session
 
 /**
  * Build badge HTML for a queued item tab.
- * @param {string} itemName
+ * @param {string} itemHrid
+ * @param {string} itemName - English fallback name
  * @param {number} count
  * @returns {string}
  */
-function buildBadgeHtml(itemName, count) {
-    const titleCase = itemName
+function buildBadgeHtml(itemHrid, itemName, count) {
+    const titleCase = getItemName(itemHrid, itemName)
         .split(' ')
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
         .join(' ');
     const color = count > 0 ? '#4ade80' : '#6b7280';
-    const sub = count > 0 ? `In bag: ${count.toLocaleString()}` : 'Sold out';
+    const sub = count > 0 ? t('marketplaceTabs.inBag', { count: count.toLocaleString() }) : t('marketplaceTabs.soldOut');
     return `<div style="text-align:center;"><div>${titleCase}</div><div style="font-size:0.75em;color:${color};">${sub}</div></div>`;
 }
 
@@ -161,7 +163,7 @@ function updateTabsOnInventoryChange() {
         if (!entry) return;
 
         const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
-        if (badgeSpan) badgeSpan.innerHTML = buildBadgeHtml(entry.itemName, counts.get(itemHrid) || 0);
+        if (badgeSpan) badgeSpan.innerHTML = buildBadgeHtml(entry.itemHrid, entry.itemName, counts.get(itemHrid) || 0);
     });
 
     for (const hrid of toRemove) {
