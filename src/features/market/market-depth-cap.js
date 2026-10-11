@@ -141,29 +141,37 @@ class MarketDepthCap {
 
         const result = calculateDepthCap({
             bids,
-            costPerAction: depthContext.costPerAction,
+            costPerAction: item.costShare ?? depthContext.costPerAction,
             quantityPerAction: item.quantityPerAction,
         });
 
-        this.renderDepthCap(buttonContainer, result);
+        this.renderDepthCap(buttonContainer, result, bids[0]?.price);
     }
 
-    renderDepthCap(buttonContainer, result) {
+    renderDepthCap(buttonContainer, result, bestBidPrice) {
         const existing = buttonContainer.querySelector('.mwi-depth-cap');
         if (existing) existing.remove();
-        if (result.nstar <= 0) return;
 
         const el = document.createElement('div');
         el.classList.add('mwi-depth-cap');
         el.style.fontSize = '0.95rem';
         el.style.textAlign = 'center';
-        el.style.color = '#60a5fa';
 
-        el.textContent = t('marketDepthCap.sellDepthLabel', {
-            hitBookEnd: result.hitBookEnd,
-            count: formatWithSeparator(result.nstar),
-        });
-        el.title = result.hitBookEnd ? t('marketDepthCap.tooltipHitBookEnd') : t('marketDepthCap.tooltipEstimate');
+        if (result.nstar <= 0) {
+            el.style.color = config.COLOR_TEXT_SECONDARY || '#888888';
+            el.style.fontStyle = 'italic';
+            el.textContent = t('marketDepthCap.sellDepthNotApplicable', {
+                bestBid: formatWithSeparator(Math.round(bestBidPrice)),
+                threshold: formatWithSeparator(Math.round(result.thresholdPrice)),
+            });
+        } else {
+            el.style.color = '#60a5fa';
+            el.textContent = t('marketDepthCap.sellDepthLabel', {
+                hitBookEnd: result.hitBookEnd,
+                count: formatWithSeparator(result.nstar),
+            });
+            el.title = result.hitBookEnd ? t('marketDepthCap.tooltipHitBookEnd') : t('marketDepthCap.tooltipEstimate');
+        }
 
         buttonContainer.insertBefore(el, buttonContainer.lastChild);
     }

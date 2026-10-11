@@ -2290,6 +2290,8 @@ export default {
     },
     marketDepthCap: {
         sellDepthLabel: (p) => `Sell depth: ${p.hitBookEnd ? 'at least ' : '~'}${p.count} actions`,
+        sellDepthNotApplicable: (p) =>
+            `Sell depth: not applicable — best bid ${p.bestBid} is below the ${p.threshold} break-even price`,
         tooltipEstimate:
             "Estimated number of actions worth of this item the visible order book can absorb before the marginal sale price drops below cost. Ignores the marketplace's tradable range floor (not exposed in game data), so a large sell-off may hit that floor and queue with a delay before this estimate suggests.",
         tooltipHitBookEnd:

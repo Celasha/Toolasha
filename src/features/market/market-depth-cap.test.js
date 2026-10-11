@@ -3,7 +3,9 @@ import { describe, test, expect, vi, afterEach } from 'vitest';
 
 vi.mock('../../core/data-manager.js', () => ({ default: { on: vi.fn(), off: vi.fn() } }));
 vi.mock('../../core/dom-observer.js', () => ({ default: { onClass: vi.fn(() => () => {}) } }));
-vi.mock('../../core/config.js', () => ({ default: { getSetting: vi.fn(() => true) } }));
+vi.mock('../../core/config.js', () => ({
+    default: { getSetting: vi.fn(() => true), COLOR_TEXT_SECONDARY: '#888888' },
+}));
 
 const { calculateDepthCap, default: marketDepthCap } = await import('./market-depth-cap.js');
 const { MARKET_TAX } = await import('../../utils/profit-constants.js');
@@ -140,5 +142,69 @@ describe('processOrderBook / riskOfRuinUI resolution', () => {
 
         expect(() => marketDepthCap.processOrderBook()).not.toThrow();
         expect(buttonContainer.querySelector('.mwi-depth-cap')).toBeNull();
+    });
+
+    test('prefers the per-item costShare over the shared costPerAction when present (chest/alchemy modes)', () => {
+        const buttonContainer = renderButtonContainer();
+        const getDepthCapContext = vi.fn(() => ({
+            costPerAction: 999999, // would fail every bid if used - proves costShare is preferred
+            items: [{ itemHrid: '/items/test_item', quantityPerAction: 1, costShare: 50 }],
+        }));
+        window.Toolasha = { UI: { riskOfRuinUI: { getDepthCapContext } } };
+
+        marketDepthCap.orderBooksCache['/items/test_item'] = {
+            data: { orderBooks: { 0: { bids: [{ price: 1000, quantity: 10 }] } } },
+        };
+        marketDepthCap.getCurrentItemHrid = () => '/items/test_item';
+        marketDepthCap.getCurrentEnhancementLevel = () => 0;
+
+        marketDepthCap.processOrderBook();
+
+        const label = buttonContainer.querySelector('.mwi-depth-cap');
+        expect(label).not.toBeNull();
+        expect(label.textContent).toContain('10'); // nstar = floor(10 / 1), only possible if threshold used costShare
+    });
+
+    test('falls back to the shared costPerAction when costShare is absent (enhancement mode)', () => {
+        const buttonContainer = renderButtonContainer();
+        const getDepthCapContext = vi.fn(() => ({
+            costPerAction: 100,
+            items: [{ itemHrid: '/items/test_item', quantityPerAction: 1 }],
+        }));
+        window.Toolasha = { UI: { riskOfRuinUI: { getDepthCapContext } } };
+
+        marketDepthCap.orderBooksCache['/items/test_item'] = {
+            data: { orderBooks: { 0: { bids: [{ price: 1000, quantity: 10 }] } } },
+        };
+        marketDepthCap.getCurrentItemHrid = () => '/items/test_item';
+        marketDepthCap.getCurrentEnhancementLevel = () => 0;
+
+        marketDepthCap.processOrderBook();
+
+        expect(buttonContainer.querySelector('.mwi-depth-cap')).not.toBeNull();
+    });
+
+    test('renders a muted "not applicable" line (instead of nothing) when the tracked item fails its threshold', () => {
+        const buttonContainer = renderButtonContainer();
+        const getDepthCapContext = vi.fn(() => ({
+            costPerAction: 100,
+            items: [{ itemHrid: '/items/test_item', quantityPerAction: 1, costShare: 100000 }],
+        }));
+        window.Toolasha = { UI: { riskOfRuinUI: { getDepthCapContext } } };
+
+        marketDepthCap.orderBooksCache['/items/test_item'] = {
+            data: { orderBooks: { 0: { bids: [{ price: 1000, quantity: 10 }] } } },
+        };
+        marketDepthCap.getCurrentItemHrid = () => '/items/test_item';
+        marketDepthCap.getCurrentEnhancementLevel = () => 0;
+
+        marketDepthCap.processOrderBook();
+
+        const label = buttonContainer.querySelector('.mwi-depth-cap');
+        expect(label).not.toBeNull();
+        expect(label.textContent).toContain('not applicable');
+        expect(label.textContent).toContain('1,000'); // best bid
+        expect(label.style.fontStyle).toBe('italic');
+        expect(label.style.color).toBe('rgb(136, 136, 136)');
     });
 });

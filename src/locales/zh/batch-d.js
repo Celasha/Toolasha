@@ -305,6 +305,7 @@ export default {
     },
     marketDepthCap: {
         sellDepthLabel: (p) => `出售深度：${p.hitBookEnd ? '至少 ' : '约'}${p.count} 次操作`,
+        sellDepthNotApplicable: (p) => `出售深度：不适用——当前最高买单 ${p.bestBid} 低于 ${p.threshold} 的保本价`,
         tooltipEstimate:
             '预估可见订单簿在边际卖价跌破成本前，能够吸纳的该物品操作次数。未计入市场可交易范围的下限（游戏数据未公开），因此大规模抛售可能会先触及该下限、进入队列延迟，早于本估算的提示。',
         tooltipHitBookEnd:

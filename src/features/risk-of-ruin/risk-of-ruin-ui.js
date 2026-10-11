@@ -365,7 +365,11 @@ class RiskOfRuinUI {
      * The last computed cost-per-action + per-item output quantities, for market-depth-cap.js to
      * check the currently-viewed marketplace item against. Null when the enhanced item is
      * untradeable, or nothing has been calculated yet.
-     * @returns {{costPerAction: number, items: Array<{itemHrid: string, quantityPerAction: number}>}|null}
+     * @returns {{costPerAction: number, items: Array<{itemHrid: string, quantityPerAction: number, costShare?: number}>}|null}
+     *   costShare, when present (chest/alchemy modes), is this item's share of costPerAction
+     *   attributed by its share of total expected value - market-depth-cap.js prefers it over the
+     *   shared costPerAction, since no single multi-output drop alone needs to recoup the whole
+     *   action cost. Absent for single-output modes (enhancement), where the full cost is correct.
      */
     getDepthCapContext() {
         return this.lastDepthCapContext;
@@ -423,9 +427,7 @@ class RiskOfRuinUI {
             };
             this.lastDepthCapContext = {
                 costPerAction: chestModel.cost,
-                items: dropBreakdown
-                    .filter((d) => d.dropRate > 0 && d.avgCount > 0)
-                    .map((d) => ({ itemHrid: d.itemHrid, quantityPerAction: d.avgCount * d.dropRate })),
+                items: this._chestDepthCapItems(dropBreakdown, chestModel.cost),
             };
             optimalCommit = calculateOptimalCommit({
                 outcomeDistribution: chestModel.outcomeDistribution,
@@ -457,7 +459,7 @@ class RiskOfRuinUI {
             detailInfo = { mode: 'alchemy', breakdown: alchemyModel.breakdown };
             this.lastDepthCapContext = {
                 costPerAction: alchemyModel.cost,
-                items: this._alchemyDepthCapItems(alchemyModel.breakdown),
+                items: this._alchemyDepthCapItems(alchemyModel.breakdown, alchemyModel.cost),
             };
             detailInfo.untrackedOutputs = this._findUntrackedAlchemyOutputs(hrid, alchemyModel.breakdown);
             optimalCommit = calculateOptimalCommit({
@@ -544,26 +546,65 @@ class RiskOfRuinUI {
     }
 
     /**
+     * Build depth-cap tracking items for chest mode, attributing costPerAction to each item in
+     * proportion to its share of total expected value, rather than charging the full action cost
+     * to every item independently - correct for a single-output action but meant every item
+     * failed its threshold for a multi-output chest, since no single drop alone recoups the whole
+     * cost. Reduces to the original single-item full-cost-recoup threshold exactly when there is
+     * only one tracked item. Items with no resolvable price are excluded (a zero-EV item would
+     * otherwise get a zero cost share and a zero threshold, falsely appearing to have unlimited
+     * sell depth).
+     * @param {Array} dropBreakdown - expectedValueCalculator.getDropBreakdown() output.
+     * @param {number} costPerAction
+     * @returns {Array<{itemHrid: string, quantityPerAction: number, costShare: number}>}
+     */
+    _chestDepthCapItems(dropBreakdown, costPerAction) {
+        const tracked = dropBreakdown.filter((d) => d.dropRate > 0 && d.avgCount > 0 && d.hasPriceData);
+        const totalEV = tracked.reduce((sum, d) => sum + d.expectedValue, 0);
+        return tracked.map((d) => ({
+            itemHrid: d.itemHrid,
+            quantityPerAction: d.avgCount * d.dropRate,
+            costShare: totalEV > 0 ? costPerAction * (d.expectedValue / totalEV) : costPerAction,
+        }));
+    }
+
+    /**
      * Recover the raw per-attempt output quantity for each item a Transmute attempt can produce,
      * for market-depth-cap.js — main branches are conditional on success (successRate * dropRate),
      * bonus drops (essence/rare) are independent per-attempt Bernoulli events already unconditional.
+     * Also attributes costPerAction to each item by its share of total expected value, same
+     * reasoning as _chestDepthCapItems() above - branch/bonus `payout` is a per-occurrence value,
+     * so multiplying back by its own trigger probability recovers the item's true per-action EV.
      * @param {Object} breakdown - alchemyModel.breakdown from buildAlchemyTransmuteModel().
-     * @returns {Array<{itemHrid: string, quantityPerAction: number}>}
+     * @param {number} costPerAction
+     * @returns {Array<{itemHrid: string, quantityPerAction: number, costShare: number}>}
      */
-    _alchemyDepthCapItems(breakdown) {
-        const items = [];
+    _alchemyDepthCapItems(breakdown, costPerAction) {
+        const candidates = [];
         for (const branch of breakdown.mainBranches) {
             if (branch.isSelfReturn || !(branch.count > 0)) continue;
-            items.push({
+            candidates.push({
                 itemHrid: branch.itemHrid,
                 quantityPerAction: breakdown.successRate * branch.dropRate * branch.count,
+                expectedValue: branch.payout * breakdown.successRate * branch.dropRate,
             });
         }
         for (const bonus of breakdown.bonusDrops) {
             if (!(bonus.count > 0)) continue;
-            items.push({ itemHrid: bonus.itemHrid, quantityPerAction: bonus.dropRate * bonus.count });
+            candidates.push({
+                itemHrid: bonus.itemHrid,
+                quantityPerAction: bonus.dropRate * bonus.count,
+                expectedValue: bonus.payout * bonus.dropRate,
+            });
         }
-        return items;
+
+        const tracked = candidates.filter((c) => c.expectedValue > 0);
+        const totalEV = tracked.reduce((sum, c) => sum + c.expectedValue, 0);
+        return tracked.map((c) => ({
+            itemHrid: c.itemHrid,
+            quantityPerAction: c.quantityPerAction,
+            costShare: totalEV > 0 ? costPerAction * (c.expectedValue / totalEV) : costPerAction,
+        }));
     }
 
     /**
