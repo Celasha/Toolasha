@@ -68,6 +68,31 @@ export function resolveSettingDefault(settingDef) {
     return typeof d === 'function' ? d() : d;
 }
 
+/**
+ * Normalize a stored template-setting value into template items.
+ * Canonical storage shape is a JSON string of items; every reader of a
+ * template setting must go through this helper so the shape contract has a
+ * single implementation (raw arrays only exist as a legacy early-build shape).
+ * @param {*} stored - Raw value from storage or an in-memory settings map
+ * @returns {Array<{type: string, value?: string, key?: string, label?: string}>|null}
+ *   Template items array, or null when the value does not encode items
+ *   (plain-text fallbacks are reported as null, not wrapped).
+ */
+export function resolveTemplateItems(stored) {
+    if (Array.isArray(stored)) {
+        return stored;
+    }
+    if (typeof stored !== 'string') {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(stored);
+        return Array.isArray(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
 export const settingsGroups = {
     ironCow: {
         title: 'Iron Cow Mode',

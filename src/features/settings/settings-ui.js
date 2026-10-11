@@ -10,6 +10,7 @@ import dataManager from '../../core/data-manager.js';
 import {
     settingsGroups,
     resolveSettingDefault,
+    resolveTemplateItems,
     resolveTemplateVariableLabel,
     resolveTemplateVariableDescription,
 } from '../../core/settings-schema.js';
@@ -624,9 +625,14 @@ class SettingsUI {
             }
 
             case 'template': {
-                const value = currentSetting?.value ?? resolveSettingDefault(settingDef) ?? [];
-                // Store as JSON string
-                const jsonValue = JSON.stringify(value);
+                // Stored value is a JSON string of template items (legacy early
+                // builds stored a raw array) — normalize before serializing into
+                // the hidden input so the editor reads back the same items.
+                const items =
+                    resolveTemplateItems(currentSetting?.value) ??
+                    resolveTemplateItems(resolveSettingDefault(settingDef)) ??
+                    [];
+                const jsonValue = JSON.stringify(items);
                 const escapedValue = jsonValue.replace(/"/g, '&quot;');
 
                 return `
@@ -1750,12 +1756,14 @@ class SettingsUI {
         const input = document.getElementById(settingId);
         let currentValue = resolveSettingDefault(setting);
 
-        // Try to parse stored value
+        // Hidden input holds a JSON string of items. Try the single-encoded
+        // shape first; fall back to one unwrap for pages rendered before the
+        // storage-shape fix (double-encoded string).
         if (input && input.value) {
             try {
-                const parsed = JSON.parse(input.value);
-                if (Array.isArray(parsed)) {
-                    currentValue = parsed;
+                const items = resolveTemplateItems(input.value) ?? resolveTemplateItems(JSON.parse(input.value));
+                if (items) {
+                    currentValue = items;
                 }
             } catch (e) {
                 console.error('[Settings] Failed to parse template value:', e);

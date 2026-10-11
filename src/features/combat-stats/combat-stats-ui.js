@@ -5,6 +5,7 @@
 
 import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
+import { resolveTemplateItems } from '../../core/settings-schema.js';
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import combatStatsDataCollector from './combat-stats-data-collector.js';
@@ -272,15 +273,18 @@ class CombatStatsUI {
         const messageTemplate = config.getSettingValue('combatStatsChatMessage');
         const priceKey = resolveDisplayPriceKey(getKeyPricingModeSetting());
 
+        // Normalize the stored template (JSON string of items; legacy raw array)
+        const templateItems = resolveTemplateItems(messageTemplate);
+
         // Convert array format to string if needed
         let message = '';
-        if (Array.isArray(messageTemplate)) {
+        if (templateItems) {
             // Format numbers
             const useKMB = isAbbreviationEnabled();
             const formatNum = (num) => (useKMB ? coinFormatter(Math.round(num)) : formatWithSeparator(Math.round(num)));
 
             // Build message from array
-            message = messageTemplate
+            message = templateItems
                 .map((item) => {
                     if (item.type === 'variable') {
                         // Replace variable with actual value
@@ -311,7 +315,7 @@ class CombatStatsUI {
                 })
                 .join('');
         } else {
-            // Legacy string format (shouldn't happen, but handle it)
+            // Plain-text fallback (template absent or not items-shaped) — legacy replace chain
             const useKMB = isAbbreviationEnabled();
             const formatNum = (num) => (useKMB ? coinFormatter(Math.round(num)) : formatWithSeparator(Math.round(num)));
 

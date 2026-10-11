@@ -19,6 +19,7 @@ import {
     settingsGroups,
     buildCombatStatsChatTemplate,
     resolveSettingDefault,
+    resolveTemplateItems,
     resolveTemplateVariableLabel,
     resolveTemplateVariableDescription,
 } from './settings-schema.js';
@@ -119,6 +120,36 @@ describe('schema combatStatsChatMessage', () => {
         expect(resolveSettingDefault(settingsGroups.combat.settings.combatStatsChatMessage)).toEqual(
             LEGACY_ENGLISH_CHAT_TEMPLATE
         );
+    });
+});
+
+describe('resolveTemplateItems', () => {
+    test('canonical storage shape: JSON string of items parses to the array', () => {
+        const items = [
+            { type: 'text', value: '战斗12统计：' },
+            { type: 'variable', key: '{income}' },
+        ];
+        expect(resolveTemplateItems(JSON.stringify(items))).toEqual(items);
+    });
+
+    test('legacy raw array passes through unchanged', () => {
+        const items = [{ type: 'text', value: 'Combat Stats: ' }];
+        expect(resolveTemplateItems(items)).toEqual(items);
+    });
+
+    test('JSON string that parses to a non-array is rejected', () => {
+        expect(resolveTemplateItems(JSON.stringify('Combat Stats: {income}'))).toBeNull();
+        expect(resolveTemplateItems(JSON.stringify({ type: 'text' }))).toBeNull();
+    });
+
+    test('plain text (legacy fallback shape) is reported as null, not wrapped', () => {
+        expect(resolveTemplateItems('Combat Stats: {income}')).toBeNull();
+    });
+
+    test('non-string non-array values are reported as null', () => {
+        expect(resolveTemplateItems(undefined)).toBeNull();
+        expect(resolveTemplateItems(null)).toBeNull();
+        expect(resolveTemplateItems(42)).toBeNull();
     });
 });
 
