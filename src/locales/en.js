@@ -255,6 +255,10 @@ export default {
         openedLabel: 'Opened',
         partialBadgeLabel: '(partial)',
         profitLabel: 'Profit',
+        entryKeyCostLabel: 'Entry key cost',
+        entryKeyCostTooltip:
+            'Cost of the entry key spent to run the dungeon that produced this chest, priced using your Key pricing mode setting.',
+        netProfitLabel: 'Net profit',
         viewAnalyticsLink: 'View Analytics',
         vsExpectedLabel: 'vs. expected',
         importJsonParseFailed: 'Could not parse the pasted/uploaded text as JSON.',

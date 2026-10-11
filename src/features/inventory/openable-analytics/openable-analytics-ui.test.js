@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
     resetContainerResult: true,
     resetAllResult: true,
     openingCost: { cost: 0, complete: true },
+    entryKeyCost: null,
 }));
 
 vi.mock('../../../core/config.js', () => ({
@@ -79,6 +80,7 @@ vi.mock('./openable-analytics-import-parsers.js', () => ({
 
 vi.mock('./openable-analytics-cost.js', () => ({
     calculateOpeningCost: vi.fn(() => mocks.openingCost),
+    calculateEntryKeyCost: vi.fn(() => mocks.entryKeyCost),
 }));
 
 vi.mock('./openable-analytics-data-collector.js', () => ({
@@ -165,6 +167,7 @@ beforeEach(() => {
     mocks.resetContainerResult = true;
     mocks.resetAllResult = true;
     mocks.openingCost = { cost: 0, complete: true };
+    mocks.entryKeyCost = null;
     vi.clearAllMocks();
     document.body.innerHTML = '';
     // Original Storage getter (localStorage) is jsdom-provided; clear between tests.
@@ -568,6 +571,49 @@ describe('Profit (section 10)', () => {
         openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
 
         expect(calculateOpeningCost).toHaveBeenCalledWith('/items/chest', 6);
+    });
+});
+
+describe('Entry key cost / Net profit (dungeon chests)', () => {
+    test('shows no Entry key cost / Net profit row for a non-dungeon container', () => {
+        mocks.openingCost = { cost: 60000, complete: true };
+        mocks.entryKeyCost = null;
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        const row = accordionRow('/items/chest');
+        expect(row.textContent).not.toContain('Entry key cost');
+        expect(row.textContent).not.toContain('Net profit');
+    });
+
+    test('shows Entry key cost and Net profit (profit minus entry key cost) for a dungeon chest', () => {
+        mocks.openingCost = { cost: 60000, complete: true };
+        mocks.entryKeyCost = { cost: 9000, complete: true };
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        const row = accordionRow('/items/chest');
+        expect(row.textContent).toContain('Entry key cost');
+        expect(row.textContent).toContain('Net profit');
+        // profit = actualValueTotal (489000) - openingCost (60000) = 429000
+        // netProfit = profit - entryKeyCost (9000) = 420000
+        expect(row.textContent).toContain('9.00K');
+        expect(row.textContent).toContain('+420.00K');
+    });
+
+    test('shows a dash for Net profit when the entry key could not be fully priced', () => {
+        mocks.openingCost = { cost: 60000, complete: true };
+        mocks.entryKeyCost = { cost: 0, complete: false };
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        const row = accordionRow('/items/chest');
+        const netProfitHeader = [...row.querySelectorAll('div')].find((el) => el.textContent === 'Net profit');
+        expect(netProfitHeader.nextElementSibling.textContent).toBe('—');
+    });
+
+    test('passes the container total opened count to the entry key cost calculator', async () => {
+        const { calculateEntryKeyCost } = await import('./openable-analytics-cost.js');
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        expect(calculateEntryKeyCost).toHaveBeenCalledWith('/items/chest', 6);
     });
 });
 

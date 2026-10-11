@@ -12,7 +12,7 @@ import domObserver from '../../../core/dom-observer.js';
 import { t } from '../../../core/i18n.js';
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
 import { isMonetaryRewardModal, MODAL_CONTENT_CLASS } from './openable-analytics-modal-injector.js';
-import { calculateOpeningCost } from './openable-analytics-cost.js';
+import { calculateOpeningCost, calculateEntryKeyCost } from './openable-analytics-cost.js';
 import { calculateIncomeStdDev } from './openable-analytics-variance.js';
 import expectedValueCalculator from '../../market/expected-value-calculator.js';
 import assetManifest from '../../../utils/asset-manifest.js';
@@ -67,6 +67,8 @@ function luckColor(value) {
 function computeStats(containerHrid, input) {
     const cost = calculateOpeningCost(containerHrid, input.amount);
     const profit = input.incomeComplete && cost.complete ? input.income - cost.cost : null;
+    const entryKeyCost = calculateEntryKeyCost(containerHrid, input.amount);
+    const netProfit = entryKeyCost && profit !== null && entryKeyCost.complete ? profit - entryKeyCost.cost : null;
     const stdDev = calculateIncomeStdDev(containerHrid, input.amount);
 
     return {
@@ -74,6 +76,9 @@ function computeStats(containerHrid, input) {
         income: input.income,
         incomeIncomplete: !input.incomeComplete,
         profit,
+        entryKeyCostApplicable: !!entryKeyCost,
+        entryKeyCostValue: entryKeyCost ? entryKeyCost.cost : null,
+        netProfit,
         luckPercent: input.luckAvailable ? input.luckPercent : null,
         expectedIncome: input.expectedIncomeAvailable ? input.expectedIncome : null,
         expectedIncomeIncomplete: input.expectedIncomeAvailable && !input.expectedIncomeComplete,
@@ -344,6 +349,19 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, 
         stats.profit === null
             ? '—'
             : `<span style="color:${luckColor(stats.profit)}">${formatSignedMoney(stats.profit)}</span>`;
+    const entryKeyCostRowsHtml = stats.entryKeyCostApplicable
+        ? `${buildStatRow(
+              `<span title="${t('openableAnalytics.entryKeyCostTooltip')}">${t('openableAnalytics.entryKeyCostLabel')}</span>`,
+              formatMoney(stats.entryKeyCostValue),
+              { stacked: true }
+          )}${buildStatRow(
+              t('openableAnalytics.netProfitLabel'),
+              stats.netProfit === null
+                  ? '—'
+                  : `<span style="color:${luckColor(stats.netProfit)}">${formatSignedMoney(stats.netProfit)}</span>`,
+              { stacked: true }
+          )}`
+        : '';
     const luckHtml =
         stats.luckPercent === null
             ? '—'
@@ -405,6 +423,7 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, 
                 <div style="flex:1; min-width:0;">
                     ${incomeRow.toggleHtml}
                     ${buildStatRow(t('openableAnalytics.profitLabel'), profitHtml, { stacked: true })}
+                    ${entryKeyCostRowsHtml}
                 </div>
                 <div style="flex:1; min-width:0; border-left:1px solid rgba(255, 255, 255, 0.08); padding-left:12px;">
                     ${expectedRow.toggleHtml}

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     isMonetaryRewardModal: vi.fn(() => true),
     settings: { openableAnalytics_sidePanel: true },
     openingCost: { cost: 0, complete: true },
+    entryKeyCost: null,
     incomeStdDev: 100,
     onUpdateCallback: null,
     itemsSpriteUrl: 'https://example.com/items-sprite.svg',
@@ -71,6 +72,7 @@ vi.mock('./openable-analytics-modal-injector.js', () => ({
 
 vi.mock('./openable-analytics-cost.js', () => ({
     calculateOpeningCost: vi.fn(() => mocks.openingCost),
+    calculateEntryKeyCost: vi.fn(() => mocks.entryKeyCost),
 }));
 
 vi.mock('./openable-analytics-variance.js', () => ({
@@ -128,6 +130,7 @@ beforeEach(() => {
     mocks.isMonetaryRewardModal.mockReturnValue(true);
     mocks.settings.openableAnalytics_sidePanel = true;
     mocks.openingCost = { cost: 0, complete: true };
+    mocks.entryKeyCost = null;
     mocks.incomeStdDev = 100;
     dataManager.getItemDetails.mockReset();
     expectedValueCalculator.getDropBreakdown.mockReset().mockReturnValue([]);
@@ -242,6 +245,54 @@ describe('OpenableAnalyticsSidePanel', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+});
+
+describe('OpenableAnalyticsSidePanel entry key cost / net profit', () => {
+    afterEach(() => {
+        openableAnalyticsSidePanel.cleanup();
+    });
+
+    test('shows no Entry key cost / Net profit rows for a non-dungeon container', () => {
+        mocks.openingCost = { cost: 100, complete: true };
+        mocks.entryKeyCost = null;
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        const panel = document.getElementById(PANEL_ID);
+        expect(panel.textContent).not.toContain('Entry key cost');
+        expect(panel.textContent).not.toContain('Net profit');
+    });
+
+    test('shows Entry key cost and Net profit (profit minus entry key cost) for a dungeon chest', () => {
+        mocks.latestRecord = monetaryRecord({ actualValue: 600, containerCount: 1 });
+        mocks.openingCost = { cost: 100, complete: true };
+        mocks.entryKeyCost = { cost: 50, complete: true };
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        const panel = document.getElementById(PANEL_ID);
+        expect(panel.textContent).toContain('Entry key cost');
+        expect(panel.textContent).toContain('Net profit');
+        // profit = 600 - 100 = 500; netProfit = 500 - 50 = 450
+        expect(panel.textContent).toContain('50');
+        expect(panel.textContent).toContain('+450');
+    });
+
+    test('Net profit is unavailable when the entry key price cannot be resolved', () => {
+        mocks.latestRecord = monetaryRecord({ actualValue: 600, containerCount: 1 });
+        mocks.openingCost = { cost: 100, complete: true };
+        mocks.entryKeyCost = { cost: 0, complete: false };
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        const panel = document.getElementById(PANEL_ID);
+        expect(panel.textContent).toContain('Entry key cost');
+        expect(panel.textContent).toContain('Net profit');
+        const netProfitRow = Array.from(panel.querySelectorAll('div')).find((el) =>
+            el.textContent.includes('Net profit')
+        );
+        expect(netProfitRow.parentElement.textContent).toContain('—');
     });
 });
 

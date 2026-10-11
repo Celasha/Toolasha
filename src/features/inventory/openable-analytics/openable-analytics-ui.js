@@ -15,7 +15,7 @@ import { getItemName } from '../../../utils/game-i18n.js';
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
 import openableAnalyticsModalInjector, { formatLuckPercent, luckColor } from './openable-analytics-modal-injector.js';
 import { detectImportSource, parseEdibleExport, parseCombatSuiteExport } from './openable-analytics-import-parsers.js';
-import { calculateOpeningCost } from './openable-analytics-cost.js';
+import { calculateOpeningCost, calculateEntryKeyCost } from './openable-analytics-cost.js';
 
 const INVENTORY_FILTER_CONTAINER_CLASS = 'Inventory_itemFilterContainer';
 const INVENTORY_BUTTON_CLASS = 'toolasha-openable-analytics-inventory-button';
@@ -478,6 +478,9 @@ class OpenableAnalyticsUI {
         const openingCost = calculateOpeningCost(containerHrid, aggregate.containersOpened);
         const profitEligible = actualComplete && openingCost.complete;
         const profitValue = profitEligible ? aggregate.actualValueTotal - openingCost.cost : null;
+        const entryKeyCost = calculateEntryKeyCost(containerHrid, aggregate.containersOpened);
+        const netProfitEligible = !!entryKeyCost && profitEligible && entryKeyCost.complete;
+        const netProfitValue = netProfitEligible ? profitValue - entryKeyCost.cost : null;
 
         const summaryRow = document.createElement('div');
         summaryRow.style.cssText = 'display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;';
@@ -528,6 +531,41 @@ class OpenableAnalyticsUI {
         summaryRow.appendChild(profitCol);
         summaryRow.appendChild(luckCol);
         wrapper.appendChild(summaryRow);
+
+        if (entryKeyCost) {
+            const entryKeyRow = document.createElement('div');
+            entryKeyRow.style.cssText =
+                'display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;';
+
+            const entryKeyCol = document.createElement('div');
+            const entryKeyHeader = document.createElement('div');
+            entryKeyHeader.style.cssText = 'opacity:0.7; font-size:11px;';
+            entryKeyHeader.textContent = t('openableAnalytics.entryKeyCostLabel');
+            entryKeyHeader.title = t('openableAnalytics.entryKeyCostTooltip');
+            const entryKeyValueEl = document.createElement('div');
+            entryKeyValueEl.textContent = entryKeyCost.complete ? formatLargeNumber(entryKeyCost.cost) : '—';
+            entryKeyCol.appendChild(entryKeyHeader);
+            entryKeyCol.appendChild(entryKeyValueEl);
+
+            const netProfitCol = document.createElement('div');
+            netProfitCol.style.textAlign = 'right';
+            const netProfitHeader = document.createElement('div');
+            netProfitHeader.style.cssText = 'opacity:0.7; font-size:11px;';
+            netProfitHeader.textContent = t('openableAnalytics.netProfitLabel');
+            const netProfitValueEl = document.createElement('div');
+            if (!netProfitEligible) {
+                netProfitValueEl.textContent = '—';
+            } else {
+                netProfitValueEl.textContent = formatSignedLargeNumber(netProfitValue);
+                netProfitValueEl.style.color = luckColor(netProfitValue);
+            }
+            netProfitCol.appendChild(netProfitHeader);
+            netProfitCol.appendChild(netProfitValueEl);
+
+            entryKeyRow.appendChild(entryKeyCol);
+            entryKeyRow.appendChild(netProfitCol);
+            wrapper.appendChild(entryKeyRow);
+        }
 
         if (aggregate.hasImportedData) {
             const note = document.createElement('div');
