@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.14.0
+ * Version: 3.15.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -569,16 +569,34 @@
      * by walking the React fiber tree from the card's own "Go"/success button up to the component
      * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
      * "SkillType - TaskName" text.
+     *
+     * A completed card has no Go button (it shows a "Claim Reward" button instead), so this falls
+     * back to walking up from that button when the Go button isn't found. `rerollRandomTaskHandler`
+     * is only required for the Go-button path, where it disambiguates the task-card component from
+     * unrelated ancestors - a completed card may legitimately lack that handler, and none of this
+     * function's callers depend on reroll-ability, only `actionHrid`/`monsterHrid`.
      * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
      * @returns {Object|null} The characterQuest object, or null if not found.
      */
     function getQuestFromTaskCard(taskCard) {
         const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
-        if (!goBtn) return null;
+        if (goBtn) {
+            let f = getReactFiberFromElement(goBtn)?.return;
+            while (f) {
+                if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                    return f.memoizedProps.characterQuest;
+                }
+                f = f.return;
+            }
+            return null;
+        }
 
-        let f = getReactFiberFromElement(goBtn)?.return;
+        const claimBtn = taskCard.querySelector('button.Button_button__1Fe9z.Button_buy__3s24l');
+        if (!claimBtn) return null;
+
+        let f = getReactFiberFromElement(claimBtn)?.return;
         while (f) {
-            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+            if (f.memoizedProps?.characterQuest) {
                 return f.memoizedProps.characterQuest;
             }
             f = f.return;

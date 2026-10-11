@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.14.0
+ * Version: 3.15.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -654,16 +654,34 @@
      * by walking the React fiber tree from the card's own "Go"/success button up to the component
      * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
      * "SkillType - TaskName" text.
+     *
+     * A completed card has no Go button (it shows a "Claim Reward" button instead), so this falls
+     * back to walking up from that button when the Go button isn't found. `rerollRandomTaskHandler`
+     * is only required for the Go-button path, where it disambiguates the task-card component from
+     * unrelated ancestors - a completed card may legitimately lack that handler, and none of this
+     * function's callers depend on reroll-ability, only `actionHrid`/`monsterHrid`.
      * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
      * @returns {Object|null} The characterQuest object, or null if not found.
      */
     function getQuestFromTaskCard(taskCard) {
         const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
-        if (!goBtn) return null;
+        if (goBtn) {
+            let f = getReactFiberFromElement(goBtn)?.return;
+            while (f) {
+                if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                    return f.memoizedProps.characterQuest;
+                }
+                f = f.return;
+            }
+            return null;
+        }
 
-        let f = getReactFiberFromElement(goBtn)?.return;
+        const claimBtn = taskCard.querySelector('button.Button_button__1Fe9z.Button_buy__3s24l');
+        if (!claimBtn) return null;
+
+        let f = getReactFiberFromElement(claimBtn)?.return;
         while (f) {
-            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+            if (f.memoizedProps?.characterQuest) {
                 return f.memoizedProps.characterQuest;
             }
             f = f.return;
@@ -763,6 +781,37 @@
         }
 
         return chatChannelNameToHridCache.get(name) || null;
+    }
+
+    // Cache of regexes that match "Defeat - Monster Name" task descriptions in whatever language the
+    // game client is set to. English + translated fallback.
+    let defeatDescriptionRegexes = null;
+    function getDefeatDescriptionRegexes() {
+        if (defeatDescriptionRegexes) return defeatDescriptionRegexes;
+        const template = translateGameName('randomTask', 'defeat', 'Defeat');
+        const placeholderIndex = template.indexOf('{{');
+        const translated = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex))
+            .replace(/[-\s]+$/, '')
+            .trim();
+        const labels = ['Defeat', translated || 'Defeat'].filter(Boolean);
+        const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        defeatDescriptionRegexes = escaped.map((label) => new RegExp(`^${label}\\s*-\\s*(.+)$`, 'i'));
+        return defeatDescriptionRegexes;
+    }
+
+    /**
+     * Extract the monster name from a "Defeat - Monster Name" task description, matching both the
+     * English label and the game-translated one (e.g. zh: 击败).
+     * @param {string} description - Task card description text
+     * @returns {string|null} Monster name, or null if the description isn't a defeat task
+     */
+    function matchDefeatDescription(description) {
+        if (!description) return null;
+        for (const re of getDefeatDescriptionRegexes()) {
+            const m = description.match(re);
+            if (m) return m[1].trim();
+        }
+        return null;
     }
 
     /**
@@ -3896,8 +3945,27 @@ ${starCSS}
     }
 
     function formatTimestamp(ts) {
-        const date = new Date(ts);
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return formatters_js.formatDateTime(new Date(ts));
+    }
+
+    // Age-based color ramp for the timestamp (see #774): today is most prominent, fading over the
+    // next two days, then settling to the existing muted default. Calendar-day difference (not raw
+    // ms/24h) so e.g. 11pm today vs. 1am tomorrow count as different days a few hours apart.
+    const AGE_COLOR_TODAY = '#fff';
+    const AGE_COLOR_DAY_1 = '#d0d7de';
+    const AGE_COLOR_DAY_2 = '#9ea7b3';
+    const AGE_COLOR_DEFAULT = '#8b949e'; // 3+ days - matches the CSS base color for .mwi-notiflog-time
+    function ageColor(ts, now = Date.now()) {
+        const startOfDay = (ms) => {
+            const d = new Date(ms);
+            d.setHours(0, 0, 0, 0);
+            return d.getTime();
+        };
+        const ageDays = Math.round((startOfDay(now) - startOfDay(ts)) / 86400000);
+        if (ageDays <= 0) return AGE_COLOR_TODAY;
+        if (ageDays === 1) return AGE_COLOR_DAY_1;
+        if (ageDays === 2) return AGE_COLOR_DAY_2;
+        return AGE_COLOR_DEFAULT;
     }
 
     /**
@@ -3979,6 +4047,8 @@ ${starCSS}
             this.listEl = null;
             this.tabActive = false;
             this.pinnedToBottom = true;
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this._ageRefreshInterval = null;
         }
 
         async initialize() {
@@ -4017,6 +4087,8 @@ ${starCSS}
             }
             this._removeTab();
             dom_js.removeStyles(STYLE_ID$1);
+            this._stopAgeRefresh();
+            this.timerRegistry.clearAll();
             this.isInitialized = false;
         }
 
@@ -4241,11 +4313,38 @@ ${starCSS}
             if (this.listEl && this.pinnedToBottom) {
                 this.listEl.scrollTop = this.listEl.scrollHeight;
             }
+
+            this._startAgeRefresh();
+        }
+
+        /**
+         * Start the periodic timestamp-color refresh (see #774) while the tab is visible - advances
+         * the age-based color ramp as time passes without requiring a new entry to trigger a render.
+         */
+        _startAgeRefresh() {
+            if (this._ageRefreshInterval) return;
+            this._ageRefreshInterval = setInterval(() => this._refreshTimestampColors(), 60000);
+            this.timerRegistry.registerInterval(this._ageRefreshInterval);
+        }
+
+        _stopAgeRefresh() {
+            if (!this._ageRefreshInterval) return;
+            clearInterval(this._ageRefreshInterval);
+            this._ageRefreshInterval = null;
+        }
+
+        _refreshTimestampColors() {
+            if (!this.listEl) return;
+            const now = Date.now();
+            this.listEl.querySelectorAll('.mwi-notiflog-time').forEach((span) => {
+                span.style.color = ageColor(Number(span.dataset.ts), now);
+            });
         }
 
         _deactivateTab() {
             if (!this.tabActive) return;
             this.tabActive = false;
+            this._stopAgeRefresh();
             const root = document.querySelector('[class*="GamePage_chatPanel"]');
             if (root) root.classList.remove(ACTIVE_CLASS);
             if (this.tabButton) {
@@ -4301,6 +4400,8 @@ ${starCSS}
                 const time = document.createElement('span');
                 time.className = 'mwi-notiflog-time';
                 time.textContent = formatTimestamp(entry.timestamp);
+                time.dataset.ts = String(entry.timestamp);
+                time.style.color = ageColor(entry.timestamp);
 
                 const text = document.createElement('span');
                 text.className = 'mwi-notiflog-row-text';
@@ -6881,13 +6982,18 @@ ${starCSS}
     }
 
     /**
-     * Detect task type from the English "Skill - Action" description text.
-     * Fallback only - the skill name is translated in non-English clients, so this can only
-     * ever resolve on the English UI; quest-info-based detection is the preferred path.
+     * Detect task type from the "Skill - Action" description text, in whatever language the game
+     * client is set to (combat tasks are matched via matchDefeatDescription's locale-aware dual
+     * English/translated matching; gathering/production skills still match on the English name only,
+     * since quest-info-based detection is the preferred path and this is a fallback).
      * @param {string} taskDescription - Task description text (e.g., "Cheesesmithing - Holy Cheese")
      * @returns {string} Task type: 'gathering', 'production', 'combat', or 'unknown'
      */
     function detectTaskTypeFromDescription(taskDescription) {
+        if (matchDefeatDescription(taskDescription) !== null) {
+            return 'combat';
+        }
+
         // Extract skill from "Skill - Action" format
         const skillMatch = taskDescription.match(/^([^-]+)\s*-/);
         if (!skillMatch) return 'unknown';
@@ -6902,11 +7008,6 @@ ${starCSS}
         // Production skills
         if (profitConstants_js.PRODUCTION_TYPES.some((hrid) => hrid.split('/').pop() === skill)) {
             return 'production';
-        }
-
-        // Combat
-        if (skill === 'defeat') {
-            return 'combat';
         }
 
         return 'unknown';
@@ -7199,15 +7300,19 @@ ${starCSS}
     /**
      * @param {Array<{hrid: string, name: string, remaining: number, killsPerHour: number, hoursNeeded: number}>} zoneTasks
      *   Active combat quests mapped to this zone.
-     * @param {Object} simResult - SimResult for this zone (must have a `deaths` map: monsterHrid -> kills).
+     * @param {Object} simResult - SimResult for this zone (must have an `encounters` count: total
+     *   finished encounters, kill or wipe, party-wide).
+     * @param {number} simHours - Hours the sim represented by simResult actually ran for.
      * @returns {{hoursNeeded: number, fightsNeeded: number, bottleneckHrid: string, bottleneckName: string}|null}
      *   Null when there are no quests in the zone.
      */
-    function computeZoneBottleneck(zoneTasks, simResult) {
+    function computeZoneBottleneck(zoneTasks, simResult, simHours) {
         if (!zoneTasks.length) return null;
 
         const bottleneck = zoneTasks.reduce((a, b) => (a.hoursNeeded > b.hoursNeeded ? a : b));
-        const totalFightsPerHour = Object.values(simResult.deaths || {}).reduce((sum, v) => sum + v, 0);
+        // encounters (not deaths) is the true fight count: deaths excludes wipes with zero kills and
+        // includes the player's own death entries, which would otherwise inflate this total.
+        const totalFightsPerHour = (simResult.encounters || 0) / simHours;
         const fightsNeeded = totalFightsPerHour > 0 ? Math.round(totalFightsPerHour * bottleneck.hoursNeeded) : Infinity;
 
         return {
@@ -8927,31 +9032,6 @@ ${starCSS}
         return formatRgbColor(blendedColor);
     }
 
-    // Cache of regexes that match "Defeat - Monster Name" task descriptions in
-    // whatever language the game client is set to. English + translated fallback.
-    let defeatDescriptionRegexes = null;
-    function getDefeatDescriptionRegexes() {
-        if (defeatDescriptionRegexes) return defeatDescriptionRegexes;
-        const template = translateGameName('randomTask', 'defeat', 'Defeat');
-        const placeholderIndex = template.indexOf('{{');
-        const translated = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex))
-            .replace(/[-\s]+$/, '')
-            .trim();
-        const labels = ['Defeat', translated || 'Defeat'].filter(Boolean);
-        const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-        defeatDescriptionRegexes = escaped.map((label) => new RegExp(`^${label}\\s*-\\s*(.+)$`, 'i'));
-        return defeatDescriptionRegexes;
-    }
-
-    function matchDefeatDescription(description) {
-        if (!description) return null;
-        for (const re of getDefeatDescriptionRegexes()) {
-            const m = description.match(re);
-            if (m) return m[1].trim();
-        }
-        return null;
-    }
-
     /**
      * TaskProfitDisplay class manages task profit UI
      */
@@ -9116,6 +9196,7 @@ ${starCSS}
                 // Wait for game to update DOM before recalculating profits
                 this._scheduleTimeout(() => {
                     this.updateTaskProfits();
+                    this._refreshOpenCombatEstimateResults();
                 }, 250);
             };
 
@@ -9754,7 +9835,7 @@ ${starCSS}
                     };
                 }
 
-                const SIM_HOURS = 1;
+                const SIM_HOURS = 2;
                 const simResult = await runSimulation({
                     gameData: simGameData,
                     playerDTOs: players,
@@ -9795,7 +9876,9 @@ ${starCSS}
                     consumableEntries,
                     mode,
                     simResult,
-                    zoneHrid
+                    zoneHrid,
+                    SIM_HOURS,
+                    monsterHrid
                 );
             } catch (e) {
                 console.error('[TaskProfit] Combat estimate failed:', e);
@@ -9836,9 +9919,29 @@ ${starCSS}
             consumableEntries,
             mode,
             simResult,
-            zoneHrid
+            zoneHrid,
+            simHours,
+            monsterHrid
         ) {
             container.innerHTML = '';
+            container.classList.add('mwi-combat-est-result');
+            container.dataset.lastProgress = taskData.currentProgress ?? 0;
+            // Cache every input that doesn't depend on task progress, so a later progress-only
+            // change (see _refreshOpenCombatEstimateResults) can recompute remaining/time/zone-summary
+            // math and re-render without re-running the sim or losing the user's loadout/mode choice.
+            container._mwiEstimate = {
+                monsterHrid,
+                monsterName,
+                loadoutName,
+                netPerHour,
+                rewardValue,
+                dropEntries,
+                consumableEntries,
+                mode,
+                simResult,
+                zoneHrid,
+                simHours,
+            };
             if (completionSeconds !== null) {
                 container.dataset.completionSeconds = completionSeconds;
             }
@@ -10032,14 +10135,15 @@ ${starCSS}
                     }
 
                     const rem = Math.max((td.quantity ?? 0) - (td.currentProgress ?? 0), 0);
+                    if (rem <= 0) continue; // Completed - exclude from the bottleneck calc entirely
                     const mKills = simResult.deaths?.[mHrid] ?? 0;
-                    const mKillsPerHour = mKills / 1; // SIM_HOURS = 1
+                    const mKillsPerHour = mKills / simHours;
                     const hoursNeeded = mKillsPerHour > 0 ? rem / mKillsPerHour : Infinity;
                     zoneTasks.push({ hrid: mHrid, name: mName, remaining: rem, killsPerHour: mKillsPerHour, hoursNeeded });
                 }
 
                 if (zoneTasks.length > 1) {
-                    const bottleneck = computeZoneBottleneck(zoneTasks, simResult);
+                    const bottleneck = computeZoneBottleneck(zoneTasks, simResult, simHours);
                     const totalSeconds = Math.round(bottleneck.hoursNeeded * 3600);
 
                     const summary = document.createElement('div');
@@ -10059,6 +10163,53 @@ ${starCSS}
                     container.appendChild(summary);
                 }
             }
+        }
+
+        /**
+         * Refresh every currently-open combat-estimate result panel whose underlying task's progress
+         * has changed since it was last rendered - cheaply recomputing remaining/time/zone-summary
+         * math from the already-cached sim result instead of re-simulating, and without resetting the
+         * user's selected loadout/mode (unlike blindly treating a progress change as a "task changed"
+         * event the way updateTaskProfits()'s currentTaskKey does for non-combat tasks).
+         */
+        _refreshOpenCombatEstimateResults() {
+            document.querySelectorAll('.mwi-combat-est-result').forEach((container) => {
+                const cached = container._mwiEstimate;
+                if (!cached) return;
+
+                const taskNode = container.closest(selectors_js.GAME.TASK_CARD);
+                if (!taskNode) return;
+                const taskData = this.parseTaskData(taskNode);
+                if (!taskData) return;
+
+                if (taskData.currentProgress === Number(container.dataset.lastProgress)) return;
+                container.dataset.lastProgress = taskData.currentProgress ?? 0;
+
+                const kills = cached.simResult.deaths?.[cached.monsterHrid] ?? 0;
+                const killsPerHour = Math.round(kills / cached.simHours);
+                const remaining = Math.max((taskData.quantity ?? 0) - (taskData.currentProgress ?? 0), 0);
+                const completionSeconds = killsPerHour > 0 ? Math.round((remaining / killsPerHour) * 3600) : null;
+                const timeEstimate = completionSeconds !== null ? formatters_js.timeReadable(completionSeconds) : '???';
+
+                this._renderCombatEstimateResult(
+                    container,
+                    taskData,
+                    cached.monsterName,
+                    killsPerHour,
+                    timeEstimate,
+                    completionSeconds,
+                    cached.loadoutName,
+                    cached.netPerHour,
+                    cached.rewardValue,
+                    cached.dropEntries,
+                    cached.consumableEntries,
+                    cached.mode,
+                    cached.simResult,
+                    cached.zoneHrid,
+                    cached.simHours,
+                    cached.monsterHrid
+                );
+            });
         }
 
         /**
@@ -15300,7 +15451,7 @@ ${starCSS}
      */
 
 
-    const SIM_HOURS = 1;
+    const SIM_HOURS = 2;
 
     /**
      * Build the spawn monster set for every non-dungeon combat zone.
@@ -15466,7 +15617,7 @@ ${starCSS}
                 return { hrid: quest.monsterHrid, name, remaining, killsPerHour, hoursNeeded };
             });
 
-            const bottleneck = computeZoneBottleneck(zoneTasks, simResult);
+            const bottleneck = computeZoneBottleneck(zoneTasks, simResult, SIM_HOURS);
             if (!bottleneck) continue;
 
             const zoneName = getActionName(

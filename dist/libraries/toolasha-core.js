@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.14.0
+ * Version: 3.15.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8652,6 +8652,31 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         return typeof d === 'function' ? d() : d;
     }
 
+    /**
+     * Normalize a stored template-setting value into template items.
+     * Canonical storage shape is a JSON string of items; every reader of a
+     * template setting must go through this helper so the shape contract has a
+     * single implementation (raw arrays only exist as a legacy early-build shape).
+     * @param {*} stored - Raw value from storage or an in-memory settings map
+     * @returns {Array<{type: string, value?: string, key?: string, label?: string}>|null}
+     *   Template items array, or null when the value does not encode items
+     *   (plain-text fallbacks are reported as null, not wrapped).
+     */
+    function resolveTemplateItems(stored) {
+        if (Array.isArray(stored)) {
+            return stored;
+        }
+        if (typeof stored !== 'string') {
+            return null;
+        }
+        try {
+            const parsed = JSON.parse(stored);
+            return Array.isArray(parsed) ? parsed : null;
+        } catch {
+            return null;
+        }
+    }
+
     const settingsGroups = {
         ironCow: {
             title: 'Iron Cow Mode',
@@ -11293,6 +11318,55 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
         },
     };
+
+    const TEMPLATE_VARIABLE_KEY_PATTERN = /[{}]/g;
+
+    /**
+     * Resolve a template variable item's display label: locale pack entry first
+     * (keyed by the bare variable key), then the definition/stored label, then the
+     * raw key. Works for both templateVariables definitions and stored items.
+     * @param {Object} settingDef - Setting definition (uses id + templateVariables)
+     * @param {{type?: string, key?: string, label?: string}} item - Variable item or definition
+     * @returns {string} Display label ('' when the item has no key)
+     */
+    function resolveTemplateVariableLabel(settingDef, item) {
+        if (!item?.key) {
+            return '';
+        }
+        const def = settingDef?.templateVariables?.find((v) => v.key === item.key);
+        if (!def) {
+            return item.label || item.key;
+        }
+        const bareKey = def.key.replace(TEMPLATE_VARIABLE_KEY_PATTERN, '');
+        const labelKey = `settingsSchema.settings.${settingDef.id}.variables.${bareKey}.label`;
+        const translated = t(labelKey);
+        if (translated !== labelKey) {
+            return translated;
+        }
+        return def.label || item.label || item.key;
+    }
+
+    /**
+     * Resolve a template variable item's display description: locale pack entry
+     * first, then the definition/stored description, else ''.
+     * @param {Object} settingDef - Setting definition (uses id + templateVariables)
+     * @param {{type?: string, key?: string, description?: string}} item - Variable item or definition
+     * @returns {string} Display description ('' when unknown)
+     */
+    function resolveTemplateVariableDescription(settingDef, item) {
+        if (!item?.key) {
+            return '';
+        }
+        const def = settingDef?.templateVariables?.find((v) => v.key === item.key);
+        const fallback = def?.description || item.description || '';
+        if (!def) {
+            return fallback;
+        }
+        const bareKey = def.key.replace(TEMPLATE_VARIABLE_KEY_PATTERN, '');
+        const descKey = `settingsSchema.settings.${settingDef.id}.variables.${bareKey}.description`;
+        const translated = t(descKey);
+        return translated !== descKey ? translated : fallback;
+    }
 
     /**
      * Settings Storage Module
@@ -18364,6 +18438,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         featureRegistry: featureRegistry$1,
         settingsStorage,
         settingsGroups,
+        resolveSettingDefault,
+        resolveTemplateItems,
+        resolveTemplateVariableLabel,
+        resolveTemplateVariableDescription,
         tooltipObserver,
         i18n,
         profileManager: {
