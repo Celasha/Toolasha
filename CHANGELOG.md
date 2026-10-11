@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.12.0](https://github.com/Celasha/Toolasha/compare/v3.11.0...v3.12.0) (2026-10-11)
+
+### Features
+
+- instant-open task statistics, multicolumn layout, planet merge & zone-select jump fix ([#758](https://github.com/Celasha/Toolasha/issues/758)) ([7faf1db](https://github.com/Celasha/Toolasha/commit/7faf1db5fe17627274c21f6e534f3fbe91c89792))
+- **openable-analytics:** show dungeon entry key cost and net profit ([8d282c8](https://github.com/Celasha/Toolasha/commit/8d282c84b9aa46b36476699536684a737908adf2))
+
+### Bug Fixes
+
+- **i18n:** follow official in-game names for Labyrinth supplies and localize loot log action categories ([#760](https://github.com/Celasha/Toolasha/issues/760)) ([429e7ef](https://github.com/Celasha/Toolasha/commit/429e7ef9da0556fa01cedf37e35f6e32d136051b))
+
 ## [3.11.0](https://github.com/Celasha/Toolasha/compare/v3.10.1...v3.11.0) (2026-10-10)
 
 ### Features
