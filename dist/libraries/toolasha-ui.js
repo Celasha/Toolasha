@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.11.0
+ * Version: 3.12.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15224,7 +15224,112 @@ ${starCSS}
     const SIM_HOURS = 1;
 
     /**
-     * @returns {Promise<Array<{zoneHrid: string, zoneName: string, hoursNeeded: number, fightsNeeded: number, bottleneckName: string}>>}
+     * Build the spawn monster set for every non-dungeon combat zone.
+     * A zone's set is the union of its regular spawns and boss spawns.
+     * @param {Object} actionDetailMap - Game data action map
+     * @returns {Map<string, Set<string>>} zoneHrid -> Set of monster HRIDs
+     */
+    function buildZoneSpawnSets(actionDetailMap) {
+        const sets = new Map();
+        for (const [zoneHrid, action] of Object.entries(actionDetailMap || {})) {
+            if (action?.type !== '/action_types/combat') continue;
+            if (action.combatZoneInfo?.isDungeon) continue;
+            const spawns = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+            const bosses = action.combatZoneInfo?.fightInfo?.bossSpawns || [];
+            const set = new Set();
+            for (const spawn of [...spawns, ...bosses]) {
+                if (spawn.combatMonsterHrid) set.add(spawn.combatMonsterHrid);
+            }
+            if (set.size > 0) sets.set(zoneHrid, set);
+        }
+        return sets;
+    }
+
+    /**
+     * A zone is a "planet" when its spawn set strictly contains another zone's spawn set
+     * (the planet zone spawns every monster of its member zones, plus bosses every 10
+     * fights). Planet detection is purely data-driven from the game's spawn tables.
+     * @param {Map<string, Set<string>>} zoneSpawnSets - From buildZoneSpawnSets()
+     * @returns {Set<string>} Planet zone HRIDs
+     */
+    function findPlanetHrids(zoneSpawnSets) {
+        const planets = new Set();
+        for (const [hrid, set] of zoneSpawnSets) {
+            for (const [otherHrid, otherSet] of zoneSpawnSets) {
+                if (otherHrid === hrid) continue;
+                let isSubset = true;
+                for (const monster of otherSet) {
+                    if (!set.has(monster)) {
+                        isSubset = false;
+                        break;
+                    }
+                }
+                // strict superset only: equal sets do not make planets of each other
+                if (isSubset && otherSet.size < set.size) {
+                    planets.add(hrid);
+                    break;
+                }
+            }
+        }
+        return planets;
+    }
+
+    /**
+     * Find the smallest planet zone whose spawn set contains the monster.
+     * @param {string} monsterHrid - Monster HRID
+     * @param {Map<string, Set<string>>} zoneSpawnSets - From buildZoneSpawnSets()
+     * @returns {string|null} Planet zone HRID, or null when no planet contains it
+     */
+    function findPlanetForMonster(monsterHrid, zoneSpawnSets) {
+        const planets = findPlanetHrids(zoneSpawnSets);
+        let best = null;
+        for (const planetHrid of planets) {
+            if (!zoneSpawnSets.get(planetHrid).has(monsterHrid)) continue;
+            if (best === null || zoneSpawnSets.get(planetHrid).size < zoneSpawnSets.get(best).size) {
+                best = planetHrid;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Pick the monster that best anchors a "go fight here" jump for the planet: its game-side
+     * jump handler takes a monster (not a zone), so we need a monster that lives only in this
+     * planet - otherwise the game would open the window centered on a member zone instead.
+     * Regular exclusive spawns win (every fight counts); exclusive bosses are the fallback
+     * (only 1-in-battlesPerBoss fights spawn the boss, so counts must be converted).
+     * @param {string} planetHrid - Planet zone HRID
+     * @param {Object} actionDetailMap - Game data action map
+     * @returns {{monsterHrid: string, isBoss: boolean, battlesPerBoss: number}|null} Anchor, or null when the planet has no exclusive monster
+     */
+    function findPlanetAnchorMonster(planetHrid, actionDetailMap) {
+        const planet = actionDetailMap?.[planetHrid];
+        const fightInfo = planet?.combatZoneInfo?.fightInfo;
+        if (!fightInfo) return null;
+        const spawns = (fightInfo.randomSpawnInfo?.spawns || []).map((s) => s.combatMonsterHrid).filter(Boolean);
+        const bosses = (fightInfo.bossSpawns || []).map((s) => s.combatMonsterHrid).filter(Boolean);
+
+        const others = new Set();
+        for (const [zoneHrid, action] of Object.entries(actionDetailMap || {})) {
+            if (zoneHrid === planetHrid || action?.type !== '/action_types/combat') continue;
+            for (const spawn of action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || []) {
+                if (spawn.combatMonsterHrid) others.add(spawn.combatMonsterHrid);
+            }
+            for (const spawn of action.combatZoneInfo?.fightInfo?.bossSpawns || []) {
+                if (spawn.combatMonsterHrid) others.add(spawn.combatMonsterHrid);
+            }
+        }
+
+        const exclusiveSpawn = spawns.find((monster) => !others.has(monster));
+        if (exclusiveSpawn) return { monsterHrid: exclusiveSpawn, isBoss: false, battlesPerBoss: 1 };
+        const exclusiveBoss = bosses.find((monster) => !others.has(monster));
+        if (exclusiveBoss)
+            return { monsterHrid: exclusiveBoss, isBoss: true, battlesPerBoss: fightInfo.battlesPerBoss || 10 };
+        return null;
+    }
+
+    /**
+     * @returns {Promise<Array<{zoneHrid: string, zoneName: string, hoursNeeded: number, fightsNeeded: number, bottleneckName: string, anchor: {monsterHrid: string, isBoss: boolean, battlesPerBoss: number}}>>}
      *   Sorted ascending by hoursNeeded (soonest-to-clear zone first). Empty array when there are
      *   no active combat quests - no simulation is run in that case.
      */
@@ -15234,20 +15339,26 @@ ${starCSS}
         );
         if (!activeCombatQuests.length) return [];
 
-        // Group quests by zone, skipping any monster with no resolvable combat zone.
+        const gameData = buildGameDataPayload();
+        if (!gameData) return [];
+
+        // Group quests by their display zone: the planet zone when one contains the
+        // monster (fighting the planet progresses every member task at once), else the
+        // legacy first-match combat zone for the monster.
+        const zoneSpawnSets = buildZoneSpawnSets(gameData.actionDetailMap);
         const questsByZone = new Map();
         for (const quest of activeCombatQuests) {
-            const zoneHrid = dataManager.getCombatZoneForMonster(quest.monsterHrid);
-            if (!zoneHrid) continue;
+            let zoneHrid = findPlanetForMonster(quest.monsterHrid, zoneSpawnSets);
+            if (!zoneHrid) {
+                zoneHrid = dataManager.getCombatZoneForMonster(quest.monsterHrid);
+                if (!zoneHrid) continue;
+            }
             if (!questsByZone.has(zoneHrid)) questsByZone.set(zoneHrid, []);
             questsByZone.get(zoneHrid).push(quest);
         }
 
         const zoneHrids = [...questsByZone.keys()];
         if (!zoneHrids.length) return [];
-
-        const gameData = buildGameDataPayload();
-        if (!gameData) return [];
 
         const { players } = await buildAllPlayerDTOs();
         if (!players.length) return [];
@@ -15291,6 +15402,11 @@ ${starCSS}
                 hoursNeeded: bottleneck.hoursNeeded,
                 fightsNeeded: bottleneck.fightsNeeded,
                 bottleneckName,
+                anchor: findPlanetAnchorMonster(zoneHrid, gameData.actionDetailMap) || {
+                    monsterHrid: bottleneck.bottleneckHrid,
+                    isBoss: false,
+                    battlesPerBoss: 1,
+                },
             });
         }
 
@@ -15329,6 +15445,8 @@ ${starCSS}
             this.isInitialized = false;
             this.overlay = null;
             this.unregisterHandlers = [];
+            this.popupGeneration = 0;
+            this.sections = {};
         }
 
         /**
@@ -15413,37 +15531,244 @@ ${starCSS}
         }
 
         /**
-         * Show statistics popup
+         * Show statistics popup: render the skeleton synchronously, then fill sections
+         * progressively as their data arrives. A generation token discards stale async
+         * results after the popup has been closed and reopened.
          */
         async showPopup() {
             // Close any existing popup
             this.closePopup();
+            const generation = ++this.popupGeneration;
 
-            // Ensure market data is loaded for token valuation
-            if (!marketAPI.isLoaded()) {
-                await marketAPI.fetch();
-            }
+            this.createPopupSkeleton();
 
-            const statsData = await this.calculateAllStatistics();
-            this.createPopup(statsData);
+            await Promise.all([this.fillRewardSections(generation), this.fillZoneProgressSection(generation)]);
         }
 
         /**
-         * Calculate all statistics
-         * @returns {Object} Statistics data
+         * Whether an async filler may still write to the DOM.
+         * @param {number} generation - Generation captured when the filler started
+         * @returns {boolean} True when this popup instance is still the current one
          */
-        async calculateAllStatistics() {
-            const overflowData = this.calculateOverflowTime();
-            const slotStatus = this.calculateSlotStatus();
-            const rewardsSummary = await this.calculateRewardsSummary();
-            const zoneProgress = await computeAllZoneProgress();
+        isGenerationCurrent(generation) {
+            return generation === this.popupGeneration && this.overlay !== null;
+        }
 
-            return {
-                overflow: overflowData,
-                slots: slotStatus,
-                rewards: rewardsSummary,
-                zoneProgress,
+        /**
+         * Build the popup skeleton: overlay, popup, header, grid content, and the five
+         * sections. Task slots are filled synchronously; the rest show placeholders.
+         */
+        createPopupSkeleton() {
+            const textColor = config.COLOR_TEXT_PRIMARY;
+
+            // Create overlay
+            const overlay = document.createElement('div');
+            overlay.className = 'toolasha-task-stats-overlay';
+            overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+            // Create popup container: responsive width, two columns on wide screens
+            const popup = document.createElement('div');
+            popup.style.cssText = `
+            background: #1a1a1a;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 20px;
+            width: min(860px, 94vw);
+            max-height: 90%;
+            overflow-y: auto;
+            color: ${textColor};
+        `;
+
+            // Header
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3a3a3a;
+            padding-bottom: 10px;
+        `;
+
+            const title = document.createElement('h2');
+            title.textContent = i18n_js.t('taskStatistics.popupTitle');
+            title.style.cssText = `margin: 0; color: ${textColor}; font-size: 24px;`;
+
+            const closeButton = document.createElement('button');
+            closeButton.textContent = '\u00d7';
+            closeButton.style.cssText = `
+            background: none;
+            border: none;
+            color: ${textColor};
+            font-size: 32px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        `;
+            closeButton.onclick = () => this.closePopup();
+
+            header.appendChild(title);
+            header.appendChild(closeButton);
+            popup.appendChild(header);
+
+            // Responsive grid content: two columns on wide screens, one on narrow/mobile
+            const content = document.createElement('div');
+            content.className = 'toolasha-task-stats-content';
+            content.style.cssText = `
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+            align-items: start;
+        `;
+
+            this.sections = {};
+
+            // Task slots: pure sync data, real values immediately
+            const overflowSection = this.createOverflowSection(this.calculateOverflowTime(), textColor);
+            overflowSection.style.marginBottom = '0';
+            this.sections.overflow = overflowSection;
+            content.appendChild(overflowSection);
+
+            // Everything else starts as a placeholder and fills in asynchronously
+            const placeholderTitles = {
+                rewards: i18n_js.t('taskStatistics.expectedRewardsHeader'),
+                actionProfit: this.notApplicableHeader(i18n_js.t('taskStatistics.actionProfitHeader')),
+                completionTime: this.notApplicableHeader(i18n_js.t('taskStatistics.completionTimeHeader')),
+                zoneProgress: i18n_js.t('taskStatistics.zoneProgressHeader'),
             };
+            for (const key of ['rewards', 'actionProfit', 'completionTime', 'zoneProgress']) {
+                const section = this.createSection(placeholderTitles[key]);
+                section.style.marginBottom = '0';
+                if (key === 'zoneProgress') {
+                    section.style.gridColumn = '1 / -1';
+                }
+                section.appendChild(this.createPlaceholderRow());
+                this.sections[key] = section;
+                content.appendChild(section);
+            }
+
+            // Close on overlay click
+            overlay.onclick = (e) => {
+                if (e.target === overlay) {
+                    this.closePopup();
+                }
+            };
+
+            popup.appendChild(content);
+            overlay.appendChild(popup);
+            document.body.appendChild(overlay);
+            this.overlay = overlay;
+        }
+
+        /**
+         * Section header for computations that cannot cover combat tasks.
+         * The bracketed suffix is part of the localized string itself (each locale
+         * supplies its own punctuation/spacing), so nothing is hardcoded here.
+         * @param {string} titleText - Base section title
+         * @returns {string} Title with the "not applicable to combat" suffix
+         */
+        notApplicableHeader(titleText) {
+            return `${titleText}${i18n_js.t('taskStatistics.combatNotApplicableLabel')}`;
+        }
+
+        /**
+         * Placeholder row shown while a section's data is being computed.
+         * @returns {HTMLElement} Row element
+         */
+        createPlaceholderRow() {
+            return this.createRow('', i18n_js.t('taskStatistics.computingPlaceholder'), config.COLOR_TEXT_SECONDARY);
+        }
+
+        /**
+         * Build an error section for a failed async computation.
+         * @param {string} titleText - Section title
+         * @returns {HTMLElement} Section element with an error row
+         */
+        createErrorSection(titleText) {
+            const section = this.createSection(titleText);
+            section.style.marginBottom = '0';
+            section.appendChild(
+                this.createRow(i18n_js.t('marketHistory.columnStatus'), i18n_js.t('taskStatistics.computeFailedMessage'), config.COLOR_LOSS)
+            );
+            return section;
+        }
+
+        /**
+         * Replace a registered section element in the DOM and update the registry.
+         * @param {string} key - Key in this.sections
+         * @param {HTMLElement} newSection - Replacement section
+         */
+        swapSection(key, newSection) {
+            const current = this.sections[key];
+            if (!current) return;
+            current.replaceWith(newSection);
+            this.sections[key] = newSection;
+        }
+
+        /**
+         * Compute the rewards summary and fill the three reward-derived sections.
+         * @param {number} generation - Generation token captured at popup open
+         */
+        async fillRewardSections(generation) {
+            try {
+                // Ensure market data is loaded for token valuation
+                if (!marketAPI.isLoaded()) {
+                    await marketAPI.fetch();
+                }
+                const rewardsSummary = await this.calculateRewardsSummary();
+                if (!this.isGenerationCurrent(generation)) return;
+
+                const textColor = config.COLOR_TEXT_PRIMARY;
+                this.swapSection('rewards', this.createRewardsSection(rewardsSummary, textColor));
+                this.swapSection('actionProfit', this.createActionProfitSection(rewardsSummary));
+                this.swapSection('completionTime', this.createCompletionTimeSection(rewardsSummary, textColor));
+            } catch (error) {
+                console.error('[TaskStatistics] Reward sections failed:', error);
+                if (!this.isGenerationCurrent(generation)) return;
+
+                this.swapSection('rewards', this.createErrorSection(i18n_js.t('taskStatistics.expectedRewardsHeader')));
+                this.swapSection(
+                    'actionProfit',
+                    this.createErrorSection(this.notApplicableHeader(i18n_js.t('taskStatistics.actionProfitHeader')))
+                );
+                this.swapSection(
+                    'completionTime',
+                    this.createErrorSection(this.notApplicableHeader(i18n_js.t('taskStatistics.completionTimeHeader')))
+                );
+            }
+        }
+
+        /**
+         * Compute per-planet combat task progress and fill (or remove) its section.
+         * @param {number} generation - Generation token captured at popup open
+         */
+        async fillZoneProgressSection(generation) {
+            try {
+                const zoneProgress = await computeAllZoneProgress();
+                if (!this.isGenerationCurrent(generation)) return;
+
+                if (zoneProgress.length === 0) {
+                    this.sections.zoneProgress?.remove();
+                    this.sections.zoneProgress = null;
+                    return;
+                }
+                this.swapSection('zoneProgress', this.createZoneProgressSection(zoneProgress, config.COLOR_TEXT_PRIMARY));
+            } catch (error) {
+                console.error('[TaskStatistics] Zone progress section failed:', error);
+                if (!this.isGenerationCurrent(generation)) return;
+                this.swapSection('zoneProgress', this.createErrorSection(i18n_js.t('taskStatistics.zoneProgressHeader')));
+            }
         }
 
         /**
@@ -15647,96 +15972,6 @@ ${starCSS}
         }
 
         /**
-         * Create and display the statistics popup
-         * @param {Object} statsData - Calculated statistics data
-         */
-        createPopup(statsData) {
-            const textColor = config.COLOR_TEXT_PRIMARY;
-
-            // Create overlay
-            const overlay = document.createElement('div');
-            overlay.className = 'toolasha-task-stats-overlay';
-            overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        `;
-
-            // Create popup container
-            const popup = document.createElement('div');
-            popup.style.cssText = `
-            background: #1a1a1a;
-            border: 2px solid #3a3a3a;
-            border-radius: 8px;
-            padding: 20px;
-            max-width: 500px;
-            max-height: 90%;
-            overflow-y: auto;
-            color: ${textColor};
-            min-width: 360px;
-        `;
-
-            // Header
-            const header = document.createElement('div');
-            header.style.cssText = `
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #3a3a3a;
-            padding-bottom: 10px;
-        `;
-
-            const title = document.createElement('h2');
-            title.textContent = i18n_js.t('taskStatistics.popupTitle');
-            title.style.cssText = `margin: 0; color: ${textColor}; font-size: 24px;`;
-
-            const closeButton = document.createElement('button');
-            closeButton.textContent = '\u00d7';
-            closeButton.style.cssText = `
-            background: none;
-            border: none;
-            color: ${textColor};
-            font-size: 32px;
-            cursor: pointer;
-            padding: 0;
-            line-height: 1;
-        `;
-            closeButton.onclick = () => this.closePopup();
-
-            header.appendChild(title);
-            header.appendChild(closeButton);
-            popup.appendChild(header);
-
-            // Content sections
-            popup.appendChild(this.createOverflowSection(statsData.overflow, textColor));
-            popup.appendChild(this.createRewardsSection(statsData.rewards, textColor));
-            popup.appendChild(this.createActionProfitSection(statsData.rewards));
-            popup.appendChild(this.createCompletionTimeSection(statsData.rewards, textColor));
-            if (statsData.zoneProgress.length > 0) {
-                popup.appendChild(this.createZoneProgressSection(statsData.zoneProgress, textColor));
-            }
-
-            // Close on overlay click
-            overlay.onclick = (e) => {
-                if (e.target === overlay) {
-                    this.closePopup();
-                }
-            };
-
-            overlay.appendChild(popup);
-            document.body.appendChild(overlay);
-            this.overlay = overlay;
-        }
-
-        /**
          * Create a section card element
          * @param {string} titleText - Section title
          * @returns {HTMLElement} Section container
@@ -15913,25 +16148,29 @@ ${starCSS}
          * @returns {HTMLElement} Section element
          */
         createActionProfitSection(rewards) {
-            const section = this.createSection(i18n_js.t('taskStatistics.actionProfitHeader'));
+            const section = this.createSection(this.notApplicableHeader(i18n_js.t('taskStatistics.actionProfitHeader')));
 
-            for (const detail of rewards.taskDetails) {
-                const profitStr = detail.isCombat
-                    ? i18n_js.t('taskStatistics.combatNotApplicableLabel')
-                    : detail.actionProfit !== null
-                      ? formatters_js.formatKMB(Math.round(detail.actionProfit))
-                      : i18n_js.t('combatSimUi.notAvailableLabel');
+            // Combat tasks cannot produce action profit; they are represented by the
+            // header suffix instead of individual N/A rows.
+            const nonCombatDetails = rewards.taskDetails.filter((detail) => !detail.isCombat);
 
-                const profitColor = detail.isCombat
-                    ? config.COLOR_TEXT_SECONDARY
-                    : detail.actionProfit !== null && detail.actionProfit >= 0
-                      ? config.COLOR_PROFIT
-                      : detail.actionProfit !== null
-                        ? config.COLOR_LOSS
-                        : config.COLOR_TEXT_SECONDARY;
+            for (const detail of nonCombatDetails) {
+                const profitStr =
+                    detail.actionProfit !== null
+                        ? formatters_js.formatKMB(Math.round(detail.actionProfit))
+                        : i18n_js.t('combatSimUi.notAvailableLabel');
+
+                const profitColor =
+                    detail.actionProfit !== null && detail.actionProfit >= 0
+                        ? config.COLOR_PROFIT
+                        : detail.actionProfit !== null
+                          ? config.COLOR_LOSS
+                          : config.COLOR_TEXT_SECONDARY;
 
                 section.appendChild(this.createRow(detail.name, profitStr, profitColor));
             }
+
+            if (nonCombatDetails.length === 0) return section;
 
             // Separator and total
             const separator = document.createElement('div');
@@ -15974,28 +16213,27 @@ ${starCSS}
          * @returns {HTMLElement} Section element
          */
         createCompletionTimeSection(rewards, textColor) {
-            const section = this.createSection(i18n_js.t('taskStatistics.completionTimeHeader'));
+            const section = this.createSection(this.notApplicableHeader(i18n_js.t('taskStatistics.completionTimeHeader')));
 
-            for (const detail of rewards.taskDetails) {
-                const timeStr = detail.isCombat
-                    ? i18n_js.t('taskStatistics.combatNotApplicableLabel')
-                    : detail.completionSeconds !== null
-                      ? formatters_js.timeReadable(detail.completionSeconds)
-                      : i18n_js.t('combatSimUi.notAvailableLabel');
+            // Combat tasks cannot produce completion time estimates; they are represented
+            // by the header suffix instead of individual N/A rows.
+            const nonCombatDetails = rewards.taskDetails.filter((detail) => !detail.isCombat);
+
+            for (const detail of nonCombatDetails) {
+                const timeStr =
+                    detail.completionSeconds !== null
+                        ? formatters_js.timeReadable(detail.completionSeconds)
+                        : i18n_js.t('combatSimUi.notAvailableLabel');
 
                 const progressStr =
                     detail.currentCount > 0
                         ? i18n_js.t('taskStatistics.progressSuffix', { current: detail.currentCount, goal: detail.goalCount })
                         : '';
 
-                section.appendChild(
-                    this.createRow(
-                        detail.name + progressStr,
-                        timeStr,
-                        detail.isCombat ? config.COLOR_TEXT_SECONDARY : textColor
-                    )
-                );
+                section.appendChild(this.createRow(detail.name + progressStr, timeStr, textColor));
             }
+
+            if (nonCombatDetails.length === 0) return section;
 
             // Separator and total
             const separator = document.createElement('div');
@@ -16022,6 +16260,8 @@ ${starCSS}
          */
         createZoneProgressSection(zoneProgress, textColor) {
             const section = this.createSection(i18n_js.t('taskStatistics.zoneProgressHeader'));
+            // Full-width row in the popup grid: values are long and rows are clickable
+            section.style.gridColumn = '1 / -1';
 
             for (const zone of zoneProgress) {
                 const timeStr = Number.isFinite(zone.hoursNeeded)
@@ -16039,7 +16279,18 @@ ${starCSS}
                 row.onclick = () => {
                     this.closePopup();
                     const game = getGameObject();
-                    if (!game?.handleGoToAction) return;
+                    if (!game) return;
+                    // The combat page only opens the zone-select window for monster-based jumps;
+                    // handleGoToAction merely switches to the combat tab without opening anything.
+                    const anchor = zone.anchor;
+                    if (typeof game.handleGoToMonster === 'function' && anchor) {
+                        const count = anchor.isBoss
+                            ? Math.max(1, Math.round(zone.fightsNeeded / (anchor.battlesPerBoss || 10)))
+                            : Math.round(zone.fightsNeeded);
+                        game.handleGoToMonster(anchor.monsterHrid, count);
+                        return;
+                    }
+                    if (!game.handleGoToAction) return;
                     const numActions = Number.isFinite(zone.fightsNeeded) ? Math.round(zone.fightsNeeded) : undefined;
                     game.handleGoToAction(zone.zoneHrid, numActions);
                 };

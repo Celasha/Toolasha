@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.11.0
+ * Version: 3.12.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6775,6 +6775,10 @@
             openedLabel: 'Opened',
             partialBadgeLabel: '(partial)',
             profitLabel: 'Profit',
+            entryKeyCostLabel: 'Entry key cost',
+            entryKeyCostTooltip:
+                'Cost of the entry key spent to run the dungeon that produced this chest, priced using your Key pricing mode setting.',
+            netProfitLabel: 'Net profit',
             viewAnalyticsLink: 'View Analytics',
             vsExpectedLabel: 'vs. expected',
             importJsonParseFailed: 'Could not parse the pasted/uploaded text as JSON.',
@@ -8643,13 +8647,15 @@
             purpleGiftLabel: "Purple's Gift",
             totalRewardValueLabel: 'Total Reward Value',
             actionProfitHeader: 'Action Profit',
-            combatNotApplicableLabel: 'N/A (combat)',
+            combatNotApplicableLabel: ' (N/A for combat)',
             totalActionProfitLabel: 'Total Action Profit',
             combinedTotalLabel: 'Combined Total',
             completionTimeHeader: 'Completion Time',
             progressSuffix: (p) => ` (${p.current}/${p.goal})`,
             totalNonCombatLabel: 'Total (non-combat)',
             characterInfoNotAvailable: 'Character info not available',
+            computingPlaceholder: 'Computing…',
+            computeFailedMessage: 'Failed to compute — reopen the popup to retry',
             zoneProgressHeader: 'Zone Task Progress',
             zoneProgressRowValue: (p) => `~${p.fights} fights | ${p.time} (bottleneck: ${p.bottleneckName})`,
         },
@@ -11286,7 +11292,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 labyrinthClearRate: { label: '迷宫通关率计算器', help: '在迷宫生产房间的方块上显示预计通关时间和成功率' },
                 labyrinthMissingSuppliesButton: {
                     label: '迷宫：显示“购买缺少的补给”按钮',
-                    help: '在补给区域旁添加一个按钮，打开市场并显示低于携带上限的火把/寿衣/信标标签',
+                    help: '在补给区域旁添加一个按钮，打开市场并显示低于携带上限的火把/斗篷/探照灯标签',
                 },
                 labyrinthRecommendTargetRate: {
                     label: '迷宫：建议目标通关率（%）',
@@ -11909,9 +11915,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             buffDouble: '双倍',
             buffExperience: '经验',
             buffCooldown: '冷却',
-            buffTorch: '火炬',
-            buffShroud: '遮罩',
-            buffBeacon: '信标',
+            buffTorch: '火把',
+            buffShroud: '斗篷',
+            buffBeacon: '探照灯',
             buffAutomation: '自动化',
             statusLoadoutUnavailable: (p) => `所选战斗配装不可用：${p.name}，请选择其他配装或当前装备。`,
             statusSelectMonsterFirst: '请先选择一个怪物。',
@@ -12461,6 +12467,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             openedLabel: '已开启',
             partialBadgeLabel: '（部分）',
             profitLabel: '利润',
+            entryKeyCostLabel: '入场钥匙费用',
+            entryKeyCostTooltip: '开启此宝箱所需的地下城入场钥匙花费，按您的"钥匙定价模式"设置计算。',
+            netProfitLabel: '净利润',
             viewAnalyticsLink: '查看分析',
             vsExpectedLabel: '对比预期',
             importJsonParseFailed: '无法将粘贴/上传的文本解析为 JSON。',
@@ -13994,13 +14003,15 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             purpleGiftLabel: '紫色礼物',
             totalRewardValueLabel: '奖励总价值',
             actionProfitHeader: '动作利润',
-            combatNotApplicableLabel: '不适用（战斗）',
+            combatNotApplicableLabel: '（不适用于战斗）',
             totalActionProfitLabel: '动作总利润',
             combinedTotalLabel: '合计',
             completionTimeHeader: '完成时间',
             progressSuffix: (p) => `（${p.current}/${p.goal}）`,
             totalNonCombatLabel: '合计（非战斗）',
             characterInfoNotAvailable: '角色信息不可用',
+            computingPlaceholder: '计算中…',
+            computeFailedMessage: '计算失败，请重开弹窗重试',
             zoneProgressHeader: '区域任务进度',
             zoneProgressRowValue: (p) => `约 ${p.fights} 场战斗 | ${p.time}（瓶颈：${p.bottleneckName}）`,
         },
@@ -14234,7 +14245,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             guildTrialStarted: '你的公会试用期已开始！',
             houseConstructed: '已建造 {{level}} 级 $t(houseRoomNames.{{roomHrid}})',
             kickedGuildMember: '已踢出公会成员：{{name}}',
-            labyrinthShroudFailed: '遮罩失败！房间等级超出了遮罩的有效范围。',
+            labyrinthShroudFailed: '斗篷失败！房间等级超出了斗篷的有效范围。',
             listingPegged: '$t(itemNames.{{itemHrid}}){{enhancement}} 当前挂单价为 {{boundary}} — 你设置的限制：{{limit}}',
             loadoutCreated: '配装已创建',
             loadoutDeleted: '配装已删除',

@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.11.0
+ * Version: 3.12.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -34600,11 +34600,29 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Combat Simulator Adapter
+     * Bridges Toolasha's live data to the combat sim engine.
+     *
+     * Extracts game data maps, builds player DTOs, and provides
+     * combat zone metadata for the simulation UI.
+     */
+
+
+    // Maps dungeon chest HRIDs to their required entry key HRIDs
+    const DUNGEON_ENTRY_KEYS = {
+        '/items/chimerical_chest': '/items/chimerical_entry_key',
+        '/items/sinister_chest': '/items/sinister_entry_key',
+        '/items/enchanted_chest': '/items/enchanted_entry_key',
+        '/items/pirate_chest': '/items/pirate_entry_key',
+    };
+
+    /**
      * Openable Analytics Cost
      * Resolves the recurring cost of opening a container: the current buy price of its required key
      * item (`openKeyItemHrid`), if any. Containers themselves are typically earned as drops/rewards
      * rather than purchased, so only the consumable key - the one thing actually spent on every
-     * single opening - counts as cost here.
+     * single opening - counts as cost here. For dungeon chests, also resolves the separate entry-key
+     * cost of the dungeon run that produced the chest (see calculateEntryKeyCost).
      */
 
 
@@ -34625,6 +34643,31 @@ self.onmessage = function (e) {
         if (!resolved) return { cost: 0, complete: false };
 
         return { cost: resolved.value * containerCount, complete: true };
+    }
+
+    /**
+     * Calculate the dungeon entry-key cost behind `containerCount` copies of this REGULAR dungeon
+     * chest. One entry key is spent per dungeon run, and every run grants exactly one regular chest
+     * (plus a chance of an extra refinement chest riding along on that same key) - so entry-key cost
+     * only applies to regular chest hrids, which is exactly what DUNGEON_ENTRY_KEYS maps. Priced via
+     * the dedicated profitCalc_keyPricingMode setting (ask/bid/cheapest-via-crafting), matching every
+     * other dungeon-economics feature in this codebase (risk-of-ruin, combat stats, combat sim) that
+     * already prices this same key - not the generic buy-side pricing calculateOpeningCost() uses for
+     * the chest's own key.
+     * @param {string} containerHrid
+     * @param {number} containerCount
+     * @returns {{cost: number, complete: boolean}|null} null when containerHrid isn't a dungeon's
+     *      regular chest (no entry key applies - most containers, including refinement chests).
+     */
+    function calculateEntryKeyCost(containerHrid, containerCount) {
+        const entryKeyHrid = DUNGEON_ENTRY_KEYS[containerHrid];
+        if (!entryKeyHrid) return null;
+        if (!(containerCount > 0)) return { cost: 0, complete: true };
+
+        const { price } = getKeyPriceInfo(entryKeyHrid);
+        if (price === null) return { cost: 0, complete: false };
+
+        return { cost: price * containerCount, complete: true };
     }
 
     /**
@@ -35097,6 +35140,9 @@ self.onmessage = function (e) {
             const openingCost = calculateOpeningCost(containerHrid, aggregate.containersOpened);
             const profitEligible = actualComplete && openingCost.complete;
             const profitValue = profitEligible ? aggregate.actualValueTotal - openingCost.cost : null;
+            const entryKeyCost = calculateEntryKeyCost(containerHrid, aggregate.containersOpened);
+            const netProfitEligible = !!entryKeyCost && profitEligible && entryKeyCost.complete;
+            const netProfitValue = netProfitEligible ? profitValue - entryKeyCost.cost : null;
 
             const summaryRow = document.createElement('div');
             summaryRow.style.cssText = 'display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;';
@@ -35147,6 +35193,41 @@ self.onmessage = function (e) {
             summaryRow.appendChild(profitCol);
             summaryRow.appendChild(luckCol);
             wrapper.appendChild(summaryRow);
+
+            if (entryKeyCost) {
+                const entryKeyRow = document.createElement('div');
+                entryKeyRow.style.cssText =
+                    'display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;';
+
+                const entryKeyCol = document.createElement('div');
+                const entryKeyHeader = document.createElement('div');
+                entryKeyHeader.style.cssText = 'opacity:0.7; font-size:11px;';
+                entryKeyHeader.textContent = i18n_js.t('openableAnalytics.entryKeyCostLabel');
+                entryKeyHeader.title = i18n_js.t('openableAnalytics.entryKeyCostTooltip');
+                const entryKeyValueEl = document.createElement('div');
+                entryKeyValueEl.textContent = entryKeyCost.complete ? formatters_js.formatLargeNumber(entryKeyCost.cost) : '—';
+                entryKeyCol.appendChild(entryKeyHeader);
+                entryKeyCol.appendChild(entryKeyValueEl);
+
+                const netProfitCol = document.createElement('div');
+                netProfitCol.style.textAlign = 'right';
+                const netProfitHeader = document.createElement('div');
+                netProfitHeader.style.cssText = 'opacity:0.7; font-size:11px;';
+                netProfitHeader.textContent = i18n_js.t('openableAnalytics.netProfitLabel');
+                const netProfitValueEl = document.createElement('div');
+                if (!netProfitEligible) {
+                    netProfitValueEl.textContent = '—';
+                } else {
+                    netProfitValueEl.textContent = formatSignedLargeNumber(netProfitValue);
+                    netProfitValueEl.style.color = luckColor$1(netProfitValue);
+                }
+                netProfitCol.appendChild(netProfitHeader);
+                netProfitCol.appendChild(netProfitValueEl);
+
+                entryKeyRow.appendChild(entryKeyCol);
+                entryKeyRow.appendChild(netProfitCol);
+                wrapper.appendChild(entryKeyRow);
+            }
 
             if (aggregate.hasImportedData) {
                 const note = document.createElement('div');
@@ -35983,6 +36064,8 @@ self.onmessage = function (e) {
     function computeStats(containerHrid, input) {
         const cost = calculateOpeningCost(containerHrid, input.amount);
         const profit = input.incomeComplete && cost.complete ? input.income - cost.cost : null;
+        const entryKeyCost = calculateEntryKeyCost(containerHrid, input.amount);
+        const netProfit = entryKeyCost && profit !== null && entryKeyCost.complete ? profit - entryKeyCost.cost : null;
         const stdDev = calculateIncomeStdDev(containerHrid, input.amount);
 
         return {
@@ -35990,6 +36073,9 @@ self.onmessage = function (e) {
             income: input.income,
             incomeIncomplete: !input.incomeComplete,
             profit,
+            entryKeyCostApplicable: !!entryKeyCost,
+            entryKeyCostValue: entryKeyCost ? entryKeyCost.cost : null,
+            netProfit,
             luckPercent: input.luckAvailable ? input.luckPercent : null,
             expectedIncome: input.expectedIncomeAvailable ? input.expectedIncome : null,
             expectedIncomeIncomplete: input.expectedIncomeAvailable && !input.expectedIncomeComplete,
@@ -36260,6 +36346,19 @@ self.onmessage = function (e) {
             stats.profit === null
                 ? '—'
                 : `<span style="color:${luckColor(stats.profit)}">${formatSignedMoney(stats.profit)}</span>`;
+        const entryKeyCostRowsHtml = stats.entryKeyCostApplicable
+            ? `${buildStatRow(
+              `<span title="${i18n_js.t('openableAnalytics.entryKeyCostTooltip')}">${i18n_js.t('openableAnalytics.entryKeyCostLabel')}</span>`,
+              formatMoney(stats.entryKeyCostValue),
+              { stacked: true }
+          )}${buildStatRow(
+              i18n_js.t('openableAnalytics.netProfitLabel'),
+              stats.netProfit === null
+                  ? '—'
+                  : `<span style="color:${luckColor(stats.netProfit)}">${formatSignedMoney(stats.netProfit)}</span>`,
+              { stacked: true }
+          )}`
+            : '';
         const luckHtml =
             stats.luckPercent === null
                 ? '—'
@@ -36321,6 +36420,7 @@ self.onmessage = function (e) {
                 <div style="flex:1; min-width:0;">
                     ${incomeRow.toggleHtml}
                     ${buildStatRow(i18n_js.t('openableAnalytics.profitLabel'), profitHtml, { stacked: true })}
+                    ${entryKeyCostRowsHtml}
                 </div>
                 <div style="flex:1; min-width:0; border-left:1px solid rgba(255, 255, 255, 0.08); padding-left:12px;">
                     ${expectedRow.toggleHtml}

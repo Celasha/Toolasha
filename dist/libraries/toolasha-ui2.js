@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.11.0
+ * Version: 3.12.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -337,6 +337,7 @@
 
     const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);
     const getActionName = (hrid, fallback = '') => translateGameName('actionNames', hrid, fallback);
+    const getActionCategoryName = (hrid, fallback = '') => translateGameName('actionCategoryNames', hrid, fallback);
     const getSkillName = (hrid, fallback = '') => translateGameName('skillNames', hrid, fallback);
     const getItemCategoryName = (hrid, fallback = '') => translateGameName('itemCategoryNames', hrid, fallback);
     const getHouseRoomName = (hrid, fallback = '') => translateGameName('houseRoomNames', hrid, fallback);
@@ -3301,7 +3302,10 @@
         }
 
         /**
-         * Get action category from HRID (e.g. "/actions/cooking/donut" → "Cooking")
+         * Get action category display name from HRID.
+         * Resolution order: game actionCategoryNames dictionary (via the action
+         * detail's category HRID), then the game skillNames dictionary
+         * (/skills/<category segment>), then the capitalized English HRID segment.
          * @param {string} actionHrid
          * @returns {string|null}
          */
@@ -3309,11 +3313,23 @@
             if (!actionHrid) return null;
             const parts = actionHrid.split('/');
             // Format: /actions/category/name
-            if (parts.length >= 3) {
-                const category = parts[2];
-                return category.charAt(0).toUpperCase() + category.slice(1);
+            if (parts.length < 3) return null;
+            const categorySeg = parts[2];
+            const fallback = categorySeg.charAt(0).toUpperCase() + categorySeg.slice(1);
+
+            // Layer 1: authoritative category HRID from game data (e.g. /action_categories/labyrinth/labyrinth)
+            const details = dataManager.getActionDetails(actionHrid);
+            if (details?.category) {
+                const translated = getActionCategoryName(details.category, '');
+                if (translated) return translated;
             }
-            return null;
+
+            // Layer 2: skill dictionary keyed by the category segment
+            const skillTranslated = getSkillName(`/skills/${categorySeg}`, '');
+            if (skillTranslated) return skillTranslated;
+
+            // Layer 3: previous behavior - capitalized English segment
+            return fallback;
         }
 
         /**
