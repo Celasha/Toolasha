@@ -61,7 +61,7 @@ export default {
         clickForDetailsTooltip: '点击查看详情',
         cumulativeItemsHeader: '所有历史开启累计获得的物品：',
         currentCardTitle: '当前',
-        dropValuationHeader: (p) => `开启 ${p.amount} 次该容器时，可能掉落物品按今日市价计算的价值：`,
+        dropValuationHeader: (p) => `开启 ${p.amount} 次该容器时，可能掉落物品按今日市价或商店兑换价计算的价值：`,
         expectedIncomeLabel: '预期收入',
         gainedItemPartialTooltip: '一件或多件获得物品无法计价。',
         historyCardTitle: '历史',

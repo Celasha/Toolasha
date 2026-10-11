@@ -32,13 +32,12 @@ function dropValueVariance(drop) {
     const countVariance = n > 1 ? (n * n - 1) / 12 : 0;
     const avgCount = (minCount + maxCount) / 2;
 
-    const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid);
+    const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid, 0, { allowIndirect: true });
     if (!resolved) return 0;
 
-    const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-    const isTradable = itemDetails?.isTradable !== false;
-    const isCoin = drop.itemHrid === expectedValueCalculator.COIN_HRID;
-    const perUnitValue = isCoin || !isTradable ? resolved.value : calculatePriceAfterTax(resolved.value, MARKET_TAX);
+    // Tax strictly follows the resolver's needsTax contract - never item tradability, which
+    // real game data omits entirely for untradeable items.
+    const perUnitValue = resolved.needsTax ? calculatePriceAfterTax(resolved.value, MARKET_TAX) : resolved.value;
 
     return perUnitValue * perUnitValue * (p * countVariance + p * (1 - p) * avgCount * avgCount);
 }

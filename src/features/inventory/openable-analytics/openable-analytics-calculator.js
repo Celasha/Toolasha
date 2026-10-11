@@ -20,15 +20,16 @@ import { MARKET_TAX } from '../../../utils/profit-constants.js';
  * @returns {{value: number, resolved: boolean}} Value contribution and whether it could be priced
  */
 function valueGainedItemStack(itemHrid, enhancementLevel, count) {
-    const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel || 0);
+    const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel || 0, {
+        allowIndirect: true,
+    });
     if (!resolved) {
         return { value: 0, resolved: false };
     }
 
-    const itemDetails = dataManager.getItemDetails(itemHrid);
-    const isTradable = itemDetails?.isTradable !== false;
-    const perUnit =
-        resolved.needsTax && isTradable ? calculatePriceAfterTax(resolved.value, MARKET_TAX) : resolved.value;
+    // Tax strictly follows the resolver's needsTax contract - never item tradability, which
+    // real game data omits entirely for untradeable items.
+    const perUnit = resolved.needsTax ? calculatePriceAfterTax(resolved.value, MARKET_TAX) : resolved.value;
 
     return { value: perUnit * (count || 0), resolved: true };
 }
@@ -85,7 +86,10 @@ export function calculateExpectedValueForOpening(containerHrid, containerCount) 
         return { value: null, available: false, complete: false };
     }
 
-    const ev = expectedValueCalculator.calculateExpectedValue(containerHrid);
+    // Indirect shop-redemption pricing so seal-type items price on both the Actual and Expected
+    // sides (Luck stays computable); the variance sampler passes the same flag so E[income] and
+    // its stdDev share one value basis.
+    const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, { allowIndirect: true });
     if (!ev || !(ev.expectedValue >= 0)) {
         return { value: null, available: false, complete: false };
     }

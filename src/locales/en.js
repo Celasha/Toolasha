@@ -217,7 +217,7 @@ export default {
         cumulativeItemsHeader: 'Cumulative items received across all lifetime openings:',
         currentCardTitle: 'Current',
         dropValuationHeader: (p) =>
-            `What this container can drop, valued at today's market prices for ${p.amount} opened:`,
+            `What this container can drop, valued at today's market or shop-redemption prices for ${p.amount} opened:`,
         expectedIncomeLabel: 'Expected income',
         gainedItemPartialTooltip: 'One or more gained items could not be priced.',
         historyCardTitle: 'History',

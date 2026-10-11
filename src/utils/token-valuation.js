@@ -21,6 +21,21 @@ export const DUNGEON_TOKEN_HRIDS = new Set([
 ]);
 
 /**
+ * Resolve which market price side the current pricing-mode settings select: bid for
+ * Conservative/Patient Buy (buy-side-cheap convention), ask for Hybrid/Optimistic - or always
+ * bid when mode-respect is disabled.
+ * @param {string} pricingModeSetting - Config setting key for pricing mode
+ * @param {string|null} respectModeSetting - Config setting key for the respect-mode flag (an unknown key or
+ *     absent setting falls back to true, i.e. the pricing mode is respected)
+ * @returns {'bid'|'ask'} The selected market price side
+ */
+export function resolvePricingSide(pricingModeSetting, respectModeSetting) {
+    const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
+    const respectPricingMode = config.getSettingValue(respectModeSetting, true);
+    return !respectPricingMode ? 'bid' : pricingMode === 'conservative' || pricingMode === 'patientBuy' ? 'bid' : 'ask';
+}
+
+/**
  * Calculate dungeon token value based on best shop item value
  * Uses "best market value per token" approach: finds the shop item with highest (market price / token cost)
  * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
@@ -52,16 +67,7 @@ export function calculateDungeonTokenValue(
         const itemHrid = shopItem.itemHrid;
         const tokenCost = shopItem.costs[0].count;
 
-        // Use pricing mode to determine which price side to use
-        const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
-        const respectPricingMode = config.getSettingValue(respectModeSetting, true);
-
-        // Conservative/Patient Buy: Bid, Hybrid/Optimistic: Ask
-        const mode = !respectPricingMode
-            ? 'bid'
-            : pricingMode === 'conservative' || pricingMode === 'patientBuy'
-              ? 'bid'
-              : 'ask';
+        const mode = resolvePricingSide(pricingModeSetting, respectModeSetting);
         const priceInfo = getItemPriceOutlierInfo(itemHrid, { mode });
         const marketPrice = priceInfo.value || 0;
         if (marketPrice <= 0) continue;
@@ -87,14 +93,7 @@ export function calculateDungeonTokenValue(
 
         const essenceHrid = essenceMap[tokenHrid];
         if (essenceHrid) {
-            const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
-            const respectPricingMode = config.getSettingValue(respectModeSetting, true);
-
-            const mode = !respectPricingMode
-                ? 'bid'
-                : pricingMode === 'conservative' || pricingMode === 'patientBuy'
-                  ? 'bid'
-                  : 'ask';
+            const mode = resolvePricingSide(pricingModeSetting, respectModeSetting);
             const essencePriceInfo = getItemPriceOutlierInfo(essenceHrid, { mode });
             const marketPrice = essencePriceInfo.value || 0;
 

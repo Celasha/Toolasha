@@ -73,13 +73,13 @@ describe('calculateActualValue', () => {
         expect(complete).toBe(true);
     });
 
-    test('does not tax non-tradable items even when needsTax is true', () => {
-        dataManager.getItemDetails.mockReturnValue({ isTradable: false });
+    test('taxes market-priced items even when isTradable is omitted - needsTax is the sole tax authority', () => {
+        dataManager.getItemDetails.mockReturnValue({ name: 'X' });
         expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, source: 'market', needsTax: true });
 
         const { value } = calculateActualValue([{ itemHrid: '/items/x', enhancementLevel: 0, count: 1 }]);
 
-        expect(value).toBe(100);
+        expect(value).toBeCloseTo(96);
     });
 
     test('does not tax coin (needsTax: false)', () => {
@@ -482,5 +482,57 @@ describe('buildImportedAggregateRecord', () => {
 
         expect(record.actualValueComplete).toBe(false);
         expect(record.luckValue).toBeNull();
+    });
+});
+
+describe('opt-in indirect pricing (allowIndirect)', () => {
+    test('passes allowIndirect to both resolveSellSideValue and calculateExpectedValue', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10, needsTax: false });
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 100, drops: [] });
+
+        buildOpeningRecord({
+            containerHrid: '/items/chest',
+            containerCount: 1,
+            gainedItems: [{ itemHrid: '/items/x', enhancementLevel: 0, count: 1 }],
+            grantedBuffs: [],
+            timestamp: 0,
+            characterId: 'char-a',
+        });
+
+        expect(expectedValueCalculator.resolveSellSideValue).toHaveBeenCalledWith('/items/x', 0, {
+            allowIndirect: true,
+        });
+        expect(expectedValueCalculator.calculateExpectedValue).toHaveBeenCalledWith('/items/chest', {
+            allowIndirect: true,
+        });
+    });
+
+    test('a shop-redeemable gain (seal) keeps Actual complete and produces a real Luck value', () => {
+        dataManager.getItemDetails.mockReturnValue({ isTradable: false });
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((_itemHrid, _level, opts) =>
+            opts?.allowIndirect ? { value: 30000, source: 'shopRedemption', needsTax: false, isOutlier: false } : null
+        );
+        expectedValueCalculator.calculateExpectedValue.mockImplementation((_itemHrid, opts) =>
+            opts?.allowIndirect
+                ? {
+                      expectedValue: 27000,
+                      drops: [{ hasPriceData: true }],
+                  }
+                : { expectedValue: 0, drops: [{ hasPriceData: false }] }
+        );
+
+        const record = buildOpeningRecord({
+            containerHrid: '/items/chest',
+            containerCount: 1,
+            gainedItems: [{ itemHrid: '/items/seal_of_efficiency', enhancementLevel: 0, count: 1 }],
+            grantedBuffs: [],
+            timestamp: 0,
+            characterId: 'char-a',
+        });
+
+        expect(record.actualValue).toBe(30000);
+        expect(record.actualValueComplete).toBe(true);
+        expect(record.expectedValueComplete).toBe(true);
+        expect(record.luckValue).toBe(3000);
     });
 });
