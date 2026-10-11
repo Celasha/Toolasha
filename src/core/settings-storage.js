@@ -4,7 +4,7 @@
  */
 
 import storage from './storage.js';
-import { settingsGroups, resolveSettingDefault } from './settings-schema.js';
+import { settingsGroups, resolveSettingDefault, buildCombatStatsChatTemplate } from './settings-schema.js';
 
 // Task-related storage keys that are scoped per-character by a `_<charId>` suffix, outside
 // the main schema settings blob (see task-reroll-protection.js / task-auto-reroll.js).
@@ -131,6 +131,12 @@ class SettingsStorage {
             }
         }
 
+        // Locale-aware template defaults: create once per character in the current game
+        // language, then frozen (user-owned content). Only resets regenerate.
+        if (this._materializeCombatStatsChatTemplate(settings, saved)) {
+            await this.saveSettings(settings);
+        }
+
         return settings;
     }
 
@@ -172,6 +178,30 @@ class SettingsStorage {
         }
 
         return settings;
+    }
+
+    /**
+     * Materialize the locale-aware combat stats chat template default.
+     * Missing key = first creation for this character; content byte-equal to the
+     * legacy English default = never customized, migrate once to the current
+     * locale. Anything else is user-owned and never rewritten by language changes.
+     * @param {Object} settings - Fully merged settings map (mutated in place)
+     * @param {Object|null} saved - Raw saved blob for the current character
+     * @returns {boolean} True when the value was (re)generated and must persist
+     * @private
+     */
+    _materializeCombatStatsChatTemplate(settings, saved) {
+        const setting = settings.combatStatsChatMessage;
+        if (!setting) {
+            return false;
+        }
+        const hasSavedKey = Boolean(saved) && Object.prototype.hasOwnProperty.call(saved, 'combatStatsChatMessage');
+        const isLegacyDefault = JSON.stringify(setting.value) === JSON.stringify(buildCombatStatsChatTemplate('en'));
+        if (hasSavedKey && !isLegacyDefault) {
+            return false;
+        }
+        setting.value = buildCombatStatsChatTemplate();
+        return true;
     }
 
     /**

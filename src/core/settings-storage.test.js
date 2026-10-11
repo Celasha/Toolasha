@@ -4,7 +4,11 @@
 
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('./settings-schema.js', () => ({ settingsGroups: [] }));
+vi.mock('./settings-schema.js', () => ({
+    settingsGroups: [],
+    resolveSettingDefault: (def) => (typeof def === 'function' ? def() : def),
+    buildCombatStatsChatTemplate: () => [],
+}));
 
 const storageData = {};
 vi.mock('./storage.js', () => ({
