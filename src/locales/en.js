@@ -1205,6 +1205,8 @@ export default {
         minutesShort: (p) => `${p.n}m`,
         secondsShort: (p) => `${p.n}s`,
         hms: (p) => `${p.h}h ${p.m}m ${p.s}s`,
+        justNow: 'Just now',
+        moreThan30Days: '30+ days',
         separator: ' ',
     },
     xphCalculator: {
