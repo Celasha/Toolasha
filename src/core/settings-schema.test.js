@@ -15,7 +15,14 @@ vi.stubGlobal('window', {
     },
 });
 
-import { settingsGroups, buildCombatStatsChatTemplate, resolveSettingDefault } from './settings-schema.js';
+import {
+    settingsGroups,
+    buildCombatStatsChatTemplate,
+    resolveSettingDefault,
+    resolveTemplateVariableLabel,
+    resolveTemplateVariableDescription,
+} from './settings-schema.js';
+import zhPack from '../locales/zh.js';
 
 // Byte-exact copy of the pre-change English default (schema L1940-1958).
 // Keep in sync manually; the factory's 'en' branch must stay equal to this.
@@ -108,8 +115,48 @@ describe('schema combatStatsChatMessage', () => {
     });
 
     test('resolver applied to the schema definition yields the English template array', () => {
+        localeStore.set('i18nextLng', 'en');
         expect(resolveSettingDefault(settingsGroups.combat.settings.combatStatsChatMessage)).toEqual(
             LEGACY_ENGLISH_CHAT_TEMPLATE
         );
+    });
+});
+
+describe('resolveTemplateVariableLabel / resolveTemplateVariableDescription', () => {
+    // Expected zh strings are read from the zh pack itself instead of being
+    // retyped here — immune to source drift and self-maintaining.
+    const zhVars = zhPack.settingsSchema.settings.combatStatsChatMessage.variables;
+
+    const settingDef = {
+        id: 'combatStatsChatMessage',
+        templateVariables: [{ key: '{duration}', label: 'Duration', description: 'Combat session duration' }],
+    };
+
+    test('resolves zh label/description from the locale pack', () => {
+        localeStore.set('i18nextLng', 'zh');
+        const item = { type: 'variable', key: '{duration}' };
+        expect(resolveTemplateVariableLabel(settingDef, item)).toBe(zhVars.duration.label);
+        expect(resolveTemplateVariableDescription(settingDef, item)).toBe(zhVars.duration.description);
+    });
+
+    test('falls back to schema English when the locale pack has no entry', () => {
+        localeStore.set('i18nextLng', 'en');
+        const item = { type: 'variable', key: '{duration}' };
+        expect(resolveTemplateVariableLabel(settingDef, item)).toBe('Duration');
+        expect(resolveTemplateVariableDescription(settingDef, item)).toBe('Combat session duration');
+    });
+
+    test('falls back to stored item label, then the raw key; description falls to empty string', () => {
+        localeStore.set('i18nextLng', 'en');
+        const unknownDef = { id: 'x', templateVariables: [] };
+        expect(resolveTemplateVariableLabel(unknownDef, { key: '{legacy}', label: 'Stored' })).toBe('Stored');
+        expect(resolveTemplateVariableLabel(unknownDef, { key: '{legacy}' })).toBe('{legacy}');
+        expect(resolveTemplateVariableDescription(unknownDef, { key: '{legacy}', description: 'D' })).toBe('D');
+        expect(resolveTemplateVariableDescription(unknownDef, { key: '{legacy}' })).toBe('');
+    });
+
+    test('returns empty label for items without a key', () => {
+        expect(resolveTemplateVariableLabel(settingDef, {})).toBe('');
+        expect(resolveTemplateVariableDescription(settingDef, {})).toBe('');
     });
 });

@@ -3,7 +3,7 @@
  * Organizes all script settings into logical groups for the settings UI
  */
 
-import i18n from './i18n.js';
+import i18n, { t } from './i18n.js';
 
 const COMBAT_STATS_CHAT_TEMPLATE_EN = [
     { type: 'text', value: 'Combat Stats: ' },
@@ -2746,4 +2746,53 @@ export function getSettingDefinition(settingId) {
 export function getSettingDependencies(settingId) {
     const def = getSettingDefinition(settingId);
     return def?.dependencies || [];
+}
+
+const TEMPLATE_VARIABLE_KEY_PATTERN = /[{}]/g;
+
+/**
+ * Resolve a template variable item's display label: locale pack entry first
+ * (keyed by the bare variable key), then the definition/stored label, then the
+ * raw key. Works for both templateVariables definitions and stored items.
+ * @param {Object} settingDef - Setting definition (uses id + templateVariables)
+ * @param {{type?: string, key?: string, label?: string}} item - Variable item or definition
+ * @returns {string} Display label ('' when the item has no key)
+ */
+export function resolveTemplateVariableLabel(settingDef, item) {
+    if (!item?.key) {
+        return '';
+    }
+    const def = settingDef?.templateVariables?.find((v) => v.key === item.key);
+    if (!def) {
+        return item.label || item.key;
+    }
+    const bareKey = def.key.replace(TEMPLATE_VARIABLE_KEY_PATTERN, '');
+    const labelKey = `settingsSchema.settings.${settingDef.id}.variables.${bareKey}.label`;
+    const translated = t(labelKey);
+    if (translated !== labelKey) {
+        return translated;
+    }
+    return def.label || item.label || item.key;
+}
+
+/**
+ * Resolve a template variable item's display description: locale pack entry
+ * first, then the definition/stored description, else ''.
+ * @param {Object} settingDef - Setting definition (uses id + templateVariables)
+ * @param {{type?: string, key?: string, description?: string}} item - Variable item or definition
+ * @returns {string} Display description ('' when unknown)
+ */
+export function resolveTemplateVariableDescription(settingDef, item) {
+    if (!item?.key) {
+        return '';
+    }
+    const def = settingDef?.templateVariables?.find((v) => v.key === item.key);
+    const fallback = def?.description || item.description || '';
+    if (!def) {
+        return fallback;
+    }
+    const bareKey = def.key.replace(TEMPLATE_VARIABLE_KEY_PATTERN, '');
+    const descKey = `settingsSchema.settings.${settingDef.id}.variables.${bareKey}.description`;
+    const translated = t(descKey);
+    return translated !== descKey ? translated : fallback;
 }
