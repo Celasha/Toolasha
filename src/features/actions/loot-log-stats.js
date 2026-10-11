@@ -21,7 +21,13 @@ import {
     buildEntryIdentityKey,
     EXCLUDED_XP_SKILL_HRID,
 } from './loot-log-analytics.js';
-import { getItemName, getActionName, getSkillName, translateGameName } from '../../utils/game-i18n.js';
+import {
+    getItemName,
+    getActionName,
+    getActionCategoryName,
+    getSkillName,
+    translateGameName,
+} from '../../utils/game-i18n.js';
 
 class LootLogStats {
     constructor() {
@@ -913,7 +919,10 @@ class LootLogStats {
     }
 
     /**
-     * Get action category from HRID (e.g. "/actions/cooking/donut" → "Cooking")
+     * Get action category display name from HRID.
+     * Resolution order: game actionCategoryNames dictionary (via the action
+     * detail's category HRID), then the game skillNames dictionary
+     * (/skills/<category segment>), then the capitalized English HRID segment.
      * @param {string} actionHrid
      * @returns {string|null}
      */
@@ -921,11 +930,23 @@ class LootLogStats {
         if (!actionHrid) return null;
         const parts = actionHrid.split('/');
         // Format: /actions/category/name
-        if (parts.length >= 3) {
-            const category = parts[2];
-            return category.charAt(0).toUpperCase() + category.slice(1);
+        if (parts.length < 3) return null;
+        const categorySeg = parts[2];
+        const fallback = categorySeg.charAt(0).toUpperCase() + categorySeg.slice(1);
+
+        // Layer 1: authoritative category HRID from game data (e.g. /action_categories/labyrinth/labyrinth)
+        const details = dataManager.getActionDetails(actionHrid);
+        if (details?.category) {
+            const translated = getActionCategoryName(details.category, '');
+            if (translated) return translated;
         }
-        return null;
+
+        // Layer 2: skill dictionary keyed by the category segment
+        const skillTranslated = getSkillName(`/skills/${categorySeg}`, '');
+        if (skillTranslated) return skillTranslated;
+
+        // Layer 3: previous behavior - capitalized English segment
+        return fallback;
     }
 
     /**

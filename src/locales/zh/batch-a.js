@@ -812,7 +812,7 @@ export default {
             labyrinthClearRate: { label: '迷宫通关率计算器', help: '在迷宫生产房间的方块上显示预计通关时间和成功率' },
             labyrinthMissingSuppliesButton: {
                 label: '迷宫：显示“购买缺少的补给”按钮',
-                help: '在补给区域旁添加一个按钮，打开市场并显示低于携带上限的火把/寿衣/信标标签',
+                help: '在补给区域旁添加一个按钮，打开市场并显示低于携带上限的火把/斗篷/探照灯标签',
             },
             labyrinthRecommendTargetRate: {
                 label: '迷宫：建议目标通关率（%）',
