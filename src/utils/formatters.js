@@ -340,8 +340,8 @@ export function formatRelativeTime(ageMs) {
     const days = Math.floor(hours / 24);
 
     // Edge cases
-    if (minutes < 1) return 'Just now';
-    if (days > 30) return '30+ days';
+    if (minutes < 1) return i18n.t('timeUnits.justNow');
+    if (days > 30) return i18n.t('timeUnits.moreThan30Days');
 
     // Format based on age
     if (days > 7) return `${days}d`;

@@ -452,6 +452,8 @@ export default {
         minutesShort: (p) => `${p.n} 分`,
         secondsShort: (p) => `${p.n} 秒`,
         hms: (p) => `${p.h} 时 ${p.m} 分 ${p.s} 秒`,
+        justNow: '刚刚',
+        moreThan30Days: '30+ 天',
         separator: ' ',
     },
     xphCalculator: {
