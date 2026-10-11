@@ -885,23 +885,14 @@ class DungeonTrackerChatAnnotations {
     getTimestampFromMessage(msg, warnOnFailure = false) {
         const text = msg.textContent.trim();
 
-        // Try American format: [M/D HH:MM:SS AM/PM] or [M/D HH:MM:SS] (24-hour)
-        // Use \s* to handle potential spacing variations
-        let match = text.match(/\[(\d{1,2})\/(\d{1,2})\s*(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/);
-        let isAmerican = true;
-
-        if (!match) {
-            // Try international format: [DD-M HH:MM:SS] (24-hour)
-            // Use \s* to handle potential spacing variations in dungeon chat
-            match = text.match(/\[(\d{1,2})-(\d{1,2})\s*(\d{1,2}):(\d{2}):(\d{2})\]/);
-            isAmerican = false;
-        }
-
-        if (!match) {
-            // Try European dot format: [D.M. HH:MM:SS] (24-hour, trailing dot optional)
-            match = text.match(/\[(\d{1,2})\.(\d{1,2})\.?\s*(\d{1,2}):(\d{2}):(\d{2})\]/);
-            isAmerican = false;
-        }
+        // Unified across every separator the game sends (American "/", international "-",
+        // European "." with an optional trailing dot) with an optional AM/PM suffix that can
+        // appear regardless of separator - e.g. "[10-10 7:34:50 PM]" combines a hyphen date
+        // with a 12-hour clock, which the old separate-regex-per-format approach never matched
+        // (the hyphen branch had no AM/PM group at all). Mirrors the already-correct pattern
+        // dungeon-tracker.js uses for the same "Key counts:" messages. \s* (not \s+) preserves
+        // this method's existing leniency for spacing variations in dungeon chat.
+        const match = text.match(/\[(\d{1,2})([-/.])(\d{1,2})\.?\s*(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/);
 
         if (!match) {
             // Only warn if explicitly requested (for important messages like "Key counts:")
@@ -914,35 +905,32 @@ class DungeonTrackerChatAnnotations {
             return null;
         }
 
-        let month, day, hour, min, sec, period;
+        const [, part1, separator, part2, hourStr, minStr, secStr, period] = match;
+        let month, day;
 
-        if (isAmerican) {
+        if (separator === '/') {
             // American format: M/D — but if first part > 12 it must be DD/MM (e.g. "16/07")
-            [, month, day, hour, min, sec, period] = match;
-            month = parseInt(month, 10);
-            day = parseInt(day, 10);
+            month = parseInt(part1, 10);
+            day = parseInt(part2, 10);
             if (month > 12) {
-                // Swap: first part is day, second part is month
                 [month, day] = [day, month];
             }
         } else {
-            // International format: D-M or D.M.
-            [, day, month, hour, min, sec] = match;
-            month = parseInt(month, 10);
-            day = parseInt(day, 10);
+            // International/European format: D-M or D.M.
+            day = parseInt(part1, 10);
+            month = parseInt(part2, 10);
         }
 
-        hour = parseInt(hour, 10);
-        min = parseInt(min, 10);
-        sec = parseInt(sec, 10);
+        let hour = parseInt(hourStr, 10);
+        const min = parseInt(minStr, 10);
+        const sec = parseInt(secStr, 10);
 
-        // Handle AM/PM conversion (only for American format with AM/PM)
+        // Handle AM/PM conversion, whichever separator the date used
         if (period === 'PM' && hour < 12) hour += 12;
         if (period === 'AM' && hour === 12) hour = 0;
 
         const now = new Date();
-        const dateObj = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
-        return dateObj;
+        return new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
     }
 
     /**

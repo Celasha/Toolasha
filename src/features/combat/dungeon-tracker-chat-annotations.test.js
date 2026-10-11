@@ -87,3 +87,74 @@ describe('DungeonTrackerChatAnnotations — tab click handler tracking (memory l
         expect(dungeonTrackerChatAnnotations.tabClickHandlers.size).toBe(0);
     });
 });
+
+function msgWithText(text) {
+    return { textContent: text };
+}
+
+describe('DungeonTrackerChatAnnotations — getTimestampFromMessage', () => {
+    test('parses a hyphen date combined with a 12-hour AM/PM suffix (real reported format)', () => {
+        const msg = msgWithText('[10-10 7:34:50 PM] Key counts: [Smelly - 172]');
+
+        const result = dungeonTrackerChatAnnotations.getTimestampFromMessage(msg, true);
+
+        expect(result).not.toBeNull();
+        expect(result.getMonth()).toBe(9); // October, 0-indexed
+        expect(result.getDate()).toBe(10);
+        expect(result.getHours()).toBe(19); // 7 PM -> 19:00
+        expect(result.getMinutes()).toBe(34);
+        expect(result.getSeconds()).toBe(50);
+    });
+
+    test('still parses the American slash format with AM/PM', () => {
+        const msg = msgWithText('[10/15 2:30:05 PM] Battle started: Pirate Cove');
+
+        const result = dungeonTrackerChatAnnotations.getTimestampFromMessage(msg);
+
+        expect(result.getMonth()).toBe(9); // October
+        expect(result.getDate()).toBe(15);
+        expect(result.getHours()).toBe(14);
+        expect(result.getMinutes()).toBe(30);
+        expect(result.getSeconds()).toBe(5);
+    });
+
+    test('swaps month/day for the American format when the first part cannot be a month', () => {
+        const msg = msgWithText('[16/07 09:00:00] Battle started: Pirate Cove');
+
+        const result = dungeonTrackerChatAnnotations.getTimestampFromMessage(msg);
+
+        expect(result.getMonth()).toBe(6); // July
+        expect(result.getDate()).toBe(16);
+    });
+
+    test('still parses the international hyphen format with a 24-hour clock (no AM/PM)', () => {
+        const msg = msgWithText('[15-10 14:30:00] Battle started: Pirate Cove');
+
+        const result = dungeonTrackerChatAnnotations.getTimestampFromMessage(msg);
+
+        expect(result.getMonth()).toBe(9); // October
+        expect(result.getDate()).toBe(15);
+        expect(result.getHours()).toBe(14);
+    });
+
+    test('still parses the European dot format with an optional trailing dot', () => {
+        const msg = msgWithText('[15.10. 14:30:00] Battle started: Pirate Cove');
+
+        const result = dungeonTrackerChatAnnotations.getTimestampFromMessage(msg);
+
+        expect(result.getMonth()).toBe(9); // October
+        expect(result.getDate()).toBe(15);
+        expect(result.getHours()).toBe(14);
+    });
+
+    test('returns null and warns on request for text with no recognizable timestamp', () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const msg = msgWithText('Key counts: [Smelly - 172]');
+
+        const result = dungeonTrackerChatAnnotations.getTimestampFromMessage(msg, true);
+
+        expect(result).toBeNull();
+        expect(warnSpy).toHaveBeenCalled();
+        warnSpy.mockRestore();
+    });
+});

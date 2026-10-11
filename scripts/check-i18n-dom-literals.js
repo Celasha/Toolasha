@@ -86,7 +86,7 @@ const ALLOWLIST = [
     // --- known bugs tracked in ZH-I18N-REMAINING-ISSUES.md (remove entry when fixed) ---
     {
         file: 'src/features/combat/dungeon-tracker-chat-annotations.js',
-        literal: String.raw`/\[(\d{1,2})\/(\d{1,2})\s*(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/`,
+        literal: String.raw`/\[(\d{1,2})([-/.])(\d{1,2})\.?\s*(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/`,
         reason: 'to-verify: zh chat timestamp format (上午/下午 vs AM/PM)',
     },
     {
