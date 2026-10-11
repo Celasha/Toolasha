@@ -2499,7 +2499,13 @@ export default class CustomTabsUI {
             if (!details.name) continue;
             if (currentItems.has(hrid)) continue;
             if (categoryFilter && details.categoryHrid !== categoryFilter) continue;
-            if (lowerQuery && !details.name.toLowerCase().includes(lowerQuery)) continue;
+            if (
+                lowerQuery &&
+                !details.name.toLowerCase().includes(lowerQuery) &&
+                !getItemName(hrid, details.name).toLowerCase().includes(lowerQuery)
+            ) {
+                continue;
+            }
 
             const iconId = hrid.replace('/items/', '');
             const spriteUrl = getSpriteBaseUrl();

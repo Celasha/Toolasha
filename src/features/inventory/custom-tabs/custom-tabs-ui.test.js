@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     // the way getSetting() does.
     showUnorganizedCacheEmpty: false,
     tileGap: 4,
+    localizedNames: new Map(),
 }));
 
 vi.mock('../../../core/config.js', () => ({
@@ -74,6 +75,14 @@ vi.mock('../inventory-badge-manager.js', () => ({
         renderAllBadges: vi.fn(async () => {}),
     },
 }));
+
+vi.mock('../../../utils/game-i18n.js', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        getItemName: vi.fn((hrid, fallback) => mocks.localizedNames.get(hrid) ?? fallback),
+    };
+});
 
 vi.mock('../../../core/loadout-state.js', () => ({
     default: {
@@ -1003,5 +1012,61 @@ describe('CustomTabsUI toolbar: Import Native Categories', () => {
 
         const names = ui._config.tabs.map((tab) => tab.name).sort();
         expect(names).toEqual(['Food', 'My Food Stash', 'Weapon']);
+    });
+});
+
+describe('CustomTabsUI tab-editor search: bilingual item matching', () => {
+    let ui;
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        ui = new CustomTabsUI();
+        ui._isActive = false;
+        ui._config = {
+            version: 1,
+            selectedTabId: null,
+            tabs: [{ id: 'tab-2', name: 'Weapons', color: null, open: true, items: [], children: [] }],
+        };
+        vi.spyOn(ui, '_save').mockImplementation(() => {});
+        vi.spyOn(ui, '_findContentContainer').mockReturnValue(null);
+        mocks.localizedNames.set('/items/milk', '牛奶');
+    });
+
+    afterEach(() => {
+        ui._tileObserver?.disconnect();
+        mocks.localizedNames.clear();
+        document.body.innerHTML = '';
+    });
+
+    test('a query in the localized language matches items whose game-data name is English', () => {
+        const container = document.createElement('div');
+        ui._renderSearchResults(container, '牛奶', 'tab-2', null);
+
+        const rows = [...container.querySelectorAll('.toolasha-ct-search-result')];
+        expect(rows.some((row) => row.textContent.includes('牛奶'))).toBe(true);
+        expect(rows).toHaveLength(1);
+    });
+
+    test('an English query still matches (no regression of the English path)', () => {
+        const container = document.createElement('div');
+        ui._renderSearchResults(container, 'milk', 'tab-2', null);
+
+        const rows = [...container.querySelectorAll('.toolasha-ct-search-result')];
+        expect(rows.some((row) => row.textContent.includes('牛奶'))).toBe(true);
+    });
+
+    test('an English query matches an item that has no localized entry (fallback path)', () => {
+        const container = document.createElement('div');
+        ui._renderSearchResults(container, 'egg', 'tab-2', null);
+
+        const rows = [...container.querySelectorAll('.toolasha-ct-search-result')];
+        expect(rows.some((row) => row.textContent.includes('Egg'))).toBe(true);
+    });
+
+    test('a localized query with no match renders no rows', () => {
+        const container = document.createElement('div');
+        ui._renderSearchResults(container, '不存在的东西', 'tab-2', null);
+
+        expect(container.querySelectorAll('.toolasha-ct-search-result')).toHaveLength(0);
     });
 });
