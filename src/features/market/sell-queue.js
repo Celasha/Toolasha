@@ -140,7 +140,8 @@ function buildBadgeHtml(itemHrid, itemName, count) {
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
         .join(' ');
     const color = count > 0 ? '#4ade80' : '#6b7280';
-    const sub = count > 0 ? t('marketplaceTabs.inBag', { count: count.toLocaleString() }) : t('marketplaceTabs.soldOut');
+    const sub =
+        count > 0 ? t('marketplaceTabs.inBag', { count: count.toLocaleString() }) : t('marketplaceTabs.soldOut');
     return `<div style="text-align:center;"><div>${titleCase}</div><div style="font-size:0.75em;color:${color};">${sub}</div></div>`;
 }
 
