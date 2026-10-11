@@ -177,6 +177,10 @@ export default {
         colPrice: '价格',
         colEv: '期望值',
         totalEvPerOpenLabel: '每次开箱总期望值',
+        protectionSubstituteSuggestionLabel: (p) => `≈ ${p.price}（参考 ${p.itemName}）`,
+        protectionSubstituteTooltip:
+            '该物品没有市场价格，但它是这个强化保护物品的已知替代品，因此具有实际价值——点击"应用"将其作为价格使用。',
+        applyProtectionSubstitutePriceButton: '应用',
         successRateLine: (p) => `成功率：${p.rate}`,
         materialCostLine: (p) => `材料成本（每次尝试都支付）：${p.cost}`,
         coinCostLine: (p) => `金币成本（每次尝试都支付）：${p.cost}`,

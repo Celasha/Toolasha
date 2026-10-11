@@ -841,6 +841,10 @@ export default {
         colPrice: 'Price',
         colEv: 'EV',
         totalEvPerOpenLabel: 'Total EV per open',
+        protectionSubstituteSuggestionLabel: (p) => `≈ ${p.price} via ${p.itemName}`,
+        protectionSubstituteTooltip:
+            "This item has no market price, but it's a known substitute for this enhancement-protection item, so it has real value - click Apply to use that as its price.",
+        applyProtectionSubstitutePriceButton: 'Apply',
         successRateLine: (p) => `Success rate: ${p.rate}`,
         materialCostLine: (p) => `Material cost (paid every attempt): ${p.cost}`,
         coinCostLine: (p) => `Coin cost (paid every attempt): ${p.cost}`,

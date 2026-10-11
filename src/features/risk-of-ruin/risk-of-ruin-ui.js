@@ -30,6 +30,8 @@ import { buildAlchemyTransmuteModel } from '../../utils/risk-of-ruin-adapters/al
 import { buildEnhancementModel } from '../../utils/risk-of-ruin-adapters/enhancement-adapter.js';
 import { getItemName } from '../../utils/game-i18n.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
+import { suggestProtectionSubstituteProxyPrice } from '../../utils/protection-substitute-lookup.js';
+import { setCustomPriceOverride } from '../settings/custom-price-overrides.js';
 
 const PANEL_ID = 'mwi-risk-of-ruin-panel';
 const LAUNCHER_ID = 'mwi-risk-of-ruin-launcher';
@@ -196,9 +198,27 @@ class RiskOfRuinUI {
 
         this.panel.querySelector('#mwi-ror-mode').addEventListener('change', () => this._renderModeInputs());
         this.panel.querySelector('#mwi-ror-run').addEventListener('click', () => this._run());
+        this.panel.addEventListener('click', (e) => this._handleApplySubstitutePriceClick(e));
 
         this._populateItemLists();
         this._renderModeInputs();
+    }
+
+    /**
+     * Delegated handler for the "Apply" button rendered next to a detected protection-substitute
+     * drop's suggested price. Saves the suggestion via the existing Custom Price Overrides
+     * mechanism (same path a manually-entered override takes) and reruns the calculation so the
+     * cost/EV/depth-cap context all recompute with the newly-set price.
+     * @param {MouseEvent} e
+     */
+    async _handleApplySubstitutePriceClick(e) {
+        const button = e.target.closest('.mwi-ror-apply-substitute-price');
+        if (!button) return;
+
+        const itemHrid = button.dataset.itemHrid;
+        const price = Number(button.dataset.suggestedPrice);
+        await setCustomPriceOverride(itemHrid, 0, null, price);
+        this._run();
     }
 
     _bodyHTML() {
@@ -822,7 +842,9 @@ class RiskOfRuinUI {
                         }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatPercentage(drop.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.avgCount}</td>
-                        <td style="padding:2px 6px; text-align:right;">${drop.hasPriceData ? fmtGold(drop.priceEach) : '—'}</td>
+                        <td style="padding:2px 6px; text-align:right;">${
+                            drop.hasPriceData ? fmtGold(drop.priceEach) : this._protectionSubstituteCellHTML(drop)
+                        }</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.expectedValue)}</td>
                     </tr>`
             )
@@ -844,6 +866,33 @@ class RiskOfRuinUI {
                     true
                 )
         );
+    }
+
+    /**
+     * For an unpriced drop that's a known enhancement-protection substitute (e.g. a quiver
+     * usable in place of a Mirror of Protection), suggest a proxy sell price derived from the
+     * universal protection item's own current price, with a one-click Apply button that saves
+     * it via the existing Custom Price Overrides mechanism and recomputes - no new pricing/tax
+     * logic, this only ever calls the same path a manually-entered override already takes.
+     * @param {Object} drop - A dropBreakdown entry with hasPriceData === false.
+     * @returns {string}
+     */
+    _protectionSubstituteCellHTML(drop) {
+        const suggestion = suggestProtectionSubstituteProxyPrice(drop.itemHrid);
+        if (!suggestion) return '—';
+
+        const viaName = getItemName(
+            suggestion.viaItemHrid,
+            dataManager.getItemDetails(suggestion.viaItemHrid)?.name || suggestion.viaItemHrid
+        );
+        return `<span style="color:#888; font-style:italic;" title="${t('riskOfRuinUi.protectionSubstituteTooltip')}">${t(
+            'riskOfRuinUi.protectionSubstituteSuggestionLabel',
+            { price: fmtGold(suggestion.price), itemName: viaName }
+        )}</span>
+        <button type="button" class="mwi-ror-apply-substitute-price" data-item-hrid="${drop.itemHrid}" data-suggested-price="${suggestion.price}" style="
+            margin-left:4px; font-size:10px; padding:1px 5px; cursor:pointer;
+            background:rgba(96,165,250,0.15); border:1px solid rgba(96,165,250,0.4); border-radius:4px; color:#60a5fa;
+        ">${t('riskOfRuinUi.applyProtectionSubstitutePriceButton')}</button>`;
     }
 
     _alchemyDetailsHTML({ breakdown }, startingBalance, maxSinglePossibleLoss, minActions) {

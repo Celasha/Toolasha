@@ -26,6 +26,14 @@ vi.mock('../../core/data-manager.js', () => ({
     },
 }));
 
+vi.mock('../../utils/protection-substitute-lookup.js', () => ({
+    suggestProtectionSubstituteProxyPrice: vi.fn(() => null),
+}));
+
+vi.mock('../settings/custom-price-overrides.js', () => ({
+    setCustomPriceOverride: vi.fn(async () => {}),
+}));
+
 const { PANEL_ID, LAUNCHER_ID } = vi.hoisted(() => ({
     PANEL_ID: 'mwi-risk-of-ruin-panel',
     LAUNCHER_ID: 'mwi-risk-of-ruin-launcher',
@@ -33,6 +41,8 @@ const { PANEL_ID, LAUNCHER_ID } = vi.hoisted(() => ({
 
 import config from '../../core/config.js';
 import riskOfRuinUI from './risk-of-ruin-ui.js';
+import { suggestProtectionSubstituteProxyPrice } from '../../utils/protection-substitute-lookup.js';
+import { setCustomPriceOverride } from '../settings/custom-price-overrides.js';
 
 describe('RiskOfRuinUI feature toggle', () => {
     beforeEach(() => {
@@ -191,5 +201,66 @@ describe('_alchemyDepthCapItems (EV-share cost attribution)', () => {
         const items = riskOfRuinUI._alchemyDepthCapItems(data, 100);
 
         expect(items).toEqual([{ itemHrid: '/items/a', quantityPerAction: 3, costShare: 100 }]);
+    });
+});
+
+describe('_protectionSubstituteCellHTML', () => {
+    afterEach(() => {
+        vi.clearAllMocks();
+    });
+
+    test('renders a dash when the drop is not a known protection substitute', () => {
+        suggestProtectionSubstituteProxyPrice.mockReturnValue(null);
+
+        const html = riskOfRuinUI._protectionSubstituteCellHTML({ itemHrid: '/items/jade' });
+
+        expect(html).toBe('—');
+    });
+
+    test('renders the suggested price, source item name, and an Apply button with the right data attributes', () => {
+        suggestProtectionSubstituteProxyPrice.mockReturnValue({
+            price: 192000,
+            isOutlier: false,
+            viaItemHrid: '/items/mirror_of_protection',
+        });
+
+        const html = riskOfRuinUI._protectionSubstituteCellHTML({ itemHrid: '/items/chimerical_quiver' });
+
+        expect(html).toContain('192,000');
+        expect(html).toContain('mwi-ror-apply-substitute-price');
+        expect(html).toContain('data-item-hrid="/items/chimerical_quiver"');
+        expect(html).toContain('data-suggested-price="192000"');
+    });
+});
+
+describe('_handleApplySubstitutePriceClick', () => {
+    afterEach(() => {
+        vi.clearAllMocks();
+    });
+
+    test('saves the suggested price via setCustomPriceOverride and reruns the calculation', async () => {
+        const runSpy = vi.spyOn(riskOfRuinUI, '_run').mockImplementation(() => {});
+        document.body.innerHTML = `<button class="mwi-ror-apply-substitute-price" data-item-hrid="/items/chimerical_quiver" data-suggested-price="192000"></button>`;
+        const button = document.querySelector('.mwi-ror-apply-substitute-price');
+
+        await riskOfRuinUI._handleApplySubstitutePriceClick({ target: button });
+
+        expect(setCustomPriceOverride).toHaveBeenCalledWith('/items/chimerical_quiver', 0, null, 192000);
+        expect(runSpy).toHaveBeenCalled();
+        runSpy.mockRestore();
+        document.body.innerHTML = '';
+    });
+
+    test('does nothing when the click target is not the Apply button', async () => {
+        const runSpy = vi.spyOn(riskOfRuinUI, '_run').mockImplementation(() => {});
+        document.body.innerHTML = `<div id="unrelated"></div>`;
+        const target = document.querySelector('#unrelated');
+
+        await riskOfRuinUI._handleApplySubstitutePriceClick({ target });
+
+        expect(setCustomPriceOverride).not.toHaveBeenCalled();
+        expect(runSpy).not.toHaveBeenCalled();
+        runSpy.mockRestore();
+        document.body.innerHTML = '';
     });
 });
