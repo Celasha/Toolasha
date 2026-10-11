@@ -7,7 +7,7 @@
 
 /* @vitest-environment jsdom */
 
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const storageData = {};
 
@@ -537,5 +537,144 @@ describe('NotificationLog - tab activation', () => {
         const root = document.querySelector('.GamePage_chatPanel__abc');
         expect(root.classList.contains('mwi-notification-log-active')).toBe(false);
         expect(feature.tabActive).toBe(false);
+    });
+});
+
+describe('NotificationLog - timestamp date and age-color ramp (#774)', () => {
+    beforeEach(async () => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+        const config = (await import('../../core/config.js')).default;
+        config.getSetting.mockReturnValue(true);
+        config.getSettingValue.mockReturnValue(100);
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterId.mockReturnValue('111111');
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test("today's entry renders the date alongside the time and the most prominent color", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 9, 15, 14, 0, 0));
+
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        await feature._onInfoMessage({ message: 'infoNotification.soldItem', variables: [] });
+
+        const timeSpan = feature.listEl.querySelector('.mwi-notiflog-time');
+        expect(timeSpan.textContent).toContain('10-15'); // date is now always present
+        expect(timeSpan.style.color).toBe('rgb(255, 255, 255)'); // today = most prominent
+        expect(timeSpan.dataset.ts).toBe(String(feature.entries[0].timestamp));
+    });
+
+    test('an entry from 3+ days ago renders the default muted color, not the prominent one', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 9, 15, 14, 0, 0));
+
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        feature._addEntry({
+            timestamp: new Date(2026, 9, 10, 9, 0, 0).getTime(), // 5 days before "now"
+            type: 'info',
+            message: 'infoNotification.soldItem',
+            variables: [],
+        });
+
+        const timeSpan = feature.listEl.querySelector('.mwi-notiflog-time');
+        expect(timeSpan.style.color).toBe('rgb(139, 148, 158)'); // #8b949e, the existing default
+    });
+
+    test('a 1-day-old and 2-day-old entry render distinct intermediate colors between today and the default', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 9, 15, 14, 0, 0));
+
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        feature._addEntry({
+            timestamp: new Date(2026, 9, 14, 9, 0, 0).getTime(), // yesterday
+            type: 'info',
+            message: 'infoNotification.soldItem',
+            variables: [],
+        });
+        feature._addEntry({
+            timestamp: new Date(2026, 9, 13, 9, 0, 0).getTime(), // 2 days ago
+            type: 'info',
+            message: 'infoNotification.soldItem',
+            variables: [],
+        });
+
+        const spans = feature.listEl.querySelectorAll('.mwi-notiflog-time');
+        const colors = Array.from(spans).map((s) => s.style.color);
+        // Oldest-first display order: 2-days-ago row, then yesterday row.
+        expect(new Set(colors).size).toBe(2);
+        expect(colors).not.toContain('rgb(255, 255, 255)');
+        expect(colors).not.toContain('rgb(139, 148, 158)');
+    });
+
+    test('_activateTab starts a periodic refresh that advances a color as time passes, without a new entry arriving', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 9, 15, 23, 59, 0));
+
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        await feature._onInfoMessage({ message: 'infoNotification.soldItem', variables: [] });
+        feature._activateTab();
+
+        const timeSpan = feature.listEl.querySelector('.mwi-notiflog-time');
+        expect(timeSpan.style.color).toBe('rgb(255, 255, 255)'); // today
+
+        // Cross midnight without any new entry being added.
+        vi.setSystemTime(new Date(2026, 9, 16, 0, 2, 0));
+        vi.advanceTimersByTime(60000);
+
+        expect(timeSpan.style.color).toBe('rgb(208, 215, 222)'); // now "yesterday" relative to new now
+    });
+
+    test('_deactivateTab stops the periodic refresh so it does not keep running while the tab is hidden', async () => {
+        vi.useFakeTimers();
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        feature._activateTab();
+        expect(feature._ageRefreshInterval).not.toBeNull();
+        feature._deactivateTab();
+        expect(feature._ageRefreshInterval).toBeNull();
+    });
+
+    test('disable() clears the periodic refresh timer', async () => {
+        vi.useFakeTimers();
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        feature._activateTab();
+        const clearSpy = vi.spyOn(globalThis, 'clearInterval');
+        feature.disable();
+
+        expect(clearSpy).toHaveBeenCalled();
+        clearSpy.mockRestore();
     });
 });

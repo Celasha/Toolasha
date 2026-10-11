@@ -20,6 +20,8 @@ import webSocketHook from '../../core/websocket.js';
 import { t } from '../../core/i18n.js';
 import { addStyles, removeStyles } from '../../utils/dom.js';
 import { translateGameName } from '../../utils/game-i18n.js';
+import { formatDateTime } from '../../utils/formatters.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { GAME } from '../../utils/selectors.js';
 import {
     formatNotificationMessage,
@@ -98,8 +100,27 @@ function getCharacterScopedKey(prefix) {
 }
 
 function formatTimestamp(ts) {
-    const date = new Date(ts);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return formatDateTime(new Date(ts));
+}
+
+// Age-based color ramp for the timestamp (see #774): today is most prominent, fading over the
+// next two days, then settling to the existing muted default. Calendar-day difference (not raw
+// ms/24h) so e.g. 11pm today vs. 1am tomorrow count as different days a few hours apart.
+const AGE_COLOR_TODAY = '#fff';
+const AGE_COLOR_DAY_1 = '#d0d7de';
+const AGE_COLOR_DAY_2 = '#9ea7b3';
+const AGE_COLOR_DEFAULT = '#8b949e'; // 3+ days - matches the CSS base color for .mwi-notiflog-time
+function ageColor(ts, now = Date.now()) {
+    const startOfDay = (ms) => {
+        const d = new Date(ms);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime();
+    };
+    const ageDays = Math.round((startOfDay(now) - startOfDay(ts)) / 86400000);
+    if (ageDays <= 0) return AGE_COLOR_TODAY;
+    if (ageDays === 1) return AGE_COLOR_DAY_1;
+    if (ageDays === 2) return AGE_COLOR_DAY_2;
+    return AGE_COLOR_DEFAULT;
 }
 
 /**
@@ -181,6 +202,8 @@ class NotificationLog {
         this.listEl = null;
         this.tabActive = false;
         this.pinnedToBottom = true;
+        this.timerRegistry = createTimerRegistry();
+        this._ageRefreshInterval = null;
     }
 
     async initialize() {
@@ -219,6 +242,8 @@ class NotificationLog {
         }
         this._removeTab();
         removeStyles(STYLE_ID);
+        this._stopAgeRefresh();
+        this.timerRegistry.clearAll();
         this.isInitialized = false;
     }
 
@@ -443,11 +468,38 @@ class NotificationLog {
         if (this.listEl && this.pinnedToBottom) {
             this.listEl.scrollTop = this.listEl.scrollHeight;
         }
+
+        this._startAgeRefresh();
+    }
+
+    /**
+     * Start the periodic timestamp-color refresh (see #774) while the tab is visible - advances
+     * the age-based color ramp as time passes without requiring a new entry to trigger a render.
+     */
+    _startAgeRefresh() {
+        if (this._ageRefreshInterval) return;
+        this._ageRefreshInterval = setInterval(() => this._refreshTimestampColors(), 60000);
+        this.timerRegistry.registerInterval(this._ageRefreshInterval);
+    }
+
+    _stopAgeRefresh() {
+        if (!this._ageRefreshInterval) return;
+        clearInterval(this._ageRefreshInterval);
+        this._ageRefreshInterval = null;
+    }
+
+    _refreshTimestampColors() {
+        if (!this.listEl) return;
+        const now = Date.now();
+        this.listEl.querySelectorAll('.mwi-notiflog-time').forEach((span) => {
+            span.style.color = ageColor(Number(span.dataset.ts), now);
+        });
     }
 
     _deactivateTab() {
         if (!this.tabActive) return;
         this.tabActive = false;
+        this._stopAgeRefresh();
         const root = document.querySelector('[class*="GamePage_chatPanel"]');
         if (root) root.classList.remove(ACTIVE_CLASS);
         if (this.tabButton) {
@@ -503,6 +555,8 @@ class NotificationLog {
             const time = document.createElement('span');
             time.className = 'mwi-notiflog-time';
             time.textContent = formatTimestamp(entry.timestamp);
+            time.dataset.ts = String(entry.timestamp);
+            time.style.color = ageColor(entry.timestamp);
 
             const text = document.createElement('span');
             text.className = 'mwi-notiflog-row-text';
