@@ -41,7 +41,12 @@ vi.mock('../../utils/game-i18n.js', () => ({
 }));
 
 import dataManager from '../../core/data-manager.js';
-import { computeAllZoneProgress } from './task-zone-progress.js';
+import {
+    buildZoneSpawnSets,
+    computeAllZoneProgress,
+    findPlanetAnchorMonster,
+    findPlanetForMonster,
+} from './task-zone-progress.js';
 
 function quest({ monsterHrid, goalCount = 100, currentCount = 0 }) {
     return {
@@ -131,5 +136,226 @@ describe('computeAllZoneProgress', () => {
         const result = await computeAllZoneProgress();
 
         expect(result).toEqual([]);
+    });
+
+    test('merges solo-zone quests into their planet row and simulates only the planet', async () => {
+        mockBuildGameDataPayload.mockReturnValue({
+            actionDetailMap: {
+                '/actions/combat/eye_solo_a': {
+                    type: '/action_types/combat',
+                    combatZoneInfo: {
+                        fightInfo: { randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/cyclops' }] } },
+                    },
+                },
+                '/actions/combat/eye_planet': {
+                    type: '/action_types/combat',
+                    combatZoneInfo: {
+                        fightInfo: {
+                            randomSpawnInfo: {
+                                spawns: [
+                                    { combatMonsterHrid: '/monsters/cyclops' },
+                                    { combatMonsterHrid: '/monsters/compound_eye' },
+                                ],
+                            },
+                        },
+                    },
+                },
+            },
+            combatMonsterDetailMap: {
+                '/monsters/cyclops': { name: 'Cyclops' },
+                '/monsters/compound_eye': { name: 'Compound Eye' },
+            },
+        });
+        dataManager.characterQuests = [
+            quest({ monsterHrid: '/monsters/cyclops', goalCount: 100 }),
+            quest({ monsterHrid: '/monsters/compound_eye', goalCount: 397 }),
+        ];
+        // 不应再依赖 getCombatZoneForMonster 的任意首匹配
+        mockGetCombatZoneForMonster.mockReturnValue('/actions/combat/should_not_be_used');
+        mockRunAllZonesSimulation.mockResolvedValue([
+            { deaths: { '/monsters/cyclops': 100, '/monsters/compound_eye': 50 } },
+        ]);
+
+        const result = await computeAllZoneProgress();
+
+        expect(mockRunAllZonesSimulation).toHaveBeenCalledWith(
+            expect.objectContaining({
+                zones: [{ zoneHrid: '/actions/combat/eye_planet', difficultyTier: 0 }],
+                hours: 1,
+            })
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].zoneHrid).toBe('/actions/combat/eye_planet');
+        // 瓶颈：cyclops 100/100 = 1h；compound_eye 397/50 = 7.94h → 后者是瓶颈
+        expect(result[0].hoursNeeded).toBeCloseTo(7.94);
+        expect(result[0].fightsNeeded).toBe(Math.round(150 * 7.94));
+        // 锚定怪：compound_eye 是星球独占普通刷怪
+        expect(result[0].anchor).toEqual({
+            monsterHrid: '/monsters/compound_eye',
+            isBoss: false,
+            battlesPerBoss: 1,
+        });
+    });
+});
+
+describe('findPlanetAnchorMonster', () => {
+    const adm = {
+        '/actions/combat/solo_a': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: { randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/shared' }] } },
+            },
+        },
+        '/actions/combat/planet_x': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: {
+                    battlesPerBoss: 10,
+                    randomSpawnInfo: {
+                        spawns: [
+                            { combatMonsterHrid: '/monsters/shared' },
+                            { combatMonsterHrid: '/monsters/unique_spawn' },
+                        ],
+                    },
+                    bossSpawns: [{ combatMonsterHrid: '/monsters/unique_boss' }],
+                },
+            },
+        },
+        '/actions/combat/planet_shared_only': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: {
+                    battlesPerBoss: 10,
+                    randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/shared' }] },
+                    bossSpawns: [{ combatMonsterHrid: '/monsters/shared_boss' }],
+                },
+            },
+        },
+    };
+
+    test('prefers an exclusive regular spawn of the planet', () => {
+        expect(findPlanetAnchorMonster('/actions/combat/planet_x', adm)).toEqual({
+            monsterHrid: '/monsters/unique_spawn',
+            isBoss: false,
+            battlesPerBoss: 1,
+        });
+    });
+
+    test('falls back to the exclusive boss with battlesPerBoss', () => {
+        expect(findPlanetAnchorMonster('/actions/combat/planet_shared_only', adm)).toEqual({
+            monsterHrid: '/monsters/shared_boss',
+            isBoss: true,
+            battlesPerBoss: 10,
+        });
+    });
+
+    test('returns null when the planet has no exclusive monster', () => {
+        const tiny = {
+            '/actions/combat/solo_m': {
+                type: '/action_types/combat',
+                combatZoneInfo: { fightInfo: { randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/m' }] } } },
+            },
+            '/actions/combat/planet_m': {
+                type: '/action_types/combat',
+                combatZoneInfo: {
+                    fightInfo: {
+                        randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/m' }] },
+                        bossSpawns: [{ combatMonsterHrid: '/monsters/m' }],
+                    },
+                },
+            },
+        };
+        expect(findPlanetAnchorMonster('/actions/combat/planet_m', tiny)).toBeNull();
+    });
+});
+
+describe('planet identification', () => {
+    // eye 星球：spawns 含 solo 区域的怪 + 星球专属怪 + boss
+    const actionDetailMap = {
+        '/actions/combat/eye_solo_a': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: { randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/cyclops' }] } },
+            },
+        },
+        '/actions/combat/eye_solo_b': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: { randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/stacked_eye' }] } },
+            },
+        },
+        '/actions/combat/eye_planet': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: {
+                    randomSpawnInfo: {
+                        spawns: [
+                            { combatMonsterHrid: '/monsters/cyclops' },
+                            { combatMonsterHrid: '/monsters/stacked_eye' },
+                            { combatMonsterHrid: '/monsters/compound_eye' },
+                        ],
+                    },
+                    bossSpawns: [{ combatMonsterHrid: '/monsters/eye_boss' }],
+                },
+            },
+        },
+        '/actions/combat/standalone': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                fightInfo: { randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/novice' }] } },
+            },
+        },
+        '/actions/combat/some_dungeon': {
+            type: '/action_types/combat',
+            combatZoneInfo: {
+                isDungeon: true,
+                fightInfo: { randomSpawnInfo: { spawns: [{ combatMonsterHrid: '/monsters/cyclops' }] } },
+            },
+        },
+    };
+
+    test('buildZoneSpawnSets collects non-dungeon combat zone monster sets', () => {
+        const sets = buildZoneSpawnSets(actionDetailMap);
+        expect(sets.get('/actions/combat/eye_solo_a')).toEqual(new Set(['/monsters/cyclops']));
+        expect(sets.get('/actions/combat/eye_planet')).toEqual(
+            new Set(['/monsters/cyclops', '/monsters/stacked_eye', '/monsters/compound_eye', '/monsters/eye_boss'])
+        );
+        expect(sets.has('/actions/combat/some_dungeon')).toBe(false);
+    });
+
+    test('a zone whose spawn set strictly contains another zone is a planet', () => {
+        const sets = buildZoneSpawnSets(actionDetailMap);
+        expect(findPlanetForMonster('/monsters/cyclops', sets)).toBe('/actions/combat/eye_planet');
+        expect(findPlanetForMonster('/monsters/stacked_eye', sets)).toBe('/actions/combat/eye_planet');
+    });
+
+    test('planet-exclusive monsters resolve to the planet itself', () => {
+        const sets = buildZoneSpawnSets(actionDetailMap);
+        expect(findPlanetForMonster('/monsters/compound_eye', sets)).toBe('/actions/combat/eye_planet');
+        expect(findPlanetForMonster('/monsters/eye_boss', sets)).toBe('/actions/combat/eye_planet');
+    });
+
+    test('monsters with no containing planet return null (standalone zones keep legacy rows)', () => {
+        const sets = buildZoneSpawnSets(actionDetailMap);
+        expect(findPlanetForMonster('/monsters/novice', sets)).toBeNull();
+        expect(findPlanetForMonster('/monsters/unknown', sets)).toBeNull();
+    });
+
+    test('the smallest containing planet wins when planets nest', () => {
+        const nested = new Map([
+            ['tiny', new Set(['m1'])],
+            ['small', new Set(['m1', 'm2'])],
+            ['big', new Set(['m1', 'm2', 'm3'])],
+        ]);
+        // small 与 big 都是星球（严格包含 tiny）；m1 归属最小的星球 small
+        expect(findPlanetForMonster('m1', nested)).toBe('small');
+    });
+
+    test('equal sets do not make planets of each other', () => {
+        const twins = new Map([
+            ['twin_a', new Set(['m1'])],
+            ['twin_b', new Set(['m1'])],
+        ]);
+        expect(findPlanetForMonster('m1', twins)).toBeNull();
     });
 });

@@ -4,7 +4,7 @@
 
 /* @vitest-environment jsdom */
 
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../core/config.js', () => ({
     default: {
@@ -35,13 +35,17 @@ vi.mock('./task-profit-calculator.js', () => ({
     calculateTaskRewardValue: vi.fn(),
 }));
 vi.mock('./task-profit-display.js', () => ({ calculateTaskCompletionSeconds: vi.fn() }));
-vi.mock('./task-zone-progress.js', () => ({ computeAllZoneProgress: vi.fn(async () => []) }));
+const { mockComputeAllZoneProgress } = vi.hoisted(() => ({ mockComputeAllZoneProgress: vi.fn() }));
+vi.mock('./task-zone-progress.js', () => ({ computeAllZoneProgress: mockComputeAllZoneProgress }));
 vi.mock('../../utils/game-i18n.js', () => ({
     getActionName: (_hrid, fallback) => fallback,
     getMonsterName: (_hrid, fallback) => fallback,
 }));
 
 import taskStatistics from './task-statistics.js';
+import marketAPI from '../../api/marketplace.js';
+import * as taskProfitCalculator from './task-profit-calculator.js';
+import { calculateTaskCompletionSeconds } from './task-profit-display.js';
 
 describe('TaskStatistics.createZoneProgressSection', () => {
     beforeEach(() => {
@@ -103,5 +107,247 @@ describe('TaskStatistics.createZoneProgressSection', () => {
         expect(handleGoToAction).toHaveBeenCalledWith('/actions/combat/zone_a', 120);
 
         root.remove();
+    });
+
+    test('row with a planet anchor prefers handleGoToMonster and converts boss counts', () => {
+        const overlay = document.createElement('div');
+        document.body.appendChild(overlay);
+        taskStatistics.overlay = overlay;
+
+        const handleGoToAction = vi.fn();
+        const handleGoToMonster = vi.fn();
+        const root = document.createElement('div');
+        root.id = 'root';
+        root._reactRootContainer = {
+            current: { stateNode: { handleGoToAction, handleGoToMonster }, sibling: null, child: null },
+        };
+        document.body.appendChild(root);
+
+        const section = taskStatistics.createZoneProgressSection(
+            [
+                makeZone({
+                    fightsNeeded: 120,
+                    anchor: { monsterHrid: '/monsters/eye_boss', isBoss: true, battlesPerBoss: 10 },
+                }),
+                makeZone({
+                    fightsNeeded: 77,
+                    anchor: { monsterHrid: '/monsters/unique_spawn', isBoss: false, battlesPerBoss: 1 },
+                }),
+            ],
+            '#ffffff'
+        );
+        const bossRow = section.children[1];
+        const spawnRow = section.children[2];
+        bossRow.onclick();
+        expect(handleGoToMonster).toHaveBeenLastCalledWith('/monsters/eye_boss', 12);
+        spawnRow.onclick();
+        expect(handleGoToMonster).toHaveBeenLastCalledWith('/monsters/unique_spawn', 77);
+        expect(handleGoToAction).not.toHaveBeenCalled();
+
+        root.remove();
+    });
+});
+
+describe('TaskStatistics progressive popup', () => {
+    beforeEach(() => {
+        marketAPI.isLoaded.mockReturnValue(true);
+        marketAPI.fetch.mockResolvedValue(undefined);
+        taskProfitCalculator.calculateTaskTokenValue.mockReturnValue(10);
+        taskProfitCalculator.calculateTaskRewardValue.mockReturnValue({
+            error: false,
+            total: 1000,
+            breakdown: { tokenValue: 10 },
+            taskTokens: 500,
+            purpleGift: 100,
+        });
+        taskProfitCalculator.calculateTaskProfit.mockResolvedValue(null);
+        calculateTaskCompletionSeconds.mockReturnValue(null);
+        mockComputeAllZoneProgress.mockResolvedValue([]);
+        taskStatistics.overlay = null;
+        taskStatistics.popupGeneration = 0;
+    });
+
+    afterEach(() => {
+        taskStatistics.closePopup();
+    });
+
+    function makeZoneProgress() {
+        return [
+            {
+                zoneHrid: '/actions/combat/eye_planet',
+                zoneName: 'Eye Planet',
+                hoursNeeded: 2,
+                fightsNeeded: 120,
+                bottleneckName: 'Compound Eye',
+            },
+        ];
+    }
+
+    test('opening the popup renders the overlay synchronously with placeholder rows', async () => {
+        let resolveZone;
+        mockComputeAllZoneProgress.mockReturnValue(new Promise((resolve) => (resolveZone = resolve)));
+
+        const opening = taskStatistics.showPopup(); // 不 await —— 秒开断言的关键
+
+        expect(taskStatistics.overlay).not.toBeNull();
+        const content = taskStatistics.overlay.querySelector('.toolasha-task-stats-content');
+        expect(content).not.toBeNull();
+        expect(content.textContent).toContain('taskStatistics.computingPlaceholder');
+
+        resolveZone([]);
+        await opening;
+    });
+
+    test('task slots section shows real data immediately (no placeholder)', async () => {
+        const opening = taskStatistics.showPopup();
+        const overflowSection = taskStatistics.sections.overflow;
+        expect(overflowSection.textContent).toContain('taskStatistics.taskSlotsHeader');
+        expect(overflowSection.textContent).not.toContain('taskStatistics.computingPlaceholder');
+        await opening;
+    });
+
+    test('reward sections fill in after calculateRewardsSummary resolves', async () => {
+        await taskStatistics.showPopup();
+
+        expect(taskStatistics.sections.rewards.textContent).toContain('taskStatistics.totalCoinsLabel');
+        expect(taskStatistics.sections.rewards.textContent).not.toContain('taskStatistics.computingPlaceholder');
+        expect(taskStatistics.sections.actionProfit.textContent).not.toContain('taskStatistics.computingPlaceholder');
+        expect(taskStatistics.sections.completionTime.textContent).not.toContain('taskStatistics.computingPlaceholder');
+    });
+
+    test('zone progress section fills on result and is removed when result is empty', async () => {
+        mockComputeAllZoneProgress.mockResolvedValue(makeZoneProgress());
+        await taskStatistics.showPopup();
+        expect(taskStatistics.sections.zoneProgress.textContent).toContain('Eye Planet');
+
+        mockComputeAllZoneProgress.mockResolvedValue([]);
+        await taskStatistics.showPopup();
+        expect(taskStatistics.sections.zoneProgress).toBeNull();
+    });
+
+    test('stale async results from a closed popup never touch the new popup (generation token)', async () => {
+        let resolveFirst;
+        mockComputeAllZoneProgress.mockReturnValue(new Promise((r) => (resolveFirst = r)));
+
+        const first = taskStatistics.showPopup();
+        const firstGeneration = taskStatistics.popupGeneration;
+        taskStatistics.closePopup();
+
+        mockComputeAllZoneProgress.mockResolvedValue(makeZoneProgress());
+        await taskStatistics.showPopup();
+        const secondSectionHtml = taskStatistics.sections.zoneProgress.innerHTML;
+
+        resolveFirst(makeZoneProgress());
+        await first;
+
+        expect(taskStatistics.popupGeneration).toBeGreaterThan(firstGeneration);
+        expect(taskStatistics.sections.zoneProgress.innerHTML).toBe(secondSectionHtml);
+    });
+
+    test('a failing market fetch shows error rows instead of throwing', async () => {
+        marketAPI.isLoaded.mockReturnValue(false);
+        marketAPI.fetch.mockRejectedValue(new Error('network down'));
+
+        await expect(taskStatistics.showPopup()).resolves.not.toThrow();
+        expect(taskStatistics.sections.rewards.textContent).toContain('taskStatistics.computeFailedMessage');
+        expect(taskStatistics.sections.actionProfit.textContent).toContain('taskStatistics.computeFailedMessage');
+        expect(taskStatistics.sections.completionTime.textContent).toContain('taskStatistics.computeFailedMessage');
+    });
+
+    test('popup content uses a responsive grid and zone progress spans the full width', async () => {
+        mockComputeAllZoneProgress.mockResolvedValue(makeZoneProgress());
+        await taskStatistics.showPopup();
+
+        const content = taskStatistics.overlay.querySelector('.toolasha-task-stats-content');
+        expect(content.style.display).toBe('grid');
+        expect(content.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(280px, 1fr))');
+        expect(taskStatistics.sections.zoneProgress.style.gridColumn).toBe('1 / -1');
+    });
+});
+
+describe('TaskStatistics combat row hiding', () => {
+    beforeEach(() => {
+        taskStatistics.overlay = null;
+    });
+
+    afterEach(() => {
+        taskStatistics.closePopup();
+    });
+
+    function detail(overrides = {}) {
+        return {
+            name: 'Forage',
+            isCombat: false,
+            coinReward: 100,
+            tokenReward: 5,
+            actionProfit: 500,
+            completionSeconds: 3600,
+            goalCount: 10,
+            currentCount: 0,
+            ...overrides,
+        };
+    }
+
+    function rewards(taskDetails) {
+        return {
+            totalCoins: 0,
+            totalTokens: 0,
+            tokenValue: 10,
+            rewardValue: { error: false, total: 0, breakdown: { tokenValue: 10 }, taskTokens: 0, purpleGift: 0 },
+            totalActionProfit: 500,
+            totalCompletionSeconds: 3600,
+            combinedTotal: 500,
+            taskDetails,
+        };
+    }
+
+    function rowLabels(section) {
+        return [...section.querySelectorAll('div > span:first-child')].map((s) => s.textContent);
+    }
+
+    test('action profit header carries the not-applicable suffix and combat rows are hidden', () => {
+        const section = taskStatistics.createActionProfitSection(
+            rewards([detail(), detail({ name: 'Dragon', isCombat: true, actionProfit: null })])
+        );
+        expect(section.children[0].textContent).toBe(
+            'taskStatistics.actionProfitHeadertaskStatistics.combatNotApplicableLabel'
+        );
+        const labels = rowLabels(section);
+        expect(labels).toContain('Forage');
+        expect(labels).not.toContain('Dragon');
+    });
+
+    test('completion time hides combat rows too', () => {
+        const section = taskStatistics.createCompletionTimeSection(
+            rewards([detail(), detail({ name: 'Dragon', isCombat: true, completionSeconds: null })]),
+            '#ffffff'
+        );
+        const labels = rowLabels(section);
+        expect(labels).toContain('Forage');
+        expect(labels).not.toContain('Dragon');
+    });
+
+    test('all-combat task list renders only the section title', () => {
+        const profitSection = taskStatistics.createActionProfitSection(
+            rewards([detail({ name: 'D', isCombat: true, actionProfit: null })])
+        );
+        const timeSection = taskStatistics.createCompletionTimeSection(
+            rewards([detail({ name: 'D', isCombat: true, completionSeconds: null })]),
+            '#ffffff'
+        );
+        expect(profitSection.children).toHaveLength(1);
+        expect(timeSection.children).toHaveLength(1);
+    });
+});
+
+describe('combatNotApplicableLabel locale format', () => {
+    // The suffix must carry its own punctuation/spacing: code concatenates it
+    // verbatim onto the section title, so a bare label would lose the brackets.
+    test.each([
+        ['zh', '（不适用于战斗）'],
+        ['en', ' (N/A for combat)'],
+    ])('%s suffix is self-contained', async (locale, expected) => {
+        const { default: dict } = await import(`../../locales/${locale === 'zh' ? 'zh/batch-e.js' : 'en.js'}`);
+        expect(dict.taskStatistics.combatNotApplicableLabel).toBe(expected);
     });
 });
