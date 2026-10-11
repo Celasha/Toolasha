@@ -53,6 +53,9 @@ vi.mock('../../market/expected-value-calculator.js', () => ({
 }));
 
 const { default: openableAnalyticsDataCollector } = await import('./openable-analytics-data-collector.js');
+const { default: expectedValueCalculator } = await import('../../market/expected-value-calculator.js');
+const { createEmptyAggregate, foldRecordIntoAggregate } = await import('./openable-analytics-storage.js');
+const storageMock = (await import('../../../core/storage.js')).default;
 
 function lootOpenedMessage(overrides = {}) {
     return {
@@ -669,5 +672,237 @@ describe('section 23: state-change subscription', () => {
         await lootHandler()(lootOpenedEvent());
 
         expect(seen).toHaveLength(0);
+    });
+});
+
+describe('self-heal repair on initialize', () => {
+    function partialRecord(overrides = {}) {
+        return {
+            timestamp: 1,
+            characterId: 'char-a',
+            containerHrid: '/items/chimerical_chest',
+            containerCount: 1,
+            gainedItems: [{ itemHrid: '/items/mystery', enhancementLevel: 0, count: 1 }],
+            grantedBuffs: [],
+            actualValue: 0,
+            actualValueComplete: false,
+            actualValueBreakdown: [
+                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 0, resolved: false },
+            ],
+            expectedValue: 90,
+            expectedValueAvailable: true,
+            expectedValueComplete: true,
+            sourceDataComplete: true,
+            luckValue: null,
+            luckPercent: null,
+            pricingMode: 'hybrid',
+            keyPricingMode: 'ask',
+            source: 'loot_opened',
+            ...overrides,
+        };
+    }
+
+    function seedStorage(history, lifetime) {
+        mocks.values.set('lifetime:char-a', lifetime);
+        mocks.values.set('history:char-a', history);
+    }
+
+    async function reinitialize() {
+        openableAnalyticsDataCollector.cleanup();
+        await openableAnalyticsDataCollector.initialize();
+    }
+
+    test('a partial record is re-valued with current prices; lifetime gains luck eligibility', async () => {
+        const old = partialRecord();
+        const lifetime = foldRecordIntoAggregate(createEmptyAggregate(), old);
+        expect(lifetime.luckEligibleRecordCount).toBe(0);
+        seedStorage([old], { '/items/chimerical_chest': lifetime });
+
+        mocks.dropTable = { '/items/chimerical_chest': [{ itemHrid: '/items/coin', dropRate: 1 }] };
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((itemHrid) =>
+            itemHrid === '/items/mystery' ? { value: 50, needsTax: false } : { value: 10, needsTax: false }
+        );
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 90,
+            drops: [{ hasPriceData: true }],
+        });
+
+        await reinitialize();
+
+        const history = openableAnalyticsDataCollector.getHistory();
+        expect(history[0].actualValue).toBe(50);
+        expect(history[0].actualValueComplete).toBe(true);
+        expect(history[0].luckValue).toBe(-40);
+        expect(history[0].timestamp).toBe(1);
+
+        const lifetimeAfter = openableAnalyticsDataCollector.getLiveLifetimeAggregate('/items/chimerical_chest');
+        expect(lifetimeAfter.luckEligibleRecordCount).toBe(1);
+        expect(lifetimeAfter.actualValueTotal).toBe(50);
+    });
+
+    test('pre-history contributions outside the history window survive the repair', async () => {
+        // A complete record that has already fallen off the 500-event history window: its
+        // contributions live only in the lifetime aggregate. The repair must swap only the
+        // history record's stored contribution for the rebuilt one - never rebuild lifetime
+        // from history alone (which would silently drop pre-history contributions).
+        const preHistory = partialRecord({
+            timestamp: 0,
+            containerCount: 4,
+            gainedItems: [
+                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1 },
+                { itemHrid: '/items/relic', enhancementLevel: 0, count: 2 },
+            ],
+            actualValue: 200,
+            actualValueComplete: true,
+            actualValueBreakdown: [
+                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 100, resolved: true },
+                { itemHrid: '/items/relic', enhancementLevel: 0, count: 2, value: 100, resolved: true },
+            ],
+            luckValue: -10,
+            luckPercent: -10,
+        });
+        const old = partialRecord();
+        const lifetime = foldRecordIntoAggregate(foldRecordIntoAggregate(createEmptyAggregate(), preHistory), old);
+        seedStorage([old], { '/items/chimerical_chest': lifetime });
+
+        mocks.dropTable = { '/items/chimerical_chest': [{ itemHrid: '/items/coin', dropRate: 1 }] };
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((itemHrid) =>
+            itemHrid === '/items/mystery' ? { value: 50, needsTax: false } : { value: 10, needsTax: false }
+        );
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 90,
+            drops: [{ hasPriceData: true }],
+        });
+
+        await reinitialize();
+
+        const lifetimeAfter = openableAnalyticsDataCollector.getLiveLifetimeAggregate('/items/chimerical_chest');
+        // Pre-history contributions survive...
+        expect(lifetimeAfter.containersOpened).toBe(5);
+        expect(lifetimeAfter.itemTotals['/items/relic']).toBe(2);
+        expect(lifetimeAfter.itemValueTotals['/items/relic']).toBe(100);
+        // ...and only the history record's contribution was swapped for the rebuilt one (50 instead of 0).
+        expect(lifetimeAfter.actualValueTotal).toBe(250);
+        expect(lifetimeAfter.luckEligibleRecordCount).toBe(2);
+    });
+
+    test('a complete record keeps its event-time valuation untouched', async () => {
+        const complete = partialRecord({
+            actualValue: 100,
+            actualValueComplete: true,
+            actualValueBreakdown: [
+                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 100, resolved: true },
+            ],
+            luckValue: 10,
+        });
+        seedStorage([complete], {
+            '/items/chimerical_chest': foldRecordIntoAggregate(createEmptyAggregate(), complete),
+        });
+        storageMock.setJSON.mockClear();
+
+        await reinitialize();
+
+        expect(openableAnalyticsDataCollector.getHistory()[0]).toBe(complete);
+        expect(storageMock.setJSON).not.toHaveBeenCalled();
+    });
+
+    test('a still-unpriced item produces zero writes (fail-closed preserved)', async () => {
+        seedStorage([partialRecord()], {
+            '/items/chimerical_chest': foldRecordIntoAggregate(createEmptyAggregate(), partialRecord()),
+        });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue(null);
+        // EV 侧保持完整，隔离出"仅物品缺价"这一种情况，避免 expectedValueComplete 翻转干扰断言
+        mocks.dropTable = { '/items/chimerical_chest': [{ itemHrid: '/items/coin', dropRate: 1 }] };
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 90,
+            drops: [{ hasPriceData: true }],
+        });
+        storageMock.setJSON.mockClear();
+
+        await reinitialize();
+
+        expect(openableAnalyticsDataCollector.getHistory()[0].actualValueComplete).toBe(false);
+        expect(storageMock.setJSON).not.toHaveBeenCalled();
+    });
+
+    test('a sourceDataComplete:false record may gain a value but never gains luck eligibility', async () => {
+        seedStorage([partialRecord({ sourceDataComplete: false })], {
+            '/items/chimerical_chest': foldRecordIntoAggregate(
+                createEmptyAggregate(),
+                partialRecord({ sourceDataComplete: false })
+            ),
+        });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 50, needsTax: false });
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 90,
+            drops: [{ hasPriceData: true }],
+        });
+
+        await reinitialize();
+
+        const history = openableAnalyticsDataCollector.getHistory();
+        expect(history[0].actualValue).toBe(50);
+        expect(history[0].actualValueComplete).toBe(false);
+        expect(history[0].luckValue).toBeNull();
+        expect(
+            openableAnalyticsDataCollector.getLiveLifetimeAggregate('/items/chimerical_chest').luckEligibleRecordCount
+        ).toBe(0);
+    });
+
+    test('repair is idempotent: a second initialize performs zero writes', async () => {
+        seedStorage([partialRecord()], {
+            '/items/chimerical_chest': foldRecordIntoAggregate(createEmptyAggregate(), partialRecord()),
+        });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 50, needsTax: false });
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 90,
+            drops: [{ hasPriceData: true }],
+        });
+
+        await reinitialize();
+        // 先等第一次修复的持久化落地，再清空调用记录，否则该写入会计入第二次 initialize
+        await openableAnalyticsDataCollector.persistenceQueue;
+        storageMock.setJSON.mockClear();
+        await reinitialize();
+
+        expect(storageMock.setJSON).not.toHaveBeenCalled();
+    });
+
+    test('an Expected-partial record is re-valued and regains Luck eligibility via the second repair branch', async () => {
+        // Actual 侧完整且重估不变（sell-side 价与快照一致），只有 expectedValueComplete 翻转驱动
+        // valueChanged —— 专锁 needsRepair 的第二个析取支（EV partial），不与 Actual 分支混淆
+        const evPartial = partialRecord({
+            actualValue: 100,
+            actualValueComplete: true,
+            actualValueBreakdown: [
+                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 100, resolved: true },
+            ],
+            expectedValue: 90,
+            expectedValueAvailable: true,
+            expectedValueComplete: false,
+        });
+        const lifetime = foldRecordIntoAggregate(createEmptyAggregate(), evPartial);
+        expect(lifetime.luckEligibleRecordCount).toBe(0);
+        expect(lifetime.expectedValuePartialEvents).toBe(1);
+        seedStorage([evPartial], { '/items/chimerical_chest': lifetime });
+
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, needsTax: false });
+        // dropRate 行数与可定价 drops 数一致，calculator 内部推导才会翻转为 complete
+        mocks.dropTable = { '/items/chimerical_chest': [{ itemHrid: '/items/coin', dropRate: 1 }] };
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 90,
+            drops: [{ hasPriceData: true }],
+        });
+
+        await reinitialize();
+
+        const history = openableAnalyticsDataCollector.getHistory();
+        expect(history[0].actualValue).toBe(100);
+        expect(history[0].expectedValueComplete).toBe(true);
+        expect(history[0].luckValue).toBe(10);
+
+        const lifetimeAfter = openableAnalyticsDataCollector.getLiveLifetimeAggregate('/items/chimerical_chest');
+        expect(lifetimeAfter.luckEligibleRecordCount).toBe(1);
+        expect(lifetimeAfter.expectedValuePartialEvents).toBe(0);
     });
 });
