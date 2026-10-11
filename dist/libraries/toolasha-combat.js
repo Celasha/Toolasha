@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.13.0
+ * Version: 3.14.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketplaceSession_js, loadoutState, storage, i18n_js, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, marketData_js, warningIcon_js, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, dom, enhancementCalculator_js, enhancementConfig_js, teaParser_js, marketValuesAPI, actionCalculator_js, efficiency_js, materialCalculator_js, abilityCostCalculator_js, equipmentParser_js, experienceCalculator_js, tooltipObserver, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketplaceSession_js, loadoutState, storage, i18n_js, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, marketData_js, warningIcon_js, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, dom, enhancementCalculator_js, enhancementConfig_js, teaParser_js, marketValuesAPI, actionCalculator_js, efficiency_js, materialCalculator_js, abilityCostCalculator_js, equipmentParser_js, settingsSchema_js, experienceCalculator_js, tooltipObserver, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -2430,6 +2430,76 @@
     const dungeonTrackerStorage = new DungeonTrackerStorage();
 
     /**
+     * Chat Timestamp Parsing
+     * Parses the bracketed timestamp the game renders on system chat messages
+     * (e.g. "[10-11 12:05:07 AM]"), shared by every dungeon-tracker module that reads it from the DOM.
+     */
+
+    const TIMESTAMP_PATTERN = /\[(\d{1,2})([-/.])(\d{1,2})\.?\s*(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/;
+
+    /**
+     * Parse a chat-rendered timestamp into a Date.
+     *
+     * The game renders this timestamp using the browser's locale, so the day/month order implied by
+     * a given separator is not fixed - some clients render "D-M", others "M-D", with the exact same
+     * hyphen. When both numeric parts are <=12 the order is genuinely ambiguous from the digits alone
+     * (e.g. "10-11"); this resolves it by picking whichever interpretation - combined with whichever
+     * of referenceDate's year and its neighbors - lands closest to `referenceDate`. Chat messages are
+     * always close together in real time, so the correct interpretation is never more than a few
+     * hours away, while a swapped month/day reading lands weeks or months off (the exact failure this
+     * replaces: a hard-coded "hyphen always means day-month" assumption misread "[10-11 12:05:07 AM]"
+     * as November 10th instead of October 11th, producing a ~30-day gap).
+     * @param {string} text - Message text containing a bracketed timestamp
+     * @param {Date} [referenceDate] - Anchor time used to disambiguate month/day order and pick the year
+     * @returns {Date|null}
+     */
+    function parseChatTimestamp(text, referenceDate = new Date()) {
+        const match = text.match(TIMESTAMP_PATTERN);
+        if (!match) return null;
+
+        const [, part1Str, , part2Str, hourStr, minStr, secStr, period] = match;
+        const part1 = parseInt(part1Str, 10);
+        const part2 = parseInt(part2Str, 10);
+        let hour = parseInt(hourStr, 10);
+        const min = parseInt(minStr, 10);
+        const sec = parseInt(secStr, 10);
+
+        if (period === 'PM' && hour < 12) hour += 12;
+        if (period === 'AM' && hour === 12) hour = 0;
+
+        const daysInMonth = (year, month) => new Date(year, month, 0).getDate();
+        const referenceYear = referenceDate.getFullYear();
+        const referenceTime = referenceDate.getTime();
+
+        // Try both (month, day) readings - skip the duplicate when the digits are identical - and
+        // every nearby year, so a date near a Dec/Jan boundary isn't stranded a year off by a
+        // fixed-year assumption. Keep whichever valid combination lands closest to referenceDate.
+        const orders =
+            part1 === part2
+                ? [[part1, part2]]
+                : [
+                      [part1, part2],
+                      [part2, part1],
+                  ];
+        let best = null;
+        let bestDistance = Infinity;
+        for (const [month, day] of orders) {
+            if (month < 1 || month > 12) continue;
+            for (const year of [referenceYear, referenceYear - 1, referenceYear + 1]) {
+                if (day < 1 || day > daysInMonth(year, month)) continue;
+                const candidate = new Date(year, month - 1, day, hour, min, sec, 0);
+                const distance = Math.abs(candidate.getTime() - referenceTime);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = candidate;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    /**
      * Dungeon Tracker Core
      * Tracks dungeon progress in real-time using WebSocket messages
      */
@@ -2864,6 +2934,11 @@
                 if (!latestKeyCountsMap) {
                     const messages = document.querySelectorAll('[class^="ChatMessage_chatMessage"]');
 
+                    // Anchor for disambiguating an ambiguous date (see parseChatTimestamp) - advances
+                    // to each message's own timestamp as the scan proceeds, so later messages are
+                    // disambiguated against their chronological neighbor instead of wall-clock time.
+                    let referenceDate = new Date();
+
                     // Scan all messages to find Battle started and most recent key counts
                     for (const msg of messages) {
                         const text = msg.textContent || '';
@@ -2882,44 +2957,10 @@
 
                         // Look for "Battle started:" messages (locale-aware)
                         if (isBattleStartedText(text)) {
-                            // Try to extract timestamp
-                            // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
-                            const timestampMatch = text.match(
-                                /\[(\d{1,2})([-/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
-                            );
+                            const timestamp = parseChatTimestamp(text, referenceDate);
 
-                            if (timestampMatch) {
-                                const part1 = parseInt(timestampMatch[1], 10);
-                                const separator = timestampMatch[2];
-                                const part2 = parseInt(timestampMatch[3], 10);
-                                let hour = parseInt(timestampMatch[4], 10);
-                                const min = parseInt(timestampMatch[5], 10);
-                                const sec = parseInt(timestampMatch[6], 10);
-                                const period = timestampMatch[7];
-
-                                // Determine format based on separator
-                                let month, day;
-                                if (separator === '/') {
-                                    // MM/DD format — but if first part > 12 it must be DD/MM (e.g. "16/07")
-                                    if (part1 > 12) {
-                                        day = part1;
-                                        month = part2;
-                                    } else {
-                                        month = part1;
-                                        day = part2;
-                                    }
-                                } else {
-                                    // DD-M format (dash separator)
-                                    day = part1;
-                                    month = part2;
-                                }
-
-                                // Handle AM/PM if present
-                                if (period === 'PM' && hour < 12) hour += 12;
-                                if (period === 'AM' && hour === 12) hour = 0;
-
-                                const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
-
+                            if (timestamp) {
+                                referenceDate = timestamp;
                                 this.battleStartedTimestamp = timestamp.getTime();
                                 battleStartedFound = true;
                             }
@@ -2931,44 +2972,10 @@
                             const keyCountsMap = this.parseKeyCountsFromMessage(text);
 
                             if (Object.keys(keyCountsMap).length > 0) {
-                                // Try to extract timestamp from message display format:
-                                // [MM/DD HH:MM:SS AM/PM], [DD-M HH:MM:SS], or [D.M. HH:MM:SS]
-                                const timestampMatch = text.match(
-                                    /\[(\d{1,2})([-/.])(\d{1,2})\.?\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
-                                );
+                                const timestamp = parseChatTimestamp(text, referenceDate);
 
-                                if (timestampMatch) {
-                                    const part1 = parseInt(timestampMatch[1], 10);
-                                    const separator = timestampMatch[2];
-                                    const part2 = parseInt(timestampMatch[3], 10);
-                                    let hour = parseInt(timestampMatch[4], 10);
-                                    const min = parseInt(timestampMatch[5], 10);
-                                    const sec = parseInt(timestampMatch[6], 10);
-                                    const period = timestampMatch[7];
-
-                                    // Determine format based on separator
-                                    let month, day;
-                                    if (separator === '/') {
-                                        // MM/DD format — but if first part > 12 it must be DD/MM (e.g. "16/07")
-                                        if (part1 > 12) {
-                                            day = part1;
-                                            month = part2;
-                                        } else {
-                                            month = part1;
-                                            day = part2;
-                                        }
-                                    } else {
-                                        // DD-M format (dash separator)
-                                        day = part1;
-                                        month = part2;
-                                    }
-
-                                    // Handle AM/PM if present
-                                    if (period === 'PM' && hour < 12) hour += 12;
-                                    if (period === 'AM' && hour === 12) hour = 0;
-
-                                    const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
-
+                                if (timestamp) {
+                                    referenceDate = timestamp;
                                     // Keep this as the latest (will be overwritten if we find a newer one)
                                     latestKeyCountsMap = keyCountsMap;
                                     latestTimestamp = timestamp.getTime();
@@ -3331,25 +3338,6 @@
             }
 
             return keyCountsMap;
-        }
-
-        /**
-         * Reconstruct a Date from chat-message display parts (no year in the source text). Chat
-         * messages are always in the past, so if assuming the current year would put the timestamp
-         * in the future, the message must actually be from the previous year (e.g. a message sent in
-         * December, parsed after the new year rolled over).
-         * @param {number} month - 1-indexed month
-         * @param {number} day
-         * @param {number} hour
-         * @param {number} min
-         * @param {number} sec
-         * @returns {Date}
-         */
-        buildTimestampFromParts(month, day, hour, min, sec) {
-            const now = new Date();
-            const year = now.getFullYear();
-            const timestamp = new Date(year, month - 1, day, hour, min, sec, 0);
-            return timestamp.getTime() > now.getTime() ? new Date(year - 1, month - 1, day, hour, min, sec, 0) : timestamp;
         }
 
         /**
@@ -3985,6 +3973,11 @@
                 const messages = document.querySelectorAll('[class^="ChatMessage_chatMessage"]');
                 const events = [];
 
+                // Anchor for disambiguating an ambiguous date (see parseChatTimestamp) - advances to
+                // each message's own timestamp as the scan proceeds, so later messages are
+                // disambiguated against their chronological neighbor instead of wall-clock time.
+                let referenceDate = new Date();
+
                 // Extract all relevant events: key counts, party failed, battle ended, battle started
                 for (const msg of messages) {
                     const text = msg.textContent || '';
@@ -4001,37 +3994,9 @@
                         continue; // Skip player messages
                     }
 
-                    // Parse timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
-                    const timestampMatch = text.match(
-                        /\[(\d{1,2})([-/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
-                    );
-                    if (!timestampMatch) continue;
-
-                    const part1 = parseInt(timestampMatch[1], 10);
-                    const separator = timestampMatch[2];
-                    const part2 = parseInt(timestampMatch[3], 10);
-                    let hour = parseInt(timestampMatch[4], 10);
-                    const min = parseInt(timestampMatch[5], 10);
-                    const sec = parseInt(timestampMatch[6], 10);
-                    const period = timestampMatch[7];
-
-                    // Determine format based on separator
-                    let month, day;
-                    if (separator === '/') {
-                        // MM/DD format
-                        month = part1;
-                        day = part2;
-                    } else {
-                        // DD-M format (dash separator)
-                        day = part1;
-                        month = part2;
-                    }
-
-                    // Handle AM/PM if present
-                    if (period === 'PM' && hour < 12) hour += 12;
-                    if (period === 'AM' && hour === 12) hour = 0;
-
-                    const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
+                    const timestamp = parseChatTimestamp(text, referenceDate);
+                    if (!timestamp) continue;
+                    referenceDate = timestamp;
 
                     // Extract "Battle started:" messages (locale-aware)
                     if (isBattleStartedText(text)) {
@@ -4671,7 +4636,7 @@
                             // loadRunCountsFromStorage — adding their time again would cause
                             // the average to climb on every annotation pass regardless of
                             // actual run performance.
-                            if (!chatRunsMatchedStorage[statsKey]?.has(msgTs)) {
+                            if (!chatRunsMatchedStorage[statsKey]?.has(msgTs) && !this._isOutlierDiff(diff, dungeonStats)) {
                                 dungeonStats.runCount++;
                                 dungeonStats.totalTime += diff;
                             }
@@ -4894,6 +4859,12 @@
             const events = [];
             const markers = this._getChatMarkers();
 
+            // Anchor for disambiguating an ambiguous date (see parseChatTimestamp) - advances to
+            // each message's own timestamp as the scan proceeds, so a message deep in historical
+            // scrollback is disambiguated against its chronological neighbor instead of the
+            // current wall-clock time, which could be arbitrarily far away by the time this runs.
+            let referenceDate = new Date();
+
             for (const node of nodes) {
                 if (node.dataset.processed === '1') continue;
 
@@ -4903,11 +4874,12 @@
                 // Battle started message
                 const battleStartedPrefix = markers.battleStarted.find((prefix) => text.includes(prefix));
                 if (battleStartedPrefix) {
-                    const timestamp = this.getTimestampFromMessage(node);
+                    const timestamp = this.getTimestampFromMessage(node, false, referenceDate);
                     if (!timestamp) {
                         console.warn('[Dungeon Tracker Debug] Battle started message has no timestamp:', text);
                         continue;
                     }
+                    referenceDate = timestamp;
 
                     const dungeonName = text.split(battleStartedPrefix)[1]?.split(']')[0]?.trim();
                     if (dungeonName) {
@@ -4926,8 +4898,9 @@
                 }
                 // Key counts message (warn if timestamp fails - these should always have timestamps)
                 else if (markers.keyCounts.some((prefix) => text.includes(prefix))) {
-                    const timestamp = this.getTimestampFromMessage(node, true);
+                    const timestamp = this.getTimestampFromMessage(node, true, referenceDate);
                     if (!timestamp) continue;
+                    referenceDate = timestamp;
 
                     const team = this.getTeamFromMessage(node);
                     if (!team.length) continue;
@@ -4941,8 +4914,9 @@
                 }
                 // Party failed message
                 else if (markers.waveFailed.some((regex) => regex.test(text))) {
-                    const timestamp = this.getTimestampFromMessage(node);
+                    const timestamp = this.getTimestampFromMessage(node, false, referenceDate);
                     if (!timestamp) continue;
+                    referenceDate = timestamp;
 
                     events.push({
                         type: 'fail',
@@ -4953,8 +4927,9 @@
                 }
                 // Battle ended (canceled/fled)
                 else if (markers.battleEnded.some((prefix) => text.includes(prefix))) {
-                    const timestamp = this.getTimestampFromMessage(node);
+                    const timestamp = this.getTimestampFromMessage(node, false, referenceDate);
                     if (!timestamp) continue;
+                    referenceDate = timestamp;
 
                     events.push({
                         type: 'cancel',
@@ -5020,61 +4995,26 @@
 
         /**
          * Get timestamp from message DOM element
-         * Handles American (M/D HH:MM:SS AM/PM), international (DD-M HH:MM:SS),
-         * and European dot (D.M. HH:MM:SS) formats
          * @param {HTMLElement} msg - Message element
          * @param {boolean} warnOnFailure - Whether to log warning if parsing fails (default: false)
+         * @param {Date} [referenceDate] - Anchor time used to disambiguate an ambiguous date and
+         *      pick the year; callers scanning chat in chronological order should pass the previously
+         *      parsed message's timestamp so stale wall-clock time never has to stand in for it
          * @returns {Date|null} Parsed timestamp or null
          */
-        getTimestampFromMessage(msg, warnOnFailure = false) {
+        getTimestampFromMessage(msg, warnOnFailure = false, referenceDate = new Date()) {
             const text = msg.textContent.trim();
+            const timestamp = parseChatTimestamp(text, referenceDate);
 
-            // Unified across every separator the game sends (American "/", international "-",
-            // European "." with an optional trailing dot) with an optional AM/PM suffix that can
-            // appear regardless of separator - e.g. "[10-10 7:34:50 PM]" combines a hyphen date
-            // with a 12-hour clock, which the old separate-regex-per-format approach never matched
-            // (the hyphen branch had no AM/PM group at all). Mirrors the already-correct pattern
-            // dungeon-tracker.js uses for the same "Key counts:" messages. \s* (not \s+) preserves
-            // this method's existing leniency for spacing variations in dungeon chat.
-            const match = text.match(/\[(\d{1,2})([-/.])(\d{1,2})\.?\s*(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/);
-
-            if (!match) {
+            if (!timestamp && warnOnFailure) {
                 // Only warn if explicitly requested (for important messages like "Key counts:")
-                if (warnOnFailure) {
-                    console.warn(
-                        '[Dungeon Tracker] Found key counts but could not parse timestamp from:',
-                        text.match(/\[.*?\]/)?.[0]
-                    );
-                }
-                return null;
+                console.warn(
+                    '[Dungeon Tracker] Found key counts but could not parse timestamp from:',
+                    text.match(/\[.*?\]/)?.[0]
+                );
             }
 
-            const [, part1, separator, part2, hourStr, minStr, secStr, period] = match;
-            let month, day;
-
-            if (separator === '/') {
-                // American format: M/D — but if first part > 12 it must be DD/MM (e.g. "16/07")
-                month = parseInt(part1, 10);
-                day = parseInt(part2, 10);
-                if (month > 12) {
-                    [month, day] = [day, month];
-                }
-            } else {
-                // International/European format: D-M or D.M.
-                day = parseInt(part1, 10);
-                month = parseInt(part2, 10);
-            }
-
-            let hour = parseInt(hourStr, 10);
-            const min = parseInt(minStr, 10);
-            const sec = parseInt(secStr, 10);
-
-            // Handle AM/PM conversion, whichever separator the date used
-            if (period === 'PM' && hour < 12) hour += 12;
-            if (period === 'AM' && hour === 12) hour = 0;
-
-            const now = new Date();
-            return new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+            return timestamp;
         }
 
         /**
@@ -5127,6 +5067,24 @@
             const minutes = Math.floor(totalSeconds / 60);
             const seconds = totalSeconds % 60;
             return `${minutes}m ${seconds}s`;
+        }
+
+        /**
+         * Decide whether a run duration is anomalous enough that it shouldn't feed the running
+         * average used for the live cumulative average and color-vs-average display - mirrors the
+         * median*3 threshold dungeonTrackerStorage.scrubOutlierRuns() already applies to persisted
+         * runs, using the running mean as the live equivalent of a median once there's enough
+         * history to trust it. Guards against a single wildly-anomalous diff (e.g. a parse edge
+         * case) visibly distorting the average for many subsequent messages.
+         * @param {number} diff - Candidate run duration in milliseconds
+         * @param {{runCount: number, totalTime: number}} dungeonStats - Running stats for this team+dungeon
+         * @returns {boolean}
+         * @private
+         */
+        _isOutlierDiff(diff, dungeonStats) {
+            if (dungeonStats.runCount < 5) return false;
+            const priorAvg = dungeonStats.totalTime / dungeonStats.runCount;
+            return diff > priorAvg * 3;
         }
 
         /**
@@ -13074,6 +13032,55 @@
     }
 
     /**
+     * Build the two-line badge HTML shown on a custom material tab: the item name
+     * (resolved through the game's i18n by HRID) and the trade status line.
+     * Color coding:
+     * - Red: Missing materials (missing > 0)
+     * - Green: Sufficient materials (missing = 0)
+     * - Gray: Not tradeable
+     * @param {Object} material - Material data object (see createMaterialTab)
+     * @returns {string} Badge HTML
+     */
+    function buildTabBadgeHtml(material) {
+        let statusColor;
+        let statusText;
+
+        if (!material.isTradeable) {
+            statusColor = '#888888'; // Gray - not tradeable
+            statusText = i18n_js.t('marketplaceTabs.notTradeable');
+        } else if (material.missing > 0) {
+            statusColor = '#ef4444'; // Red - missing materials
+            // Show queued amount if any materials are reserved by the action queue
+            const queuedText =
+                material.queued > 0
+                    ? i18n_js.t('marketplaceTabs.queuedSuffix', { count: formatters_js.formatWithSeparator(material.queued) })
+                    : '';
+            statusText = i18n_js.t('marketplaceTabs.missingQty', {
+                qty: formatters_js.formatWithSeparator(material.missing),
+                queued: queuedText,
+            });
+        } else {
+            statusColor = '#4ade80'; // Green - sufficient materials
+            statusText = i18n_js.t('marketplaceTabs.sufficientQty', { qty: formatters_js.formatWithSeparator(material.required) });
+        }
+
+        // Title case only prettifies the English fallback name; it is a no-op for CJK names.
+        const titleCaseName = getItemName(material.itemHrid, material.itemName)
+            .split(' ')
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+
+        return `
+            <div style="text-align: center;">
+                <div>${titleCaseName}</div>
+                <div style="font-size: 0.75em; color: ${statusColor};">
+                    ${statusText}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
      * Create a custom material tab for the marketplace
      * @param {Object} material - Material data object
      * @param {string} material.itemHrid - Item HRID
@@ -13101,43 +13108,10 @@
         if (forceActionable) tab.setAttribute('data-mwi-force-actionable', 'true');
         if (owner) tab.setAttribute('data-mwi-tab-owner', owner);
 
-        // Color coding:
-        // - Red: Missing materials (missing > 0)
-        // - Green: Sufficient materials (missing = 0)
-        // - Gray: Not tradeable
-        let statusColor;
-        let statusText;
-
-        if (!material.isTradeable) {
-            statusColor = '#888888'; // Gray - not tradeable
-            statusText = 'Not Tradeable';
-        } else if (material.missing > 0) {
-            statusColor = '#ef4444'; // Red - missing materials
-            // Show queued amount if any materials are reserved by queue
-            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
-            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
-        } else {
-            statusColor = '#4ade80'; // Green - sufficient materials
-            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
-        }
-
-        // Update text content
+        // Update text content (translated item name + trade status)
         const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
         if (badgeSpan) {
-            // Title case: capitalize first letter of each word
-            const titleCaseName = material.itemName
-                .split(' ')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                .join(' ');
-
-            badgeSpan.innerHTML = `
-            <div style="text-align: center;">
-                <div>${titleCaseName}</div>
-                <div style="font-size: 0.75em; color: ${statusColor};">
-                    ${statusText}
-                </div>
-            </div>
-        `;
+            badgeSpan.innerHTML = buildTabBadgeHtml(material);
         }
 
         // Disable non-tradeable and already-complete tabs.
@@ -13186,34 +13160,7 @@
         const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
         if (!badgeSpan) return;
 
-        let statusColor;
-        let statusText;
-
-        if (!material.isTradeable) {
-            statusColor = '#888888';
-            statusText = 'Not Tradeable';
-        } else if (material.missing > 0) {
-            statusColor = '#ef4444';
-            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
-            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
-        } else {
-            statusColor = '#4ade80';
-            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
-        }
-
-        const titleCaseName = material.itemName
-            .split(' ')
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-            .join(' ');
-
-        badgeSpan.innerHTML = `
-        <div style="text-align: center;">
-            <div>${titleCaseName}</div>
-            <div style="font-size: 0.75em; color: ${statusColor};">
-                ${statusText}
-            </div>
-        </div>
-    `;
+        badgeSpan.innerHTML = buildTabBadgeHtml(material);
 
         tab.setAttribute('data-missing-quantity', material.missing.toString());
 
@@ -31475,15 +31422,18 @@
             const messageTemplate = config.getSettingValue('combatStatsChatMessage');
             const priceKey = resolveDisplayPriceKey(getKeyPricingModeSetting());
 
+            // Normalize the stored template (JSON string of items; legacy raw array)
+            const templateItems = settingsSchema_js.resolveTemplateItems(messageTemplate);
+
             // Convert array format to string if needed
             let message = '';
-            if (Array.isArray(messageTemplate)) {
+            if (templateItems) {
                 // Format numbers
                 const useKMB = formatters_js.isAbbreviationEnabled();
                 const formatNum = (num) => (useKMB ? formatters_js.coinFormatter(Math.round(num)) : formatters_js.formatWithSeparator(Math.round(num)));
 
                 // Build message from array
-                message = messageTemplate
+                message = templateItems
                     .map((item) => {
                         if (item.type === 'variable') {
                             // Replace variable with actual value
@@ -31514,7 +31464,7 @@
                     })
                     .join('');
             } else {
-                // Legacy string format (shouldn't happen, but handle it)
+                // Plain-text fallback (template absent or not items-shaped) — legacy replace chain
                 const useKMB = formatters_js.isAbbreviationEnabled();
                 const formatNum = (num) => (useKMB ? formatters_js.coinFormatter(Math.round(num)) : formatters_js.formatWithSeparator(Math.round(num)));
 
@@ -38350,4 +38300,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Core, Toolasha.Utils.experienceCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);

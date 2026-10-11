@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.13.0
+ * Version: 3.14.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3682,18 +3682,33 @@ ${starCSS}
         }
     }
 
-    /** Nested `$t(table.{{var}})` resolvers, backed by dataManager's detail maps. */
-    const NESTED_TABLES = {
-        itemNames: (hrid) => dataManager.getItemDetails(hrid)?.name,
-        houseRoomNames: (hrid) => dataManager.getInitClientData()?.houseRoomDetailMap?.[hrid]?.name,
-        buyableUpgradeNames: (hrid) => dataManager.getInitClientData()?.buyableUpgradeDetailMap?.[hrid]?.name,
-        communityBuffTypeNames: (hrid) => dataManager.getInitClientData()?.communityBuffTypeDetailMap?.[hrid]?.name,
-        guildCharacterRoleNames: (role) => dataManager.getInitClientData()?.guildCharacterRoleDetailMap?.[role]?.name,
-        skillNames: (hrid) => dataManager.getInitClientData()?.skillDetailMap?.[hrid]?.name,
-        achievementNames: (hrid) => dataManager.getInitClientData()?.achievementDetailMap?.[hrid]?.name,
-        // No detail map with a "name" field exists for chat icons or name colors (verified against
-        // the game's static definitions), so these always fall through to humanizeHrid below.
+    /**
+     * Nested `$t(table.{{var}})` resolvers, keyed by the game's own i18next namespace (identical to
+     * the table name in the templates). Each resolves the game-localized name via the game-i18n
+     * bridge, falling back to the English name from the init client data maps — or '' where no
+     * detail map with a "name" field exists (chat icons and name colors, verified against the
+     * game's static definitions) — and ultimately to humanizeHrid in resolveNestedName(). A
+     * namespace the game i18n doesn't know degrades to the English fallback, same as before this
+     * bridge existed.
+     */
+    const NESTED_TABLE_LOOKUPS = {
+        itemNames: (hrid) => dataManager.getItemDetails(hrid)?.name ?? '',
+        houseRoomNames: (hrid) => dataManager.getInitClientData()?.houseRoomDetailMap?.[hrid]?.name ?? '',
+        buyableUpgradeNames: (hrid) => dataManager.getInitClientData()?.buyableUpgradeDetailMap?.[hrid]?.name ?? '',
+        communityBuffTypeNames: (hrid) => dataManager.getInitClientData()?.communityBuffTypeDetailMap?.[hrid]?.name ?? '',
+        guildCharacterRoleNames: (role) => dataManager.getInitClientData()?.guildCharacterRoleDetailMap?.[role]?.name ?? '',
+        skillNames: (hrid) => dataManager.getInitClientData()?.skillDetailMap?.[hrid]?.name ?? '',
+        achievementNames: (hrid) => dataManager.getInitClientData()?.achievementDetailMap?.[hrid]?.name ?? '',
+        chatIconNames: () => '',
+        nameColorNames: () => '',
     };
+
+    const NESTED_TABLES = Object.fromEntries(
+        Object.entries(NESTED_TABLE_LOOKUPS).map(([namespace, lookup]) => [
+            namespace,
+            (hrid) => translateGameName(namespace, hrid, lookup(hrid)),
+        ])
+    );
 
     /**
      * Turn a hrid (or any slash/underscore-separated identifier) into a readable label.
@@ -3941,9 +3956,11 @@ ${starCSS}
      */
     function formatEntryText(entry) {
         if (entry.type === 'mention') {
+            const channelName =
+                translateGameName('chatChannelTypeNames', entry.channel, entry.channelName || '') || entry.channel;
             return i18n_js.t('notificationLog.mentionedByLine', {
                 sender: entry.sName,
-                channel: entry.channelName,
+                channel: channelName,
                 text: entry.text,
             });
         }
@@ -19906,9 +19923,14 @@ ${starCSS}
                 }
 
                 case 'template': {
-                    const value = currentSetting?.value ?? settingDef.default ?? [];
-                    // Store as JSON string
-                    const jsonValue = JSON.stringify(value);
+                    // Stored value is a JSON string of template items (legacy early
+                    // builds stored a raw array) — normalize before serializing into
+                    // the hidden input so the editor reads back the same items.
+                    const items =
+                        settingsSchema_js.resolveTemplateItems(currentSetting?.value) ??
+                        settingsSchema_js.resolveTemplateItems(settingsSchema_js.resolveSettingDefault(settingDef)) ??
+                        [];
+                    const jsonValue = JSON.stringify(items);
                     const escapedValue = jsonValue.replace(/"/g, '&quot;');
 
                     return `
@@ -20963,8 +20985,8 @@ ${starCSS}
                 cursor: pointer;
                 font-size: 13px;
             `;
-                chip.title = v.description || '';
-                chip.textContent = v.label;
+                chip.title = settingsSchema_js.resolveTemplateVariableDescription(setting, v);
+                chip.textContent = settingsSchema_js.resolveTemplateVariableLabel(setting, v);
                 chip.onclick = () => {
                     const start = textarea.selectionStart;
                     const end = textarea.selectionEnd;
@@ -21030,14 +21052,16 @@ ${starCSS}
             }
 
             const input = document.getElementById(settingId);
-            let currentValue = setting.default;
+            let currentValue = settingsSchema_js.resolveSettingDefault(setting);
 
-            // Try to parse stored value
+            // Hidden input holds a JSON string of items. Try the single-encoded
+            // shape first; fall back to one unwrap for pages rendered before the
+            // storage-shape fix (double-encoded string).
             if (input && input.value) {
                 try {
-                    const parsed = JSON.parse(input.value);
-                    if (Array.isArray(parsed)) {
-                        currentValue = parsed;
+                    const items = settingsSchema_js.resolveTemplateItems(input.value) ?? settingsSchema_js.resolveTemplateItems(JSON.parse(input.value));
+                    if (items) {
+                        currentValue = items;
                     }
                 } catch (e) {
                     console.error('[Settings] Failed to parse template value:', e);
@@ -21046,7 +21070,7 @@ ${starCSS}
 
             // Ensure currentValue is an array
             if (!Array.isArray(currentValue)) {
-                currentValue = setting.default || [];
+                currentValue = settingsSchema_js.resolveSettingDefault(setting) || [];
             }
 
             // Deep clone to avoid mutating original
@@ -21126,7 +21150,7 @@ ${starCSS}
             const renderList = () => {
                 listContainer.innerHTML = '';
                 templateItems.forEach((item, index) => {
-                    const itemEl = this.createTemplateListItem(item, index, templateItems, renderList);
+                    const itemEl = this.createTemplateListItem(item, index, templateItems, renderList, setting);
                     listContainer.appendChild(itemEl);
                 });
             };
@@ -21149,8 +21173,8 @@ ${starCSS}
             for (const variable of setting.templateVariables) {
                 const chip = document.createElement('button');
                 chip.type = 'button';
-                chip.textContent = '+  ' + variable.label;
-                chip.title = variable.description;
+                chip.textContent = '+ ' + settingsSchema_js.resolveTemplateVariableLabel(setting, variable);
+                chip.title = settingsSchema_js.resolveTemplateVariableDescription(setting, variable);
                 chip.style.cssText = `
                 background: #2a2a2a;
                 border: 1px solid #4a4a4a;
@@ -21242,7 +21266,7 @@ ${starCSS}
                 if (confirm(i18n_js.t('settings.resetTemplateConfirm'))) {
                     // Reset to default
                     templateItems.length = 0;
-                    const defaultTemplate = setting.default || [];
+                    const defaultTemplate = settingsSchema_js.resolveSettingDefault(setting) || [];
                     templateItems.push(...JSON.parse(JSON.stringify(defaultTemplate)));
                     renderList();
                 }
@@ -21324,10 +21348,10 @@ ${starCSS}
             const itemDetailMap = gameData?.itemDetailMap || {};
 
             // Build item list for search
-            const allItems = Object.entries(itemDetailMap).map(([hrid, detail]) => ({
-                hrid,
-                name: detail.name || hrid.replace('/items/', ''),
-            }));
+            const allItems = Object.entries(itemDetailMap).map(([hrid, detail]) => {
+                const enName = detail.name || hrid.replace('/items/', '');
+                return { hrid, name: getItemName(hrid, enName), enName };
+            });
 
             // Get sprite URL for item icons
             const spriteEl = document.querySelector('use[href*="items_sprite"]');
@@ -21522,7 +21546,9 @@ ${starCSS}
                     return;
                 }
 
-                const matches = allItems.filter((item) => item.name.toLowerCase().includes(query)).slice(0, 15);
+                const matches = allItems
+                    .filter((item) => item.name.toLowerCase().includes(query) || item.enName.toLowerCase().includes(query))
+                    .slice(0, 15);
 
                 if (matches.length === 0) {
                     dropdown.style.display = 'none';
@@ -21619,7 +21645,7 @@ ${starCSS}
                     const [itemHrid, enhLevel] = key.split(':');
                     const enhNum = parseInt(enhLevel) || 0;
                     const itemDetail = itemDetailMap[itemHrid];
-                    const itemName = itemDetail?.name || itemHrid.replace('/items/', '');
+                    const itemName = getItemName(itemHrid, itemDetail?.name || itemHrid.replace('/items/', ''));
                     const enhSuffix = enhNum > 0 ? ` +${enhNum}` : '';
 
                     const row = document.createElement('div');
@@ -21740,7 +21766,9 @@ ${starCSS}
                 if (!selection.itemHrid) {
                     // Try exact match from search text
                     const searchText = searchInput.value.toLowerCase().trim();
-                    const exactMatch = allItems.find((item) => item.name.toLowerCase() === searchText);
+                    const exactMatch = allItems.find(
+                        (item) => item.name.toLowerCase() === searchText || item.enName.toLowerCase() === searchText
+                    );
                     if (exactMatch) {
                         selection.itemHrid = exactMatch.hrid;
                     } else {
@@ -21886,9 +21914,10 @@ ${starCSS}
          * @param {number} index - Item index
          * @param {Array} items - All items
          * @param {Function} renderList - Callback to re-render list
+         * @param {Object} settingDef - Setting definition for variable label resolution
          * @returns {HTMLElement} List item element
          */
-        createTemplateListItem(item, index, items, renderList) {
+        createTemplateListItem(item, index, items, renderList, settingDef) {
             const itemEl = document.createElement('div');
             itemEl.draggable = true;
             itemEl.dataset.index = index;
@@ -21919,7 +21948,8 @@ ${starCSS}
             content.style.cssText = 'flex: 1; color: #e0e0e0; font-size: 13px;';
 
             if (item.type === 'variable') {
-                content.innerHTML = `<strong style="color: #4a9eff;">${item.label}</strong> <span style="color: #666; font-family: monospace;">${item.key}</span>`;
+                const displayLabel = settingsSchema_js.resolveTemplateVariableLabel(settingDef, item);
+                content.innerHTML = `<strong style="color: #4a9eff;">${displayLabel}</strong> <span style="color: #666; font-family: monospace;">${item.key}</span>`;
             } else {
                 // Editable text
                 const textInput = document.createElement('input');

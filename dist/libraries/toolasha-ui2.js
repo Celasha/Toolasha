@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.13.0
+ * Version: 3.14.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4285,6 +4285,55 @@
     }
 
     /**
+     * Build the two-line badge HTML shown on a custom material tab: the item name
+     * (resolved through the game's i18n by HRID) and the trade status line.
+     * Color coding:
+     * - Red: Missing materials (missing > 0)
+     * - Green: Sufficient materials (missing = 0)
+     * - Gray: Not tradeable
+     * @param {Object} material - Material data object (see createMaterialTab)
+     * @returns {string} Badge HTML
+     */
+    function buildTabBadgeHtml(material) {
+        let statusColor;
+        let statusText;
+
+        if (!material.isTradeable) {
+            statusColor = '#888888'; // Gray - not tradeable
+            statusText = i18n_js.t('marketplaceTabs.notTradeable');
+        } else if (material.missing > 0) {
+            statusColor = '#ef4444'; // Red - missing materials
+            // Show queued amount if any materials are reserved by the action queue
+            const queuedText =
+                material.queued > 0
+                    ? i18n_js.t('marketplaceTabs.queuedSuffix', { count: formatters_js.formatWithSeparator(material.queued) })
+                    : '';
+            statusText = i18n_js.t('marketplaceTabs.missingQty', {
+                qty: formatters_js.formatWithSeparator(material.missing),
+                queued: queuedText,
+            });
+        } else {
+            statusColor = '#4ade80'; // Green - sufficient materials
+            statusText = i18n_js.t('marketplaceTabs.sufficientQty', { qty: formatters_js.formatWithSeparator(material.required) });
+        }
+
+        // Title case only prettifies the English fallback name; it is a no-op for CJK names.
+        const titleCaseName = getItemName(material.itemHrid, material.itemName)
+            .split(' ')
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+
+        return `
+            <div style="text-align: center;">
+                <div>${titleCaseName}</div>
+                <div style="font-size: 0.75em; color: ${statusColor};">
+                    ${statusText}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
      * Create a custom material tab for the marketplace
      * @param {Object} material - Material data object
      * @param {string} material.itemHrid - Item HRID
@@ -4312,43 +4361,10 @@
         if (forceActionable) tab.setAttribute('data-mwi-force-actionable', 'true');
         if (owner) tab.setAttribute('data-mwi-tab-owner', owner);
 
-        // Color coding:
-        // - Red: Missing materials (missing > 0)
-        // - Green: Sufficient materials (missing = 0)
-        // - Gray: Not tradeable
-        let statusColor;
-        let statusText;
-
-        if (!material.isTradeable) {
-            statusColor = '#888888'; // Gray - not tradeable
-            statusText = 'Not Tradeable';
-        } else if (material.missing > 0) {
-            statusColor = '#ef4444'; // Red - missing materials
-            // Show queued amount if any materials are reserved by queue
-            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
-            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
-        } else {
-            statusColor = '#4ade80'; // Green - sufficient materials
-            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
-        }
-
-        // Update text content
+        // Update text content (translated item name + trade status)
         const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
         if (badgeSpan) {
-            // Title case: capitalize first letter of each word
-            const titleCaseName = material.itemName
-                .split(' ')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                .join(' ');
-
-            badgeSpan.innerHTML = `
-            <div style="text-align: center;">
-                <div>${titleCaseName}</div>
-                <div style="font-size: 0.75em; color: ${statusColor};">
-                    ${statusText}
-                </div>
-            </div>
-        `;
+            badgeSpan.innerHTML = buildTabBadgeHtml(material);
         }
 
         // Disable non-tradeable and already-complete tabs.
@@ -4404,34 +4420,7 @@
         const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
         if (!badgeSpan) return;
 
-        let statusColor;
-        let statusText;
-
-        if (!material.isTradeable) {
-            statusColor = '#888888';
-            statusText = 'Not Tradeable';
-        } else if (material.missing > 0) {
-            statusColor = '#ef4444';
-            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
-            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
-        } else {
-            statusColor = '#4ade80';
-            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
-        }
-
-        const titleCaseName = material.itemName
-            .split(' ')
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-            .join(' ');
-
-        badgeSpan.innerHTML = `
-        <div style="text-align: center;">
-            <div>${titleCaseName}</div>
-            <div style="font-size: 0.75em; color: ${statusColor};">
-                ${statusText}
-            </div>
-        </div>
-    `;
+        badgeSpan.innerHTML = buildTabBadgeHtml(material);
 
         tab.setAttribute('data-missing-quantity', material.missing.toString());
 
