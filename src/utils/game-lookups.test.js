@@ -22,6 +22,7 @@ let getSkillHridFromIconHref;
 let getActionHridFromFiber;
 let getQuestFromTaskCard;
 let getChatChannelHridFromName;
+let matchDefeatDescription;
 
 beforeEach(async () => {
     // The module caches its fragment->hrid maps on first use for the life of the module
@@ -38,6 +39,7 @@ beforeEach(async () => {
         getActionHridFromFiber,
         getQuestFromTaskCard,
         getChatChannelHridFromName,
+        matchDefeatDescription,
     } = await import('./game-lookups.js'));
 });
 
@@ -148,6 +150,14 @@ describe('getQuestFromTaskCard', () => {
         return { card, goBtn };
     }
 
+    function buildCompletedTaskCard() {
+        const card = document.createElement('div');
+        const claimBtn = document.createElement('button');
+        claimBtn.className = 'Button_button__1Fe9z Button_buy__3s24l';
+        card.appendChild(claimBtn);
+        return { card, claimBtn };
+    }
+
     test('finds characterQuest on an ancestor fiber of the Go button', () => {
         const { card, goBtn } = buildTaskCard();
         const ownerFiber = { stateNode: null, child: null, sibling: null, return: null };
@@ -162,7 +172,7 @@ describe('getQuestFromTaskCard', () => {
         expect(getQuestFromTaskCard(card)).toBe(quest);
     });
 
-    test('returns null when the card has no Go/success button', () => {
+    test('returns null when the card has no Go/success button and no Claim Reward button', () => {
         const card = document.createElement('div');
 
         expect(getQuestFromTaskCard(card)).toBeNull();
@@ -171,6 +181,28 @@ describe('getQuestFromTaskCard', () => {
     test('returns null when no ancestor fiber carries characterQuest props', () => {
         const { card, goBtn } = buildTaskCard();
         attachReactRoot(goBtn, { stateNode: null, child: null, sibling: null, return: null });
+
+        expect(getQuestFromTaskCard(card)).toBeNull();
+    });
+
+    test('a completed card (no Go button) falls back to the Claim Reward button and finds characterQuest without a reroll handler (#771)', () => {
+        const { card, claimBtn } = buildCompletedTaskCard();
+        const ownerFiber = { stateNode: null, child: null, sibling: null, return: null };
+        attachReactRoot(claimBtn, ownerFiber);
+        const quest = { monsterHrid: '/monsters/skeleton_king' };
+        // No rerollRandomTaskHandler - a completed card may legitimately lack it.
+        ownerFiber.return = {
+            stateNode: null,
+            return: null,
+            memoizedProps: { characterQuest: quest },
+        };
+
+        expect(getQuestFromTaskCard(card)).toBe(quest);
+    });
+
+    test('returns null for a completed card when no ancestor fiber carries characterQuest', () => {
+        const { card, claimBtn } = buildCompletedTaskCard();
+        attachReactRoot(claimBtn, { stateNode: null, child: null, sibling: null, return: null });
 
         expect(getQuestFromTaskCard(card)).toBeNull();
     });
@@ -223,5 +255,31 @@ describe('getChatChannelHridFromName', () => {
         delete gameData.chatChannelTypeDetailMap;
 
         expect(getChatChannelHridFromName('Party')).toBeNull();
+    });
+});
+
+describe('matchDefeatDescription — zh client dual-match (BUG #15)', () => {
+    test('matches English "Defeat - Goblin" task description', () => {
+        expect(matchDefeatDescription('Defeat - Goblin')).toBe('Goblin');
+    });
+
+    test('matches Chinese "击败 - 野猪" task description', () => {
+        gameI18nTranslations['randomTask.defeat'] = '击败{{monster}}';
+        expect(matchDefeatDescription('击败 - 野猪')).toBe('野猪');
+    });
+
+    test('matches Chinese template "击败{{monster}}" prefix without trimming monster', () => {
+        gameI18nTranslations['randomTask.defeat'] = '击败{{monster}}';
+        expect(matchDefeatDescription('击败 - Skeleton King')).toBe('Skeleton King');
+    });
+
+    test('returns null for non-combat task description', () => {
+        expect(matchDefeatDescription('Gather 100 Wood')).toBeNull();
+    });
+
+    test('returns null for empty input', () => {
+        expect(matchDefeatDescription('')).toBeNull();
+        expect(matchDefeatDescription(null)).toBeNull();
+        expect(matchDefeatDescription(undefined)).toBeNull();
     });
 });

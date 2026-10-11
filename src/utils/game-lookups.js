@@ -112,16 +112,34 @@ function getRefinedNameVariants(name) {
  * by walking the React fiber tree from the card's own "Go"/success button up to the component
  * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
  * "SkillType - TaskName" text.
+ *
+ * A completed card has no Go button (it shows a "Claim Reward" button instead), so this falls
+ * back to walking up from that button when the Go button isn't found. `rerollRandomTaskHandler`
+ * is only required for the Go-button path, where it disambiguates the task-card component from
+ * unrelated ancestors - a completed card may legitimately lack that handler, and none of this
+ * function's callers depend on reroll-ability, only `actionHrid`/`monsterHrid`.
  * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
  * @returns {Object|null} The characterQuest object, or null if not found.
  */
 export function getQuestFromTaskCard(taskCard) {
     const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
-    if (!goBtn) return null;
+    if (goBtn) {
+        let f = getReactFiberFromElement(goBtn)?.return;
+        while (f) {
+            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                return f.memoizedProps.characterQuest;
+            }
+            f = f.return;
+        }
+        return null;
+    }
 
-    let f = getReactFiberFromElement(goBtn)?.return;
+    const claimBtn = taskCard.querySelector('button.Button_button__1Fe9z.Button_buy__3s24l');
+    if (!claimBtn) return null;
+
+    let f = getReactFiberFromElement(claimBtn)?.return;
     while (f) {
-        if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+        if (f.memoizedProps?.characterQuest) {
             return f.memoizedProps.characterQuest;
         }
         f = f.return;
@@ -266,4 +284,35 @@ export function getShopCoinCost(itemHrid) {
     }
 
     return 0;
+}
+
+// Cache of regexes that match "Defeat - Monster Name" task descriptions in whatever language the
+// game client is set to. English + translated fallback.
+let defeatDescriptionRegexes = null;
+function getDefeatDescriptionRegexes() {
+    if (defeatDescriptionRegexes) return defeatDescriptionRegexes;
+    const template = translateGameName('randomTask', 'defeat', 'Defeat');
+    const placeholderIndex = template.indexOf('{{');
+    const translated = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex))
+        .replace(/[-\s]+$/, '')
+        .trim();
+    const labels = ['Defeat', translated || 'Defeat'].filter(Boolean);
+    const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    defeatDescriptionRegexes = escaped.map((label) => new RegExp(`^${label}\\s*-\\s*(.+)$`, 'i'));
+    return defeatDescriptionRegexes;
+}
+
+/**
+ * Extract the monster name from a "Defeat - Monster Name" task description, matching both the
+ * English label and the game-translated one (e.g. zh: 击败).
+ * @param {string} description - Task card description text
+ * @returns {string|null} Monster name, or null if the description isn't a defeat task
+ */
+export function matchDefeatDescription(description) {
+    if (!description) return null;
+    for (const re of getDefeatDescriptionRegexes()) {
+        const m = description.match(re);
+        if (m) return m[1].trim();
+    }
+    return null;
 }

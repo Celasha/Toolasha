@@ -25,8 +25,8 @@ import {
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { debugEquipmentSpeedBonuses, parseEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
 import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
-import { getActionName, getItemName, getMonsterName, translateGameName } from '../../utils/game-i18n.js';
-import { getQuestFromTaskCard } from '../../utils/game-lookups.js';
+import { getActionName, getItemName, getMonsterName } from '../../utils/game-i18n.js';
+import { getQuestFromTaskCard, matchDefeatDescription } from '../../utils/game-lookups.js';
 import { runSimulation } from '../combat-sim/combat-sim-runner.js';
 import {
     buildAllPlayerDTOs,
@@ -375,31 +375,6 @@ function getRelativeEfficiencyGradientColor(value, minValue, maxValue, minColor,
     return formatRgbColor(blendedColor);
 }
 
-// Cache of regexes that match "Defeat - Monster Name" task descriptions in
-// whatever language the game client is set to. English + translated fallback.
-let defeatDescriptionRegexes = null;
-function getDefeatDescriptionRegexes() {
-    if (defeatDescriptionRegexes) return defeatDescriptionRegexes;
-    const template = translateGameName('randomTask', 'defeat', 'Defeat');
-    const placeholderIndex = template.indexOf('{{');
-    const translated = (placeholderIndex === -1 ? template : template.slice(0, placeholderIndex))
-        .replace(/[-\s]+$/, '')
-        .trim();
-    const labels = ['Defeat', translated || 'Defeat'].filter(Boolean);
-    const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    defeatDescriptionRegexes = escaped.map((label) => new RegExp(`^${label}\\s*-\\s*(.+)$`, 'i'));
-    return defeatDescriptionRegexes;
-}
-
-export function matchDefeatDescription(description) {
-    if (!description) return null;
-    for (const re of getDefeatDescriptionRegexes()) {
-        const m = description.match(re);
-        if (m) return m[1].trim();
-    }
-    return null;
-}
-
 /**
  * TaskProfitDisplay class manages task profit UI
  */
@@ -564,6 +539,7 @@ class TaskProfitDisplay {
             // Wait for game to update DOM before recalculating profits
             this._scheduleTimeout(() => {
                 this.updateTaskProfits();
+                this._refreshOpenCombatEstimateResults();
             }, 250);
         };
 
@@ -1202,7 +1178,7 @@ class TaskProfitDisplay {
                 };
             }
 
-            const SIM_HOURS = 1;
+            const SIM_HOURS = 2;
             const simResult = await runSimulation({
                 gameData: simGameData,
                 playerDTOs: players,
@@ -1243,7 +1219,9 @@ class TaskProfitDisplay {
                 consumableEntries,
                 mode,
                 simResult,
-                zoneHrid
+                zoneHrid,
+                SIM_HOURS,
+                monsterHrid
             );
         } catch (e) {
             console.error('[TaskProfit] Combat estimate failed:', e);
@@ -1284,9 +1262,29 @@ class TaskProfitDisplay {
         consumableEntries,
         mode,
         simResult,
-        zoneHrid
+        zoneHrid,
+        simHours,
+        monsterHrid
     ) {
         container.innerHTML = '';
+        container.classList.add('mwi-combat-est-result');
+        container.dataset.lastProgress = taskData.currentProgress ?? 0;
+        // Cache every input that doesn't depend on task progress, so a later progress-only
+        // change (see _refreshOpenCombatEstimateResults) can recompute remaining/time/zone-summary
+        // math and re-render without re-running the sim or losing the user's loadout/mode choice.
+        container._mwiEstimate = {
+            monsterHrid,
+            monsterName,
+            loadoutName,
+            netPerHour,
+            rewardValue,
+            dropEntries,
+            consumableEntries,
+            mode,
+            simResult,
+            zoneHrid,
+            simHours,
+        };
         if (completionSeconds !== null) {
             container.dataset.completionSeconds = completionSeconds;
         }
@@ -1480,14 +1478,15 @@ class TaskProfitDisplay {
                 }
 
                 const rem = Math.max((td.quantity ?? 0) - (td.currentProgress ?? 0), 0);
+                if (rem <= 0) continue; // Completed - exclude from the bottleneck calc entirely
                 const mKills = simResult.deaths?.[mHrid] ?? 0;
-                const mKillsPerHour = mKills / 1; // SIM_HOURS = 1
+                const mKillsPerHour = mKills / simHours;
                 const hoursNeeded = mKillsPerHour > 0 ? rem / mKillsPerHour : Infinity;
                 zoneTasks.push({ hrid: mHrid, name: mName, remaining: rem, killsPerHour: mKillsPerHour, hoursNeeded });
             }
 
             if (zoneTasks.length > 1) {
-                const bottleneck = computeZoneBottleneck(zoneTasks, simResult);
+                const bottleneck = computeZoneBottleneck(zoneTasks, simResult, simHours);
                 const totalSeconds = Math.round(bottleneck.hoursNeeded * 3600);
 
                 const summary = document.createElement('div');
@@ -1507,6 +1506,53 @@ class TaskProfitDisplay {
                 container.appendChild(summary);
             }
         }
+    }
+
+    /**
+     * Refresh every currently-open combat-estimate result panel whose underlying task's progress
+     * has changed since it was last rendered - cheaply recomputing remaining/time/zone-summary
+     * math from the already-cached sim result instead of re-simulating, and without resetting the
+     * user's selected loadout/mode (unlike blindly treating a progress change as a "task changed"
+     * event the way updateTaskProfits()'s currentTaskKey does for non-combat tasks).
+     */
+    _refreshOpenCombatEstimateResults() {
+        document.querySelectorAll('.mwi-combat-est-result').forEach((container) => {
+            const cached = container._mwiEstimate;
+            if (!cached) return;
+
+            const taskNode = container.closest(GAME.TASK_CARD);
+            if (!taskNode) return;
+            const taskData = this.parseTaskData(taskNode);
+            if (!taskData) return;
+
+            if (taskData.currentProgress === Number(container.dataset.lastProgress)) return;
+            container.dataset.lastProgress = taskData.currentProgress ?? 0;
+
+            const kills = cached.simResult.deaths?.[cached.monsterHrid] ?? 0;
+            const killsPerHour = Math.round(kills / cached.simHours);
+            const remaining = Math.max((taskData.quantity ?? 0) - (taskData.currentProgress ?? 0), 0);
+            const completionSeconds = killsPerHour > 0 ? Math.round((remaining / killsPerHour) * 3600) : null;
+            const timeEstimate = completionSeconds !== null ? timeReadable(completionSeconds) : '???';
+
+            this._renderCombatEstimateResult(
+                container,
+                taskData,
+                cached.monsterName,
+                killsPerHour,
+                timeEstimate,
+                completionSeconds,
+                cached.loadoutName,
+                cached.netPerHour,
+                cached.rewardValue,
+                cached.dropEntries,
+                cached.consumableEntries,
+                cached.mode,
+                cached.simResult,
+                cached.zoneHrid,
+                cached.simHours,
+                cached.monsterHrid
+            );
+        });
     }
 
     /**

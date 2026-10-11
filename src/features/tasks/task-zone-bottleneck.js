@@ -10,15 +10,19 @@
 /**
  * @param {Array<{hrid: string, name: string, remaining: number, killsPerHour: number, hoursNeeded: number}>} zoneTasks
  *   Active combat quests mapped to this zone.
- * @param {Object} simResult - SimResult for this zone (must have a `deaths` map: monsterHrid -> kills).
+ * @param {Object} simResult - SimResult for this zone (must have an `encounters` count: total
+ *   finished encounters, kill or wipe, party-wide).
+ * @param {number} simHours - Hours the sim represented by simResult actually ran for.
  * @returns {{hoursNeeded: number, fightsNeeded: number, bottleneckHrid: string, bottleneckName: string}|null}
  *   Null when there are no quests in the zone.
  */
-export function computeZoneBottleneck(zoneTasks, simResult) {
+export function computeZoneBottleneck(zoneTasks, simResult, simHours) {
     if (!zoneTasks.length) return null;
 
     const bottleneck = zoneTasks.reduce((a, b) => (a.hoursNeeded > b.hoursNeeded ? a : b));
-    const totalFightsPerHour = Object.values(simResult.deaths || {}).reduce((sum, v) => sum + v, 0);
+    // encounters (not deaths) is the true fight count: deaths excludes wipes with zero kills and
+    // includes the player's own death entries, which would otherwise inflate this total.
+    const totalFightsPerHour = (simResult.encounters || 0) / simHours;
     const fightsNeeded = totalFightsPerHour > 0 ? Math.round(totalFightsPerHour * bottleneck.hoursNeeded) : Infinity;
 
     return {

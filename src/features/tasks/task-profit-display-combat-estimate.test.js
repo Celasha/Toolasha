@@ -82,6 +82,10 @@ vi.mock('../market/expected-value-calculator.js', () => ({
 
 vi.mock('../../utils/game-lookups.js', () => ({
     getQuestFromTaskCard: vi.fn(() => null),
+    matchDefeatDescription: vi.fn((description) => {
+        const m = description?.match(/^Defeat\s*-\s*(.+)$/);
+        return m ? m[1].trim() : null;
+    }),
 }));
 
 const combatSim = vi.hoisted(() => ({
@@ -257,5 +261,182 @@ describe('TaskProfitDisplay combat estimate (#750 review follow-up)', () => {
         });
 
         expect(html).toContain("Purple's Gift");
+    });
+});
+
+describe('TaskProfitDisplay._refreshOpenCombatEstimateResults (#771 staleness fix)', () => {
+    let feature;
+
+    function buildOpenResultTaskCard(progressText) {
+        document.body.innerHTML = '';
+        const card = document.createElement('div');
+        card.className = 'RandomTask_randomTask';
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'RandomTask_name';
+        nameDiv.textContent = 'Defeat - Fly';
+        card.appendChild(nameDiv);
+
+        const progressDiv = document.createElement('div');
+        progressDiv.textContent = progressText;
+        card.appendChild(progressDiv);
+
+        const rewardsDiv = document.createElement('div');
+        rewardsDiv.className = 'RandomTask_rewards__YZk7D';
+        card.appendChild(rewardsDiv);
+
+        const container = document.createElement('div');
+        container.className = 'mwi-combat-est-result';
+        card.appendChild(container);
+
+        document.body.appendChild(card);
+        return container;
+    }
+
+    beforeEach(async () => {
+        vi.resetModules();
+        vi.clearAllMocks();
+        gameI18n.translations = {};
+        document.body.innerHTML = '';
+        dataManagerMocks.initClientData = {};
+        seedGameData();
+
+        ({ default: feature } = await import('./task-profit-display.js'));
+    });
+
+    test('re-renders an open result when progress changes, preserving the cached loadout/mode/simResult', () => {
+        const container = buildOpenResultTaskCard('Progress: 5 / 10');
+        container.dataset.lastProgress = '3'; // stale - live DOM now shows 5
+        const cachedSimResult = { deaths: { [FLY_HRID]: 100 } };
+        container._mwiEstimate = {
+            monsterHrid: FLY_HRID,
+            monsterName: 'Fly',
+            loadoutName: 'my-custom-loadout',
+            netPerHour: 1000,
+            rewardValue: REWARD_VALUE,
+            dropEntries: [],
+            consumableEntries: [],
+            mode: 'zone',
+            simResult: cachedSimResult,
+            zoneHrid: ZONE_HRID,
+            simHours: 2,
+        };
+
+        const spy = vi.spyOn(feature, '_renderCombatEstimateResult');
+        feature._refreshOpenCombatEstimateResults();
+
+        expect(spy).toHaveBeenCalledTimes(1);
+        const args = spy.mock.calls[0];
+        expect(args[6]).toBe('my-custom-loadout'); // loadoutName preserved, not reset
+        expect(args[11]).toBe('zone'); // mode preserved
+        expect(args[12]).toBe(cachedSimResult); // same simResult object - no re-simulation
+        expect(args[1].currentProgress).toBe(5); // fresh taskData read from the live DOM
+    });
+
+    test('does nothing when progress has not changed since the cached value', () => {
+        const container = buildOpenResultTaskCard('Progress: 5 / 10');
+        container.dataset.lastProgress = '5';
+        container._mwiEstimate = {
+            monsterHrid: FLY_HRID,
+            monsterName: 'Fly',
+            loadoutName: '',
+            netPerHour: 0,
+            rewardValue: REWARD_VALUE,
+            dropEntries: [],
+            consumableEntries: [],
+            mode: 'solo',
+            simResult: { deaths: { [FLY_HRID]: 100 } },
+            zoneHrid: ZONE_HRID,
+            simHours: 2,
+        };
+
+        const spy = vi.spyOn(feature, '_renderCombatEstimateResult');
+        feature._refreshOpenCombatEstimateResults();
+
+        expect(spy).not.toHaveBeenCalled();
+    });
+
+    test('ignores a container with no cached estimate (e.g. a config panel, not a rendered result)', () => {
+        buildOpenResultTaskCard('Progress: 5 / 10');
+        // No container._mwiEstimate set.
+
+        const spy = vi.spyOn(feature, '_renderCombatEstimateResult');
+        expect(() => feature._refreshOpenCombatEstimateResults()).not.toThrow();
+        expect(spy).not.toHaveBeenCalled();
+    });
+});
+
+describe('TaskProfitDisplay zone summary excludes completed tasks (#771)', () => {
+    let feature;
+    const OOZE_HRID = '/monsters/ooze';
+    const WORM_HRID = '/monsters/worm';
+
+    beforeEach(async () => {
+        vi.resetModules();
+        vi.clearAllMocks();
+        gameI18n.translations = {};
+        document.body.innerHTML = '';
+        dataManagerMocks.initClientData = {};
+        seedGameData();
+        dataManagerMocks.initClientData.combatMonsterDetailMap[OOZE_HRID] = { name: 'Ooze' };
+        dataManagerMocks.initClientData.combatMonsterDetailMap[WORM_HRID] = { name: 'Worm' };
+        dataManagerMocks.getMonsterHridFromName.mockImplementation(
+            (name) => ({ Fly: FLY_HRID, Ooze: OOZE_HRID, Worm: WORM_HRID })[name] || null
+        );
+
+        ({ default: feature } = await import('./task-profit-display.js'));
+    });
+
+    function buildTaskInfo(name, progressText) {
+        const info = document.createElement('div');
+        info.className = 'RandomTask_taskInfo__1uasf';
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'RandomTask_name';
+        nameDiv.textContent = name;
+        info.appendChild(nameDiv);
+        const progressDiv = document.createElement('div');
+        progressDiv.textContent = progressText;
+        info.appendChild(progressDiv);
+        const rewardsDiv = document.createElement('div');
+        rewardsDiv.className = 'RandomTask_rewards__YZk7D';
+        info.appendChild(rewardsDiv);
+        return info;
+    }
+
+    test('a completed task never becomes "the bottleneck" despite its hoursNeeded computing to Infinity', () => {
+        const taskList = document.createElement('div');
+        taskList.className = 'TasksPanel_taskList';
+        // Completed (rem=0) - without the fix, mKillsPerHour=0 -> hoursNeeded=Infinity, which
+        // would always win the "longest remaining time" reduce in computeZoneBottleneck.
+        taskList.appendChild(buildTaskInfo('Defeat - Worm', 'Progress: 10 / 10'));
+        // Slower of the two remaining in-progress tasks - the real bottleneck (hoursNeeded=2 vs
+        // Ooze's 1), distinct enough from Ooze's rate to avoid a tie in the "longest remaining
+        // time" reduce.
+        taskList.appendChild(buildTaskInfo('Defeat - Fly', 'Progress: 0 / 200'));
+        taskList.appendChild(buildTaskInfo('Defeat - Ooze', 'Progress: 0 / 50'));
+        document.body.appendChild(taskList);
+
+        const container = document.createElement('div');
+        feature._renderCombatEstimateResult(
+            container,
+            { ...TASK_DATA, description: 'Defeat - Fly', quantity: 200, currentProgress: 0 },
+            'Fly',
+            100,
+            '1h',
+            3600,
+            '',
+            0,
+            REWARD_VALUE,
+            [],
+            [],
+            'zone',
+            { deaths: { [FLY_HRID]: 100, [OOZE_HRID]: 50, [WORM_HRID]: 0 }, encounters: 150 },
+            ZONE_HRID,
+            1
+        );
+
+        expect(container.innerHTML).toContain('taskProfitDisplay.zoneSummaryLine');
+        expect(container.innerHTML).toContain('bottleneckName=Fly');
+        expect(container.innerHTML).not.toContain('bottleneckName=Worm');
     });
 });

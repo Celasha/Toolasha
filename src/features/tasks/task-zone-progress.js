@@ -14,7 +14,7 @@ import { runAllZonesSimulation } from '../combat-sim/all-zones-runner.js';
 import { getActionName, getMonsterName } from '../../utils/game-i18n.js';
 import { computeZoneBottleneck } from './task-zone-bottleneck.js';
 
-const SIM_HOURS = 1;
+const SIM_HOURS = 2;
 
 /**
  * Build the spawn monster set for every non-dungeon combat zone.
@@ -182,7 +182,7 @@ export async function computeAllZoneProgress() {
             return { hrid: quest.monsterHrid, name, remaining, killsPerHour, hoursNeeded };
         });
 
-        const bottleneck = computeZoneBottleneck(zoneTasks, simResult);
+        const bottleneck = computeZoneBottleneck(zoneTasks, simResult, SIM_HOURS);
         if (!bottleneck) continue;
 
         const zoneName = getActionName(

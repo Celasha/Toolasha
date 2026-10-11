@@ -103,8 +103,8 @@ describe('computeAllZoneProgress', () => {
             hrid === '/monsters/slime' ? '/actions/combat/zone_a' : '/actions/combat/zone_b'
         );
         mockRunAllZonesSimulation.mockResolvedValue([
-            { deaths: { '/monsters/slime': 100 } }, // zone_a: 1000 remaining / 100 per hr = 10h
-            { deaths: { '/monsters/ooze': 100 } }, // zone_b: 50 remaining / 100 per hr = 0.5h
+            { deaths: { '/monsters/slime': 100 }, encounters: 100 }, // zone_a: 1000 remaining / 50 per hr = 20h
+            { deaths: { '/monsters/ooze': 100 }, encounters: 100 }, // zone_b: 50 remaining / 50 per hr = 1h
         ]);
 
         const result = await computeAllZoneProgress();
@@ -115,17 +115,17 @@ describe('computeAllZoneProgress', () => {
                     { zoneHrid: '/actions/combat/zone_a', difficultyTier: 0 },
                     { zoneHrid: '/actions/combat/zone_b', difficultyTier: 0 },
                 ],
-                hours: 1,
+                hours: 2,
             })
         );
 
         expect(result).toHaveLength(2);
-        // zone_b (0.5h) should sort before zone_a (10h)
+        // zone_b (1h) should sort before zone_a (20h)
         expect(result[0].zoneHrid).toBe('/actions/combat/zone_b');
-        expect(result[0].hoursNeeded).toBeCloseTo(0.5);
+        expect(result[0].hoursNeeded).toBeCloseTo(1);
         expect(result[0].fightsNeeded).toBe(50);
         expect(result[1].zoneHrid).toBe('/actions/combat/zone_a');
-        expect(result[1].hoursNeeded).toBeCloseTo(10);
+        expect(result[1].hoursNeeded).toBeCloseTo(20);
     });
 
     test('skips a zone whose sim result is missing', async () => {
@@ -173,7 +173,7 @@ describe('computeAllZoneProgress', () => {
         // 不应再依赖 getCombatZoneForMonster 的任意首匹配
         mockGetCombatZoneForMonster.mockReturnValue('/actions/combat/should_not_be_used');
         mockRunAllZonesSimulation.mockResolvedValue([
-            { deaths: { '/monsters/cyclops': 100, '/monsters/compound_eye': 50 } },
+            { deaths: { '/monsters/cyclops': 100, '/monsters/compound_eye': 50 }, encounters: 150 },
         ]);
 
         const result = await computeAllZoneProgress();
@@ -181,14 +181,14 @@ describe('computeAllZoneProgress', () => {
         expect(mockRunAllZonesSimulation).toHaveBeenCalledWith(
             expect.objectContaining({
                 zones: [{ zoneHrid: '/actions/combat/eye_planet', difficultyTier: 0 }],
-                hours: 1,
+                hours: 2,
             })
         );
         expect(result).toHaveLength(1);
         expect(result[0].zoneHrid).toBe('/actions/combat/eye_planet');
-        // 瓶颈：cyclops 100/100 = 1h；compound_eye 397/50 = 7.94h → 后者是瓶颈
-        expect(result[0].hoursNeeded).toBeCloseTo(7.94);
-        expect(result[0].fightsNeeded).toBe(Math.round(150 * 7.94));
+        // 瓶颈：cyclops 100/50 = 2h；compound_eye 397/25 = 15.88h → 后者是瓶颈
+        expect(result[0].hoursNeeded).toBeCloseTo(15.88);
+        expect(result[0].fightsNeeded).toBe(Math.round(75 * 15.88));
         // 锚定怪：compound_eye 是星球独占普通刷怪
         expect(result[0].anchor).toEqual({
             monsterHrid: '/monsters/compound_eye',

@@ -14,7 +14,7 @@ import {
     calculateGatheringActionTotalsFromBase,
 } from '../../utils/profit-helpers.js';
 import { GATHERING_TYPES, PRODUCTION_TYPES } from '../../utils/profit-constants.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, matchDefeatDescription } from '../../utils/game-lookups.js';
 
 const GATHERING_TYPE_SET = new Set(GATHERING_TYPES);
 const PRODUCTION_TYPE_SET = new Set(PRODUCTION_TYPES);
@@ -150,13 +150,18 @@ function detectTaskType(questInfo) {
 }
 
 /**
- * Detect task type from the English "Skill - Action" description text.
- * Fallback only - the skill name is translated in non-English clients, so this can only
- * ever resolve on the English UI; quest-info-based detection is the preferred path.
+ * Detect task type from the "Skill - Action" description text, in whatever language the game
+ * client is set to (combat tasks are matched via matchDefeatDescription's locale-aware dual
+ * English/translated matching; gathering/production skills still match on the English name only,
+ * since quest-info-based detection is the preferred path and this is a fallback).
  * @param {string} taskDescription - Task description text (e.g., "Cheesesmithing - Holy Cheese")
  * @returns {string} Task type: 'gathering', 'production', 'combat', or 'unknown'
  */
 function detectTaskTypeFromDescription(taskDescription) {
+    if (matchDefeatDescription(taskDescription) !== null) {
+        return 'combat';
+    }
+
     // Extract skill from "Skill - Action" format
     const skillMatch = taskDescription.match(/^([^-]+)\s*-/);
     if (!skillMatch) return 'unknown';
@@ -171,11 +176,6 @@ function detectTaskTypeFromDescription(taskDescription) {
     // Production skills
     if (PRODUCTION_TYPES.some((hrid) => hrid.split('/').pop() === skill)) {
         return 'production';
-    }
-
-    // Combat
-    if (skill === 'defeat') {
-        return 'combat';
     }
 
     return 'unknown';
