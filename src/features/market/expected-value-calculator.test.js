@@ -12,6 +12,7 @@ const {
     mockGetCustomPrice,
     mockResolveShopRedemptionValue,
     mockResolveCurrencyValue,
+    mockCalculateEVBatch,
 } = vi.hoisted(() => {
     const getItemPrice = vi.fn();
     return {
@@ -24,6 +25,7 @@ const {
         mockGetCustomPrice: vi.fn(() => null),
         mockResolveShopRedemptionValue: vi.fn(),
         mockResolveCurrencyValue: vi.fn(),
+        mockCalculateEVBatch: vi.fn(),
     };
 });
 
@@ -31,6 +33,7 @@ vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: mockGetItemPrice,
     getItemPriceOutlierInfo: mockGetItemPriceOutlierInfo,
 }));
+vi.mock('../../utils/ev-worker-manager.js', () => ({ calculateEVBatch: mockCalculateEVBatch }));
 vi.mock('../../utils/token-valuation.js', () => ({ calculateDungeonTokenValue: mockCalculateDungeonTokenValue }));
 vi.mock('../../utils/shop-redemption-valuation.js', () => ({
     resolveShopRedemptionValue: mockResolveShopRedemptionValue,
@@ -598,5 +601,54 @@ describe('calculateExpectedValue hasOutlierPrices aggregate', () => {
         const ev = expectedValueCalculator.calculateExpectedValue('/items/test_chest');
 
         expect(ev.hasOutlierPrices).toBe(false);
+    });
+});
+
+describe('worker-path price map', () => {
+    beforeEach(() => {
+        mockGetItemPrice.mockReset();
+        mockCalculateDungeonTokenValue.mockReset();
+        mockGetSetting.mockReset().mockReturnValue(true);
+        mockGetCustomPrice.mockReset().mockReturnValue(null);
+        mockGetItemDetails.mockReset();
+        mockCalculateEVBatch.mockReset();
+        expectedValueCalculator.containerCache.clear();
+    });
+
+    test('buildPriceMap carries the needsTax contract with the real omitted-field data shape', () => {
+        const initData = {
+            openableLootDropMap: {
+                '/items/test_chest': [
+                    { itemHrid: '/items/sinister_token', dropRate: 1, minCount: 1, maxCount: 1 },
+                    { itemHrid: '/items/cheese', dropRate: 1, minCount: 1, maxCount: 1 },
+                    { itemHrid: '/items/coin', dropRate: 1, minCount: 1, maxCount: 1 },
+                ],
+            },
+        };
+        // Real data shape: isTradable is omitted entirely for untradeable items, never false.
+        mockGetItemDetails.mockImplementation((hrid) => ({ name: hrid, isOpenable: false }));
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 7, isOutlier: false });
+        mockGetItemPrice.mockImplementation((hrid) => (hrid === '/items/cheese' ? 100 : null));
+
+        const priceMap = expectedValueCalculator.buildPriceMap(['/items/test_chest'], initData);
+
+        expect(priceMap['/items/sinister_token']).toEqual({ price: 7, needsTax: false });
+        expect(priceMap['/items/cheese']).toEqual({ price: 100, needsTax: true });
+        expect(priceMap['/items/coin']).toEqual({ price: 1, needsTax: false });
+    });
+
+    test('calculateNestedContainers forwards the needsTax contract to the worker batch', async () => {
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/test_chest': [{ itemHrid: '/items/sinister_token', dropRate: 1, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 7, isOutlier: false });
+        mockCalculateEVBatch.mockResolvedValue([{ containerHrid: '/items/test_chest', ev: 7 }]);
+
+        await expectedValueCalculator.calculateNestedContainers();
+
+        const payload = mockCalculateEVBatch.mock.calls[0][0];
+        expect(payload[0].priceMap['/items/sinister_token']).toEqual({ price: 7, needsTax: false });
     });
 });

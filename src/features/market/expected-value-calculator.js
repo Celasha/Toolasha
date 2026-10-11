@@ -112,7 +112,6 @@ class ExpectedValueCalculator {
                 containerHrid,
                 dropTable: initData.openableLootDropMap[containerHrid],
                 priceMap,
-                COIN_HRID: this.COIN_HRID,
                 MARKET_TAX: this.MARKET_TAX,
             }));
 
@@ -143,7 +142,7 @@ class ExpectedValueCalculator {
      * Build price map for all items needed for container calculations
      * @param {Array} containerHrids - Array of container HRIDs
      * @param {Object} initData - Game data
-     * @returns {Object} Map of itemHrid to {price, canBeSold}
+     * @returns {Object} Map of itemHrid to {price, needsTax}
      */
     buildPriceMap(containerHrids, initData) {
         const priceMap = {};
@@ -159,14 +158,13 @@ class ExpectedValueCalculator {
                 if (processedItems.has(itemHrid)) continue;
                 processedItems.add(itemHrid);
 
-                // Get price and tradeable status
-                const price = this.getDropPrice(itemHrid);
-                const itemDetails = dataManager.getItemDetails(itemHrid);
-                const canBeSold = itemDetails?.isTradable !== false;
+                // Resolve price together with the tax contract - tax strictly follows needsTax,
+                // never item tradability (real game data omits isTradable for untradeable items).
+                const resolved = this.resolveSellSideValue(itemHrid, 0);
 
                 priceMap[itemHrid] = {
-                    price,
-                    canBeSold,
+                    price: resolved ? resolved.value : null,
+                    needsTax: resolved ? resolved.needsTax || false : false,
                 };
             }
         }

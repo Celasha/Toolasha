@@ -19,7 +19,7 @@ const evCache = new Map();
  * @returns {Object} {containerHrid, ev}
  */
 function calculateContainerEV(data) {
-    const { containerHrid, dropTable, priceMap, COIN_HRID, MARKET_TAX } = data;
+    const { containerHrid, dropTable, priceMap, MARKET_TAX } = data;
 
     if (!dropTable || dropTable.length === 0) {
         return { containerHrid, ev: null };
@@ -49,15 +49,13 @@ function calculateContainerEV(data) {
         }
 
         const price = priceData.price;
-        const canBeSold = priceData.canBeSold;
-        const isCoin = itemHrid === COIN_HRID;
+        const needsTax = priceData.needsTax;
 
-        // Calculate drop value with tax
-        const dropValue = isCoin
-            ? avgCount * dropRate * price
-            : canBeSold
-              ? avgCount * dropRate * price * (1 - MARKET_TAX)
-              : avgCount * dropRate * price;
+        // Tax strictly follows the resolver's needsTax contract - never item tradability
+        // (real game data omits isTradable for untradeable items like dungeon tokens/cowbells).
+        const dropValue = needsTax
+            ? avgCount * dropRate * price * (1 - MARKET_TAX)
+            : avgCount * dropRate * price;
 
         totalExpectedValue += dropValue;
     }
