@@ -48,11 +48,13 @@ const COMBAT_STATS_CHAT_TEMPLATE_ZH = [
 /**
  * Build the default combat stats chat template for a locale.
  * Returns a deep clone each call; callers may mutate freely.
- * @param {'en'|'zh'} [locale] - Defaults to the effective UI locale
+ * @param {'en'|'zh'} [locale] - Defaults to the effective UI locale. Raw tags like 'zh-CN' are accepted
+ *   (case-insensitive 'zh' prefix match); other values fall back to English.
  * @returns {Array<{type: string, value?: string, key?: string, label?: string}>}
  */
 export function buildCombatStatsChatTemplate(locale = i18n.getLocale()) {
-    const source = locale === 'zh' ? COMBAT_STATS_CHAT_TEMPLATE_ZH : COMBAT_STATS_CHAT_TEMPLATE_EN;
+    const isZh = typeof locale === 'string' && locale.toLowerCase().startsWith('zh');
+    const source = isZh ? COMBAT_STATS_CHAT_TEMPLATE_ZH : COMBAT_STATS_CHAT_TEMPLATE_EN;
     return JSON.parse(JSON.stringify(source));
 }
 

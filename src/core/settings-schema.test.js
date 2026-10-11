@@ -7,6 +7,8 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 // i18n.getLocale() reads window.localStorage['i18nextLng']; stub it so tests
 // can switch the effective locale without a browser environment.
 const localeStore = new Map();
+// NOTE: vi.stubGlobal runs after ESM module evaluation (imports hoist first); this only works
+// because i18n.js reads window.localStorage lazily inside getLocale().
 vi.stubGlobal('window', {
     localStorage: {
         getItem: (key) => (localeStore.has(key) ? localeStore.get(key) : null),
@@ -77,6 +79,11 @@ describe('buildCombatStatsChatTemplate', () => {
         localeStore.set('i18nextLng', 'en');
         expect(buildCombatStatsChatTemplate()[0].value).toBe('Combat Stats: ');
     });
+
+    test("raw BCP-47 tags starting with 'zh' select the Chinese template", () => {
+        expect(buildCombatStatsChatTemplate('zh-CN')[0].value).toBe('战斗统计：');
+        expect(buildCombatStatsChatTemplate('ZH-TW')[0].value).toBe('战斗统计：');
+    });
 });
 
 describe('resolveSettingDefault', () => {
@@ -98,5 +105,11 @@ describe('schema combatStatsChatMessage', () => {
     test('default is a factory (function), not a static array', () => {
         const def = settingsGroups.combat.settings.combatStatsChatMessage;
         expect(typeof def.default).toBe('function');
+    });
+
+    test('resolver applied to the schema definition yields the English template array', () => {
+        expect(resolveSettingDefault(settingsGroups.combat.settings.combatStatsChatMessage)).toEqual(
+            LEGACY_ENGLISH_CHAT_TEMPLATE
+        );
     });
 });

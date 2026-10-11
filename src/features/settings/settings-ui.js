@@ -7,7 +7,7 @@
 import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
-import { settingsGroups } from '../../core/settings-schema.js';
+import { settingsGroups, resolveSettingDefault } from '../../core/settings-schema.js';
 import settingsStorage from '../../core/settings-storage.js';
 import storage from '../../core/storage.js';
 import settingsCSS from './settings-styles.css?raw';
@@ -619,7 +619,7 @@ class SettingsUI {
             }
 
             case 'template': {
-                const value = currentSetting?.value ?? settingDef.default ?? [];
+                const value = currentSetting?.value ?? resolveSettingDefault(settingDef) ?? [];
                 // Store as JSON string
                 const jsonValue = JSON.stringify(value);
                 const escapedValue = jsonValue.replace(/"/g, '&quot;');
@@ -1743,7 +1743,7 @@ class SettingsUI {
         }
 
         const input = document.getElementById(settingId);
-        let currentValue = setting.default;
+        let currentValue = resolveSettingDefault(setting);
 
         // Try to parse stored value
         if (input && input.value) {
@@ -1759,7 +1759,7 @@ class SettingsUI {
 
         // Ensure currentValue is an array
         if (!Array.isArray(currentValue)) {
-            currentValue = setting.default || [];
+            currentValue = resolveSettingDefault(setting) || [];
         }
 
         // Deep clone to avoid mutating original
@@ -1955,7 +1955,7 @@ class SettingsUI {
             if (confirm(t('settings.resetTemplateConfirm'))) {
                 // Reset to default
                 templateItems.length = 0;
-                const defaultTemplate = setting.default || [];
+                const defaultTemplate = resolveSettingDefault(setting) || [];
                 templateItems.push(...JSON.parse(JSON.stringify(defaultTemplate)));
                 renderList();
             }

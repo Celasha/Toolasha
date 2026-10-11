@@ -4,7 +4,7 @@
  */
 
 import storage from './storage.js';
-import { settingsGroups } from './settings-schema.js';
+import { settingsGroups, resolveSettingDefault } from './settings-schema.js';
 
 // Task-related storage keys that are scoped per-character by a `_<charId>` suffix, outside
 // the main schema settings blob (see task-reroll-protection.js / task-auto-reroll.js).
@@ -80,7 +80,7 @@ class SettingsStorage {
                 if (settingDef.type === 'checkbox') {
                     settings[settingId].isTrue = settingDef.default ?? false;
                 } else {
-                    settings[settingId].value = settingDef.default ?? '';
+                    settings[settingId].value = resolveSettingDefault(settingDef) ?? '';
                 }
 
                 // Copy other properties
@@ -153,7 +153,7 @@ class SettingsStorage {
                 if (settingDef.type === 'checkbox') {
                     settings[settingId].isTrue = settingDef.default ?? false;
                 } else {
-                    settings[settingId].value = settingDef.default ?? '';
+                    settings[settingId].value = resolveSettingDefault(settingDef) ?? '';
                 }
 
                 if (settingDef.options) {
