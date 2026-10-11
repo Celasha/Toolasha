@@ -227,3 +227,9 @@ export function getNotificationCategory(message) {
 export function getAllNotificationCategories() {
     return [...new Set(Object.keys(CATEGORIES))];
 }
+
+/**
+ * Names of all nested-table lookups used by notification templates.
+ * Exported for diagnostics and the locale-template drift test only.
+ */
+export const NESTED_TABLE_NAMES = Object.keys(NESTED_TABLE_LOOKUPS);

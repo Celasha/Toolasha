@@ -222,4 +222,23 @@ describe('notificationFormatter locale templates', () => {
             }
         }
     });
+
+    test("references only tables that exist in the formatter's nested-table lookups", async () => {
+        // A $t(table.{{var}}) pointing at a namespace missing from NESTED_TABLE_LOOKUPS silently
+        // degrades to a humanized hrid instead of the game-localized name — fail loudly here.
+        const { NESTED_TABLE_NAMES } = await import('./notification-formatter.js');
+        const { default: enLocale } = await import('../locales/en.js');
+        const { default: zhLocale } = await import('../locales/zh.js');
+
+        for (const [locale, table] of [
+            ['en', enLocale.notificationFormatter],
+            ['zh', zhLocale.notificationFormatter],
+        ]) {
+            for (const [key, template] of Object.entries(table)) {
+                const referenced = [...template.matchAll(/\$t\(([a-zA-Z]+)\./g)].map((match) => match[1]);
+                const unknown = referenced.filter((name) => !NESTED_TABLE_NAMES.includes(name));
+                expect(unknown, `${locale}.notificationFormatter.${key} references unknown tables`).toEqual([]);
+            }
+        }
+    });
 });
