@@ -473,7 +473,15 @@ export default {
         columnAskCost: '卖价成本',
         columnBidCost: '买价成本',
         unpricedItemsNote: '* 部分物品暂无市场价格数据',
-        missingMatsButtonLabel: '缺失材料市场',
+        missingMatsButtonLabel: '购买缺失材料',
+    },
+    marketplaceTabs: {
+        notTradeable: '不可交易',
+        missingQty: (p) => `缺少：${p.qty}${p.queued}`,
+        queuedSuffix: (p) => `（已排队 ${p.count}）`,
+        sufficientQty: (p) => `足够（${p.qty}）`,
+        inBag: (p) => `背包中：${p.count}`,
+        soldOut: '已售罄',
     },
     networthHistoryChart: {
         categoryGold: '金币',

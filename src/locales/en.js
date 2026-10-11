@@ -321,6 +321,14 @@ export default {
         unpricedItemsNote: '* some items have no market price data',
         missingMatsButtonLabel: 'Missing Mats Marketplace',
     },
+    marketplaceTabs: {
+        notTradeable: 'Not Tradeable',
+        missingQty: (p) => `Missing: ${p.qty}${p.queued}`,
+        queuedSuffix: (p) => ` (${p.count} Q'd)`,
+        sufficientQty: (p) => `Sufficient (${p.qty})`,
+        inBag: (p) => `In bag: ${p.count}`,
+        soldOut: 'Sold out',
+    },
     marketData: {
         outlierPriceWarningTooltip:
             "This price was outside the normal range vs. the game's own reference market value, so Toolasha substituted the reference value instead. Adjust or disable this in Settings → Pricing & Profit.",

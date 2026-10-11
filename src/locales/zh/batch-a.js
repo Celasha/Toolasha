@@ -242,7 +242,7 @@ export default {
             },
             alchemyItemDimming: { label: '炼金面板：使需要更高等级的物品变暗' },
             actions_missingMaterialsButton: {
-                label: '在生产面板显示“缺失材料市场”按钮',
+                label: '在生产面板显示“购买缺失材料”按钮',
                 help: '在生产面板添加按钮，点击后打开市场并自动创建缺失材料的标签页',
             },
             actions_missingMaterialsButton_ignoreQueue: {
@@ -251,7 +251,7 @@ export default {
             },
             actions_budgetCalculator: {
                 label: '动作面板：预算计算器',
-                help: '在“缺失材料”按钮下方添加预算输入框。输入金币预算（例如 50m），即可计算按卖价买齐缺失的可交易材料后能生产的数量。',
+                help: '在“购买缺失材料”按钮下方添加预算输入框。输入金币预算（例如 50m），即可计算按卖价买齐缺失的可交易材料后能生产的数量。',
             },
             actions_costSummary: {
                 label: '动作面板：显示成本摘要',
