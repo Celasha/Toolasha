@@ -160,7 +160,10 @@ class ExpectedValueCalculator {
 
                 // Resolve price together with the tax contract - tax strictly follows needsTax,
                 // never item tradability (real game data omits isTradable for untradeable items).
-                const resolved = this.resolveSellSideValue(itemHrid, 0);
+                // allowIndirect lets task tokens (and other shop currencies priced only through
+                // openable outputs) enter the worker's price map, so per-iteration container EVs
+                // and token prices converge together.
+                const resolved = this.resolveSellSideValue(itemHrid, 0, { allowIndirect: true });
 
                 priceMap[itemHrid] = {
                     price: resolved ? resolved.value : null,
@@ -213,7 +216,9 @@ class ExpectedValueCalculator {
 
             // Resolve price together with the tax contract - tax strictly follows needsTax,
             // never item tradability (real game data omits isTradable for untradeable items).
-            const resolved = this.resolveSellSideValue(itemHrid, 0);
+            // allowIndirect: same resolver and formula as the worker path - the fallback pass
+            // (worker unavailable) must price identically, including tier-3 container-EV chains.
+            const resolved = this.resolveSellSideValue(itemHrid, 0, { allowIndirect: true });
 
             if (!resolved) {
                 _missingDataCount++;
@@ -307,7 +312,10 @@ class ExpectedValueCalculator {
             // the caller explicitly passes `allowIndirect` (opt-in: Openable Analytics' calculator
             // wiring is the intended consumer).
             if (!allowIndirect) return null;
-            const indirect = resolveShopRedemptionValue(itemHrid);
+            // Tier-3 hook: let the shop chain value openable, unpriced outputs (e.g. task chests)
+            // from the converged container cache - a plain map read, never a recursive valuation.
+            const containerValueLookup = (hrid) => this.containerCache.get(hrid) ?? 0;
+            const indirect = resolveShopRedemptionValue(itemHrid, { containerValueLookup });
             if (indirect) {
                 return {
                     value: indirect.value,
@@ -319,7 +327,7 @@ class ExpectedValueCalculator {
             // Mirror case: the dropped item is itself a shop currency (e.g. labyrinth tokens from
             // Purdora's boxes) - value it at its own best tradeable redemption. Shop currencies are
             // not market-relistable, so no tax applies (same contract as shopRedemption above).
-            const currency = resolveCurrencyValue(itemHrid);
+            const currency = resolveCurrencyValue(itemHrid, { containerValueLookup });
             if (!currency) return null;
             return {
                 value: currency.value,

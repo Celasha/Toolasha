@@ -186,3 +186,111 @@ describe('resolveCurrencyValue', () => {
         expect(resolveCurrencyValue('/items/labyrinth_token')).toBeNull();
     });
 });
+
+describe('resolveCurrencyValue container-EV fallback (tier-3 indirect)', () => {
+    const TASK_TOKEN = '/items/task_token';
+
+    function seedTaskShopFixture() {
+        mocks.gameData.itemDetailMap['/items/task_chest'] = { isOpenable: true };
+        mocks.gameData.itemDetailMap['/items/task_potion'] = {};
+        mocks.gameData.taskShopItemDetailMap = {
+            '/task_shop_items/task_chest': {
+                itemHrid: '/items/task_chest',
+                cost: { itemHrid: TASK_TOKEN, count: 100 },
+                outputCount: 1,
+            },
+            '/task_shop_items/task_potion': {
+                itemHrid: '/items/task_potion',
+                cost: { itemHrid: TASK_TOKEN, count: 100 },
+                outputCount: 1,
+            },
+        };
+    }
+
+    test('prices a token via an openable, unpriced shop output using the injected container lookup', () => {
+        seedTaskShopFixture();
+        const result = resolveCurrencyValue(TASK_TOKEN, {
+            containerValueLookup: (itemHrid) => (itemHrid === '/items/task_chest' ? 5000 : 0),
+        });
+
+        expect(result).toEqual({ value: 50, isOutlier: false }); // 5000 x 1 / 100
+    });
+
+    test('prefers the market price of the shop output over the container lookup', () => {
+        seedTaskShopFixture();
+        mocks.getItemPriceOutlierInfo.mockImplementation((itemHrid) =>
+            itemHrid === '/items/task_chest' ? { value: 900, isOutlier: false } : { value: null, isOutlier: false }
+        );
+        const lookup = vi.fn(() => 5000);
+        const result = resolveCurrencyValue(TASK_TOKEN, { containerValueLookup: lookup });
+
+        expect(result).toEqual({ value: 9, isOutlier: false }); // 900 / 100
+        expect(lookup).not.toHaveBeenCalled();
+    });
+
+    test('takes the best value per token across market-priced and EV-fallback entries', () => {
+        seedTaskShopFixture();
+        mocks.getItemPriceOutlierInfo.mockImplementation((itemHrid) =>
+            itemHrid === '/items/task_potion' ? { value: 600, isOutlier: false } : { value: null, isOutlier: false }
+        );
+        const result = resolveCurrencyValue(TASK_TOKEN, {
+            containerValueLookup: (itemHrid) => (itemHrid === '/items/task_chest' ? 5000 : 0),
+        });
+
+        expect(result).toEqual({ value: 50, isOutlier: false }); // EV 50/token beats potion 6/token
+    });
+
+    test('honors outputCount when scaling the fallback EV', () => {
+        seedTaskShopFixture();
+        mocks.gameData.taskShopItemDetailMap['/task_shop_items/task_chest'].outputCount = 2;
+        const result = resolveCurrencyValue(TASK_TOKEN, {
+            containerValueLookup: (itemHrid) => (itemHrid === '/items/task_chest' ? 5000 : 0),
+        });
+
+        expect(result.value).toBe(100); // 5000 x 2 / 100
+    });
+
+    test('stays null without an injected lookup even when outputs are openable (back-compat)', () => {
+        seedTaskShopFixture();
+
+        expect(resolveCurrencyValue(TASK_TOKEN)).toBeNull();
+    });
+
+    test('stays null when every fallback lookup yields zero', () => {
+        seedTaskShopFixture();
+
+        expect(resolveCurrencyValue(TASK_TOKEN, { containerValueLookup: () => 0 })).toBeNull();
+    });
+
+    test('never consults the lookup for unpriced outputs that are not openable', () => {
+        seedTaskShopFixture();
+        mocks.gameData.itemDetailMap['/items/task_chest'] = {};
+        const lookup = vi.fn(() => 5000);
+
+        expect(resolveCurrencyValue(TASK_TOKEN, { containerValueLookup: lookup })).toBeNull();
+        expect(lookup).not.toHaveBeenCalled();
+    });
+});
+
+describe('resolveShopRedemptionValue container-EV propagation', () => {
+    test('threads the lookup through so a currency priced only by EV-backed outputs resolves the chain', () => {
+        mocks.gameData.itemDetailMap['/items/labyrinth_chest'] = { isOpenable: true };
+        mocks.gameData.labyrinthShopItemDetailMap['/labyrinth_shop_items/labyrinth_chest'] = {
+            itemHrid: '/items/labyrinth_chest',
+            cost: { itemHrid: '/items/labyrinth_token', count: 50 },
+            outputCount: 1,
+        };
+        // Default mock leaves every market price null; only the chest EV lookup has value.
+        const result = resolveShopRedemptionValue('/items/seal_of_efficiency', {
+            containerValueLookup: (itemHrid) => (itemHrid === '/items/labyrinth_chest' ? 2500 : 0),
+        });
+
+        expect(result).toEqual({
+            value: 1500, // labyrinth_token = 2500 / 50; seal = 50 x 30
+            isOutlier: false,
+            currencyHrid: '/items/labyrinth_token',
+            tokenCost: 30,
+            outputCount: 1,
+        });
+    });
+});

@@ -241,6 +241,37 @@ describe('resolveSellSideValue', () => {
         expect(result.source).toBe('market');
         expect(mockResolveShopRedemptionValue).not.toHaveBeenCalled();
     });
+
+    test('allowIndirect threads a containerCache-backed lookup into the shop redemption chain', () => {
+        expectedValueCalculator.containerCache.set('/items/task_chest', 5000);
+        mockResolveShopRedemptionValue.mockReturnValue({ value: 30000, isOutlier: false });
+
+        expectedValueCalculator.resolveSellSideValue('/items/seal_of_efficiency', 0, { allowIndirect: true });
+
+        expect(mockResolveShopRedemptionValue).toHaveBeenCalledWith('/items/seal_of_efficiency', {
+            containerValueLookup: expect.any(Function),
+        });
+        // The injected lookup is a plain cache read - never a recursive valuation call.
+        const opts = mockResolveShopRedemptionValue.mock.calls[0][1];
+        expect(opts.containerValueLookup('/items/task_chest')).toBe(5000);
+        expect(opts.containerValueLookup('/items/unknown_item')).toBe(0);
+    });
+
+    test('allowIndirect threads the same lookup into the dropped-currency valuation', () => {
+        expectedValueCalculator.containerCache.set('/items/task_chest', 5000);
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+        mockResolveCurrencyValue.mockReturnValue({ value: 50, isOutlier: false });
+
+        expect(expectedValueCalculator.resolveSellSideValue('/items/task_token', 0, { allowIndirect: true })).toEqual({
+            value: 50,
+            source: 'specialCurrency',
+            needsTax: false,
+            isOutlier: false,
+        });
+
+        const opts = mockResolveCurrencyValue.mock.calls[0][1];
+        expect(opts.containerValueLookup('/items/task_chest')).toBe(5000);
+    });
 });
 
 describe('allowIndirect threading through the EV path', () => {
@@ -607,11 +638,19 @@ describe('calculateExpectedValue hasOutlierPrices aggregate', () => {
 describe('worker-path price map', () => {
     beforeEach(() => {
         mockGetItemPrice.mockReset();
+        // Restore the delegating outlier-info wrapper - the hasOutlierPrices describe leaves a
+        // hardcoded {value, isOutlier} return on it, which would leak into every unpriced drop.
+        mockGetItemPriceOutlierInfo.mockReset();
         mockCalculateDungeonTokenValue.mockReset();
         mockGetSetting.mockReset().mockReturnValue(true);
         mockGetCustomPrice.mockReset().mockReturnValue(null);
         mockGetItemDetails.mockReset();
         mockCalculateEVBatch.mockReset();
+        mockGetInitClientData.mockReset();
+        // Same leak-guard for the indirect-chain resolvers - earlier describes leave hardcoded
+        // returns on them inside test bodies.
+        mockResolveShopRedemptionValue.mockReset();
+        mockResolveCurrencyValue.mockReset();
         expectedValueCalculator.containerCache.clear();
     });
 
@@ -650,5 +689,156 @@ describe('worker-path price map', () => {
 
         const payload = mockCalculateEVBatch.mock.calls[0][0];
         expect(payload[0].priceMap['/items/sinister_token']).toEqual({ price: 7, needsTax: false });
+    });
+
+    test('buildPriceMap prices unpriced shop-currency drops through the indirect chain (worker convergence)', () => {
+        const initData = {
+            openableLootDropMap: {
+                '/items/violet_gift': [{ itemHrid: '/items/task_token', dropRate: 0.1, minCount: 1, maxCount: 1 }],
+            },
+        };
+        mockGetItemDetails.mockImplementation((hrid) => ({ name: hrid, isOpenable: false }));
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+        mockResolveCurrencyValue.mockReturnValue({ value: 500, isOutlier: false });
+
+        const priceMap = expectedValueCalculator.buildPriceMap(['/items/violet_gift'], initData);
+
+        expect(priceMap['/items/task_token']).toEqual({ price: 500, needsTax: false });
+    });
+
+    test('calculateSingleContainer prices unpriced shop-currency drops through the indirect chain (fallback path)', () => {
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/violet_gift': [{ itemHrid: '/items/task_token', dropRate: 1, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockGetItemDetails.mockImplementation((hrid) => ({ name: hrid, isOpenable: false }));
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+        mockResolveCurrencyValue.mockReturnValue({ value: 500, isOutlier: false });
+
+        expect(expectedValueCalculator.calculateSingleContainer('/items/violet_gift')).toBe(500);
+    });
+
+    test('worker iterations converge task-token pricing through the chest EV cache (purple cow shape)', async () => {
+        // Real bug shape: Violet Cow's Gift drops task tokens (worthless until priced), task chests
+        // are bought with tokens and drop a market-priced gem. The chest EV feeds the token price,
+        // which feeds the gift EV - resolved across the convergence iterations.
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/task_chest': [{ itemHrid: '/items/gem', dropRate: 1, minCount: 1, maxCount: 1 }],
+                '/items/violet_gift': [{ itemHrid: '/items/task_token', dropRate: 0.1, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockGetItemPrice.mockImplementation((hrid) => (hrid === '/items/gem' ? 40000 : null));
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+        // Mirror the real chain math with a per-call implementation: token value = chest EV / 100
+        // tokens, re-evaluated each iteration so the lookup sees the freshly updated cache.
+        mockResolveCurrencyValue.mockImplementation((currencyHrid, opts) => {
+            const chestEv = opts && opts.containerValueLookup ? opts.containerValueLookup('/items/task_chest') : 0;
+            return chestEv > 0 ? { value: chestEv / 100, isOutlier: false } : null;
+        });
+        // Worker stub: the chest always nets 40000 from its gem; the gift recomputes from whatever
+        // token price this iteration's priceMap carries.
+        mockCalculateEVBatch.mockImplementation((containerData) =>
+            Promise.resolve(
+                containerData.map((c) => {
+                    if (c.containerHrid === '/items/task_chest') {
+                        return { containerHrid: c.containerHrid, ev: 40000 };
+                    }
+                    const tokenPrice = c.priceMap['/items/task_token'] ? c.priceMap['/items/task_token'].price : 0;
+                    return { containerHrid: c.containerHrid, ev: tokenPrice > 0 ? 0.1 * tokenPrice : 0 };
+                })
+            )
+        );
+
+        await expectedValueCalculator.calculateNestedContainers();
+
+        // Iteration 1 started from an empty cache: the token was still unpriced.
+        const firstPayload = mockCalculateEVBatch.mock.calls[0][0];
+        const firstGift = firstPayload.find((c) => c.containerHrid === '/items/violet_gift');
+        expect(firstGift.priceMap['/items/task_token']).toEqual({ price: null, needsTax: false });
+
+        // Fixed point: token = 40000 chest EV / 100 token cost = 400; gift = 10% of one token.
+        const lastPayload = mockCalculateEVBatch.mock.calls[mockCalculateEVBatch.mock.calls.length - 1][0];
+        const lastGift = lastPayload.find((c) => c.containerHrid === '/items/violet_gift');
+        expect(lastGift.priceMap['/items/task_token']).toEqual({ price: 400, needsTax: false });
+        expect(expectedValueCalculator.containerCache.get('/items/task_chest')).toBe(40000);
+        expect(expectedValueCalculator.containerCache.get('/items/violet_gift')).toBe(40);
+    });
+
+    test('worker path keeps non-chain containers at market-only cached EVs (no accidental repricing)', async () => {
+        // Invariance side of the review scope note: an unpriced drop with no shop-redemption or
+        // special-currency chain must keep contributing nothing to background-cached EVs, exactly
+        // as before allowIndirect was enabled on this path.
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/mixed_chest': [
+                    { itemHrid: '/items/cheese', dropRate: 1, minCount: 1, maxCount: 1 },
+                    { itemHrid: '/items/mystery_junk', dropRate: 0.5, minCount: 1, maxCount: 1 },
+                ],
+            },
+        });
+        mockGetItemPrice.mockImplementation((hrid) => (hrid === '/items/cheese' ? 100 : null));
+        mockResolveShopRedemptionValue.mockReturnValue(null);
+        mockResolveCurrencyValue.mockReturnValue(null);
+        mockCalculateEVBatch.mockImplementation((containerData) =>
+            Promise.resolve(
+                containerData.map((c) => {
+                    const cheese = c.priceMap['/items/cheese'];
+                    return { containerHrid: c.containerHrid, ev: cheese && cheese.price > 0 ? cheese.price : 0 };
+                })
+            )
+        );
+
+        await expectedValueCalculator.calculateNestedContainers();
+
+        const payload = mockCalculateEVBatch.mock.calls[0][0];
+        const mixedChest = payload.find((c) => c.containerHrid === '/items/mixed_chest');
+        expect(mixedChest.priceMap['/items/mystery_junk']).toEqual({ price: null, needsTax: false });
+        expect(mixedChest.priceMap['/items/cheese']).toEqual({ price: 100, needsTax: true });
+        expect(expectedValueCalculator.containerCache.get('/items/mixed_chest')).toBe(100);
+    });
+
+    test('worker path prices dropped shop-redemption items through the indirect chain (intentional scope change)', async () => {
+        // Intentional side of the review scope note: before this change the background paths left
+        // tier-1/2 drops unpriced (only the live Openable-Analytics display path priced them), so
+        // enabling allowIndirect here retroactively raises cached EVs for containers holding such
+        // drops. The PR body discloses this under "Consumer impact" - this test locks it in.
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/loot_chest': [{ itemHrid: '/items/seal', dropRate: 0.5, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockGetItemPrice.mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReturnValue({ value: 300, isOutlier: false });
+        mockResolveCurrencyValue.mockReturnValue(null);
+        mockCalculateEVBatch.mockImplementation((containerData) =>
+            Promise.resolve(
+                containerData.map((c) => {
+                    const seal = c.priceMap['/items/seal'];
+                    return { containerHrid: c.containerHrid, ev: seal && seal.price > 0 ? 0.5 * seal.price : 0 };
+                })
+            )
+        );
+
+        await expectedValueCalculator.calculateNestedContainers();
+
+        const payload = mockCalculateEVBatch.mock.calls[0][0];
+        const lootChest = payload.find((c) => c.containerHrid === '/items/loot_chest');
+        expect(lootChest.priceMap['/items/seal']).toEqual({ price: 300, needsTax: false });
+        expect(expectedValueCalculator.containerCache.get('/items/loot_chest')).toBe(150);
+    });
+
+    test('fallback path prices dropped shop-redemption items identically to the worker path', () => {
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/loot_chest': [{ itemHrid: '/items/seal', dropRate: 0.5, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockGetItemPrice.mockReturnValue(null);
+        mockResolveShopRedemptionValue.mockReturnValue({ value: 300, isOutlier: false });
+        mockResolveCurrencyValue.mockReturnValue(null);
+
+        expect(expectedValueCalculator.calculateSingleContainer('/items/loot_chest')).toBe(150);
     });
 });
