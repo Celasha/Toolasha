@@ -29,29 +29,37 @@ function buildPanelCss() {
 .mwi-nw-root { text-align: left; color: #ccc; font-size: 0.875rem; }
 .mwi-nw-iconrow { display: flex; align-items: center; gap: 6px; }
 .mwi-nw-headtoggle { cursor: pointer; font-weight: bold; flex: 1; display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.mwi-nw-headtoggle:hover .mwi-nw-chev { background: rgba(255,255,255,0.2); color: #fff; }
 .mwi-nw-headname { display: inline-flex; align-items: center; gap: 7px; color: #fff; }
 .mwi-nw-coin { width: 20px; height: 20px; border-radius: 6px; background: rgba(251,191,36,0.16); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; flex: none; }
 .mwi-nw-big { color: #fbbf24; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.mwi-nw-chev { display: inline-block; width: 11px; color: rgba(255,255,255,0.4); font-size: 9px; transition: transform 0.15s; flex: none; }
+.mwi-nw-chev { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.75); font-size: 10px; line-height: 1; transition: transform 0.15s, background 0.15s, color 0.15s; flex: none; }
+#mwi-networth-chev { width: 16px; height: 16px; font-size: 11px; }
+#mwi-networth-details > .mwi-nw-kids > details.mwi-nw-node > summary .mwi-nw-chev { width: 20px; height: 20px; border-radius: 5px; font-size: 13px; }
 .mwi-nw-chev-open { transform: rotate(90deg); }
 details.mwi-nw-node { display: block; min-width: 0; }
-details.mwi-nw-node > summary { list-style: none; cursor: pointer; }
+details.mwi-nw-node > summary { list-style: none; cursor: pointer; user-select: none; }
 details.mwi-nw-node > summary::-webkit-details-marker { display: none; }
 details.mwi-nw-node > summary .mwi-nw-chev { transform: rotate(0); }
 details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 .mwi-nw-sharebar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 10px 2px 3px; }
 .mwi-nw-sharebar i { display: block; height: 100%; }
 .mwi-nw-sharelegend { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.45); padding: 0 4px 2px; }
-.mwi-nw-section { display: flex; align-items: center; justify-content: space-between; margin: 12px 2px 3px; padding: 3px 6px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.45); border-bottom: 1px solid rgba(255,255,255,0.08); }
+.mwi-nw-section { display: flex; align-items: center; justify-content: space-between; margin: 12px 2px 3px; padding: 3px 6px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.6); border-bottom: 1px solid rgba(255,255,255,0.14); }
 .mwi-nw-section-value { font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 600; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
 .mwi-nw-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 3px 6px; border-radius: 5px; font-size: 12px; min-width: 0; }
 .mwi-nw-kids > details > summary:hover, .mwi-nw-kids > .mwi-nw-row:hover { background: rgba(255,255,255,0.07); }
 .mwi-nw-kids > :nth-child(odd) > summary, .mwi-nw-kids > .mwi-nw-row:nth-child(odd) { background: rgba(255,255,255,0.03); }
+/* Clickable affordance: group rows keep a tinted strip, chevron badge brightens on hover, open rows highlight. */
+.mwi-nw-kids > details > summary:hover .mwi-nw-chev { background: rgba(255,255,255,0.2); color: #fff; }
+.mwi-nw-kids > details.mwi-nw-node > summary { background: rgba(255,255,255,0.06); font-weight: 600; }
+.mwi-nw-kids > details.mwi-nw-node > summary:hover { background: rgba(255,255,255,0.11); }
+.mwi-nw-kids > details.mwi-nw-node[open] > summary { color: #fff; }
 .mwi-nw-nm { color: inherit; overflow-wrap: anywhere; }
 .mwi-nw-count { color: rgba(255,255,255,0.4); font-size: 10.5px; margin-left: 4px; }
 .mwi-nw-val { color: #fbbf24; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mwi-nw-zero { color: rgba(255,255,255,0.3); font-weight: 400; }
-.mwi-nw-indent { border-left: 1px solid rgba(255,255,255,0.08); margin: 1px 0 1px 11px; padding-left: 9px; }
+.mwi-nw-indent { border-left: 1px solid rgba(255,255,255,0.08); margin: 1px 0 1px 14px; padding-left: 9px; }
 .mwi-nw-lv1 { color: #ccc; }
 .mwi-nw-lv2 { color: #aaa; font-size: 11.5px; }
 .mwi-nw-lv3 { color: #999; font-size: 10.8px; }
@@ -443,7 +451,9 @@ class NetworthInventoryDisplay {
                 .filter((d) => d.open)
                 .map((d) => d.id)
         );
-        const rootWasOpen = this.container.querySelector('#mwi-networth-details')?.style.display !== 'none';
+        // First render starts collapsed; afterwards preserve the user's toggle state.
+        const prevRoot = this.container.querySelector('#mwi-networth-details');
+        const rootWasOpen = prevRoot ? prevRoot.style.display !== 'none' : false;
 
         const totalNetworth = networthFormatter(Math.round(networthData.totalNetworth));
         const share = getSharePercent(networthData);

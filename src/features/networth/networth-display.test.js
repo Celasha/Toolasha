@@ -196,6 +196,34 @@ describe('update() panel structure', () => {
         expect(networthInventoryDisplay.container.querySelector('#mwi-nw-inventory').open).toBe(true);
     });
 
+    test('top-level group nodes render collapsed by default', () => {
+        networthInventoryDisplay.update(makeNetworthData());
+        const c = networthInventoryDisplay.container;
+        for (const id of [
+            'mwi-nw-equipment',
+            'mwi-nw-inventory',
+            'mwi-nw-listings',
+            'mwi-nw-houses',
+            'mwi-nw-abilities',
+            'mwi-nw-ability-books',
+            'mwi-nw-shrines',
+        ]) {
+            expect(c.querySelector(`#${id}`)?.open).toBe(false);
+        }
+    });
+
+    test('panel detail area starts collapsed on first render and keeps toggle state afterwards', () => {
+        networthInventoryDisplay.update(makeNetworthData());
+        const c = networthInventoryDisplay.container;
+        const rootDetails = c.querySelector('#mwi-networth-details');
+        expect(rootDetails.style.display).toBe('none');
+
+        // User expands the panel via header toggle, then a data refresh re-renders
+        rootDetails.style.display = 'block';
+        networthInventoryDisplay.update(makeNetworthData());
+        expect(c.querySelector('#mwi-networth-details').style.display).toBe('');
+    });
+
     test('omits the share bar when one side is zero', () => {
         const data = makeNetworthData();
         data.fixedAssets.total = 0;
