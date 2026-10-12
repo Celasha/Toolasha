@@ -437,50 +437,16 @@ class NetworthInventoryDisplay {
             return;
         }
 
-        // Preserve expand/collapse states before updating
-        const expandedStates = {};
-        const sectionsToPreserve = [
-            'mwi-networth-details',
-            'mwi-current-assets-details',
-            'mwi-equipment-breakdown',
-            'mwi-inventory-breakdown',
-            'mwi-listings-breakdown',
-            'mwi-fixed-assets-details',
-            'mwi-houses-breakdown',
-            'mwi-abilities-details',
-            'mwi-equipped-abilities-breakdown',
-            'mwi-other-abilities-breakdown',
-            'mwi-ability-books-breakdown',
-            'mwi-guild-shrines-breakdown',
-            'mwi-excluded-details',
-        ];
-
-        // Also preserve inventory category states
-        const inventoryCategories = Object.keys(networthData.currentAssets.inventory.byCategory || {});
-        inventoryCategories.forEach((categoryName) => {
-            const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
-            sectionsToPreserve.push(categoryId);
-        });
-
-        // Preserve chest item expand states
-        const byCatForState = networthData.currentAssets.inventory.byCategory || {};
-        for (const categoryData of Object.values(byCatForState)) {
-            for (const item of categoryData.items) {
-                if (item.isOpenable && item.itemHrid) {
-                    const slug = item.itemHrid.split('/').pop();
-                    sectionsToPreserve.push(`mwi-chest-${slug}-detail`);
-                }
-            }
-        }
-
-        sectionsToPreserve.forEach((id) => {
-            const elem = this.container.querySelector(`#${id}`);
-            if (elem) {
-                expandedStates[id] = elem.style.display !== 'none';
-            }
-        });
+        // Preserve <details> open state across re-render (generic: any details with an id)
+        const prevOpenIds = new Set(
+            Array.from(this.container.querySelectorAll('details[id]'))
+                .filter((d) => d.open)
+                .map((d) => d.id)
+        );
+        const rootWasOpen = this.container.querySelector('#mwi-networth-details')?.style.display !== 'none';
 
         const totalNetworth = networthFormatter(Math.round(networthData.totalNetworth));
+        const share = getSharePercent(networthData);
         const showChartBtn = config.getSetting('networth_historyChart');
         const ca = networthData.currentAssets;
         const fa = networthData.fixedAssets;
@@ -496,211 +462,159 @@ class NetworthInventoryDisplay {
         const showGuildShrines = fa.guildShrines.totalCost > 0;
         const showExcluded = excl.total > 0;
 
+        const sections = [];
+        if (showCurrentAssets) {
+            const nodes = [];
+            if (showEquipped) {
+                nodes.push(
+                    nodeDetails(
+                        1,
+                        'mwi-nw-equipment',
+                        t('networthDisplay.equipmentName'),
+                        networthFormatter(Math.round(ca.equipped.value)),
+                        this.renderEquipmentBreakdown(ca.equipped.breakdown)
+                    )
+                );
+            }
+            if (showInventory) {
+                nodes.push(
+                    nodeDetails(
+                        1,
+                        'mwi-nw-inventory',
+                        t('networthDisplay.inventoryName'),
+                        networthFormatter(Math.round(ca.inventory.value)),
+                        this.renderInventoryBreakdown(ca.inventory)
+                    )
+                );
+            }
+            if (showListings) {
+                nodes.push(
+                    nodeDetails(
+                        1,
+                        'mwi-nw-listings',
+                        t('networthDisplay.marketListingsName'),
+                        networthFormatter(Math.round(ca.listings.value)),
+                        this.renderListingsBreakdown(ca.listings.breakdown)
+                    )
+                );
+            }
+            sections.push(
+                `<div class="mwi-nw-section"><span class="mwi-nw-section-name">${t('networthDisplay.currentAssetsName')}</span><span class="mwi-nw-section-value">${networthFormatter(Math.round(ca.total))}</span></div>` +
+                    `<div class="mwi-nw-kids">${nodes.join('')}</div>`
+            );
+        }
+        if (showFixedAssets) {
+            const nodes = [];
+            if (showHouses) {
+                nodes.push(
+                    nodeDetails(
+                        1,
+                        'mwi-nw-houses',
+                        t('networthDisplay.housesName'),
+                        networthFormatter(Math.round(fa.houses.totalCost)),
+                        this.renderHousesBreakdown(fa.houses.breakdown)
+                    )
+                );
+            }
+            if (showAbilities) {
+                const abilityChildren =
+                    nodeDetails(
+                        2,
+                        'mwi-nw-abilities-equipped',
+                        t('networthDisplay.equippedAbilitiesLabel', { count: fa.abilities.equippedBreakdown.length }),
+                        networthFormatter(Math.round(fa.abilities.equippedCost)),
+                        this.renderAbilitiesBreakdown(fa.abilities.equippedBreakdown)
+                    ) +
+                    (fa.abilities.otherBreakdown.length > 0
+                        ? nodeDetails(
+                              2,
+                              'mwi-nw-abilities-other',
+                              t('networthDisplay.otherAbilitiesLabel', { count: fa.abilities.otherBreakdown.length }),
+                              networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost)),
+                              this.renderAbilitiesBreakdown(fa.abilities.otherBreakdown)
+                          )
+                        : '');
+                nodes.push(
+                    nodeDetails(
+                        1,
+                        'mwi-nw-abilities',
+                        t('networthDisplay.abilitiesName'),
+                        networthFormatter(Math.round(fa.abilities.totalCost)),
+                        abilityChildren
+                    )
+                );
+            }
+            if (fa.abilityBooks.breakdown.length > 0) {
+                nodes.push(
+                    nodeDetails(
+                        1,
+                        'mwi-nw-ability-books',
+                        t('networthDisplay.abilityBooksLabel', { count: fa.abilityBooks.breakdown.length }),
+                        networthFormatter(Math.round(fa.abilityBooks.totalCost)),
+                        this.renderAbilityBooksBreakdown(fa.abilityBooks.breakdown)
+                    )
+                );
+            }
+            if (showGuildShrines) {
+                nodes.push(
+                    nodeDetails(
+                        1,
+                        'mwi-nw-shrines',
+                        t('networthDisplay.guildShrinesName'),
+                        networthFormatter(Math.round(fa.guildShrines.totalCost)),
+                        this.renderGuildShrinesBreakdown(fa.guildShrines.breakdown)
+                    )
+                );
+            }
+            sections.push(
+                `<div class="mwi-nw-section"><span class="mwi-nw-section-name">${t('networthDisplay.fixedAssetsName')}</span><span class="mwi-nw-section-value">${networthFormatter(Math.round(fa.total))}</span></div>` +
+                    `<div class="mwi-nw-kids">${nodes.join('')}</div>`
+            );
+        }
+        if (showExcluded) {
+            const rows = excl.items
+                .map(
+                    (item) =>
+                        `<div class="mwi-nw-exclrow"><span class="mwi-nw-exclname">${item.name}: ${networthFormatter(Math.round(item.amount))}</span>` +
+                        `<span class="mwi-excluded-remove" data-type="${attrValue(item.type)}" data-value="${attrValue(item.value)}" title="${t('networthExclusionPopup.removeExclusionTooltip')}">✕</span></div>`
+                )
+                .join('');
+            sections.push(
+                `<div class="mwi-nw-section"><span class="mwi-nw-section-name">${t('networthDisplay.excludedSectionName')}</span><span class="mwi-nw-section-value">${networthFormatter(Math.round(excl.total))}</span></div>` +
+                    `<div class="mwi-nw-kids">${rows}</div>`
+            );
+        }
+
         this.container.innerHTML = `
-            <div class="mwi-networth-icon-row" style="display: flex; align-items: center; gap: 6px;">
-                <div style="cursor: pointer; font-weight: bold; flex: 1;" id="mwi-networth-toggle">
-                    + ${t('networthDisplay.netWorthLabel', { value: totalNetworth })}
-                </div>
-                ${
-                    showChartBtn
-                        ? `<span id="mwi-networth-chart-btn" title="${t('networthDisplay.netWorthHistoryChartTooltip')}" style="
-                    cursor: pointer;
-                    font-size: 14px;
-                    opacity: 0.7;
-                    padding: 2px 4px;
-                    border-radius: 3px;
-                    line-height: 1;
-                ">&#x1F4C8;</span>`
-                        : ''
-                }
-                <span id="mwi-networth-exclusions-btn" title="${t('networthDisplay.configureExclusionsTooltip')}" style="
-                    cursor: pointer;
-                    font-size: 12px;
-                    opacity: 0.6;
-                    padding: 2px 4px;
-                    border-radius: 3px;
-                    line-height: 1;
-                ">🔧</span>
-            </div>
-            <div id="mwi-networth-details" style="display: none; margin-left: 20px;">
-                ${
-                    showCurrentAssets
-                        ? `
-                <!-- Current Assets -->
-                <div style="cursor: pointer; margin-top: 8px;" id="mwi-current-assets-toggle">
-                    + ${t('networthDisplay.currentAssetsLabel', { value: networthFormatter(Math.round(ca.total)) })}
-                </div>
-                <div id="mwi-current-assets-details" style="display: none; margin-left: 20px;">
-                    ${
-                        showEquipped
-                            ? `
-                    <!-- Equipment Value -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipment-toggle">
-                        + ${t('networthDisplay.equipmentValueLabel', { value: networthFormatter(Math.round(ca.equipped.value)) })}
+            <div class="mwi-nw-root">
+                <div class="mwi-networth-icon-row mwi-nw-iconrow">
+                    <div class="mwi-nw-headtoggle" id="mwi-networth-toggle">
+                        <span class="mwi-nw-headname"><span class="mwi-nw-chev" id="mwi-networth-chev">▸</span><span class="mwi-nw-coin">🪙</span>${t('networthDisplay.netWorthName')}</span>
+                        <span class="mwi-nw-big">${totalNetworth}</span>
                     </div>
-                    <div id="mwi-equipment-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderEquipmentBreakdown(ca.equipped.breakdown)}</div>
-                    `
+                    ${
+                        showChartBtn
+                            ? `<span id="mwi-networth-chart-btn" class="mwi-nw-iconbtn" title="${t('networthDisplay.netWorthHistoryChartTooltip')}">📈</span>`
                             : ''
                     }
-
-                    ${
-                        showInventory
-                            ? `
-                    <!-- Inventory Value -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-inventory-toggle">
-                        + ${t('networthDisplay.inventoryValueLabel', { value: networthFormatter(Math.round(ca.inventory.value)) })}
-                    </div>
-                    <div id="mwi-inventory-breakdown" style="display: none; margin-left: 20px;">
-                        ${this.renderInventoryBreakdown(ca.inventory)}
-                    </div>
-                    `
-                            : ''
-                    }
-
-                    ${
-                        showListings
-                            ? `
-                    <!-- Market Listings -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-listings-toggle">
-                        + ${t('networthDisplay.marketListingsLabel', { value: networthFormatter(Math.round(ca.listings.value)) })}
-                    </div>
-                    <div id="mwi-listings-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderListingsBreakdown(ca.listings.breakdown)}</div>
-                    `
-                            : ''
-                    }
+                    <span id="mwi-networth-exclusions-btn" class="mwi-nw-iconbtn" title="${t('networthDisplay.configureExclusionsTooltip')}">🔧</span>
                 </div>
-                `
-                        : ''
-                }
-
-                ${
-                    showFixedAssets
-                        ? `
-                <!-- Fixed Assets -->
-                <div style="cursor: pointer; margin-top: 8px;" id="mwi-fixed-assets-toggle">
-                    + ${t('networthDisplay.fixedAssetsLabel', { value: networthFormatter(Math.round(fa.total)) })}
+                <div id="mwi-networth-details" style="${rootWasOpen ? '' : 'display: none;'} margin-left: 20px;">
+                    ${renderShareBar(share)}
+                    ${sections.join('')}
                 </div>
-                <div id="mwi-fixed-assets-details" style="display: none; margin-left: 20px;">
-                    ${
-                        showHouses
-                            ? `
-                    <!-- Houses -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-houses-toggle">
-                        + ${t('networthDisplay.housesLabel', { value: networthFormatter(Math.round(fa.houses.totalCost)) })}
-                    </div>
-                    <div id="mwi-houses-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderHousesBreakdown(fa.houses.breakdown)}</div>
-                    `
-                            : ''
-                    }
-
-                    ${
-                        showAbilities
-                            ? `
-                    <!-- Abilities -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-abilities-toggle">
-                        + ${t('networthDisplay.abilitiesLabel', { value: networthFormatter(Math.round(fa.abilities.totalCost)) })}
-                    </div>
-                    <div id="mwi-abilities-details" style="display: none; margin-left: 20px;">
-                        <!-- Equipped Abilities -->
-                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipped-abilities-toggle">
-                            + ${t('networthDisplay.equippedAbilitiesLabel', { count: fa.abilities.equippedBreakdown.length, value: networthFormatter(Math.round(fa.abilities.equippedCost)) })}
-                        </div>
-                        <div id="mwi-equipped-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(fa.abilities.equippedBreakdown)}</div>
-
-                        ${
-                            fa.abilities.otherBreakdown.length > 0
-                                ? `
-                            <div style="cursor: pointer; margin-top: 4px;" id="mwi-other-abilities-toggle">
-                                + ${t('networthDisplay.otherAbilitiesCountLabel', { count: fa.abilities.otherBreakdown.length, value: networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost)) })}
-                            </div>
-                            <div id="mwi-other-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(fa.abilities.otherBreakdown)}</div>
-                        `
-                                : ''
-                        }
-                    </div>
-                    `
-                            : ''
-                    }
-
-                    ${
-                        fa.abilityBooks.breakdown.length > 0
-                            ? `
-                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-ability-books-toggle">
-                            + ${t('networthDisplay.abilityBooksCountLabel', { count: fa.abilityBooks.breakdown.length, value: networthFormatter(Math.round(fa.abilityBooks.totalCost)) })}
-                        </div>
-                        <div id="mwi-ability-books-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilityBooksBreakdown(fa.abilityBooks.breakdown)}</div>
-                    `
-                            : ''
-                    }
-
-                    ${
-                        showGuildShrines
-                            ? `
-                    <!-- Guild Shrines -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-guild-shrines-toggle">
-                        + ${t('networthDisplay.guildShrinesLabel', { value: networthFormatter(Math.round(fa.guildShrines.totalCost)) })}
-                    </div>
-                    <div id="mwi-guild-shrines-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderGuildShrinesBreakdown(fa.guildShrines.breakdown)}</div>
-                    `
-                            : ''
-                    }
-                </div>
-                `
-                        : ''
-                }
-
-                ${
-                    showExcluded
-                        ? `
-                <!-- Excluded -->
-                <div style="cursor: pointer; margin-top: 8px; opacity: 0.6;" id="mwi-excluded-toggle">
-                    + ${t('networthDisplay.excludedLabel', { value: networthFormatter(Math.round(excl.total)) })}
-                </div>
-                <div id="mwi-excluded-details" style="display: none; margin-left: 20px; font-size: 0.8rem;">
-                    ${excl.items
-                        .map(
-                            (item) => `
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 3px; color: rgba(255,255,255,0.45);">
-                            <span style="text-decoration: line-through;">${item.name}: ${networthFormatter(Math.round(item.amount))}</span>
-                            <span class="mwi-excluded-remove" data-type="${item.type}" data-value="${item.value.replace(/"/g, '&quot;')}" style="cursor: pointer; color: rgba(255,100,100,0.7); margin-left: 8px; font-size: 0.75rem;" title="${t('networthExclusionPopup.removeExclusionTooltip')}">✕</span>
-                        </div>
-                    `
-                        )
-                        .join('')}
-                </div>
-                `
-                        : ''
-                }
             </div>
         `;
 
-        // Restore expand/collapse states after updating
-        sectionsToPreserve.forEach((id) => {
-            const elem = this.container.querySelector(`#${id}`);
-            if (elem && expandedStates[id]) {
-                elem.style.display = 'block';
-
-                // Derive the toggle button ID from the detail ID.
-                // Fixed sections use suffixes like -details, -breakdown, -detail → strip and append -toggle.
-                // Dynamic sections (e.g. inventory categories: mwi-inventory-loot) use id + '-toggle'.
-                let toggleId = id
-                    .replace('-details', '-toggle')
-                    .replace('-breakdown', '-toggle')
-                    .replace('-detail', '-toggle');
-                if (toggleId === id) {
-                    toggleId = id + '-toggle';
-                }
-
-                const toggleBtn = this.container.querySelector(`#${toggleId}`);
-                if (toggleBtn) {
-                    const currentText = toggleBtn.textContent;
-                    toggleBtn.textContent = currentText.replace('+ ', '- ');
-                }
+        // Restore details open state
+        prevOpenIds.forEach((id) => {
+            const el = this.container.querySelector(`details[id="${id}"]`);
+            if (el) {
+                el.open = true;
             }
         });
 
-        // Set up event listeners for all toggles
-        this.setupToggleListeners(networthData);
+        this.setupActionListeners(networthData);
     }
 
     /**
@@ -878,20 +792,21 @@ class NetworthInventoryDisplay {
     }
 
     /**
-     * Set up toggle event listeners
+     * Bind chart / exclusions / excluded-row remove listeners.
+     * Expand/collapse itself is native <details> behavior — no toggle handlers needed.
      * @param {Object} networthData - Networth data
      */
-    setupToggleListeners(networthData) {
-        const ca = networthData.currentAssets;
-        const fa = networthData.fixedAssets;
-        const excl = networthData.excluded ?? { total: 0, items: [] };
-
-        // Main networth toggle
-        this.setupToggle(
-            'mwi-networth-toggle',
-            'mwi-networth-details',
-            t('networthDisplay.netWorthLabel', { value: networthFormatter(Math.round(networthData.totalNetworth)) })
-        );
+    setupActionListeners(networthData) {
+        // Root collapse toggle
+        const rootToggle = this.container.querySelector('#mwi-networth-toggle');
+        const rootDetails = this.container.querySelector('#mwi-networth-details');
+        if (rootToggle && rootDetails) {
+            rootToggle.addEventListener('click', () => {
+                const isCollapsed = rootDetails.style.display === 'none';
+                rootDetails.style.display = isCollapsed ? 'block' : 'none';
+                this.container.querySelector('#mwi-networth-chev')?.classList.toggle('mwi-nw-chev-open', isCollapsed);
+            });
+        }
 
         // Chart button
         const chartBtn = this.container.querySelector('#mwi-networth-chart-btn');
@@ -900,12 +815,8 @@ class NetworthInventoryDisplay {
                 e.stopPropagation();
                 networthHistoryChart.openModal();
             });
-            chartBtn.addEventListener('mouseenter', () => {
-                chartBtn.style.opacity = '1';
-            });
-            chartBtn.addEventListener('mouseleave', () => {
-                chartBtn.style.opacity = '0.7';
-            });
+            chartBtn.addEventListener('mouseenter', () => (chartBtn.style.opacity = '1'));
+            chartBtn.addEventListener('mouseleave', () => (chartBtn.style.opacity = '0.6'));
         }
 
         // Exclusions button
@@ -917,169 +828,19 @@ class NetworthInventoryDisplay {
                     if (this.networthFeature) this.networthFeature.recalculate();
                 });
             });
-            exclusionsBtn.addEventListener('mouseenter', () => {
-                exclusionsBtn.style.opacity = '1';
+            exclusionsBtn.addEventListener('mouseenter', () => (exclusionsBtn.style.opacity = '1'));
+            exclusionsBtn.addEventListener('mouseleave', () => (exclusionsBtn.style.opacity = '0.6'));
+        }
+
+        // ✕ remove buttons on excluded rows
+        this.container.querySelectorAll('.mwi-excluded-remove').forEach((btn) => {
+            btn.addEventListener('mouseenter', () => (btn.style.color = 'rgba(255,100,100,1)'));
+            btn.addEventListener('mouseleave', () => (btn.style.color = 'rgba(255,100,100,0.7)'));
+            btn.addEventListener('click', async () => {
+                await removeExclusion(btn.dataset.type, btn.dataset.value);
+                if (this.networthFeature) this.networthFeature.recalculate();
             });
-            exclusionsBtn.addEventListener('mouseleave', () => {
-                exclusionsBtn.style.opacity = '0.6';
-            });
-        }
-
-        // Current assets toggle
-        if (ca.total > 0) {
-            this.setupToggle(
-                'mwi-current-assets-toggle',
-                'mwi-current-assets-details',
-                t('networthDisplay.currentAssetsLabel', { value: networthFormatter(Math.round(ca.total)) })
-            );
-        }
-
-        // Equipment toggle
-        if (ca.equipped.value > 0) {
-            this.setupToggle(
-                'mwi-equipment-toggle',
-                'mwi-equipment-breakdown',
-                t('networthDisplay.equipmentValueLabel', { value: networthFormatter(Math.round(ca.equipped.value)) })
-            );
-        }
-
-        // Inventory toggle
-        if (ca.inventory.value > 0) {
-            this.setupToggle(
-                'mwi-inventory-toggle',
-                'mwi-inventory-breakdown',
-                t('networthDisplay.inventoryValueLabel', { value: networthFormatter(Math.round(ca.inventory.value)) })
-            );
-
-            // Inventory category toggles
-            Object.entries(ca.inventory.byCategory || {}).forEach(([categoryName, categoryData]) => {
-                const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
-                const categoryToggleId = `${categoryId}-toggle`;
-                this.setupToggle(
-                    categoryToggleId,
-                    categoryId,
-                    `${categoryName}: ${networthFormatter(Math.round(categoryData.totalValue))}`
-                );
-            });
-
-            // Per-chest item toggles (openable items)
-            for (const categoryData of Object.values(ca.inventory.byCategory || {})) {
-                for (const item of categoryData.items) {
-                    if (item.isOpenable && item.itemHrid) {
-                        const slug = item.itemHrid.split('/').pop();
-                        this.setupToggle(
-                            `mwi-chest-${slug}-toggle`,
-                            `mwi-chest-${slug}-detail`,
-                            `${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}`
-                        );
-                    }
-                }
-            }
-        }
-
-        // Market Listings toggle
-        if (ca.listings.value > 0) {
-            this.setupToggle(
-                'mwi-listings-toggle',
-                'mwi-listings-breakdown',
-                t('networthDisplay.marketListingsLabel', { value: networthFormatter(Math.round(ca.listings.value)) })
-            );
-        }
-
-        // Fixed assets toggle
-        if (fa.total > 0) {
-            this.setupToggle(
-                'mwi-fixed-assets-toggle',
-                'mwi-fixed-assets-details',
-                t('networthDisplay.fixedAssetsLabel', { value: networthFormatter(Math.round(fa.total)) })
-            );
-        }
-
-        // Houses toggle
-        if (fa.houses.totalCost > 0) {
-            this.setupToggle(
-                'mwi-houses-toggle',
-                'mwi-houses-breakdown',
-                t('networthDisplay.housesLabel', { value: networthFormatter(Math.round(fa.houses.totalCost)) })
-            );
-        }
-
-        // Abilities toggle
-        if (fa.abilities.totalCost > 0) {
-            this.setupToggle(
-                'mwi-abilities-toggle',
-                'mwi-abilities-details',
-                t('networthDisplay.abilitiesLabel', { value: networthFormatter(Math.round(fa.abilities.totalCost)) })
-            );
-
-            // Equipped abilities toggle
-            this.setupToggle(
-                'mwi-equipped-abilities-toggle',
-                'mwi-equipped-abilities-breakdown',
-                t('networthDisplay.equippedAbilitiesLabel', {
-                    count: fa.abilities.equippedBreakdown.length,
-                    value: networthFormatter(Math.round(fa.abilities.equippedCost)),
-                })
-            );
-
-            // Other abilities toggle (if exists)
-            if (fa.abilities.otherBreakdown.length > 0) {
-                this.setupToggle(
-                    'mwi-other-abilities-toggle',
-                    'mwi-other-abilities-breakdown',
-                    t('networthDisplay.otherAbilitiesLabel', {
-                        value: networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost)),
-                    })
-                );
-            }
-        }
-
-        // Ability books toggle (if exists)
-        if (fa.abilityBooks.breakdown.length > 0) {
-            this.setupToggle(
-                'mwi-ability-books-toggle',
-                'mwi-ability-books-breakdown',
-                t('networthDisplay.abilityBooksLabel', {
-                    value: networthFormatter(Math.round(fa.abilityBooks.totalCost)),
-                })
-            );
-        }
-
-        // Guild Shrines toggle
-        if (fa.guildShrines.totalCost > 0) {
-            this.setupToggle(
-                'mwi-guild-shrines-toggle',
-                'mwi-guild-shrines-breakdown',
-                t('networthDisplay.guildShrinesLabel', {
-                    value: networthFormatter(Math.round(fa.guildShrines.totalCost)),
-                })
-            );
-        }
-
-        // Excluded toggle
-        if (excl.total > 0) {
-            this.setupToggle(
-                'mwi-excluded-toggle',
-                'mwi-excluded-details',
-                t('networthDisplay.excludedLabel', { value: networthFormatter(Math.round(excl.total)) })
-            );
-
-            // ✕ remove buttons on excluded rows
-            this.container.querySelectorAll('.mwi-excluded-remove').forEach((btn) => {
-                btn.addEventListener('mouseenter', () => {
-                    btn.style.color = 'rgba(255,100,100,1)';
-                });
-                btn.addEventListener('mouseleave', () => {
-                    btn.style.color = 'rgba(255,100,100,0.7)';
-                });
-                btn.addEventListener('click', async () => {
-                    const type = btn.dataset.type;
-                    const value = btn.dataset.value;
-                    await removeExclusion(type, value);
-                    if (this.networthFeature) this.networthFeature.recalculate();
-                });
-            });
-        }
+        });
     }
 
     /**
@@ -1150,34 +911,13 @@ class NetworthInventoryDisplay {
     }
 
     /**
-     * Set up a single toggle button
-     * @param {string} toggleId - Toggle button element ID
-     * @param {string} detailsId - Details element ID
-     * @param {string} label - Label text (without +/- prefix)
-     */
-    setupToggle(toggleId, detailsId, label) {
-        const toggleBtn = this.container.querySelector(`#${toggleId}`);
-        const details = this.container.querySelector(`#${detailsId}`);
-
-        if (!toggleBtn || !details) return;
-
-        toggleBtn.addEventListener('click', () => {
-            const isCollapsed = details.style.display === 'none';
-            details.style.display = isCollapsed ? 'block' : 'none';
-            toggleBtn.textContent = (isCollapsed ? '- ' : '+ ') + label;
-        });
-    }
-
-    /**
      * Refresh colors on existing panel
      */
     refresh() {
         if (!this.container || !document.body.contains(this.container)) {
             return;
         }
-
-        // Update main container color
-        this.container.style.color = config.COLOR_ACCENT;
+        injectPanelStyles();
     }
 
     /**

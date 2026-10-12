@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi, afterEach } from 'vitest';
 
 vi.mock('../../core/config.js', () => ({
     default: { COLOR_WARNING: '#ffa500', COLOR_ACCENT: '#22c55e', getSetting: vi.fn(() => true) },
@@ -126,5 +126,84 @@ describe('getSharePercent', () => {
     test('returns null for missing data', () => {
         expect(getSharePercent(null)).toBeNull();
         expect(getSharePercent({})).toBeNull();
+    });
+});
+
+function makeNetworthData() {
+    return {
+        totalNetworth: 2066,
+        coins: 148,
+        currentAssets: {
+            total: 1320,
+            equipped: { value: 943, breakdown: [{ name: 'Cape', value: 310, isOutlier: true }] },
+            inventory: {
+                value: 372,
+                byCategory: {
+                    Gems: {
+                        totalValue: 130,
+                        items: [{ name: 'Ruby', count: 55, value: 130, isOutlier: false, itemHrid: '/items/ruby' }],
+                    },
+                },
+                breakdown: [{ itemHrid: '/items/coin', name: 'Coin', count: 1, value: 148 }],
+            },
+            listings: { value: 5, breakdown: [{ name: 'Gem', isSell: true, value: 3, isOutlier: false }] },
+        },
+        fixedAssets: {
+            total: 746,
+            houses: { totalCost: 231, breakdown: [{ name: 'Library', level: 7, cost: 371, isOutlier: false }] },
+            abilities: {
+                totalCost: 400,
+                equippedCost: 296,
+                equippedBreakdown: [{ name: 'Frost', cost: 781, isOutlier: false }],
+                otherBreakdown: [{ name: 'Fireball', cost: 298, isOutlier: false }],
+            },
+            abilityBooks: { totalCost: 10, breakdown: [{ name: 'Book', count: 12, value: 10 }] },
+            guildShrines: { totalCost: 115, breakdown: [{ name: 'Scholar', level: 5, cost: 451, isOutlier: false }] },
+        },
+        excluded: { total: 855, items: [{ type: 'item', name: 'Goblet', value: 'x"1', amount: 120 }] },
+    };
+}
+
+describe('update() panel structure', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '<div id="mwi-nw-test-host"></div>';
+        networthInventoryDisplay.container = document.getElementById('mwi-nw-test-host');
+    });
+
+    afterEach(() => {
+        networthInventoryDisplay.container = null;
+        document.body.innerHTML = '';
+    });
+
+    test('renders icon row (🎁 anchor), share bar, flat sections and node details', () => {
+        networthInventoryDisplay.update(makeNetworthData());
+        const c = networthInventoryDisplay.container;
+        expect(c.querySelector('.mwi-networth-icon-row')).toBeTruthy();
+        expect(c.querySelector('.mwi-nw-sharebar')).toBeTruthy();
+        expect(c.querySelector('#mwi-nw-equipment')).toBeTruthy();
+        expect(c.querySelector('#mwi-nw-inventory')).toBeTruthy();
+        expect(c.querySelector('#mwi-nw-listings')).toBeTruthy();
+        expect(c.querySelector('#mwi-nw-houses')).toBeTruthy();
+        expect(c.querySelector('#mwi-nw-abilities')).toBeTruthy();
+        expect(c.querySelectorAll('.mwi-nw-section').length).toBe(3);
+        expect(c.querySelector('.mwi-excluded-remove')).toBeTruthy();
+    });
+
+    test('open state of details nodes survives an update', () => {
+        networthInventoryDisplay.update(makeNetworthData());
+        networthInventoryDisplay.container.querySelector('#mwi-nw-inventory').open = true;
+        networthInventoryDisplay.update(makeNetworthData());
+        expect(networthInventoryDisplay.container.querySelector('#mwi-nw-inventory').open).toBe(true);
+    });
+
+    test('omits the share bar when one side is zero', () => {
+        const data = makeNetworthData();
+        data.fixedAssets.total = 0;
+        data.fixedAssets.houses.totalCost = 0;
+        data.fixedAssets.abilities.totalCost = 0;
+        data.fixedAssets.abilityBooks.totalCost = 0;
+        data.fixedAssets.guildShrines.totalCost = 0;
+        networthInventoryDisplay.update(data);
+        expect(networthInventoryDisplay.container.querySelector('.mwi-nw-sharebar')).toBeNull();
     });
 });
