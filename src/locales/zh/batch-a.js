@@ -250,7 +250,7 @@ export default {
             alchemyItemDimming: { label: '炼金面板：使需要更高等级的物品变暗' },
             alchemyBestItems_prefillLevelFilter: {
                 label: '炼金面板：根据当前技能等级预填最佳物品的最高等级',
-                help: '打开最佳物品时，将最高等级筛选预填为你当前的炼金技能等级，默认只显示你实际能够完成的配方',
+                help: '打开最佳物品时，将最高等级筛选预填为你当前的炼金技能等级。默认关闭——炼金没有硬性等级要求（等级不足只会降低成功率，而每小时利润已经计入了这一点），因此利润最高的物品可能本来就高于你的等级。',
             },
             actions_missingMaterialsButton: {
                 label: '在生产面板显示“购买缺失材料”按钮',

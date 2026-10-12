@@ -2974,7 +2974,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             alchemyItemDimming: { label: 'Alchemy panel: Dim items requiring higher level' },
             alchemyBestItems_prefillLevelFilter: {
                 label: 'Alchemy panel: Pre-fill Best Items max level from current skill level',
-                help: 'When opening Best Items, sets the max level filter to your current Alchemy skill level so results default to recipes you can actually perform',
+                help: 'When opening Best Items, sets the max level filter to your current Alchemy skill level. Off by default - alchemy has no hard level requirement (being under-leveled only lowers success rate, which profit/hr already accounts for), so the highest-profit item may genuinely be above your level.',
             },
             actions_missingMaterialsButton: {
                 label: 'Show "Missing Mats Marketplace" button on production panels',
