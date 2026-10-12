@@ -3,7 +3,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
 vi.mock('../../core/config.js', () => ({
-    default: { COLOR_WARNING: '#ffa500', COLOR_ACCENT: '#22c55e' },
+    default: { COLOR_WARNING: '#ffa500', COLOR_ACCENT: '#22c55e', getSetting: vi.fn(() => true) },
 }));
 
 vi.mock('../../core/i18n.js', () => ({
@@ -28,7 +28,7 @@ vi.mock('../../utils/dungeon-key-cost.js', () => ({ getKeyPrice: vi.fn(() => 0) 
 vi.mock('./networth-exclusion-popup.js', () => ({ default: {} }));
 vi.mock('./networth-exclusions.js', () => ({ removeExclusion: vi.fn() }));
 
-import { networthInventoryDisplay } from './networth-display.js';
+import { networthInventoryDisplay, getSharePercent } from './networth-display.js';
 
 describe('NetworthInventoryDisplay outlier warning icons', () => {
     test('renderEquipmentBreakdown appends the icon for a flagged item, not for a normal one', () => {
@@ -86,5 +86,30 @@ describe('NetworthInventoryDisplay outlier warning icons', () => {
             { name: 'Plain Item', value: 10, isOutlier: false },
         ]);
         expect(html).not.toContain('⚠');
+    });
+});
+
+describe('getSharePercent', () => {
+    test('returns a 64/36 style split for positive totals', () => {
+        expect(
+            getSharePercent({ totalNetworth: 2066, currentAssets: { total: 1320 }, fixedAssets: { total: 746 } })
+        ).toEqual({ currentPct: 64, fixedPct: 36 });
+    });
+
+    test('returns null when either side is zero', () => {
+        expect(
+            getSharePercent({ totalNetworth: 100, currentAssets: { total: 100 }, fixedAssets: { total: 0 } })
+        ).toBeNull();
+        expect(
+            getSharePercent({ totalNetworth: 100, currentAssets: { total: 0 }, fixedAssets: { total: 100 } })
+        ).toBeNull();
+        expect(
+            getSharePercent({ totalNetworth: 0, currentAssets: { total: 0 }, fixedAssets: { total: 0 } })
+        ).toBeNull();
+    });
+
+    test('returns null for missing data', () => {
+        expect(getSharePercent(null)).toBeNull();
+        expect(getSharePercent({})).toBeNull();
     });
 });

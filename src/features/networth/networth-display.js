@@ -70,6 +70,65 @@ function injectPanelStyles() {
     addStyles(buildPanelCss(), PANEL_STYLES_ID);
 }
 
+/** Escape double quotes for data attributes (parity with existing excluded-row markup). */
+function attrValue(value) {
+    return String(value).replace(/"/g, '&quot;');
+}
+
+/** Muted count/Lv/type suffix span. */
+function countSpan(text) {
+    return text ? `<span class="mwi-nw-count">${text}</span>` : '';
+}
+
+/** Right-aligned gold value cell. */
+function valueSpan(value, { zero = false } = {}) {
+    return `<span class="mwi-nw-val${zero ? ' mwi-nw-zero' : ''}">${value}</span>`;
+}
+
+/** Leaf row: name left, value right. */
+function leafRow(level, nameHtml, value, { zero = false } = {}) {
+    return `<div class="mwi-nw-row mwi-nw-lv${level}"><span class="mwi-nw-nm">${nameHtml}</span>${valueSpan(value, { zero })}</div>`;
+}
+
+/** Collapsible node row backed by <details> so no click handlers are needed. */
+function nodeDetails(level, id, nameHtml, value, childrenHtml) {
+    return (
+        `<details class="mwi-nw-node" id="${id}">` +
+        `<summary class="mwi-nw-row mwi-nw-lv${level}"><span class="mwi-nw-nm"><span class="mwi-nw-chev">▸</span>${nameHtml}</span>${valueSpan(value)}</summary>` +
+        `<div class="mwi-nw-kids mwi-nw-indent">${childrenHtml}</div></details>`
+    );
+}
+
+/**
+ * Compute current-vs-fixed asset share percentages for the overview bar.
+ * @param {Object|null} networthData
+ * @returns {{currentPct: number, fixedPct: number}|null} null when either side is zero/missing
+ */
+export function getSharePercent(networthData) {
+    const total = networthData?.totalNetworth ?? 0;
+    const current = networthData?.currentAssets?.total ?? 0;
+    const fixed = networthData?.fixedAssets?.total ?? 0;
+    if (total <= 0 || current <= 0 || fixed <= 0) {
+        return null;
+    }
+    const currentPct = Math.round((current / total) * 100);
+    return { currentPct, fixedPct: 100 - currentPct };
+}
+
+/** Overview bar: percentage-only split bar + legend (design option C). */
+function renderShareBar(share) {
+    if (!share) {
+        return '';
+    }
+    return (
+        `<div class="mwi-nw-sharebar">` +
+        `<i style="width:${share.currentPct}%;background:${config.COLOR_ACCENT}"></i>` +
+        `<i style="width:${share.fixedPct}%;background:${FIXED_ASSET_COLOR}"></i></div>` +
+        `<div class="mwi-nw-sharelegend"><span>◀ ${t('networthDisplay.currentShareLabel', { pct: share.currentPct })}</span>` +
+        `<span>${t('networthDisplay.fixedShareLabel', { pct: share.fixedPct })} ▶</span></div>`
+    );
+}
+
 /**
  * Header Display Component
  * Shows "Gold: [amount]" next to total level
