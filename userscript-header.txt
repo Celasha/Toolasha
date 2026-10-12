@@ -10,6 +10,7 @@
 // @license      CC-BY-NC-SA-4.0
 // @run-at       document-start
 // @match        https://www.milkywayidle.com/*
+// @match        https://milkywayidle.com/*
 // @match        https://test.milkywayidle.com/*
 // @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
 // @match        https://szerra.github.io/mwi-shrine-combat-simulator/*
