@@ -268,9 +268,9 @@ export default {
     marketOrderTotals: {
         noOrdersTitle: '暂无市场订单',
         buyOrdersTooltip: '买单（锁定在买单中的金币）',
-        buyOrdersLabel: '买单：',
+        buyOrdersLabel: '买单',
         sellOrdersTooltip: '卖单（税后预期收益）',
-        sellOrdersLabel: '卖单：',
+        sellOrdersLabel: '卖单',
         unclaimedTooltip: '待领取的金币',
     },
     shopMaxBuyButton: {

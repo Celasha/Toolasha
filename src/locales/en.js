@@ -1809,9 +1809,9 @@ export default {
     marketOrderTotals: {
         noOrdersTitle: 'No market orders',
         buyOrdersTooltip: 'Buy Orders (coins locked in buy orders)',
-        buyOrdersLabel: 'BO:',
+        buyOrdersLabel: 'BO',
         sellOrdersTooltip: 'Sell Orders (expected proceeds after tax)',
-        sellOrdersLabel: 'SO:',
+        sellOrdersLabel: 'SO',
         unclaimedTooltip: 'Unclaimed coins (waiting to be collected)',
     },
     shopMaxBuyButton: {
