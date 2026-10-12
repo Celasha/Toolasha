@@ -493,6 +493,8 @@ export class ActionTimeDisplay {
      */
     injectQueueTimesTooltip(tooltipContent) {
         try {
+            if (!config.getSetting('actionQueue')) return;
+
             const currentActions = dataManager.getCurrentActions();
             if (!currentActions || currentActions.length === 0) return;
 
@@ -2843,51 +2845,56 @@ export class ActionTimeDisplay {
                     });
                 }
 
-                // Format completion time
-                let completionText = '';
-                if (!hasInfinite && !hasTimingUnavailable && !isTrulyInfinite && !isRowTimingUnavailable) {
-                    completionText = buildCompletionText(accumulatedTime);
-                }
-
-                // Create time display element
-                const timeDiv = document.createElement('div');
-                timeDiv.className = 'mwi-queue-action-time';
-                timeDiv.style.cssText = `
-                    color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
-                    font-size: 0.85em;
-                    margin-top: 2px;
-                `;
-
-                if (isRowTimingUnavailable) {
-                    timeDiv.textContent = '[?]';
-                } else if (isTrulyInfinite) {
-                    timeDiv.textContent = '[∞]';
-                } else if (isInfinite && materialLimit !== null) {
-                    // Material-limited infinite action
-                    let limitLabel = '';
-                    if (limitType === 'gold') {
-                        limitLabel = t('actionTimeDisplay.limitLabelGold');
-                    } else if (limitType && limitType.startsWith('material:')) {
-                        limitLabel = t('actionTimeDisplay.limitLabelMat');
-                    } else if (limitType && limitType.startsWith('upgrade:')) {
-                        limitLabel = t('actionTimeDisplay.limitLabelUpgrade');
-                    } else {
-                        limitLabel = t('actionTimeDisplay.limitLabelMax');
-                    }
-                    const timeStr = timeReadable(totalTime);
-                    timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
-                } else {
-                    const timeStr = timeReadable(totalTime);
-                    timeDiv.textContent = `[${timeStr}]${completionText}`;
-                }
-
                 // Find the actionText container and append inside it
                 const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
-                if (actionTextContainer) {
-                    actionTextContainer.appendChild(timeDiv);
-                } else {
-                    // Fallback: append to action div
-                    actionDiv.appendChild(timeDiv);
+
+                // actionQueue gates only the time/completion display - actionQueue_showValue (the
+                // profit div below) is an independent toggle and must keep working on its own.
+                if (config.getSetting('actionQueue')) {
+                    // Format completion time
+                    let completionText = '';
+                    if (!hasInfinite && !hasTimingUnavailable && !isTrulyInfinite && !isRowTimingUnavailable) {
+                        completionText = buildCompletionText(accumulatedTime);
+                    }
+
+                    // Create time display element
+                    const timeDiv = document.createElement('div');
+                    timeDiv.className = 'mwi-queue-action-time';
+                    timeDiv.style.cssText = `
+                        color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+                        font-size: 0.85em;
+                        margin-top: 2px;
+                    `;
+
+                    if (isRowTimingUnavailable) {
+                        timeDiv.textContent = '[?]';
+                    } else if (isTrulyInfinite) {
+                        timeDiv.textContent = '[∞]';
+                    } else if (isInfinite && materialLimit !== null) {
+                        // Material-limited infinite action
+                        let limitLabel = '';
+                        if (limitType === 'gold') {
+                            limitLabel = t('actionTimeDisplay.limitLabelGold');
+                        } else if (limitType && limitType.startsWith('material:')) {
+                            limitLabel = t('actionTimeDisplay.limitLabelMat');
+                        } else if (limitType && limitType.startsWith('upgrade:')) {
+                            limitLabel = t('actionTimeDisplay.limitLabelUpgrade');
+                        } else {
+                            limitLabel = t('actionTimeDisplay.limitLabelMax');
+                        }
+                        const timeStr = timeReadable(totalTime);
+                        timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
+                    } else {
+                        const timeStr = timeReadable(totalTime);
+                        timeDiv.textContent = `[${timeStr}]${completionText}`;
+                    }
+
+                    if (actionTextContainer) {
+                        actionTextContainer.appendChild(timeDiv);
+                    } else {
+                        // Fallback: append to action div
+                        actionDiv.appendChild(timeDiv);
+                    }
                 }
 
                 // Create empty profit div for this action (will be populated asynchronously)
@@ -2917,54 +2924,62 @@ export class ActionTimeDisplay {
                 }
             }
 
-            // Add total time at bottom (includes current action + all queued)
-            const totalDiv = document.createElement('div');
-            totalDiv.id = 'mwi-queue-total-time';
-            totalDiv.style.cssText = `
-                color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});
-                font-weight: bold;
-                margin-top: 12px;
-                padding: 8px;
-                border-top: 1px solid var(--border-color, ${config.COLOR_BORDER});
-                text-align: center;
-            `;
-
-            // Build total time text
-            let totalText = '';
-            if (hasTimingUnavailable) {
-                totalText =
-                    accumulatedTime > 0
-                        ? t('actionTimeDisplay.queueTotalTimeWithUnavailable', {
-                              time: timeReadable(accumulatedTime),
-                          })
-                        : t('actionTimeDisplay.queueTotalTimeUnavailable');
-            } else if (hasInfinite) {
-                // Show finite time first, then add infinity indicator
-                if (accumulatedTime > 0) {
-                    totalText = t('actionTimeDisplay.queueTotalTimeWithInfinite', {
-                        time: timeReadable(accumulatedTime),
-                    });
-                } else {
-                    totalText = t('actionTimeDisplay.queueTotalTimeInfinite');
-                }
-            } else {
-                totalText = t('actionTimeDisplay.queueTotalTime', { time: timeReadable(accumulatedTime) });
-            }
-
-            totalDiv.innerHTML = totalText;
-
-            // Insert after queue menu
-            queueMenu.insertAdjacentElement('afterend', totalDiv);
-
-            // Calculate profit asynchronously (non-blocking)
-            if (
+            // Add total time/profit summary at bottom (includes current action + all queued).
+            // actionQueue gates the time text, actionQueue_showValue gates the profit text -
+            // independent toggles, so only skip the whole summary box when neither wants to show.
+            const showQueueTime = config.getSetting('actionQueue');
+            const willShowValue =
                 actionsToCalculate.length > 0 &&
                 marketAPI.isLoaded() &&
-                config.getSettingValue('actionQueue_showValue', true)
-            ) {
-                // Async will handle observer reconnection after updates complete
-                shouldReconnectObserver = false;
-                this.calculateAndDisplayTotalProfit(totalDiv, actionsToCalculate, totalText, queueMenu);
+                config.getSettingValue('actionQueue_showValue', true);
+
+            if (showQueueTime || willShowValue) {
+                const totalDiv = document.createElement('div');
+                totalDiv.id = 'mwi-queue-total-time';
+                totalDiv.style.cssText = `
+                    color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});
+                    font-weight: bold;
+                    margin-top: 12px;
+                    padding: 8px;
+                    border-top: 1px solid var(--border-color, ${config.COLOR_BORDER});
+                    text-align: center;
+                `;
+
+                // Build total time text
+                let totalText = '';
+                if (showQueueTime) {
+                    if (hasTimingUnavailable) {
+                        totalText =
+                            accumulatedTime > 0
+                                ? t('actionTimeDisplay.queueTotalTimeWithUnavailable', {
+                                      time: timeReadable(accumulatedTime),
+                                  })
+                                : t('actionTimeDisplay.queueTotalTimeUnavailable');
+                    } else if (hasInfinite) {
+                        // Show finite time first, then add infinity indicator
+                        if (accumulatedTime > 0) {
+                            totalText = t('actionTimeDisplay.queueTotalTimeWithInfinite', {
+                                time: timeReadable(accumulatedTime),
+                            });
+                        } else {
+                            totalText = t('actionTimeDisplay.queueTotalTimeInfinite');
+                        }
+                    } else {
+                        totalText = t('actionTimeDisplay.queueTotalTime', { time: timeReadable(accumulatedTime) });
+                    }
+                }
+
+                totalDiv.innerHTML = totalText;
+
+                // Insert after queue menu
+                queueMenu.insertAdjacentElement('afterend', totalDiv);
+
+                // Calculate profit asynchronously (non-blocking)
+                if (willShowValue) {
+                    // Async will handle observer reconnection after updates complete
+                    shouldReconnectObserver = false;
+                    this.calculateAndDisplayTotalProfit(totalDiv, actionsToCalculate, totalText, queueMenu);
+                }
             }
         } catch (error) {
             console.error('[Toolasha] Error injecting queue times:', error);
@@ -3053,8 +3068,10 @@ export class ActionTimeDisplay {
                 const valueLabel = isEstimatedValue
                     ? t('actionTimeDisplay.estimatedValueLabel')
                     : t('actionTimeDisplay.totalProfitLabel');
-                const valueText = `<br>${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
-                totalDiv.innerHTML = baseText + valueText;
+                const valueLine = `${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
+                // baseText is '' when actionQueue (the time display) is off - avoid a stray leading
+                // <br> so the profit line isn't preceded by a blank line in that case.
+                totalDiv.innerHTML = baseText ? `${baseText}<br>${valueLine}` : valueLine;
             }
         } catch (error) {
             console.warn('[Action Time Display] Error calculating total profit:', error);

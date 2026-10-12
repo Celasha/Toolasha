@@ -112,6 +112,7 @@ import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import marketAPI from '../../api/marketplace.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { resolveActionContext, resolveCurrentActionContext } from '../../utils/action-context.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
@@ -801,6 +802,8 @@ describe('ActionTimeDisplay Queued Actions edit-menu width stability (TLA-040)',
         document.body.innerHTML = '';
         document.head.querySelectorAll('style').forEach((el) => el.remove());
         instance = new ActionTimeDisplay();
+        config.getSetting.mockImplementation((key) => key === 'actionQueue');
+        marketAPI.isLoaded.mockReturnValue(false);
 
         dataManager.getCurrentActions.mockReturnValue([
             {
@@ -907,6 +910,52 @@ describe('ActionTimeDisplay Queued Actions edit-menu width stability (TLA-040)',
         const timeDiv = queueMenu.querySelector('.mwi-queue-action-time');
         expect(timeDiv).not.toBeNull();
         expect(timeDiv.textContent).toMatch(/^\[.+\]/);
+    });
+
+    test('the actionQueue setting being off suppresses the per-row time text and the bottom total time, independent of actionQueue_showValue', () => {
+        config.getSetting.mockImplementation(() => false);
+        config.getSettingValue.mockImplementation((key, fallback) =>
+            key === 'actionQueue_showValue' ? false : fallback
+        );
+        instance.initializeQueueObserver();
+        const onMount = getQueueMountCallback();
+        const queueMenu = makeQueueMenu();
+
+        onMount(queueMenu);
+
+        expect(queueMenu.querySelector('.mwi-queue-action-time')).toBeNull();
+        expect(document.querySelector('#mwi-queue-total-time')).toBeNull();
+    });
+
+    test('actionQueue off but actionQueue_showValue on still renders the bottom summary box for the (async) profit line, with no stray leading line break', () => {
+        config.getSetting.mockImplementation(() => false);
+        config.getSettingValue.mockImplementation((key, fallback) =>
+            key === 'actionQueue_showValue' ? true : fallback
+        );
+        marketAPI.isLoaded.mockReturnValue(true);
+        instance.initializeQueueObserver();
+        const onMount = getQueueMountCallback();
+        const queueMenu = makeQueueMenu();
+
+        onMount(queueMenu);
+
+        const totalDiv = document.querySelector('#mwi-queue-total-time');
+        expect(totalDiv).not.toBeNull();
+        // No time text was ever written, and no profit result has resolved yet - the box starts
+        // empty rather than carrying a leftover '<br>' from the old unconditional concatenation.
+        expect(totalDiv.innerHTML).toBe('');
+    });
+
+    test('the hover tooltip (injectQueueTimesTooltip) renders nothing at all when actionQueue is off', () => {
+        config.getSetting.mockImplementation(() => false);
+        const tooltipContent = document.createElement('div');
+        const actionDiv = document.createElement('div');
+        actionDiv.className = 'QueuedActions_action__xyz';
+        tooltipContent.appendChild(actionDiv);
+
+        instance.injectQueueTimesTooltip(tooltipContent);
+
+        expect(tooltipContent.querySelector('.mwi-queue-action-time')).toBeNull();
     });
 
     test('QW-16: re-initializing never appends a duplicate stylesheet', () => {
@@ -1084,6 +1133,7 @@ describe('ActionTimeDisplay queue completion display style setting (actionQueue_
         document.body.innerHTML = '';
         document.head.querySelectorAll('style').forEach((el) => el.remove());
         instance = new ActionTimeDisplay();
+        config.getSetting.mockImplementation((key) => key === 'actionQueue');
 
         dataManager.getCurrentActions.mockReturnValue([
             {
