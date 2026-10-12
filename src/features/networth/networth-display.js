@@ -153,13 +153,18 @@ class NetworthHeaderDisplay {
         // Get current items sprite URL from DOM
         const itemsSpriteUrl = this.getItemsSpriteUrl();
 
-        // Create SVG icon using game's sprite
+        // Create icon tile (matches market order totals style)
+        const tile = document.createElement('span');
+        tile.style.cssText =
+            'display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 8px; background: rgba(251, 191, 36, 0.16); font-size: 11px; flex: none;';
+
+        // Create SVG icon using game's sprite (fallback to emoji)
         if (itemsSpriteUrl) {
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.setAttribute('width', '16');
-            svg.setAttribute('height', '16');
+            svg.setAttribute('width', '12');
+            svg.setAttribute('height', '12');
             svg.style.cssText = `
-                vertical-align: middle;
+                color: #fbbf24;
                 fill: currentColor;
             `;
 
@@ -168,15 +173,25 @@ class NetworthHeaderDisplay {
             use.setAttribute('href', `${itemsSpriteUrl}#coin`);
             svg.appendChild(use);
 
-            wrapper.appendChild(svg);
+            tile.appendChild(svg);
+        } else {
+            tile.textContent = '💰';
         }
 
-        // Create text span
-        const textSpan = document.createElement('span');
-        textSpan.textContent = t('networthDisplay.goldLabelLine', { value });
+        wrapper.appendChild(tile);
+
+        // Create label + value spans
+        const labelSpan = document.createElement('span');
+        labelSpan.style.cssText = 'color: #888; font-weight: 500;';
+        labelSpan.textContent = t('networthDisplay.goldLabel');
+
+        const valueSpan = document.createElement('span');
+        valueSpan.style.cssText = 'color: #fbbf24; font-weight: 600;';
+        valueSpan.textContent = value;
 
         // Assemble
-        wrapper.appendChild(textSpan);
+        wrapper.appendChild(labelSpan);
+        wrapper.appendChild(valueSpan);
         this.container.appendChild(wrapper);
     }
 

@@ -2019,7 +2019,7 @@ export default {
         removeExclusionTooltip: 'Remove exclusion',
     },
     networthDisplay: {
-        goldLabelLine: (p) => `Gold: ${p.value}`,
+        goldLabel: 'Gold',
         networthLoadingMessage: 'Networth: Loading...',
         netWorthLabel: (p) => `Net Worth: ${p.value}`,
         netWorthHistoryChartTooltip: 'Net Worth History Chart',

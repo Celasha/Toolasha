@@ -540,7 +540,7 @@ export default {
         movingAvgCustomHoursOption: (p) => `${p.hours}小时`,
     },
     networthDisplay: {
-        goldLabelLine: (p) => `金币：${p.value}`,
+        goldLabel: '金币',
         networthLoadingMessage: '净资产加载中…',
         netWorthLabel: (p) => `净资产：${p.value}`,
         netWorthHistoryChartTooltip: '净资产历史图表',
