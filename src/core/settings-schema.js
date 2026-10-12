@@ -376,12 +376,6 @@ export const settingsGroups = {
         title: 'Action Panel',
         icon: '📄',
         settings: {
-            actionPanel_totalTime: {
-                id: 'actionPanel_totalTime',
-                label: 'Action panel: Total time, times to reach target level, exp/hour',
-                type: 'checkbox',
-                default: true,
-            },
             actionPanel_totalTime_quickInputs: {
                 id: 'actionPanel_totalTime_quickInputs',
                 label: 'Action panel: Quick input buttons (hours, count presets, Max)',

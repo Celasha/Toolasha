@@ -2887,7 +2887,6 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Pinned actions: Enable pinned actions page and pin icons',
                 help: 'Adds a Pinned button to the left nav bar showing all pinned actions, and shows pin icons on action tiles.',
             },
-            actionPanel_totalTime: { label: 'Action panel: Total time, times to reach target level, exp/hour' },
             actionPanel_totalTime_quickInputs: {
                 label: 'Action panel: Quick input buttons (hours, count presets, Max)',
             },

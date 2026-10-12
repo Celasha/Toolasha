@@ -171,7 +171,6 @@ export default {
                 label: '固定动作：启用固定动作页面与图钉图标',
                 help: '在左侧导航栏添加“固定”按钮，显示所有已固定的动作，并在动作方块上显示图钉图标。',
             },
-            actionPanel_totalTime: { label: '动作面板：总时间、达到目标等级所需次数、经验/时' },
             actionPanel_totalTime_quickInputs: { label: '动作面板：快捷输入按钮（小时、数量预设、最大值）' },
             actionPanel_quickInputs_countPresets: {
                 label: '动作面板：自定义数量预设（以逗号分隔，例如 100,1000,1000000）',
