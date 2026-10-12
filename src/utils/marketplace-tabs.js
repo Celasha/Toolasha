@@ -288,6 +288,51 @@ export function updateTabBadge(tab, material) {
 }
 
 /**
+ * Diagnostic-only: whether a mutation's target is relevant to the tab-selection investigation -
+ * a tab element itself (native or Toolasha-injected), or anything inside the native tablist.
+ * Document-body-wide subtree observation sees constant unrelated page churn (chat, timers,
+ * etc.) - this keeps the captured trail limited to the one question that matters: what,
+ * specifically, changed on or near the tabs right before selection was lost.
+ * @param {Node} node
+ * @returns {boolean}
+ */
+function isDiagnosticMutationTarget(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node.getAttribute('role') === 'tab') return true;
+    if (node.hasAttribute('data-mwi-custom-tab') || node.hasAttribute('data-mwi-tab-owner')) return true;
+    return Boolean(node.closest && node.closest('.MuiTabs-flexContainer[role="tablist"]'));
+}
+
+function describeMutationTarget(node) {
+    const tag = node.tagName.toLowerCase();
+    const role = node.getAttribute('role') || '';
+    const kind = node.hasAttribute('data-mwi-custom-tab') ? 'custom' : role === 'tab' ? 'native' : 'other';
+    const text = (node.textContent || '').trim().slice(0, 24).replace(/\s+/g, ' ');
+    return `<${tag}${role ? ` role="${role}"` : ''}> [${kind}] "${text}"`;
+}
+
+/**
+ * Diagnostic-only: summarize a MutationRecord relevant to marketplace tab selection, to
+ * distinguish a native React/MUI selection glitch (mutation lands on a native tab) from one
+ * caused by Toolasha's own injected tabs (mutation lands on a custom tab, or a childList churn
+ * on the shared tablist container itself). Returns null for anything outside the tab area.
+ * @param {MutationRecord} record
+ * @returns {string|null}
+ */
+function summarizeMutation(record) {
+    if (!isDiagnosticMutationTarget(record.target)) return null;
+    const label = describeMutationTarget(record.target);
+    if (record.type === 'attributes') {
+        const newValue = record.target.getAttribute(record.attributeName);
+        return `attr "${record.attributeName}" on ${label}: "${record.oldValue}" -> "${newValue}"`;
+    }
+    if (record.type === 'childList') {
+        return `childList on ${label}: +${record.addedNodes.length}/-${record.removedNodes.length}`;
+    }
+    return `${record.type} on ${label}`;
+}
+
+/**
  * Setup marketplace cleanup observer.
  * Uses MutationObserver for prompt close/remount detection, with polling as a fallback.
  *
@@ -325,6 +370,9 @@ export function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
     let invalidStateTimer = null;
     let isStopped = false;
     let invalidStateNotified = false;
+    // Diagnostic-only: bounded trail of relevant mutations leading up to an invalid-state
+    // episode, cleared on recovery so a later failure is never attributed to stale entries.
+    const mutationTrail = [];
 
     function hasValidState() {
         const visibleContainer = getVisibleMarketplaceTabContainer();
@@ -363,15 +411,39 @@ export function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
         }
         const container = candidates.values().next().value;
         if (owner && !isMarketplaceMarketListingsSelected(container)) {
-            const selected = Array.from(container.children).find(
-                (tab) => tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('Mui-selected')
+            // Full per-native-tab breakdown, not just "was something selected" - distinguishes a
+            // genuine tab switch (My Listings now selected) from both native tabs losing their
+            // selected marker simultaneously (a render/reconciliation glitch, not user action).
+            const nativeTabs = Array.from(container.children).filter(
+                (tab) =>
+                    tab.getAttribute('role') === 'tab' &&
+                    !tab.hasAttribute('data-mwi-custom-tab') &&
+                    !tab.hasAttribute('data-mwi-shrine-tab')
             );
-            return `Market Listings tab not selected (selected: "${selected?.textContent || 'none'}")`;
+            const states = nativeTabs
+                .map(
+                    (tab) =>
+                        `"${tab.textContent}" aria-selected=${tab.getAttribute('aria-selected')} Mui-selected=${tab.classList.contains('Mui-selected')}`
+                )
+                .join('; ');
+            return `Market Listings tab not selected (native tabs: ${states || 'none found'})`;
         }
         if (owner) {
             return `no connected/visible custom tabs remain for owner "${owner}"`;
         }
         return 'legacy tabsArray no longer in document';
+    }
+
+    // Diagnostic-only: renders the captured mutation trail (see poll()) so the warning below
+    // shows exactly what changed right before selection was lost - distinguishing a native
+    // React/MUI glitch (mutation lands on a native tab) from Toolasha's own injected tabs
+    // disrupting the shared tablist (mutation lands on a custom tab, or childList churn on the
+    // container itself).
+    function formatMutationTrail() {
+        if (!mutationTrail.length) {
+            return ' (no relevant DOM mutations captured - detected via the 1s poll interval, not a live mutation)';
+        }
+        return `\n  Recent relevant mutations leading up to this:\n  - ${mutationTrail.join('\n  - ')}`;
     }
 
     function notifyInvalidState() {
@@ -380,7 +452,7 @@ export function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
         if (invalidStateGraceMs <= 0) {
             invalidStateNotified = true;
             console.warn(
-                `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}`
+                `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
             );
             onTabsGone();
             return;
@@ -391,14 +463,25 @@ export function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
             if (isStopped || invalidStateNotified || hasValidState()) return;
             invalidStateNotified = true;
             console.warn(
-                `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}`
+                `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
             );
             onTabsGone();
         }, invalidStateGraceMs);
     }
 
-    function poll() {
+    function poll(mutations) {
         if (isStopped) return;
+
+        // mutations is only present when called as the MutationObserver callback directly (the
+        // 1s setInterval fallback below calls poll() with no arguments) - diagnostic-only.
+        if (mutations) {
+            for (const record of mutations) {
+                const summary = summarizeMutation(record);
+                if (!summary) continue;
+                mutationTrail.push(summary);
+                if (mutationTrail.length > 8) mutationTrail.shift();
+            }
+        }
 
         if (!hasValidState()) {
             notifyInvalidState();
@@ -407,6 +490,7 @@ export function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
 
         clearInvalidStateTimer();
         invalidStateNotified = false;
+        mutationTrail.length = 0;
     }
 
     if (document.body && typeof MutationObserver === 'function') {
