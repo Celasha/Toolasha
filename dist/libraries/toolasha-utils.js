@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.15.1
+ * Version: 3.16.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6380,11 +6380,15 @@
      * the same shape as the dungeon-token formula, which omits outputCount only because every dungeon
      * shop entry yields a single output. Exported so expected-value-calculator can price a dropped
      * item that is itself a shop currency (e.g. labyrinth tokens). Currencies whose every redemption
-     * output is itself unpriced (e.g. task tokens, whose chests have no market price) stay null.
+     * output is itself unpriced fall back to `containerValueLookup` for openable outputs (e.g. task
+     * tokens, whose chests are valued by the caller's converged container cache); without a lookup,
+     * or when the lookup also yields nothing, they stay null.
      * @param {string} currencyHrid - e.g. '/items/labyrinth_token'
+     * @param {{containerValueLookup?: (itemHrid: string) => number}} [opts] - tier-3 hook: value of an
+     *   openable, unpriced shop output (container EV), injected to avoid a circular import
      * @returns {{value: number, isOutlier: boolean}|null} Value per currency unit, or null
      */
-    function resolveCurrencyValue(currencyHrid) {
+    function resolveCurrencyValue(currencyHrid, { containerValueLookup } = {}) {
         if (DUNGEON_TOKEN_HRIDS.has(currencyHrid)) {
             return calculateDungeonTokenValue(currencyHrid, PRICING_MODE_SETTING, RESPECT_MODE_SETTING);
         }
@@ -6395,12 +6399,22 @@
 
         for (const entry of getShopEntriesForCurrency(currencyHrid)) {
             const priceInfo = getItemPriceOutlierInfo(entry.itemHrid, { mode });
-            const marketPrice = priceInfo.value || 0;
-            if (marketPrice <= 0) continue;
-            const valuePerToken = (marketPrice * (entry.outputCount || 1)) / entry.tokenCost;
+            let outputValue = priceInfo.value || 0;
+            let isOutlier = priceInfo.isOutlier;
+            // Tier-3 fallback: an openable output with no market price (e.g. a task chest) is valued
+            // by the injected lookup - a plain cache read on the caller side, never a recursive call.
+            if (!(outputValue > 0) && entry.isOpenable && containerValueLookup) {
+                const containerValue = containerValueLookup(entry.itemHrid);
+                if (containerValue > 0) {
+                    outputValue = containerValue;
+                    isOutlier = false;
+                }
+            }
+            if (!(outputValue > 0)) continue;
+            const valuePerToken = (outputValue * (entry.outputCount || 1)) / entry.tokenCost;
             if (valuePerToken > bestValuePerToken) {
                 bestValuePerToken = valuePerToken;
-                bestIsOutlier = priceInfo.isOutlier;
+                bestIsOutlier = isOutlier;
             }
         }
 
@@ -6413,13 +6427,15 @@
      * The implied value is not taxed - shop-redeemed items cannot be relisted on the market, mirroring
      * how the dungeon-token special case is treated upstream.
      * @param {string} itemHrid - e.g. '/items/seal_of_efficiency'
+     * @param {{containerValueLookup?: (itemHrid: string) => number}} [opts] - forwarded to
+     *   `resolveCurrencyValue` for the tier-3 container-EV fallback
      * @returns {{value: number, isOutlier: boolean, currencyHrid: string, tokenCost: number, outputCount: number}|null}
      */
-    function resolveShopRedemptionValue(itemHrid) {
+    function resolveShopRedemptionValue(itemHrid, opts = {}) {
         const purchase = findShopPurchaseInfo(itemHrid);
         if (!purchase) return null;
 
-        const currencyValue = resolveCurrencyValue(purchase.currencyHrid);
+        const currencyValue = resolveCurrencyValue(purchase.currencyHrid, opts);
         if (!currencyValue || !(currencyValue.value > 0)) return null;
 
         const outputCount = purchase.outputCount || 1;
@@ -6922,7 +6938,10 @@ self.onmessage = function (e) {
 
                     // Resolve price together with the tax contract - tax strictly follows needsTax,
                     // never item tradability (real game data omits isTradable for untradeable items).
-                    const resolved = this.resolveSellSideValue(itemHrid, 0);
+                    // allowIndirect lets task tokens (and other shop currencies priced only through
+                    // openable outputs) enter the worker's price map, so per-iteration container EVs
+                    // and token prices converge together.
+                    const resolved = this.resolveSellSideValue(itemHrid, 0, { allowIndirect: true });
 
                     priceMap[itemHrid] = {
                         price: resolved ? resolved.value : null,
@@ -6974,7 +6993,9 @@ self.onmessage = function (e) {
 
                 // Resolve price together with the tax contract - tax strictly follows needsTax,
                 // never item tradability (real game data omits isTradable for untradeable items).
-                const resolved = this.resolveSellSideValue(itemHrid, 0);
+                // allowIndirect: same resolver and formula as the worker path - the fallback pass
+                // (worker unavailable) must price identically, including tier-3 container-EV chains.
+                const resolved = this.resolveSellSideValue(itemHrid, 0, { allowIndirect: true });
 
                 if (!resolved) {
                     continue; // Skip drops with missing data
@@ -7067,7 +7088,10 @@ self.onmessage = function (e) {
                 // the caller explicitly passes `allowIndirect` (opt-in: Openable Analytics' calculator
                 // wiring is the intended consumer).
                 if (!allowIndirect) return null;
-                const indirect = resolveShopRedemptionValue(itemHrid);
+                // Tier-3 hook: let the shop chain value openable, unpriced outputs (e.g. task chests)
+                // from the converged container cache - a plain map read, never a recursive valuation.
+                const containerValueLookup = (hrid) => this.containerCache.get(hrid) ?? 0;
+                const indirect = resolveShopRedemptionValue(itemHrid, { containerValueLookup });
                 if (indirect) {
                     return {
                         value: indirect.value,
@@ -7079,7 +7103,7 @@ self.onmessage = function (e) {
                 // Mirror case: the dropped item is itself a shop currency (e.g. labyrinth tokens from
                 // Purdora's boxes) - value it at its own best tradeable redemption. Shop currencies are
                 // not market-relistable, so no tax applies (same contract as shopRedemption above).
-                const currency = resolveCurrencyValue(itemHrid);
+                const currency = resolveCurrencyValue(itemHrid, { containerValueLookup });
                 if (!currency) return null;
                 return {
                     value: currency.value,

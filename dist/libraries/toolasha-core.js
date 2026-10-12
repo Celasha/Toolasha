@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.15.1
+ * Version: 3.16.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2338,7 +2338,10 @@
             consumablesLabel: (p) => `Consumables: ${p.value}`,
             rerunButtonLabel: 'Re-run',
             zoneFallbackLabel: 'Zone',
-            zoneSummaryLine: (p) => `${p.zoneName}: ~${p.fights} fights | ${p.time} (bottleneck: ${p.bottleneckName})`,
+            zoneSummaryLine: (p) =>
+                `${p.zoneName}: ~${p.fights} fights${p.percentSuffix} | ${p.time} (bottleneck: ${p.bottleneckName})`,
+            zonePercentileSuffix: (p) => ` (${p.percent}%)`,
+            zoneMedianHint: (p) => `Planning for ${p.percent}% confidence. Median (50%): ~${p.fights} fights | ${p.time}`,
             tokenValuesUnavailableNote: (p) => `${p.error} - Token values unavailable`,
             loadingEllipsis: 'Loading...',
             actionProfitLabel: 'Action Profit:',
@@ -2426,6 +2429,9 @@
             profitableOnlyLabel: 'Profitable only',
             profitFilterLabel: 'Profit/hr:',
             itemPriceFilterLabel: 'Item price:',
+            levelFilterLabel: 'Max level:',
+            lookaheadFilterLabel: 'Preview levels ahead:',
+            lookaheadPlaceholder: '+N',
             minPlaceholder: 'Min',
             maxPlaceholder: 'Max',
             colLvl: 'Lvl',
@@ -2497,9 +2503,9 @@
         marketOrderTotals: {
             noOrdersTitle: 'No market orders',
             buyOrdersTooltip: 'Buy Orders (coins locked in buy orders)',
-            buyOrdersLabel: 'BO:',
+            buyOrdersLabel: 'BO',
             sellOrdersTooltip: 'Sell Orders (expected proceeds after tax)',
-            sellOrdersLabel: 'SO:',
+            sellOrdersLabel: 'SO',
             unclaimedTooltip: 'Unclaimed coins (waiting to be collected)',
         },
         shopMaxBuyButton: {
@@ -2707,26 +2713,26 @@
             removeExclusionTooltip: 'Remove exclusion',
         },
         networthDisplay: {
-            goldLabelLine: (p) => `Gold: ${p.value}`,
+            goldLabel: 'Gold',
             networthLoadingMessage: 'Networth: Loading...',
-            netWorthLabel: (p) => `Net Worth: ${p.value}`,
             netWorthHistoryChartTooltip: 'Net Worth History Chart',
             configureExclusionsTooltip: 'Configure Net Worth Exclusions',
-            currentAssetsLabel: (p) => `Current Assets: ${p.value}`,
-            equipmentValueLabel: (p) => `Equipment value: ${p.value}`,
-            inventoryValueLabel: (p) => `Inventory value: ${p.value}`,
-            marketListingsLabel: (p) => `Market listings: ${p.value}`,
-            fixedAssetsLabel: (p) => `Fixed Assets: ${p.value}`,
-            housesLabel: (p) => `Houses: ${p.value}`,
-            abilitiesLabel: (p) => `Abilities: ${p.value}`,
-            equippedAbilitiesLabel: (p) => `Equipped (${p.count}): ${p.value}`,
-            otherAbilitiesCountLabel: (p) => `Other (${p.count}): ${p.value}`,
-            otherAbilitiesLabel: (p) => `Other Abilities: ${p.value}`,
-            abilityBooksCountLabel: (p) => `Ability Books (${p.count}): ${p.value}`,
-            abilityBooksLabel: (p) => `Ability Books: ${p.value}`,
-            guildShrinesLabel: (p) => `Guild Shrines: ${p.value}`,
-            excludedLabel: (p) => `Excluded: ${p.value}`,
-            coinLabel: (p) => `Coin: ${p.value}`,
+            netWorthName: 'Net Worth',
+            currentAssetsName: 'Current Assets',
+            fixedAssetsName: 'Fixed Assets',
+            excludedSectionName: 'Excluded (not counted)',
+            equipmentName: 'Equipment',
+            inventoryName: 'Inventory',
+            marketListingsName: 'Market Listings',
+            housesName: 'Houses',
+            abilitiesName: 'Abilities',
+            equippedAbilitiesLabel: (p) => `Equipped (${p.count})`,
+            otherAbilitiesLabel: (p) => `Other (${p.count})`,
+            abilityBooksLabel: (p) => `Ability Books (${p.count})`,
+            guildShrinesName: 'Guild Shrines',
+            coinName: 'Coin',
+            currentShareLabel: (p) => `Current ${p.pct}%`,
+            fixedShareLabel: (p) => `Fixed ${p.pct}%`,
             noHousesBuiltMessage: 'No houses built',
             noAbilitiesMessage: 'No abilities',
             noAbilityBooksMessage: 'No ability books',
@@ -2831,7 +2837,8 @@
             computingPlaceholder: 'Computing…',
             computeFailedMessage: 'Failed to compute — reopen the popup to retry',
             zoneProgressHeader: 'Zone Task Progress',
-            zoneProgressRowValue: (p) => `~${p.fights} fights | ${p.time} (bottleneck: ${p.bottleneckName})`,
+            zoneProgressRowValue: (p) =>
+                `~${p.fights} fights${p.percentSuffix} | ${p.time} (bottleneck: ${p.bottleneckName})`,
         },
         combatSimIntegrationMetz: {
             noCharacterDataAlert:
@@ -3481,6 +3488,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Chat: Reformat message timestamps',
                     help: 'Reformats chat message timestamps using your Market date/time format settings instead of the browser default',
                 },
+                chat_messageSpacing: {
+                    label: 'Chat: Add spacing between name and message',
+                    help: 'Adds breathing room between the sender name and message text in chat channels',
+                },
                 shop_maxBuyButton: {
                     label: "Shop: Add 'Max' buy buttons",
                     help: 'Adds a Max button to Shop, Task Shop, Labyrinth Shop, and Cowbell Store buy dialogs that fills in the most you can afford',
@@ -3563,7 +3574,6 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Pinned actions: Enable pinned actions page and pin icons',
                     help: 'Adds a Pinned button to the left nav bar showing all pinned actions, and shows pin icons on action tiles.',
                 },
-                actionPanel_totalTime: { label: 'Action panel: Total time, times to reach target level, exp/hour' },
                 actionPanel_totalTime_quickInputs: {
                     label: 'Action panel: Quick input buttons (hours, count presets, Max)',
                 },
@@ -3646,6 +3656,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: 'Blocks alchemy action buttons for 3 seconds when the selected item belongs to a protected category. A shield icon appears in the alchemy panel to configure protected categories.',
                 },
                 alchemyItemDimming: { label: 'Alchemy panel: Dim items requiring higher level' },
+                alchemyBestItems_prefillLevelFilter: {
+                    label: 'Alchemy panel: Pre-fill Best Items max level from current skill level',
+                    help: 'When opening Best Items, sets the max level filter to your current Alchemy skill level. Off by default - alchemy has no hard level requirement (being under-leveled only lowers success rate, which profit/hr already accounts for), so the highest-profit item may genuinely be above your level.',
+                },
                 actions_missingMaterialsButton: {
                     label: 'Show "Missing Mats Marketplace" button on production panels',
                     help: 'Adds button to production panels that opens marketplace with tabs for missing materials',
@@ -4363,6 +4377,16 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         gold: 'Task profit per hour',
                     },
                 },
+                taskCombatEstimatePercentile: {
+                    label: 'Zone fight estimate confidence',
+                    help: 'How many fights to plan for in zone task estimates. Higher values mean the bottleneck task is more likely to be finished by then; the median is shown on hover.',
+                    options: {
+                        50: 'Median (50%)',
+                        80: '80%',
+                        90: '90%',
+                        95: '95%',
+                    },
+                },
                 taskEfficiencyGradient: {
                     label: 'Use relative gradient colors',
                     help: 'Colors efficiency ratings relative to visible tasks.',
@@ -4748,6 +4772,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '聊天：重新格式化消息时间戳',
                     help: '使用你的市场日期/时间格式设置来重新格式化聊天消息时间戳，而不是使用浏览器默认格式',
                 },
+                chat_messageSpacing: {
+                    label: '聊天：增加名称与消息之间的间距',
+                    help: '在聊天频道中为发送者名称和消息文本之间增加一些间距',
+                },
                 shop_maxBuyButton: {
                     label: '商店：添加“最大”购买按钮',
                     help: '在商店、任务商店、迷宫商店和铃铛商店的购买对话框中添加一个最大按钮，自动填入你能负担的最大数量',
@@ -4827,7 +4855,6 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '固定动作：启用固定动作页面与图钉图标',
                     help: '在左侧导航栏添加“固定”按钮，显示所有已固定的动作，并在动作方块上显示图钉图标。',
                 },
-                actionPanel_totalTime: { label: '动作面板：总时间、达到目标等级所需次数、经验/时' },
                 actionPanel_totalTime_quickInputs: { label: '动作面板：快捷输入按钮（小时、数量预设、最大值）' },
                 actionPanel_quickInputs_countPresets: {
                     label: '动作面板：自定义数量预设（以逗号分隔，例如 100,1000,1000000）',
@@ -4905,6 +4932,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '当所选物品属于受保护类别时，炼金动作按钮将锁定 3 秒。炼金面板中会显示盾牌图标，用于配置受保护的类别。',
                 },
                 alchemyItemDimming: { label: '炼金面板：使需要更高等级的物品变暗' },
+                alchemyBestItems_prefillLevelFilter: {
+                    label: '炼金面板：根据当前技能等级预填最佳物品的最高等级',
+                    help: '打开最佳物品时，将最高等级筛选预填为你当前的炼金技能等级。默认关闭——炼金没有硬性等级要求（等级不足只会降低成功率，而每小时利润已经计入了这一点），因此利润最高的物品可能本来就高于你的等级。',
+                },
                 actions_missingMaterialsButton: {
                     label: '在生产面板显示“购买缺失材料”按钮',
                     help: '在生产面板添加按钮，点击后打开市场并自动创建缺失材料的标签页',
@@ -5583,6 +5614,16 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     options: {
                         tokens: '每小时任务代币',
                         gold: '每小时任务利润',
+                    },
+                },
+                taskCombatEstimatePercentile: {
+                    label: '区域战斗场数估算置信度',
+                    help: '区域任务估算按多少场战斗来规划。数值越高，瓶颈任务在该场数内完成的可能性越大；悬停可查看中位数。',
+                    options: {
+                        50: '中位数（50%）',
+                        80: '80%',
+                        90: '90%',
+                        95: '95%',
                     },
                 },
                 taskEfficiencyGradient: { label: '使用相对渐变颜色', help: '根据当前可见任务的相对情况为效率评分着色。' },
@@ -6984,6 +7025,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             profitableOnlyLabel: '仅盈利',
             profitFilterLabel: '利润/时：',
             itemPriceFilterLabel: '物品价格：',
+            levelFilterLabel: '最高等级：',
+            lookaheadFilterLabel: '预览未来等级：',
+            lookaheadPlaceholder: '+N',
             minPlaceholder: '最小',
             maxPlaceholder: '最大',
             colLvl: '等级',
@@ -7458,9 +7502,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         marketOrderTotals: {
             noOrdersTitle: '暂无市场订单',
             buyOrdersTooltip: '买单（锁定在买单中的金币）',
-            buyOrdersLabel: '买单：',
+            buyOrdersLabel: '买单',
             sellOrdersTooltip: '卖单（税后预期收益）',
-            sellOrdersLabel: '卖单：',
+            sellOrdersLabel: '卖单',
             unclaimedTooltip: '待领取的金币',
         },
         shopMaxBuyButton: {
@@ -7738,26 +7782,26 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             movingAvgCustomHoursOption: (p) => `${p.hours}小时`,
         },
         networthDisplay: {
-            goldLabelLine: (p) => `金币：${p.value}`,
+            goldLabel: '金币',
             networthLoadingMessage: '净资产加载中…',
-            netWorthLabel: (p) => `净资产：${p.value}`,
             netWorthHistoryChartTooltip: '净资产历史图表',
             configureExclusionsTooltip: '配置净资产排除项',
-            currentAssetsLabel: (p) => `当前资产：${p.value}`,
-            equipmentValueLabel: (p) => `装备价值：${p.value}`,
-            inventoryValueLabel: (p) => `物品栏价值：${p.value}`,
-            marketListingsLabel: (p) => `市场挂单：${p.value}`,
-            fixedAssetsLabel: (p) => `固定资产：${p.value}`,
-            housesLabel: (p) => `房屋：${p.value}`,
-            abilitiesLabel: (p) => `技能：${p.value}`,
-            equippedAbilitiesLabel: (p) => `已装备（${p.count}）：${p.value}`,
-            otherAbilitiesCountLabel: (p) => `其他（${p.count}）：${p.value}`,
-            otherAbilitiesLabel: (p) => `其他技能：${p.value}`,
-            abilityBooksCountLabel: (p) => `技能书（${p.count}）：${p.value}`,
-            abilityBooksLabel: (p) => `技能书：${p.value}`,
-            guildShrinesLabel: (p) => `公会神殿：${p.value}`,
-            excludedLabel: (p) => `已排除：${p.value}`,
-            coinLabel: (p) => `金币：${p.value}`,
+            netWorthName: '净资产',
+            currentAssetsName: '流动资产',
+            fixedAssetsName: '固定资产',
+            excludedSectionName: '已排除（不计入总额）',
+            equipmentName: '装备',
+            inventoryName: '物品栏',
+            marketListingsName: '市场挂单',
+            housesName: '房屋',
+            abilitiesName: '技能',
+            equippedAbilitiesLabel: (p) => `已装备（${p.count}）`,
+            otherAbilitiesLabel: (p) => `其他（${p.count}）`,
+            abilityBooksLabel: (p) => `技能书（${p.count}）`,
+            guildShrinesName: '公会神殿',
+            coinName: '金币',
+            currentShareLabel: (p) => `流动 ${p.pct}%`,
+            fixedShareLabel: (p) => `固定 ${p.pct}%`,
             noHousesBuiltMessage: '尚未建造房屋',
             noAbilitiesMessage: '暂无技能',
             noAbilityBooksMessage: '暂无技能书',
@@ -8020,7 +8064,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             consumablesLabel: (p) => `消耗品：${p.value}`,
             rerunButtonLabel: '重新运行',
             zoneFallbackLabel: '区域',
-            zoneSummaryLine: (p) => `${p.zoneName}：约 ${p.fights} 场战斗 | ${p.time}（瓶颈：${p.bottleneckName}）`,
+            zoneSummaryLine: (p) =>
+                `${p.zoneName}：约 ${p.fights} 场战斗${p.percentSuffix} | ${p.time}（瓶颈：${p.bottleneckName}）`,
+            zonePercentileSuffix: (p) => `（${p.percent}%）`,
+            zoneMedianHint: (p) => `按 ${p.percent}% 置信度规划。中位数（50%）：约 ${p.fights} 场战斗 | ${p.time}`,
             tokenValuesUnavailableNote: (p) => `${p.error}——代币价值不可用`,
             loadingEllipsis: '加载中…',
             actionProfitLabel: '动作利润：',
@@ -8222,7 +8269,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             computingPlaceholder: '计算中…',
             computeFailedMessage: '计算失败，请重开弹窗重试',
             zoneProgressHeader: '区域任务进度',
-            zoneProgressRowValue: (p) => `约 ${p.fights} 场战斗 | ${p.time}（瓶颈：${p.bottleneckName}）`,
+            zoneProgressRowValue: (p) => `约 ${p.fights} 场战斗${p.percentSuffix} | ${p.time}（瓶颈：${p.bottleneckName}）`,
         },
         actionFilter: {
             modeLabel: (p) => `模式：${p.mode}`,
@@ -8753,6 +8800,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     default: true,
                     help: 'Reformats chat message timestamps using your Market date/time format settings instead of the browser default',
                 },
+                chat_messageSpacing: {
+                    id: 'chat_messageSpacing',
+                    label: 'Chat: Add spacing between name and message',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds breathing room between the sender name and message text in chat channels',
+                },
                 shop_maxBuyButton: {
                     id: 'shop_maxBuyButton',
                     label: "Shop: Add 'Max' buy buttons",
@@ -8961,12 +9015,6 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             title: 'Action Panel',
             icon: '📄',
             settings: {
-                actionPanel_totalTime: {
-                    id: 'actionPanel_totalTime',
-                    label: 'Action panel: Total time, times to reach target level, exp/hour',
-                    type: 'checkbox',
-                    default: true,
-                },
                 actionPanel_totalTime_quickInputs: {
                     id: 'actionPanel_totalTime_quickInputs',
                     label: 'Action panel: Quick input buttons (hours, count presets, Max)',
@@ -9136,6 +9184,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Alchemy panel: Dim items requiring higher level',
                     type: 'checkbox',
                     default: true,
+                },
+                alchemyBestItems_prefillLevelFilter: {
+                    id: 'alchemyBestItems_prefillLevelFilter',
+                    label: 'Alchemy panel: Pre-fill Best Items max level from current skill level',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'When opening Best Items, sets the max level filter to your current Alchemy skill level. Off by default - alchemy has no hard level requirement (being under-leveled only lowers success rate, which profit/hr already accounts for), so the highest-profit item may genuinely be above your level.',
                 },
             },
         },
@@ -10687,6 +10742,19 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         { value: 'gold', label: 'Task profit per hour' },
                     ],
                     help: 'Choose whether to rate by task token payout or total profit.',
+                },
+                taskCombatEstimatePercentile: {
+                    id: 'taskCombatEstimatePercentile',
+                    label: 'Zone fight estimate confidence',
+                    type: 'select',
+                    default: '90',
+                    options: [
+                        { value: '50', label: 'Median (50%)' },
+                        { value: '80', label: '80%' },
+                        { value: '90', label: '90%' },
+                        { value: '95', label: '95%' },
+                    ],
+                    help: 'How many fights to plan for in zone task estimates. Higher values mean the bottleneck task is more likely to be finished by then; the median is shown on hover.',
                 },
                 taskEfficiencyGradient: {
                     id: 'taskEfficiencyGradient',

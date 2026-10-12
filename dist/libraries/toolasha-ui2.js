@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.15.1
+ * Version: 3.16.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4448,6 +4448,51 @@
     }
 
     /**
+     * Diagnostic-only: whether a mutation's target is relevant to the tab-selection investigation -
+     * a tab element itself (native or Toolasha-injected), or anything inside the native tablist.
+     * Document-body-wide subtree observation sees constant unrelated page churn (chat, timers,
+     * etc.) - this keeps the captured trail limited to the one question that matters: what,
+     * specifically, changed on or near the tabs right before selection was lost.
+     * @param {Node} node
+     * @returns {boolean}
+     */
+    function isDiagnosticMutationTarget(node) {
+        if (!node || node.nodeType !== 1) return false;
+        if (node.getAttribute('role') === 'tab') return true;
+        if (node.hasAttribute('data-mwi-custom-tab') || node.hasAttribute('data-mwi-tab-owner')) return true;
+        return Boolean(node.closest && node.closest('.MuiTabs-flexContainer[role="tablist"]'));
+    }
+
+    function describeMutationTarget(node) {
+        const tag = node.tagName.toLowerCase();
+        const role = node.getAttribute('role') || '';
+        const kind = node.hasAttribute('data-mwi-custom-tab') ? 'custom' : role === 'tab' ? 'native' : 'other';
+        const text = (node.textContent || '').trim().slice(0, 24).replace(/\s+/g, ' ');
+        return `<${tag}${role ? ` role="${role}"` : ''}> [${kind}] "${text}"`;
+    }
+
+    /**
+     * Diagnostic-only: summarize a MutationRecord relevant to marketplace tab selection, to
+     * distinguish a native React/MUI selection glitch (mutation lands on a native tab) from one
+     * caused by Toolasha's own injected tabs (mutation lands on a custom tab, or a childList churn
+     * on the shared tablist container itself). Returns null for anything outside the tab area.
+     * @param {MutationRecord} record
+     * @returns {string|null}
+     */
+    function summarizeMutation(record) {
+        if (!isDiagnosticMutationTarget(record.target)) return null;
+        const label = describeMutationTarget(record.target);
+        if (record.type === 'attributes') {
+            const newValue = record.target.getAttribute(record.attributeName);
+            return `attr "${record.attributeName}" on ${label}: "${record.oldValue}" -> "${newValue}"`;
+        }
+        if (record.type === 'childList') {
+            return `childList on ${label}: +${record.addedNodes.length}/-${record.removedNodes.length}`;
+        }
+        return `${record.type} on ${label}`;
+    }
+
+    /**
      * Setup marketplace cleanup observer.
      * Uses MutationObserver for prompt close/remount detection, with polling as a fallback.
      *
@@ -4485,6 +4530,9 @@
         let invalidStateTimer = null;
         let isStopped = false;
         let invalidStateNotified = false;
+        // Diagnostic-only: bounded trail of relevant mutations leading up to an invalid-state
+        // episode, cleared on recovery so a later failure is never attributed to stale entries.
+        const mutationTrail = [];
 
         function hasValidState() {
             const visibleContainer = getVisibleMarketplaceTabContainer();
@@ -4523,15 +4571,39 @@
             }
             const container = candidates.values().next().value;
             if (owner && !isMarketplaceMarketListingsSelected(container)) {
-                const selected = Array.from(container.children).find(
-                    (tab) => tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('Mui-selected')
+                // Full per-native-tab breakdown, not just "was something selected" - distinguishes a
+                // genuine tab switch (My Listings now selected) from both native tabs losing their
+                // selected marker simultaneously (a render/reconciliation glitch, not user action).
+                const nativeTabs = Array.from(container.children).filter(
+                    (tab) =>
+                        tab.getAttribute('role') === 'tab' &&
+                        !tab.hasAttribute('data-mwi-custom-tab') &&
+                        !tab.hasAttribute('data-mwi-shrine-tab')
                 );
-                return `Market Listings tab not selected (selected: "${selected?.textContent || 'none'}")`;
+                const states = nativeTabs
+                    .map(
+                        (tab) =>
+                            `"${tab.textContent}" aria-selected=${tab.getAttribute('aria-selected')} Mui-selected=${tab.classList.contains('Mui-selected')}`
+                    )
+                    .join('; ');
+                return `Market Listings tab not selected (native tabs: ${states || 'none found'})`;
             }
             if (owner) {
                 return `no connected/visible custom tabs remain for owner "${owner}"`;
             }
             return 'legacy tabsArray no longer in document';
+        }
+
+        // Diagnostic-only: renders the captured mutation trail (see poll()) so the warning below
+        // shows exactly what changed right before selection was lost - distinguishing a native
+        // React/MUI glitch (mutation lands on a native tab) from Toolasha's own injected tabs
+        // disrupting the shared tablist (mutation lands on a custom tab, or childList churn on the
+        // container itself).
+        function formatMutationTrail() {
+            if (!mutationTrail.length) {
+                return ' (no relevant DOM mutations captured - detected via the 1s poll interval, not a live mutation)';
+            }
+            return `\n  Recent relevant mutations leading up to this:\n  - ${mutationTrail.join('\n  - ')}`;
         }
 
         function notifyInvalidState() {
@@ -4540,7 +4612,7 @@
             if (invalidStateGraceMs <= 0) {
                 invalidStateNotified = true;
                 console.warn(
-                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}`
+                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
                 );
                 onTabsGone();
                 return;
@@ -4551,14 +4623,25 @@
                 if (isStopped || invalidStateNotified || hasValidState()) return;
                 invalidStateNotified = true;
                 console.warn(
-                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}`
+                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
                 );
                 onTabsGone();
             }, invalidStateGraceMs);
         }
 
-        function poll() {
+        function poll(mutations) {
             if (isStopped) return;
+
+            // mutations is only present when called as the MutationObserver callback directly (the
+            // 1s setInterval fallback below calls poll() with no arguments) - diagnostic-only.
+            if (mutations) {
+                for (const record of mutations) {
+                    const summary = summarizeMutation(record);
+                    if (!summary) continue;
+                    mutationTrail.push(summary);
+                    if (mutationTrail.length > 8) mutationTrail.shift();
+                }
+            }
 
             if (!hasValidState()) {
                 notifyInvalidState();
@@ -4567,6 +4650,7 @@
 
             clearInvalidStateTimer();
             invalidStateNotified = false;
+            mutationTrail.length = 0;
         }
 
         if (document.body && typeof MutationObserver === 'function') {
@@ -23407,6 +23491,8 @@ self.onmessage = function (e) {
          */
         injectQueueTimesTooltip(tooltipContent) {
             try {
+                if (!config.getSetting('actionQueue')) return;
+
                 const currentActions = dataManager.getCurrentActions();
                 if (!currentActions || currentActions.length === 0) return;
 
@@ -23951,6 +24037,15 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Empty the Action Bar profit row and invalidate any in-flight profit calculation, so a
+         * calculation started for the previous action cannot write its result back afterwards.
+         */
+        clearActionBarProfit() {
+            this.activeBarProfitId = null;
+            if (this.profitElement) this.profitElement.innerHTML = '';
+        }
+
+        /**
          * Update the display with current action data
          */
         updateDisplay() {
@@ -23981,6 +24076,7 @@ self.onmessage = function (e) {
 
             if (!actionNameElement || !actionNameElement.textContent) {
                 this.displayElement.innerHTML = '';
+                this.clearActionBarProfit();
                 // Clear any appended stats from the game's div
                 this.clearAppendedStats(actionNameElement);
                 // Reconnect observer
@@ -23997,7 +24093,7 @@ self.onmessage = function (e) {
             const doingNothingLabel = translateGameName('actionsUtil', 'doingNothing', 'Doing nothing');
             if (actionNameText.includes('Doing nothing') || actionNameText.includes(doingNothingLabel)) {
                 this.displayElement.innerHTML = '';
-                if (this.profitElement) this.profitElement.innerHTML = '';
+                this.clearActionBarProfit();
                 this.clearAppendedStats(actionNameElement);
                 // Reconnect observer
                 this.reconnectActionNameObserver(actionNameElement);
@@ -24021,6 +24117,7 @@ self.onmessage = function (e) {
 
             if (!action) {
                 this.displayElement.innerHTML = '';
+                this.clearActionBarProfit();
                 this.clearAppendedStats(actionNameElement);
                 // Only retry if no cached actions (data not loaded yet).
                 // If cached actions exist but none match, data updated before DOM —
@@ -24035,6 +24132,7 @@ self.onmessage = function (e) {
             const actionDetails = dataManager.getActionDetails(action.actionHrid);
             if (!actionDetails) {
                 this.displayElement.innerHTML = '';
+                this.clearActionBarProfit();
                 this.clearAppendedStats(actionNameElement);
                 // Reconnect observer
                 this.reconnectActionNameObserver(actionNameElement);
@@ -24044,7 +24142,7 @@ self.onmessage = function (e) {
             // Skip combat actions - no time display for combat
             if (actionDetails.type === '/action_types/combat') {
                 this.displayElement.innerHTML = '';
-                if (this.profitElement) this.profitElement.innerHTML = '';
+                this.clearActionBarProfit();
                 this.clearAppendedStats(actionNameElement);
 
                 const combatCompact = config.getSetting('actionBar_compactWidth');
@@ -24101,7 +24199,7 @@ self.onmessage = function (e) {
 
             // Handle enhancing actions with specialized display
             if (actionDetails.type === '/action_types/enhancing') {
-                if (this.profitElement) this.profitElement.innerHTML = '';
+                this.clearActionBarProfit();
                 this.buildEnhancingDisplay(action, actionDetails, actionNameElement);
                 this.reconnectActionNameObserver(actionNameElement);
                 return;
@@ -25757,51 +25855,56 @@ self.onmessage = function (e) {
                         });
                     }
 
-                    // Format completion time
-                    let completionText = '';
-                    if (!hasInfinite && !hasTimingUnavailable && !isTrulyInfinite && !isRowTimingUnavailable) {
-                        completionText = buildCompletionText(accumulatedTime);
-                    }
-
-                    // Create time display element
-                    const timeDiv = document.createElement('div');
-                    timeDiv.className = 'mwi-queue-action-time';
-                    timeDiv.style.cssText = `
-                    color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
-                    font-size: 0.85em;
-                    margin-top: 2px;
-                `;
-
-                    if (isRowTimingUnavailable) {
-                        timeDiv.textContent = '[?]';
-                    } else if (isTrulyInfinite) {
-                        timeDiv.textContent = '[∞]';
-                    } else if (isInfinite && materialLimit !== null) {
-                        // Material-limited infinite action
-                        let limitLabel = '';
-                        if (limitType === 'gold') {
-                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGold');
-                        } else if (limitType && limitType.startsWith('material:')) {
-                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMat');
-                        } else if (limitType && limitType.startsWith('upgrade:')) {
-                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgrade');
-                        } else {
-                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
-                        }
-                        const timeStr = formatters_js.timeReadable(totalTime);
-                        timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
-                    } else {
-                        const timeStr = formatters_js.timeReadable(totalTime);
-                        timeDiv.textContent = `[${timeStr}]${completionText}`;
-                    }
-
                     // Find the actionText container and append inside it
                     const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
-                    if (actionTextContainer) {
-                        actionTextContainer.appendChild(timeDiv);
-                    } else {
-                        // Fallback: append to action div
-                        actionDiv.appendChild(timeDiv);
+
+                    // actionQueue gates only the time/completion display - actionQueue_showValue (the
+                    // profit div below) is an independent toggle and must keep working on its own.
+                    if (config.getSetting('actionQueue')) {
+                        // Format completion time
+                        let completionText = '';
+                        if (!hasInfinite && !hasTimingUnavailable && !isTrulyInfinite && !isRowTimingUnavailable) {
+                            completionText = buildCompletionText(accumulatedTime);
+                        }
+
+                        // Create time display element
+                        const timeDiv = document.createElement('div');
+                        timeDiv.className = 'mwi-queue-action-time';
+                        timeDiv.style.cssText = `
+                        color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+                        font-size: 0.85em;
+                        margin-top: 2px;
+                    `;
+
+                        if (isRowTimingUnavailable) {
+                            timeDiv.textContent = '[?]';
+                        } else if (isTrulyInfinite) {
+                            timeDiv.textContent = '[∞]';
+                        } else if (isInfinite && materialLimit !== null) {
+                            // Material-limited infinite action
+                            let limitLabel = '';
+                            if (limitType === 'gold') {
+                                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGold');
+                            } else if (limitType && limitType.startsWith('material:')) {
+                                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMat');
+                            } else if (limitType && limitType.startsWith('upgrade:')) {
+                                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgrade');
+                            } else {
+                                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
+                            }
+                            const timeStr = formatters_js.timeReadable(totalTime);
+                            timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
+                        } else {
+                            const timeStr = formatters_js.timeReadable(totalTime);
+                            timeDiv.textContent = `[${timeStr}]${completionText}`;
+                        }
+
+                        if (actionTextContainer) {
+                            actionTextContainer.appendChild(timeDiv);
+                        } else {
+                            // Fallback: append to action div
+                            actionDiv.appendChild(timeDiv);
+                        }
                     }
 
                     // Create empty profit div for this action (will be populated asynchronously)
@@ -25831,54 +25934,62 @@ self.onmessage = function (e) {
                     }
                 }
 
-                // Add total time at bottom (includes current action + all queued)
-                const totalDiv = document.createElement('div');
-                totalDiv.id = 'mwi-queue-total-time';
-                totalDiv.style.cssText = `
-                color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});
-                font-weight: bold;
-                margin-top: 12px;
-                padding: 8px;
-                border-top: 1px solid var(--border-color, ${config.COLOR_BORDER});
-                text-align: center;
-            `;
-
-                // Build total time text
-                let totalText = '';
-                if (hasTimingUnavailable) {
-                    totalText =
-                        accumulatedTime > 0
-                            ? i18n_js.t('actionTimeDisplay.queueTotalTimeWithUnavailable', {
-                                  time: formatters_js.timeReadable(accumulatedTime),
-                              })
-                            : i18n_js.t('actionTimeDisplay.queueTotalTimeUnavailable');
-                } else if (hasInfinite) {
-                    // Show finite time first, then add infinity indicator
-                    if (accumulatedTime > 0) {
-                        totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeWithInfinite', {
-                            time: formatters_js.timeReadable(accumulatedTime),
-                        });
-                    } else {
-                        totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeInfinite');
-                    }
-                } else {
-                    totalText = i18n_js.t('actionTimeDisplay.queueTotalTime', { time: formatters_js.timeReadable(accumulatedTime) });
-                }
-
-                totalDiv.innerHTML = totalText;
-
-                // Insert after queue menu
-                queueMenu.insertAdjacentElement('afterend', totalDiv);
-
-                // Calculate profit asynchronously (non-blocking)
-                if (
+                // Add total time/profit summary at bottom (includes current action + all queued).
+                // actionQueue gates the time text, actionQueue_showValue gates the profit text -
+                // independent toggles, so only skip the whole summary box when neither wants to show.
+                const showQueueTime = config.getSetting('actionQueue');
+                const willShowValue =
                     actionsToCalculate.length > 0 &&
                     marketAPI.isLoaded() &&
-                    config.getSettingValue('actionQueue_showValue', true)
-                ) {
-                    // Async will handle observer reconnection after updates complete
-                    shouldReconnectObserver = false;
-                    this.calculateAndDisplayTotalProfit(totalDiv, actionsToCalculate, totalText, queueMenu);
+                    config.getSettingValue('actionQueue_showValue', true);
+
+                if (showQueueTime || willShowValue) {
+                    const totalDiv = document.createElement('div');
+                    totalDiv.id = 'mwi-queue-total-time';
+                    totalDiv.style.cssText = `
+                    color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});
+                    font-weight: bold;
+                    margin-top: 12px;
+                    padding: 8px;
+                    border-top: 1px solid var(--border-color, ${config.COLOR_BORDER});
+                    text-align: center;
+                `;
+
+                    // Build total time text
+                    let totalText = '';
+                    if (showQueueTime) {
+                        if (hasTimingUnavailable) {
+                            totalText =
+                                accumulatedTime > 0
+                                    ? i18n_js.t('actionTimeDisplay.queueTotalTimeWithUnavailable', {
+                                          time: formatters_js.timeReadable(accumulatedTime),
+                                      })
+                                    : i18n_js.t('actionTimeDisplay.queueTotalTimeUnavailable');
+                        } else if (hasInfinite) {
+                            // Show finite time first, then add infinity indicator
+                            if (accumulatedTime > 0) {
+                                totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeWithInfinite', {
+                                    time: formatters_js.timeReadable(accumulatedTime),
+                                });
+                            } else {
+                                totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeInfinite');
+                            }
+                        } else {
+                            totalText = i18n_js.t('actionTimeDisplay.queueTotalTime', { time: formatters_js.timeReadable(accumulatedTime) });
+                        }
+                    }
+
+                    totalDiv.innerHTML = totalText;
+
+                    // Insert after queue menu
+                    queueMenu.insertAdjacentElement('afterend', totalDiv);
+
+                    // Calculate profit asynchronously (non-blocking)
+                    if (willShowValue) {
+                        // Async will handle observer reconnection after updates complete
+                        shouldReconnectObserver = false;
+                        this.calculateAndDisplayTotalProfit(totalDiv, actionsToCalculate, totalText, queueMenu);
+                    }
                 }
             } catch (error) {
                 console.error('[Toolasha] Error injecting queue times:', error);
@@ -25967,8 +26078,10 @@ self.onmessage = function (e) {
                     const valueLabel = isEstimatedValue
                         ? i18n_js.t('actionTimeDisplay.estimatedValueLabel')
                         : i18n_js.t('actionTimeDisplay.totalProfitLabel');
-                    const valueText = `<br>${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
-                    totalDiv.innerHTML = baseText + valueText;
+                    const valueLine = `${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
+                    // baseText is '' when actionQueue (the time display) is off - avoid a stray leading
+                    // <br> so the profit line isn't preceded by a blank line in that case.
+                    totalDiv.innerHTML = baseText ? `${baseText}<br>${valueLine}` : valueLine;
                 }
             } catch (error) {
                 console.warn('[Action Time Display] Error calculating total profit:', error);
