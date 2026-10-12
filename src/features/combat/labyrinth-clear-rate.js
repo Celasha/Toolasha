@@ -1766,6 +1766,7 @@ class LabyrinthClearRate {
         }
 
         const tooltipLines = [
+            t('labyrinthClearRate.liveClearChanceLine', { pct: chancePct }),
             t('labyrinthClearRate.successDoubleLine', {
                 success: (estimate.successChance * 100).toFixed(1),
                 double: (estimate.doubleChance * 100).toFixed(1),
