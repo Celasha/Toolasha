@@ -439,4 +439,35 @@ describe('TaskProfitDisplay zone summary excludes completed tasks (#771)', () =>
         expect(container.innerHTML).toContain('bottleneckName=Fly');
         expect(container.innerHTML).not.toContain('bottleneckName=Worm');
     });
+    test('zone summary quotes the selected percentile and offers the median on hover', () => {
+        const taskList = document.createElement('div');
+        taskList.className = 'TasksPanel_taskList';
+        taskList.appendChild(buildTaskInfo('Defeat - Fly', 'Progress: 0 / 200'));
+        taskList.appendChild(buildTaskInfo('Defeat - Ooze', 'Progress: 0 / 50'));
+        document.body.appendChild(taskList);
+
+        const container = document.createElement('div');
+        feature._renderCombatEstimateResult(
+            container,
+            { ...TASK_DATA, description: 'Defeat - Fly', quantity: 200, currentProgress: 0 },
+            'Fly',
+            100,
+            '1h',
+            3600,
+            '',
+            0,
+            REWARD_VALUE,
+            [],
+            [],
+            'zone',
+            { deaths: { [FLY_HRID]: 100, [OOZE_HRID]: 50 }, encounters: 150 },
+            ZONE_HRID,
+            1
+        );
+
+        expect(container.innerHTML).toContain('taskProfitDisplay.zonePercentileSuffix[percent=90]');
+        const hint = container.querySelector('.mwi-zone-estimate-hint');
+        expect(hint).not.toBeNull();
+        expect(hint.title).toContain('taskProfitDisplay.zoneMedianHint');
+    });
 });

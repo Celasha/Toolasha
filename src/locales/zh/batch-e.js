@@ -191,7 +191,10 @@ export default {
         consumablesLabel: (p) => `消耗品：${p.value}`,
         rerunButtonLabel: '重新运行',
         zoneFallbackLabel: '区域',
-        zoneSummaryLine: (p) => `${p.zoneName}：约 ${p.fights} 场战斗 | ${p.time}（瓶颈：${p.bottleneckName}）`,
+        zoneSummaryLine: (p) =>
+            `${p.zoneName}：约 ${p.fights} 场战斗${p.percentSuffix} | ${p.time}（瓶颈：${p.bottleneckName}）`,
+        zonePercentileSuffix: (p) => `（${p.percent}%）`,
+        zoneMedianHint: (p) => `按 ${p.percent}% 置信度规划。中位数（50%）：约 ${p.fights} 场战斗 | ${p.time}`,
         tokenValuesUnavailableNote: (p) => `${p.error}——代币价值不可用`,
         loadingEllipsis: '加载中…',
         actionProfitLabel: '动作利润：',
@@ -393,7 +396,7 @@ export default {
         computingPlaceholder: '计算中…',
         computeFailedMessage: '计算失败，请重开弹窗重试',
         zoneProgressHeader: '区域任务进度',
-        zoneProgressRowValue: (p) => `约 ${p.fights} 场战斗 | ${p.time}（瓶颈：${p.bottleneckName}）`,
+        zoneProgressRowValue: (p) => `约 ${p.fights} 场战斗${p.percentSuffix} | ${p.time}（瓶颈：${p.bottleneckName}）`,
     },
     actionFilter: {
         modeLabel: (p) => `模式：${p.mode}`,

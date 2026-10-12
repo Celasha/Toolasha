@@ -12,6 +12,7 @@ import marketAPI from '../../api/marketplace.js';
 import { calculateTaskProfit, calculateTaskTokenValue, calculateTaskRewardValue } from './task-profit-calculator.js';
 import { calculateTaskCompletionSeconds } from './task-profit-display.js';
 import { computeAllZoneProgress } from './task-zone-progress.js';
+import { createMedianHint, formatPercentileSuffix } from './task-zone-estimate-percentile.js';
 import { timeReadable, formatKMB, formatDateTime } from '../../utils/formatters.js';
 import { getActionName, getMonsterName } from '../../utils/game-i18n.js';
 import { TOOLASHA } from '../../utils/selectors.js';
@@ -865,11 +866,14 @@ class TaskStatistics {
             const fightsStr = Number.isFinite(zone.fightsNeeded) ? formatKMB(zone.fightsNeeded) : '???';
             const value = t('taskStatistics.zoneProgressRowValue', {
                 fights: fightsStr,
+                percentSuffix: formatPercentileSuffix(zone.percentile),
                 time: timeStr,
                 bottleneckName: zone.bottleneckName,
             });
 
             const row = this.createRow(zone.zoneName, value, textColor);
+            const medianHint = createMedianHint(zone);
+            if (medianHint) row.lastChild.appendChild(medianHint);
             row.style.cursor = 'pointer';
             row.onclick = () => {
                 this.closePopup();

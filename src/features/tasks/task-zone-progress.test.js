@@ -10,12 +10,18 @@ const {
     mockBuildGameDataPayload,
     mockGetCommunityBuffs,
     mockRunAllZonesSimulation,
+    mockGetZoneEstimatePercentile,
 } = vi.hoisted(() => ({
     mockGetCombatZoneForMonster: vi.fn(),
     mockBuildAllPlayerDTOs: vi.fn(),
     mockBuildGameDataPayload: vi.fn(),
     mockGetCommunityBuffs: vi.fn(() => ({ mooPass: false, comExp: 0, comDrop: 0 })),
     mockRunAllZonesSimulation: vi.fn(),
+    mockGetZoneEstimatePercentile: vi.fn(() => null),
+}));
+
+vi.mock('./task-zone-estimate-percentile.js', () => ({
+    getZoneEstimatePercentile: mockGetZoneEstimatePercentile,
 }));
 
 vi.mock('../../core/data-manager.js', () => ({
@@ -61,6 +67,7 @@ function quest({ monsterHrid, goalCount = 100, currentCount = 0 }) {
 describe('computeAllZoneProgress', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockGetZoneEstimatePercentile.mockReturnValue(null);
         mockGetCommunityBuffs.mockReturnValue({ mooPass: false, comExp: 0, comDrop: 0 });
         mockBuildGameDataPayload.mockReturnValue({
             actionDetailMap: {
@@ -136,6 +143,23 @@ describe('computeAllZoneProgress', () => {
         const result = await computeAllZoneProgress();
 
         expect(result).toEqual([]);
+    });
+
+    test('reports the selected percentile with the median alongside, consistent between fights and time', async () => {
+        mockGetZoneEstimatePercentile.mockReturnValue(0.9);
+        dataManager.characterQuests = [quest({ monsterHrid: '/monsters/slime', goalCount: 27, currentCount: 0 })];
+        mockGetCombatZoneForMonster.mockReturnValue('/actions/combat/zone_a');
+        // 2h sim, 2000 encounters = 1000 fights/hr; slime killed 106 times = q 0.053
+        mockRunAllZonesSimulation.mockResolvedValue([{ deaths: { '/monsters/slime': 106 }, encounters: 2000 }]);
+
+        const result = await computeAllZoneProgress();
+
+        expect(result).toHaveLength(1);
+        expect(result[0].percentile).toBe(0.9);
+        expect(result[0].fightsNeeded).toBe(635);
+        expect(result[0].hoursNeeded).toBeCloseTo(0.635);
+        expect(result[0].medianFightsNeeded).toBe(503);
+        expect(result[0].medianHoursNeeded).toBeCloseTo(0.503);
     });
 
     test('merges solo-zone quests into their planet row and simulates only the planet', async () => {

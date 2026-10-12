@@ -63,6 +63,27 @@ describe('TaskStatistics.createZoneProgressSection', () => {
         };
     }
 
+    test('shows the percentile suffix and a median hover hint when a percentile estimate is present', () => {
+        const section = taskStatistics.createZoneProgressSection(
+            [makeZone({ percentile: 0.9, medianFightsNeeded: 100, medianHoursNeeded: 1.5 })],
+            '#ffffff'
+        );
+        const valueSpan = section.querySelectorAll('div > span:last-child')[0];
+        expect(valueSpan.textContent).toContain(
+            '"percentSuffix":"taskProfitDisplay.zonePercentileSuffix:{\\"percent\\":90}"'
+        );
+        const hint = valueSpan.querySelector('.mwi-zone-estimate-hint');
+        expect(hint).not.toBeNull();
+        expect(hint.title).toContain('"fights":"100"');
+    });
+
+    test('shows no suffix or hint for the mean fallback', () => {
+        const section = taskStatistics.createZoneProgressSection([makeZone({ percentile: null })], '#ffffff');
+        const valueSpan = section.querySelectorAll('div > span:last-child')[0];
+        expect(valueSpan.textContent).toContain('"percentSuffix":""');
+        expect(valueSpan.querySelector('.mwi-zone-estimate-hint')).toBeNull();
+    });
+
     test('renders one row per zone with the zone name as the label', () => {
         const section = taskStatistics.createZoneProgressSection([makeZone()], '#ffffff');
         const rows = section.querySelectorAll('div > span:first-child');

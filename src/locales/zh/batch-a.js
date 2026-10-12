@@ -932,6 +932,16 @@ export default {
                     gold: '每小时任务利润',
                 },
             },
+            taskCombatEstimatePercentile: {
+                label: '区域战斗场数估算置信度',
+                help: '区域任务估算按多少场战斗来规划。数值越高，瓶颈任务在该场数内完成的可能性越大；悬停可查看中位数。',
+                options: {
+                    50: '中位数（50%）',
+                    80: '80%',
+                    90: '90%',
+                    95: '95%',
+                },
+            },
             taskEfficiencyGradient: { label: '使用相对渐变颜色', help: '根据当前可见任务的相对情况为效率评分着色。' },
             taskQueuedIndicator: {
                 label: '在任务卡片上显示“已排队”标记',

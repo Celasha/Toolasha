@@ -1658,7 +1658,10 @@ export default {
         consumablesLabel: (p) => `Consumables: ${p.value}`,
         rerunButtonLabel: 'Re-run',
         zoneFallbackLabel: 'Zone',
-        zoneSummaryLine: (p) => `${p.zoneName}: ~${p.fights} fights | ${p.time} (bottleneck: ${p.bottleneckName})`,
+        zoneSummaryLine: (p) =>
+            `${p.zoneName}: ~${p.fights} fights${p.percentSuffix} | ${p.time} (bottleneck: ${p.bottleneckName})`,
+        zonePercentileSuffix: (p) => ` (${p.percent}%)`,
+        zoneMedianHint: (p) => `Planning for ${p.percent}% confidence. Median (50%): ~${p.fights} fights | ${p.time}`,
         tokenValuesUnavailableNote: (p) => `${p.error} - Token values unavailable`,
         loadingEllipsis: 'Loading...',
         actionProfitLabel: 'Action Profit:',
@@ -2154,7 +2157,8 @@ export default {
         computingPlaceholder: 'Computing…',
         computeFailedMessage: 'Failed to compute — reopen the popup to retry',
         zoneProgressHeader: 'Zone Task Progress',
-        zoneProgressRowValue: (p) => `~${p.fights} fights | ${p.time} (bottleneck: ${p.bottleneckName})`,
+        zoneProgressRowValue: (p) =>
+            `~${p.fights} fights${p.percentSuffix} | ${p.time} (bottleneck: ${p.bottleneckName})`,
     },
     combatSimIntegrationMetz: {
         noCharacterDataAlert:
@@ -3691,6 +3695,16 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 options: {
                     tokens: 'Task tokens per hour',
                     gold: 'Task profit per hour',
+                },
+            },
+            taskCombatEstimatePercentile: {
+                label: 'Zone fight estimate confidence',
+                help: 'How many fights to plan for in zone task estimates. Higher values mean the bottleneck task is more likely to be finished by then; the median is shown on hover.',
+                options: {
+                    50: 'Median (50%)',
+                    80: '80%',
+                    90: '90%',
+                    95: '95%',
                 },
             },
             taskEfficiencyGradient: {

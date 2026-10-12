@@ -13,6 +13,7 @@ import { buildAllPlayerDTOs, buildGameDataPayload, getCommunityBuffs } from '../
 import { runAllZonesSimulation } from '../combat-sim/all-zones-runner.js';
 import { getActionName, getMonsterName } from '../../utils/game-i18n.js';
 import { computeZoneBottleneck } from './task-zone-bottleneck.js';
+import { getZoneEstimatePercentile } from './task-zone-estimate-percentile.js';
 
 const SIM_HOURS = 2;
 
@@ -122,7 +123,7 @@ export function findPlanetAnchorMonster(planetHrid, actionDetailMap) {
 }
 
 /**
- * @returns {Promise<Array<{zoneHrid: string, zoneName: string, hoursNeeded: number, fightsNeeded: number, bottleneckName: string, anchor: {monsterHrid: string, isBoss: boolean, battlesPerBoss: number}}>>}
+ * @returns {Promise<Array<{zoneHrid: string, zoneName: string, hoursNeeded: number, fightsNeeded: number, percentile: number|null, medianFightsNeeded: number|null, medianHoursNeeded: number|null, bottleneckName: string, anchor: {monsterHrid: string, isBoss: boolean, battlesPerBoss: number}}>>}
  *   Sorted ascending by hoursNeeded (soonest-to-clear zone first). Empty array when there are
  *   no active combat quests - no simulation is run in that case.
  */
@@ -168,6 +169,7 @@ export async function computeAllZoneProgress() {
         useEarlyExit: false,
     });
 
+    const percentile = getZoneEstimatePercentile();
     const results = [];
     for (let i = 0; i < zoneHrids.length; i++) {
         const zoneHrid = zoneHrids[i];
@@ -182,7 +184,7 @@ export async function computeAllZoneProgress() {
             return { hrid: quest.monsterHrid, name, remaining, killsPerHour, hoursNeeded };
         });
 
-        const bottleneck = computeZoneBottleneck(zoneTasks, simResult, SIM_HOURS);
+        const bottleneck = computeZoneBottleneck(zoneTasks, simResult, SIM_HOURS, percentile);
         if (!bottleneck) continue;
 
         const zoneName = getActionName(
@@ -196,6 +198,9 @@ export async function computeAllZoneProgress() {
             zoneName,
             hoursNeeded: bottleneck.hoursNeeded,
             fightsNeeded: bottleneck.fightsNeeded,
+            percentile: bottleneck.percentile,
+            medianFightsNeeded: bottleneck.medianFightsNeeded,
+            medianHoursNeeded: bottleneck.medianHoursNeeded,
             bottleneckName,
             anchor: findPlanetAnchorMonster(zoneHrid, gameData.actionDetailMap) || {
                 monsterHrid: bottleneck.bottleneckHrid,

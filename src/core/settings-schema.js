@@ -2104,6 +2104,19 @@ export const settingsGroups = {
                 ],
                 help: 'Choose whether to rate by task token payout or total profit.',
             },
+            taskCombatEstimatePercentile: {
+                id: 'taskCombatEstimatePercentile',
+                label: 'Zone fight estimate confidence',
+                type: 'select',
+                default: '90',
+                options: [
+                    { value: '50', label: 'Median (50%)' },
+                    { value: '80', label: '80%' },
+                    { value: '90', label: '90%' },
+                    { value: '95', label: '95%' },
+                ],
+                help: 'How many fights to plan for in zone task estimates. Higher values mean the bottleneck task is more likely to be finished by then; the median is shown on hover.',
+            },
             taskEfficiencyGradient: {
                 id: 'taskEfficiencyGradient',
                 label: 'Use relative gradient colors',

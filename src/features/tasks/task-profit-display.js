@@ -13,6 +13,11 @@ import { setReactInputValue } from '../../utils/react-input.js';
 import { findActionInput } from '../../utils/action-panel-helper.js';
 import { calculateTaskProfit, calculateTaskRewardValue } from './task-profit-calculator.js';
 import { computeZoneBottleneck } from './task-zone-bottleneck.js';
+import {
+    createMedianHint,
+    formatPercentileSuffix,
+    getZoneEstimatePercentile,
+} from './task-zone-estimate-percentile.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { timeReadable, formatPercentage, formatKMB } from '../../utils/formatters.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
@@ -1486,7 +1491,7 @@ class TaskProfitDisplay {
             }
 
             if (zoneTasks.length > 1) {
-                const bottleneck = computeZoneBottleneck(zoneTasks, simResult, simHours);
+                const bottleneck = computeZoneBottleneck(zoneTasks, simResult, simHours, getZoneEstimatePercentile());
                 const totalSeconds = Math.round(bottleneck.hoursNeeded * 3600);
 
                 const summary = document.createElement('div');
@@ -1500,9 +1505,12 @@ class TaskProfitDisplay {
                 summary.textContent = t('taskProfitDisplay.zoneSummaryLine', {
                     zoneName,
                     fights: formatKMB(bottleneck.fightsNeeded),
+                    percentSuffix: formatPercentileSuffix(bottleneck.percentile),
                     time: timeReadable(totalSeconds),
                     bottleneckName: getMonsterName(bottleneck.bottleneckHrid, bottleneck.bottleneckName),
                 });
+                const medianHint = createMedianHint(bottleneck);
+                if (medianHint) summary.appendChild(medianHint);
                 container.appendChild(summary);
             }
         }
