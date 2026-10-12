@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.15.1](https://github.com/Celasha/Toolasha/compare/v3.15.0...v3.15.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* add missing locale strings for shop max-buy-button setting ([57d0131](https://github.com/Celasha/Toolasha/commit/57d01314d92f82b25f0353c2b96974401e139d36))
+* log diagnostic detail when the marketplace cleanup watchdog tears down custom tabs ([66bedaf](https://github.com/Celasha/Toolasha/commit/66bedaf062c4a52296ba5e4255900a0f9ebd15d8))
+
 ## [3.15.0](https://github.com/Celasha/Toolasha/compare/v3.14.0...v3.15.0) (2026-10-11)
 
 ### Features
