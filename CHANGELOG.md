@@ -2,26 +2,24 @@
 
 ## [3.16.0](https://github.com/Celasha/Toolasha/compare/v3.15.1...v3.16.0) (2026-10-12)
 
-
 ### Features
 
-* add level-aware filtering to Alchemy Best Items ([e9440df](https://github.com/Celasha/Toolasha/commit/e9440dffd2e77d883fb375c6bd2773b8cacb4010))
-* **networth:** modernize net worth panel layout ([#784](https://github.com/Celasha/Toolasha/issues/784)) ([aaa03dc](https://github.com/Celasha/Toolasha/commit/aaa03dc31ded952f752c22542ede444d2fd06d13))
-* **openable-analytics:** price task tokens through their chests' expected value ([#770](https://github.com/Celasha/Toolasha/issues/770)) ([b4f1627](https://github.com/Celasha/Toolasha/commit/b4f1627fea6c5954d7203c3b8b4b5d20ed097bfb))
-* show percentile-based fight estimates for zone combat tasks ([e4343bf](https://github.com/Celasha/Toolasha/commit/e4343bfe7f075a0a2a7477cc6f9d59c7c2d5633c))
-
+- add level-aware filtering to Alchemy Best Items ([e9440df](https://github.com/Celasha/Toolasha/commit/e9440dffd2e77d883fb375c6bd2773b8cacb4010))
+- **networth:** modernize net worth panel layout ([#784](https://github.com/Celasha/Toolasha/issues/784)) ([aaa03dc](https://github.com/Celasha/Toolasha/commit/aaa03dc31ded952f752c22542ede444d2fd06d13))
+- **openable-analytics:** price task tokens through their chests' expected value ([#770](https://github.com/Celasha/Toolasha/issues/770)) ([b4f1627](https://github.com/Celasha/Toolasha/commit/b4f1627fea6c5954d7203c3b8b4b5d20ed097bfb))
+- show percentile-based fight estimates for zone combat tasks ([e4343bf](https://github.com/Celasha/Toolasha/commit/e4343bfe7f075a0a2a7477cc6f9d59c7c2d5633c))
 
 ### Bug Fixes
 
-* capture mutation trail and per-tab breakdown for marketplace tab teardown ([1cc1423](https://github.com/Celasha/Toolasha/commit/1cc142377687b93bad1f19948c1a9247d15da714))
-* clear the Action Bar profit line when the action changes to one with no profit ([e64410a](https://github.com/Celasha/Toolasha/commit/e64410a1f93758631fc37e891e54cb3ae91f09d4))
-* default Alchemy Best Items level pre-fill to off ([126d864](https://github.com/Celasha/Toolasha/commit/126d86484cef4ce60c9841ba286b45cc982edd98))
-* **market:** single-line order totals + icon tile header restyle ([#781](https://github.com/Celasha/Toolasha/issues/781)) ([2708e5a](https://github.com/Celasha/Toolasha/commit/2708e5ac53846ab80267ad37dbe871625efd2c58))
-* match milkywayidle.com without www so the script loads on the apex domain ([d9b6798](https://github.com/Celasha/Toolasha/commit/d9b6798ee46eae1387327e7e4e6d57a80c81c0da))
-* polish Log tab age colors, add category badges, and chat message spacing ([#774](https://github.com/Celasha/Toolasha/issues/774) follow-up) ([ee19721](https://github.com/Celasha/Toolasha/commit/ee1972193e98b03651acdd0ef567463cb073fdd1))
-* remove dead actionPanel_totalTime setting ([364e13e](https://github.com/Celasha/Toolasha/commit/364e13e14caf00f753e454d9da22d74acd30f81d))
-* value openable containers by expected value in Combat Summary revenue ([9191a56](https://github.com/Celasha/Toolasha/commit/9191a565b3afb8f88ba6e088b516b4e197d9f45b))
-* wire the actionQueue setting to actually gate queue time display ([95219cc](https://github.com/Celasha/Toolasha/commit/95219cc51e1f6cc372faa9a2354fed2c3134be39))
+- capture mutation trail and per-tab breakdown for marketplace tab teardown ([1cc1423](https://github.com/Celasha/Toolasha/commit/1cc142377687b93bad1f19948c1a9247d15da714))
+- clear the Action Bar profit line when the action changes to one with no profit ([e64410a](https://github.com/Celasha/Toolasha/commit/e64410a1f93758631fc37e891e54cb3ae91f09d4))
+- default Alchemy Best Items level pre-fill to off ([126d864](https://github.com/Celasha/Toolasha/commit/126d86484cef4ce60c9841ba286b45cc982edd98))
+- **market:** single-line order totals + icon tile header restyle ([#781](https://github.com/Celasha/Toolasha/issues/781)) ([2708e5a](https://github.com/Celasha/Toolasha/commit/2708e5ac53846ab80267ad37dbe871625efd2c58))
+- match milkywayidle.com without www so the script loads on the apex domain ([d9b6798](https://github.com/Celasha/Toolasha/commit/d9b6798ee46eae1387327e7e4e6d57a80c81c0da))
+- polish Log tab age colors, add category badges, and chat message spacing ([#774](https://github.com/Celasha/Toolasha/issues/774) follow-up) ([ee19721](https://github.com/Celasha/Toolasha/commit/ee1972193e98b03651acdd0ef567463cb073fdd1))
+- remove dead actionPanel_totalTime setting ([364e13e](https://github.com/Celasha/Toolasha/commit/364e13e14caf00f753e454d9da22d74acd30f81d))
+- value openable containers by expected value in Combat Summary revenue ([9191a56](https://github.com/Celasha/Toolasha/commit/9191a565b3afb8f88ba6e088b516b4e197d9f45b))
+- wire the actionQueue setting to actually gate queue time display ([95219cc](https://github.com/Celasha/Toolasha/commit/95219cc51e1f6cc372faa9a2354fed2c3134be39))
 
 ## [3.15.1](https://github.com/Celasha/Toolasha/compare/v3.15.0...v3.15.1) (2026-10-12)
 
