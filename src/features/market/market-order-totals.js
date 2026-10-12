@@ -149,11 +149,12 @@ class MarketOrderTotals {
         this.displayElement.classList.add('mwi-market-order-totals');
         this.displayElement.style.cssText = `
             display: flex;
-            gap: 12px;
+            gap: 8px;
             font-size: 0.85em;
             color: #aaa;
             margin-top: 4px;
             padding: 2px 0;
+            white-space: nowrap;
         `;
 
         // Find the networth header (if it exists) and insert after it
@@ -216,23 +217,29 @@ class MarketOrderTotals {
         }
 
         // Format values for display
-        const boDisplay = `<span style="color: #ffd700;">${formatKMB(totals.buyOrders)}</span>`;
-        const soDisplay = `<span style="color: #ffd700;">${formatKMB(totals.sellOrders)}</span>`;
-        const unclaimedDisplay = `<span style="color: #ffd700;">${formatKMB(totals.unclaimed)}</span>`;
+        const boValue = formatKMB(totals.buyOrders);
+        const soValue = formatKMB(totals.sellOrders);
+        const unclaimedValue = formatKMB(totals.unclaimed);
+
+        const itemStyle = 'display: flex; align-items: center; gap: 4px;';
+        const tileStyle =
+            'display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 8px; font-size: 11px; flex: none;';
 
         // Update display
         this.displayElement.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 4px;" title="${t('marketOrderTotals.buyOrdersTooltip')}">
+            <div style="${itemStyle}" title="${t('marketOrderTotals.buyOrdersTooltip')}">
+                <span style="${tileStyle} background: rgba(124, 184, 255, 0.16);">🛒</span>
                 <span style="color: #888; font-weight: 500;">${t('marketOrderTotals.buyOrdersLabel')}</span>
-                ${boDisplay}
+                <span style="color: #7cb8ff; font-weight: 600;">${boValue}</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 4px;" title="${t('marketOrderTotals.sellOrdersTooltip')}">
+            <div style="${itemStyle}" title="${t('marketOrderTotals.sellOrdersTooltip')}">
+                <span style="${tileStyle} background: rgba(74, 222, 128, 0.16);">🏷</span>
                 <span style="color: #888; font-weight: 500;">${t('marketOrderTotals.sellOrdersLabel')}</span>
-                ${soDisplay}
+                <span style="color: #4ade80; font-weight: 600;">${soValue}</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 4px;" title="${t('marketOrderTotals.unclaimedTooltip')}">
-                <span style="font-weight: 500;">💰:</span>
-                ${unclaimedDisplay}
+            <div style="${itemStyle}" title="${t('marketOrderTotals.unclaimedTooltip')}">
+                <span style="${tileStyle} background: rgba(251, 191, 36, 0.16);">💰</span>
+                <span style="color: #fbbf24; font-weight: 600;">${unclaimedValue}</span>
             </div>
         `;
     }
