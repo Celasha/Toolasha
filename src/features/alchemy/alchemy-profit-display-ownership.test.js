@@ -299,6 +299,51 @@ describe('AlchemyProfitDisplay.createDisplay ownership split (TLA-026)', () => {
         expect(document.getElementById('mwi-alchemy-display-anchor')).toBeNull();
     });
 
+    test('15. editing the target level fills the Repeat input with the actions needed', () => {
+        display.createDisplay(infoContainer, makeFullProfitData(), 'coinify', ITEM_HRID, true);
+        const repeatInput = document.querySelector('.maxActionCountInput__x input');
+        const targetInput = document.getElementById('mwi-alchemy-target-level-input');
+        const expectedActions = document
+            .getElementById('mwi-alchemy-target-level-result')
+            .textContent.match(/[\d,]+/)[0]
+            .replace(/,/g, '');
+
+        repeatInput.value = '';
+        targetInput.value = '11';
+        targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        expect(Number(repeatInput.value)).toBeGreaterThan(0);
+        expect(repeatInput.value).toBe(expectedActions);
+    });
+
+    test('16. an invalid target level leaves the Repeat input alone', () => {
+        display.createDisplay(infoContainer, makeFullProfitData(), 'coinify', ITEM_HRID, true);
+        const repeatInput = document.querySelector('.maxActionCountInput__x input');
+        const targetInput = document.getElementById('mwi-alchemy-target-level-input');
+
+        repeatInput.value = '77';
+        targetInput.value = '5';
+        targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        expect(repeatInput.value).toBe('77');
+    });
+
+    test('17. rebuilding with a saved target level does not overwrite a typed Repeat value', () => {
+        gameDataState.levelExperienceTable[12] = 3000;
+        try {
+            display._alchemyTargetLevel = 12;
+            const repeatInput = document.querySelector('.maxActionCountInput__x input');
+            repeatInput.value = '77';
+
+            display.createDisplay(infoContainer, makeFullProfitData(), 'coinify', ITEM_HRID, true);
+
+            expect(document.getElementById('mwi-alchemy-target-level-input').value).toBe('12');
+            expect(repeatInput.value).toBe('77');
+        } finally {
+            delete gameDataState.levelExperienceTable[12];
+        }
+    });
+
     test('transmute/decompose still work end-to-end through the non-market path', () => {
         display.createDisplay(
             buildAlchemyComponentDom(),
