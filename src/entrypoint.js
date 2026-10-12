@@ -249,6 +249,7 @@ function registerFeatures() {
             category: 'Inventory',
             module: Market.openableAnalytics,
             async: true,
+            customCheck: () => config.getSetting('openableAnalytics'),
         },
         {
             key: 'inventoryTabs',

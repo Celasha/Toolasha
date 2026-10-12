@@ -11,9 +11,10 @@ vi.mock('./dungeon-tracker.js', () => ({
 }));
 
 vi.mock('../../core/config.js', () => ({
-    default: { isFeatureEnabled: vi.fn(() => true) },
+    default: { isFeatureEnabled: vi.fn(() => true), getSetting: vi.fn(() => true) },
 }));
 
+const { default: config } = await import('../../core/config.js');
 const { default: dungeonTrackerChatAnnotations } = await import('./dungeon-tracker-chat-annotations.js');
 
 function buildTabsContainer(labels) {
@@ -190,5 +191,45 @@ describe('DungeonTrackerChatAnnotations — _isOutlierDiff (live average corrupt
         const dungeonStats = { runCount: 10, totalTime: 10 * 16 * 60 * 1000 }; // avg = 16m
         // The exact reported case: ~43276 minutes against a ~16m38s average.
         expect(dungeonTrackerChatAnnotations._isOutlierDiff(43276 * 60 * 1000, dungeonStats)).toBe(true);
+    });
+});
+
+describe('DungeonTrackerChatAnnotations — dungeonTrackerChatAnnotations setting gate', () => {
+    beforeEach(() => {
+        config.getSetting.mockReset();
+        config.getSetting.mockReturnValue(true);
+        dungeonTrackerChatAnnotations.initComplete = true;
+    });
+
+    test('annotateAllMessages reads the chat when the setting is on', async () => {
+        const spy = vi.spyOn(dungeonTrackerChatAnnotations, 'extractChatEvents').mockReturnValue([]);
+
+        await dungeonTrackerChatAnnotations.annotateAllMessages();
+
+        expect(spy).toHaveBeenCalled();
+        spy.mockRestore();
+    });
+
+    test('annotateAllMessages does nothing when the setting is off', async () => {
+        config.getSetting.mockImplementation((key) => key !== 'dungeonTrackerChatAnnotations');
+        const spy = vi.spyOn(dungeonTrackerChatAnnotations, 'extractChatEvents').mockReturnValue([]);
+
+        await dungeonTrackerChatAnnotations.annotateAllMessages();
+
+        expect(spy).not.toHaveBeenCalled();
+        spy.mockRestore();
+    });
+
+    test('initialize does not load history or watch chat when the setting is off', async () => {
+        config.getSetting.mockImplementation((key) => key !== 'dungeonTrackerChatAnnotations');
+        const loadSpy = vi.spyOn(dungeonTrackerChatAnnotations, 'loadRunCountsFromStorage').mockResolvedValue();
+        const waitSpy = vi.spyOn(dungeonTrackerChatAnnotations, 'waitForChat').mockImplementation(() => {});
+
+        await dungeonTrackerChatAnnotations.initialize();
+
+        expect(loadSpy).not.toHaveBeenCalled();
+        expect(waitSpy).not.toHaveBeenCalled();
+        loadSpy.mockRestore();
+        waitSpy.mockRestore();
     });
 });

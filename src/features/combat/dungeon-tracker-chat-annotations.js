@@ -35,6 +35,8 @@ class DungeonTrackerChatAnnotations {
      * Initialize chat annotation monitor
      */
     async initialize() {
+        if (!config.getSetting('dungeonTrackerChatAnnotations')) return;
+
         // Load run counts from storage to sync with UI
         await this.loadRunCountsFromStorage();
 
@@ -308,7 +310,11 @@ class DungeonTrackerChatAnnotations {
      * Called on page load and when needed
      */
     async annotateAllMessages() {
-        if (!this.enabled || !config.isFeatureEnabled('dungeonTracker')) {
+        if (
+            !this.enabled ||
+            !config.getSetting('dungeonTrackerChatAnnotations') ||
+            !config.isFeatureEnabled('dungeonTracker')
+        ) {
             return;
         }
 

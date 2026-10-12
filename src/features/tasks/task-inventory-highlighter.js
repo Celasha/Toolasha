@@ -3,6 +3,7 @@
  * Dims inventory items that are NOT needed for current non-combat tasks
  */
 
+import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { calculateTaskProfit } from './task-profit-calculator.js';
@@ -27,6 +28,7 @@ class TaskInventoryHighlighter {
      */
     initialize() {
         if (this.initialized) return;
+        if (!config.getSetting('taskInventoryHighlighter')) return;
 
         // Watch for task panel header to add button
         this.watchTaskPanel();

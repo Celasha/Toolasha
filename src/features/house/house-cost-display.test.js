@@ -176,6 +176,7 @@ vi.mock('../../utils/formatters.js', () => ({
     formatWithSeparator: vi.fn((n) => String(n)),
 }));
 
+import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import houseCostCalculator from './house-cost-calculator.js';
 import houseCostDisplay from './house-cost-display.js';
@@ -606,6 +607,24 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
 
             expect(levelSpy).toHaveBeenCalledWith('/house_rooms/library');
             expect(compactSpy).toHaveBeenCalledWith(costsSection, '/house_rooms/library', 2);
+        });
+    });
+
+    describe('addCostColumn setting gate', () => {
+        it('adds nothing when the houseUpgradeCosts setting is off', async () => {
+            const modalContent = document.createElement('div');
+            const costsSection = document.createElement('div');
+            modalContent.appendChild(costsSection);
+            document.body.appendChild(modalContent);
+
+            const compactSpy = vi.spyOn(houseCostDisplay, 'addCompactToLevel').mockResolvedValue();
+            vi.spyOn(houseCostDisplay, '_getLiveHouseRoomLevel').mockReturnValue(2);
+            config.getSetting.mockImplementation((key) => key !== 'houseUpgradeCosts');
+
+            await houseCostDisplay.addCostColumn(costsSection, '/house_rooms/library', modalContent);
+
+            expect(compactSpy).not.toHaveBeenCalled();
+            config.getSetting.mockImplementation(() => true);
         });
     });
 

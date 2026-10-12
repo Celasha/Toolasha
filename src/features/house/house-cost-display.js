@@ -141,6 +141,7 @@ class HouseCostDisplay {
      */
     async addCostColumn(costsSection, houseRoomHrid, modalContent) {
         this.removeExistingColumn(modalContent);
+        if (!config.getSetting('houseUpgradeCosts')) return;
         this.currentModalContent = modalContent;
 
         const currentLevel = this._getLiveHouseRoomLevel(houseRoomHrid);

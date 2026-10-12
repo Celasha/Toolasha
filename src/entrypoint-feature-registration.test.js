@@ -36,3 +36,23 @@ describe('Expected Value Calculator feature registration (OA-RUNTIME-2)', () => 
         expect(block).toContain('openableAnalytics');
     });
 });
+
+/**
+ * Features that are not in config.features default to "enabled" in config.isFeatureEnabled(), so
+ * a registry entry with no customCheck would start even when its own setting is off. These
+ * entries need an explicit customCheck that reads their setting.
+ */
+describe('Registry entries gated on their own setting', () => {
+    function extractBlock(key) {
+        const keyIndex = entrypointSource.indexOf(`key: '${key}'`);
+        expect(keyIndex).toBeGreaterThan(-1);
+        return entrypointSource.slice(keyIndex, entrypointSource.indexOf('},', keyIndex));
+    }
+
+    test('openableAnalytics has a customCheck on the openableAnalytics setting', () => {
+        const block = extractBlock('openableAnalytics');
+
+        expect(block).toContain('customCheck');
+        expect(block).toContain("getSetting('openableAnalytics')");
+    });
+});
