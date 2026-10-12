@@ -1039,6 +1039,15 @@ export class ActionTimeDisplay {
     }
 
     /**
+     * Empty the Action Bar profit row and invalidate any in-flight profit calculation, so a
+     * calculation started for the previous action cannot write its result back afterwards.
+     */
+    clearActionBarProfit() {
+        this.activeBarProfitId = null;
+        if (this.profitElement) this.profitElement.innerHTML = '';
+    }
+
+    /**
      * Update the display with current action data
      */
     updateDisplay() {
@@ -1069,6 +1078,7 @@ export class ActionTimeDisplay {
 
         if (!actionNameElement || !actionNameElement.textContent) {
             this.displayElement.innerHTML = '';
+            this.clearActionBarProfit();
             // Clear any appended stats from the game's div
             this.clearAppendedStats(actionNameElement);
             // Reconnect observer
@@ -1085,7 +1095,7 @@ export class ActionTimeDisplay {
         const doingNothingLabel = translateGameName('actionsUtil', 'doingNothing', 'Doing nothing');
         if (actionNameText.includes('Doing nothing') || actionNameText.includes(doingNothingLabel)) {
             this.displayElement.innerHTML = '';
-            if (this.profitElement) this.profitElement.innerHTML = '';
+            this.clearActionBarProfit();
             this.clearAppendedStats(actionNameElement);
             // Reconnect observer
             this.reconnectActionNameObserver(actionNameElement);
@@ -1109,6 +1119,7 @@ export class ActionTimeDisplay {
 
         if (!action) {
             this.displayElement.innerHTML = '';
+            this.clearActionBarProfit();
             this.clearAppendedStats(actionNameElement);
             // Only retry if no cached actions (data not loaded yet).
             // If cached actions exist but none match, data updated before DOM —
@@ -1123,6 +1134,7 @@ export class ActionTimeDisplay {
         const actionDetails = dataManager.getActionDetails(action.actionHrid);
         if (!actionDetails) {
             this.displayElement.innerHTML = '';
+            this.clearActionBarProfit();
             this.clearAppendedStats(actionNameElement);
             // Reconnect observer
             this.reconnectActionNameObserver(actionNameElement);
@@ -1132,7 +1144,7 @@ export class ActionTimeDisplay {
         // Skip combat actions - no time display for combat
         if (actionDetails.type === '/action_types/combat') {
             this.displayElement.innerHTML = '';
-            if (this.profitElement) this.profitElement.innerHTML = '';
+            this.clearActionBarProfit();
             this.clearAppendedStats(actionNameElement);
 
             const combatCompact = config.getSetting('actionBar_compactWidth');
@@ -1189,7 +1201,7 @@ export class ActionTimeDisplay {
 
         // Handle enhancing actions with specialized display
         if (actionDetails.type === '/action_types/enhancing') {
-            if (this.profitElement) this.profitElement.innerHTML = '';
+            this.clearActionBarProfit();
             this.buildEnhancingDisplay(action, actionDetails, actionNameElement);
             this.reconnectActionNameObserver(actionNameElement);
             return;

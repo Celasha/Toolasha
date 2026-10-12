@@ -1263,3 +1263,87 @@ describe('ActionTimeDisplay queue completion display style setting (actionQueue_
         expect(rows[1]).not.toContain('Complete at');
     });
 });
+
+describe('ActionTimeDisplay Action Bar profit row clears when the current action changes to one with no profit (#783)', () => {
+    let instance;
+    let actionNameElement;
+    const BREW = '/actions/brewing/tea';
+    const LABYRINTH = '/actions/labyrinth/explore';
+    const COMBAT = '/actions/combat/zone';
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        document.body.innerHTML = '';
+        actionNameElement = document.createElement('div');
+        actionNameElement.className = 'Header_actionName__31-L2';
+        actionNameElement.textContent = 'Tea';
+        document.body.appendChild(actionNameElement);
+        config.getSetting.mockImplementation((key) => key === 'actionBar_showProfit');
+        dataManager.getActionDetails.mockImplementation((hrid) => {
+            if (hrid === BREW) return { name: 'Tea', type: '/action_types/brewing', dropTable: [{}] };
+            if (hrid === LABYRINTH) return { name: 'Explore Labyrinth', type: '/action_types/labyrinth' };
+            if (hrid === COMBAT) return { name: 'Zone', type: '/action_types/combat' };
+            return undefined;
+        });
+        instance = new ActionTimeDisplay();
+        instance.createDisplayPanel();
+        instance.profitElement.innerHTML = 'Profit: +1.96M/hr · Remaining: +29.13M';
+    });
+
+    test('a header that matches no cached action (Labyrinth decorated text) empties the profit row', () => {
+        actionNameElement.textContent = 'Labyrinth - Shadow Archer Lv.44';
+        dataManager.getCurrentActions.mockReturnValue([{ actionHrid: LABYRINTH, ordinal: 0 }]);
+
+        instance.updateDisplay();
+
+        expect(instance.profitElement.innerHTML).toBe('');
+    });
+
+    test('an empty header empties the profit row', () => {
+        actionNameElement.textContent = '';
+
+        instance.updateDisplay();
+
+        expect(instance.profitElement.innerHTML).toBe('');
+    });
+
+    test('an in-flight profit calculation for the previous action cannot write back after a no-match switch', async () => {
+        let resolveProfit;
+        calculateGatheringProfit.mockReturnValue(
+            new Promise((resolve) => {
+                resolveProfit = resolve;
+            })
+        );
+        instance.profitElement.innerHTML = '';
+        const pending = instance.updateActionBarProfit({ actionHrid: BREW }, Infinity);
+
+        actionNameElement.textContent = 'Labyrinth - Shadow Archer Lv.44';
+        dataManager.getCurrentActions.mockReturnValue([{ actionHrid: LABYRINTH, ordinal: 0 }]);
+        instance.updateDisplay();
+
+        resolveProfit({ profitPerHour: 1960000, actionsPerHour: 100, efficiencyMultiplier: 1 });
+        await pending;
+
+        expect(instance.profitElement.innerHTML).toBe('');
+    });
+
+    test('an in-flight profit calculation cannot write back after switching to a combat action either', async () => {
+        let resolveProfit;
+        calculateGatheringProfit.mockReturnValue(
+            new Promise((resolve) => {
+                resolveProfit = resolve;
+            })
+        );
+        instance.profitElement.innerHTML = '';
+        const pending = instance.updateActionBarProfit({ actionHrid: BREW }, Infinity);
+
+        actionNameElement.textContent = 'Zone';
+        dataManager.getCurrentActions.mockReturnValue([{ actionHrid: COMBAT, ordinal: 0 }]);
+        instance.updateDisplay();
+
+        resolveProfit({ profitPerHour: 1960000, actionsPerHour: 100, efficiencyMultiplier: 1 });
+        await pending;
+
+        expect(instance.profitElement.innerHTML).toBe('');
+    });
+});
