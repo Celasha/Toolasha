@@ -553,7 +553,7 @@ export default {
         netWorthLabel: (p) => `净资产：${p.value}`,
         netWorthHistoryChartTooltip: '净资产历史图表',
         configureExclusionsTooltip: '配置净资产排除项',
-        currentAssetsLabel: (p) => `当前资产：${p.value}`,
+        currentAssetsLabel: (p) => `流动资产：${p.value}`,
         equipmentValueLabel: (p) => `装备价值：${p.value}`,
         inventoryValueLabel: (p) => `物品栏价值：${p.value}`,
         marketListingsLabel: (p) => `市场挂单：${p.value}`,
