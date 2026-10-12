@@ -24,50 +24,66 @@ vi.mock('../../utils/formatters.js', () => ({
 vi.mock('./networth-history-chart.js', () => ({ default: {} }));
 vi.mock('../market/expected-value-calculator.js', () => ({ default: { isInitialized: false } }));
 vi.mock('../combat-stats/combat-stats-calculator.js', () => ({ DUNGEON_CHEST_CHEST_KEYS: {} }));
-vi.mock('../../utils/dungeon-key-cost.js', () => ({ getKeyPrice: vi.fn(() => 0) }));
+vi.mock('../../utils/dungeon-key-cost.js', () => ({ getKeyPriceInfo: vi.fn(() => ({ price: 0, isOutlier: false })) }));
 vi.mock('./networth-exclusion-popup.js', () => ({ default: {} }));
 vi.mock('./networth-exclusions.js', () => ({ removeExclusion: vi.fn() }));
 
 import { networthInventoryDisplay, getSharePercent } from './networth-display.js';
 
 describe('NetworthInventoryDisplay outlier warning icons', () => {
-    test('renderEquipmentBreakdown appends the icon for a flagged item, not for a normal one', () => {
+    test('renderEquipmentBreakdown emits one row per item with value cell and outlier icon only when flagged', () => {
         const html = networthInventoryDisplay.renderEquipmentBreakdown([
             { name: 'Sinister Cape', value: 1000, isOutlier: true },
             { name: 'Normal Sword', value: 500, isOutlier: false },
         ]);
-
-        expect(html).toContain('Sinister Cape: N1000 <span style="color: #ffa500;" title="outlier-tooltip">⚠</span>');
-        expect(html).toContain('Normal Sword: N500');
-        expect(html).not.toContain('Normal Sword: N500 <span');
+        const rows = html.split('<div class="mwi-nw-row').slice(1);
+        expect(rows).toHaveLength(2);
+        expect(rows[0]).toContain('Sinister Cape');
+        expect(rows[0]).toContain('⚠');
+        expect(rows[0]).toContain('>N1000</span>');
+        expect(rows[1]).toContain('Normal Sword');
+        expect(rows[1]).toContain('>N500</span>');
+        expect(rows[1]).not.toContain('⚠');
     });
 
-    test('renderListingsBreakdown appends the icon only for the flagged listing', () => {
+    test('renderListingsBreakdown marks the listing type as a muted count span', () => {
         const html = networthInventoryDisplay.renderListingsBreakdown([
             { name: 'Rare Gem', value: 2000, isSell: true, isOutlier: true },
             { name: 'Common Ore', value: 100, isSell: false, isOutlier: false },
         ]);
-
-        expect(html).toContain('Rare Gem (Sell): N2000 <span style="color: #ffa500;" title="outlier-tooltip">⚠</span>');
-        expect(html).toContain('Common Ore (Buy): N100');
-        expect(html).not.toContain('Common Ore (Buy): N100 <span');
+        expect(html).toContain('Rare Gem');
+        expect(html).toContain('mwi-nw-count">(Sell)</span>');
+        expect(html).toContain('>N2000</span>');
+        expect(html).toContain('Common Ore');
+        expect(html).toContain('mwi-nw-count">(Buy)</span>');
+        expect(html).toContain('>N100</span>');
     });
 
-    test('renderInventoryBreakdown appends the icon on a flagged item row inside a category', () => {
+    test('renderHousesBreakdown renders level as a muted count span', () => {
+        const html = networthInventoryDisplay.renderHousesBreakdown([
+            { name: 'Library', level: 7, cost: 371, isOutlier: false },
+        ]);
+        expect(html).toContain('Library');
+        expect(html).toContain('mwi-nw-count">7</span>');
+        expect(html).toContain('>N371</span>');
+    });
+
+    test('renderInventoryBreakdown renders coin row and category nodes', () => {
         const html = networthInventoryDisplay.renderInventoryBreakdown({
             byCategory: {
                 Gems: {
-                    totalValue: 1000,
-                    items: [{ name: 'Flagged Gem', count: 2, value: 1000, isOutlier: true, itemHrid: '/items/gem' }],
+                    totalValue: 130,
+                    items: [{ name: 'Ruby', count: 55, value: 130, isOutlier: false, itemHrid: '/items/ruby' }],
                 },
             },
-            breakdown: [],
+            breakdown: [{ itemHrid: '/items/coin', name: 'Coin', count: 1, value: 148 }],
         });
-
-        expect(html).toContain('Flagged Gem xK2: N1000 <span style="color: #ffa500;" title="outlier-tooltip">⚠</span>');
+        expect(html).toContain('mwi-nw-val">N148</span>');
+        expect(html).toContain('id="mwi-nw-cat-gems"');
+        expect(html).toContain('Ruby');
     });
 
-    test('renderOpenableItemRow appends the icon for a flagged openable item', () => {
+    test('renderOpenableItemRow keeps a details node with chest id', () => {
         const html = networthInventoryDisplay.renderOpenableItemRow({
             name: 'Mystery Chest',
             count: 1,
@@ -75,10 +91,9 @@ describe('NetworthInventoryDisplay outlier warning icons', () => {
             isOutlier: true,
             itemHrid: '/items/mystery_chest',
         });
-
-        expect(html).toContain(
-            'Mystery Chest xK1: N5000 <span style="color: #ffa500;" title="outlier-tooltip">⚠</span>'
-        );
+        expect(html).toContain('id="mwi-nw-chest-mystery_chest"');
+        expect(html).toContain('Mystery Chest');
+        expect(html).toContain('⚠');
     });
 
     test('no icon markup appears anywhere when nothing is flagged', () => {

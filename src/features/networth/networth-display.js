@@ -710,14 +710,17 @@ class NetworthInventoryDisplay {
      */
     renderHousesBreakdown(breakdown) {
         if (breakdown.length === 0) {
-            return `<div>${t('networthDisplay.noHousesBuiltMessage')}</div>`;
+            return `<div class="mwi-nw-row mwi-nw-empty">${t('networthDisplay.noHousesBuiltMessage')}</div>`;
         }
-
         return breakdown
-            .map((house) => {
-                return `${house.name} ${house.level}: ${networthFormatter(Math.round(house.cost))}${buildOutlierPriceWarningIcon(house.isOutlier)}`;
-            })
-            .join('\n');
+            .map((house) =>
+                leafRow(
+                    2,
+                    `${house.name}${countSpan(String(house.level))}${buildOutlierPriceWarningIcon(house.isOutlier)}`,
+                    networthFormatter(Math.round(house.cost))
+                )
+            )
+            .join('');
     }
 
     /**
@@ -727,14 +730,17 @@ class NetworthInventoryDisplay {
      */
     renderAbilitiesBreakdown(breakdown) {
         if (breakdown.length === 0) {
-            return `<div>${t('networthDisplay.noAbilitiesMessage')}</div>`;
+            return `<div class="mwi-nw-row mwi-nw-empty">${t('networthDisplay.noAbilitiesMessage')}</div>`;
         }
-
         return breakdown
-            .map((ability) => {
-                return `${ability.name}: ${networthFormatter(Math.round(ability.cost))}${buildOutlierPriceWarningIcon(ability.isOutlier)}`;
-            })
-            .join('\n');
+            .map((ability) =>
+                leafRow(
+                    3,
+                    `${ability.name}${buildOutlierPriceWarningIcon(ability.isOutlier)}`,
+                    networthFormatter(Math.round(ability.cost))
+                )
+            )
+            .join('');
     }
 
     /**
@@ -744,14 +750,13 @@ class NetworthInventoryDisplay {
      */
     renderAbilityBooksBreakdown(breakdown) {
         if (breakdown.length === 0) {
-            return `<div>${t('networthDisplay.noAbilityBooksMessage')}</div>`;
+            return `<div class="mwi-nw-row mwi-nw-empty">${t('networthDisplay.noAbilityBooksMessage')}</div>`;
         }
-
         return breakdown
-            .map((book) => {
-                return `${book.name} (${formatKMB(book.count)}): ${networthFormatter(Math.round(book.value))}`;
-            })
-            .join('\n');
+            .map((book) =>
+                leafRow(2, `${book.name}${countSpan(formatKMB(book.count))}`, networthFormatter(Math.round(book.value)))
+            )
+            .join('');
     }
 
     /**
@@ -761,14 +766,13 @@ class NetworthInventoryDisplay {
      */
     renderGuildShrinesBreakdown(breakdown) {
         if (breakdown.length === 0) {
-            return `<div>${t('networthDisplay.noGuildShrineBuffsMessage')}</div>`;
+            return `<div class="mwi-nw-row mwi-nw-empty">${t('networthDisplay.noGuildShrineBuffsMessage')}</div>`;
         }
-
         return breakdown
-            .map((buff) => {
-                return `${buff.name} (Lv.${buff.level}): ${networthFormatter(Math.round(buff.cost))}`;
-            })
-            .join('\n');
+            .map((buff) =>
+                leafRow(2, `${buff.name}${countSpan(`Lv.${buff.level}`)}`, networthFormatter(Math.round(buff.cost)))
+            )
+            .join('');
     }
 
     /**
@@ -778,14 +782,17 @@ class NetworthInventoryDisplay {
      */
     renderEquipmentBreakdown(breakdown) {
         if (breakdown.length === 0) {
-            return `<div>${t('networthDisplay.noEquipmentMessage')}</div>`;
+            return `<div class="mwi-nw-row mwi-nw-empty">${t('networthDisplay.noEquipmentMessage')}</div>`;
         }
-
         return breakdown
-            .map((item) => {
-                return `${item.name}: ${networthFormatter(Math.round(item.value))}${buildOutlierPriceWarningIcon(item.isOutlier)}`;
-            })
-            .join('\n');
+            .map((item) =>
+                leafRow(
+                    2,
+                    `${item.name}${buildOutlierPriceWarningIcon(item.isOutlier)}`,
+                    networthFormatter(Math.round(item.value))
+                )
+            )
+            .join('');
     }
 
     /**
@@ -795,15 +802,18 @@ class NetworthInventoryDisplay {
      */
     renderListingsBreakdown(breakdown) {
         if (!breakdown || breakdown.length === 0) {
-            return `<div>${t('networthDisplay.noMarketListingsMessage')}</div>`;
+            return `<div class="mwi-nw-row mwi-nw-empty">${t('networthDisplay.noMarketListingsMessage')}</div>`;
         }
-
         return breakdown
             .map((listing) => {
                 const typeLabel = listing.isSell ? t('marketHistory.sellLabel') : t('marketHistory.buyLabel');
-                return `${listing.name} (${typeLabel}): ${networthFormatter(Math.round(listing.value))}${buildOutlierPriceWarningIcon(listing.isOutlier)}`;
+                return leafRow(
+                    2,
+                    `${listing.name}${countSpan(`(${typeLabel})`)}${buildOutlierPriceWarningIcon(listing.isOutlier)}`,
+                    networthFormatter(Math.round(listing.value))
+                );
             })
-            .join('\n');
+            .join('');
     }
 
     /**
@@ -816,37 +826,39 @@ class NetworthInventoryDisplay {
         const coinItem = inventory.breakdown?.find((item) => item.itemHrid === '/items/coin') ?? null;
 
         if (Object.keys(byCategory).length === 0 && !coinItem) {
-            return `<div>${t('networthDisplay.noInventoryMessage')}</div>`;
+            return `<div class="mwi-nw-row mwi-nw-empty">${t('networthDisplay.noInventoryMessage')}</div>`;
         }
 
-        // Sort categories by total value descending
         const sortedCategories = Object.entries(byCategory).sort((a, b) => b[1].totalValue - a[1].totalValue);
 
         const renderCategory = ([categoryName, categoryData]) => {
-            const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
-            const categoryToggleId = `${categoryId}-toggle`;
-
-            const itemsHTML = categoryData.items
+            const categoryId = `mwi-nw-cat-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
+            const children = categoryData.items
                 .map((item) => {
                     if (item.isOpenable && item.itemHrid) {
                         return this.renderOpenableItemRow(item);
                     }
-                    return `<div>${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}${buildOutlierPriceWarningIcon(item.isOutlier)}</div>`;
+                    return leafRow(
+                        3,
+                        `${item.name}${countSpan(`x${formatKMB(item.count)}`)}${buildOutlierPriceWarningIcon(item.isOutlier)}`,
+                        networthFormatter(Math.round(item.value)),
+                        { zero: item.value === 0 }
+                    );
                 })
                 .join('');
-
-            return `
-                <div style="cursor: pointer; margin-top: 4px; font-size: 0.85rem;" id="${categoryToggleId}">
-                    + ${categoryName}: ${networthFormatter(Math.round(categoryData.totalValue))}
-                </div>
-                <div id="${categoryId}" style="display: none; margin-left: 20px; font-size: 0.75rem; color: #999;">
-                    ${itemsHTML}
-                </div>
-            `;
+            return nodeDetails(
+                2,
+                categoryId,
+                categoryName,
+                networthFormatter(Math.round(categoryData.totalValue)),
+                children
+            );
         };
 
         const coinHTML = coinItem
-            ? `<div style="margin-top: 4px; font-size: 0.85rem;">${t('networthDisplay.coinLabel', { value: networthFormatter(Math.round(coinItem.value)) })}</div>`
+            ? leafRow(2, t('networthDisplay.coinName'), networthFormatter(Math.round(coinItem.value)), {
+                  zero: coinItem.value === 0,
+              })
             : '';
 
         // Insert coin at the right position based on value (sorted descending with categories)
@@ -862,7 +874,6 @@ class NetworthInventoryDisplay {
         if (!coinInserted) {
             html += coinHTML;
         }
-
         return html;
     }
 
@@ -1078,8 +1089,7 @@ class NetworthInventoryDisplay {
      */
     renderOpenableItemRow(item) {
         const slug = item.itemHrid.split('/').pop();
-        const toggleId = `mwi-chest-${slug}-toggle`;
-        const detailId = `mwi-chest-${slug}-detail`;
+        const detailId = `mwi-nw-chest-${slug}`;
 
         const evData = expectedValueCalculator.isInitialized
             ? expectedValueCalculator.calculateExpectedValue(item.itemHrid)
@@ -1100,13 +1110,13 @@ class NetworthInventoryDisplay {
             detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName, keyPriceOutlier);
         }
 
-        return `
-            <div id="${toggleId}" style="cursor: pointer; padding: 1px 0;">
-                + ${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}${buildOutlierPriceWarningIcon(item.isOutlier)}
-            </div>
-            <div id="${detailId}" style="display: none; margin-left: 16px; color: #bbb; margin-bottom: 2px;">
-                ${detailsHTML}
-            </div>`;
+        return nodeDetails(
+            3,
+            detailId,
+            `${item.name}${countSpan(`x${formatKMB(item.count)}`)}${buildOutlierPriceWarningIcon(item.isOutlier)}`,
+            networthFormatter(Math.round(item.value)),
+            `<div class="mwi-nw-ev">${detailsHTML}</div>`
+        );
     }
 
     /**
