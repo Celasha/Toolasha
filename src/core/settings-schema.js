@@ -546,6 +546,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            alchemyBestItems_prefillLevelFilter: {
+                id: 'alchemyBestItems_prefillLevelFilter',
+                label: 'Alchemy panel: Pre-fill Best Items max level from current skill level',
+                type: 'checkbox',
+                default: true,
+                help: 'When opening Best Items, sets the max level filter to your current Alchemy skill level so results default to recipes you can actually perform',
+            },
         },
     },
 

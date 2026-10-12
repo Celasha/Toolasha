@@ -248,6 +248,10 @@ export default {
                 help: '当所选物品属于受保护类别时，炼金动作按钮将锁定 3 秒。炼金面板中会显示盾牌图标，用于配置受保护的类别。',
             },
             alchemyItemDimming: { label: '炼金面板：使需要更高等级的物品变暗' },
+            alchemyBestItems_prefillLevelFilter: {
+                label: '炼金面板：根据当前技能等级预填最佳物品的最高等级',
+                help: '打开最佳物品时，将最高等级筛选预填为你当前的炼金技能等级，默认只显示你实际能够完成的配方',
+            },
             actions_missingMaterialsButton: {
                 label: '在生产面板显示“购买缺失材料”按钮',
                 help: '在生产面板添加按钮，点击后打开市场并自动创建缺失材料的标签页',

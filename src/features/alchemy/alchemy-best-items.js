@@ -109,7 +109,19 @@ function calcXpPerAction(actionType, itemLevel, successRate) {
     return successRate * fullXP + (1 - successRate) * fullXP * 0.1;
 }
 
-class AlchemyBestItems {
+/**
+ * The player's current Alchemy skill level, for the level filter pre-fill and the
+ * per-row availability indicator. Same lookup already used for this exact purpose in
+ * alchemy-item-dimming.js.
+ * @returns {number}
+ */
+function getPlayerAlchemyLevel() {
+    const skills = dataManager.getSkills();
+    const alchemySkill = skills?.find((s) => s.skillHrid === '/skills/alchemy');
+    return alchemySkill?.level || 1;
+}
+
+export class AlchemyBestItems {
     constructor() {
         this.isInitialized = false;
         this.modal = null;
@@ -125,6 +137,7 @@ class AlchemyBestItems {
         this.filterProfitMax = null;
         this.filterPriceMin = null;
         this.filterPriceMax = null;
+        this.filterLevelMax = null;
     }
 
     initialize() {
@@ -498,11 +511,19 @@ class AlchemyBestItems {
             return isNaN(num) ? null : num * (multipliers[match[2]] || 1);
         };
 
+        // Plain integer parse for level values - no k/m/b suffix support needed here.
+        const parseLevelValue = (val) => {
+            if (!val) return null;
+            const num = parseInt(val.trim(), 10);
+            return Number.isNaN(num) ? null : num;
+        };
+
         const onFilterChange = () => {
             this.filterProfitMin = parseFilterValue(profitMin.value);
             this.filterProfitMax = parseFilterValue(profitMax.value);
             this.filterPriceMin = parseFilterValue(priceMin.value);
             this.filterPriceMax = parseFilterValue(priceMax.value);
+            this.filterLevelMax = parseLevelValue(levelMax.value);
             this.renderTable();
         };
 
@@ -531,6 +552,47 @@ class AlchemyBestItems {
         priceFilter.appendChild(document.createTextNode('–'));
         priceFilter.appendChild(priceMax);
         filterRow.appendChild(priceFilter);
+
+        // Max level filter - pre-filled from the player's current Alchemy skill level when the
+        // setting is on, so results default to recipes the player can actually perform today.
+        const levelFilter = document.createElement('span');
+        levelFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+        levelFilter.innerHTML = t('alchemyBestItems.levelFilterLabel');
+        const levelMax = document.createElement('input');
+        levelMax.type = 'text';
+        levelMax.placeholder = t('alchemyBestItems.maxPlaceholder');
+        levelMax.style.cssText = filterInputStyle;
+        levelMax.setAttribute('data-mwi-level-max', 'true');
+        if (config.getSetting('alchemyBestItems_prefillLevelFilter')) {
+            const playerLevel = getPlayerAlchemyLevel();
+            levelMax.value = String(playerLevel);
+            this.filterLevelMax = playerLevel;
+        }
+        levelMax.addEventListener('change', onFilterChange);
+        levelFilter.appendChild(levelMax);
+        filterRow.appendChild(levelFilter);
+
+        // Lookahead - a convenience shortcut that raises the max level filter above the
+        // player's real current level, to preview upcoming recipes. Not an independent filter
+        // dimension: it only ever writes into levelMax/filterLevelMax, reusing the same
+        // filtering path. Availability coloring in renderTable() still compares against the
+        // player's real level, so previewed rows stay visibly marked as not-yet-unlocked.
+        const lookaheadFilter = document.createElement('span');
+        lookaheadFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+        lookaheadFilter.innerHTML = t('alchemyBestItems.lookaheadFilterLabel');
+        const lookaheadInput = document.createElement('input');
+        lookaheadInput.type = 'text';
+        lookaheadInput.placeholder = t('alchemyBestItems.lookaheadPlaceholder');
+        lookaheadInput.style.cssText = filterInputStyle;
+        lookaheadInput.setAttribute('data-mwi-lookahead', 'true');
+        lookaheadInput.addEventListener('change', () => {
+            const lookahead = parseLevelValue(lookaheadInput.value);
+            if (lookahead === null) return;
+            levelMax.value = String(getPlayerAlchemyLevel() + lookahead);
+            onFilterChange();
+        });
+        lookaheadFilter.appendChild(lookaheadInput);
+        filterRow.appendChild(lookaheadFilter);
 
         content.appendChild(filterRow);
 
@@ -568,6 +630,9 @@ class AlchemyBestItems {
         }
         if (this.filterPriceMax !== null) {
             filtered = filtered.filter((r) => r.itemPrice <= this.filterPriceMax);
+        }
+        if (this.filterLevelMax !== null) {
+            filtered = filtered.filter((r) => r.itemLevel <= this.filterLevelMax);
         }
 
         // Sort — secondary sort is the other metric when primary values tie
@@ -636,6 +701,7 @@ class AlchemyBestItems {
         // Body rows
         const tbody = document.createElement('tbody');
         const maxRows = 100;
+        const playerAlchemyLevel = getPlayerAlchemyLevel();
 
         for (let i = 0; i < Math.min(sorted.length, maxRows); i++) {
             const item = sorted[i];
@@ -661,10 +727,12 @@ class AlchemyBestItems {
             nameTd.appendChild(nameLink);
             row.appendChild(nameTd);
 
-            // Level
+            // Level - colored against the player's real current Alchemy level (not the filter
+            // ceiling), so a row pulled in via lookahead preview still reads as not-yet-unlocked.
             const levelTd = document.createElement('td');
             levelTd.textContent = item.itemLevel;
-            levelTd.style.cssText = 'padding: 4px 8px; text-align: center; color: #888;';
+            const isUnlocked = item.itemLevel <= playerAlchemyLevel;
+            levelTd.style.cssText = `padding: 4px 8px; text-align: center; color: ${isUnlocked ? '#4ade80' : '#f87171'};`;
             row.appendChild(levelTd);
 
             // Catalyst

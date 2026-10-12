@@ -1746,6 +1746,9 @@ export default {
         profitableOnlyLabel: 'Profitable only',
         profitFilterLabel: 'Profit/hr:',
         itemPriceFilterLabel: 'Item price:',
+        levelFilterLabel: 'Max level:',
+        lookaheadFilterLabel: 'Preview levels ahead:',
+        lookaheadPlaceholder: '+N',
         minPlaceholder: 'Min',
         maxPlaceholder: 'Max',
         colLvl: 'Lvl',
@@ -2969,6 +2972,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 help: 'Blocks alchemy action buttons for 3 seconds when the selected item belongs to a protected category. A shield icon appears in the alchemy panel to configure protected categories.',
             },
             alchemyItemDimming: { label: 'Alchemy panel: Dim items requiring higher level' },
+            alchemyBestItems_prefillLevelFilter: {
+                label: 'Alchemy panel: Pre-fill Best Items max level from current skill level',
+                help: 'When opening Best Items, sets the max level filter to your current Alchemy skill level so results default to recipes you can actually perform',
+            },
             actions_missingMaterialsButton: {
                 label: 'Show "Missing Mats Marketplace" button on production panels',
                 help: 'Adds button to production panels that opens marketplace with tabs for missing materials',
