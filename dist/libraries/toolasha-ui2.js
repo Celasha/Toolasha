@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.15.0
+ * Version: 3.15.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4209,11 +4209,12 @@
     }
 
     /**
-     * Get the unique visible Marketplace native tab container.
-     * Hidden retained panels and ambiguous duplicate visible panels fail closed.
-     * @returns {HTMLElement|null}
+     * Collect every visible native Marketplace tab container currently in the DOM.
+     * Exposed separately from getVisibleMarketplaceTabContainer so diagnostics can report
+     * *how many* candidates were found (0 vs 2+) instead of just the collapsed null.
+     * @returns {Set<HTMLElement>}
      */
-    function getVisibleMarketplaceTabContainer() {
+    function getMarketplaceTabContainerCandidates() {
         const candidates = new Set();
 
         for (const panel of document.querySelectorAll('[class*="MarketplacePanel_marketplacePanel"]')) {
@@ -4231,6 +4232,16 @@
             }
         }
 
+        return candidates;
+    }
+
+    /**
+     * Get the unique visible Marketplace native tab container.
+     * Hidden retained panels and ambiguous duplicate visible panels fail closed.
+     * @returns {HTMLElement|null}
+     */
+    function getVisibleMarketplaceTabContainer() {
+        const candidates = getMarketplaceTabContainerCandidates();
         return candidates.size === 1 ? candidates.values().next().value : null;
     }
 
@@ -4503,11 +4514,34 @@
             invalidStateTimer = null;
         }
 
+        // Diagnostic-only: the cleanup path below was previously silent, leaving no console
+        // trace when custom marketplace tabs got torn down.
+        function describeInvalidState() {
+            const candidates = getMarketplaceTabContainerCandidates();
+            if (candidates.size !== 1) {
+                return `expected exactly 1 visible marketplace tab container, found ${candidates.size}`;
+            }
+            const container = candidates.values().next().value;
+            if (owner && !isMarketplaceMarketListingsSelected(container)) {
+                const selected = Array.from(container.children).find(
+                    (tab) => tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('Mui-selected')
+                );
+                return `Market Listings tab not selected (selected: "${selected?.textContent || 'none'}")`;
+            }
+            if (owner) {
+                return `no connected/visible custom tabs remain for owner "${owner}"`;
+            }
+            return 'legacy tabsArray no longer in document';
+        }
+
         function notifyInvalidState() {
             if (invalidStateNotified || invalidStateTimer || !onTabsGone) return;
 
             if (invalidStateGraceMs <= 0) {
                 invalidStateNotified = true;
+                console.warn(
+                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}`
+                );
                 onTabsGone();
                 return;
             }
@@ -4516,6 +4550,9 @@
                 invalidStateTimer = null;
                 if (isStopped || invalidStateNotified || hasValidState()) return;
                 invalidStateNotified = true;
+                console.warn(
+                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}`
+                );
                 onTabsGone();
             }, invalidStateGraceMs);
         }

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.15.0
+ * Version: 3.15.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3481,6 +3481,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Chat: Reformat message timestamps',
                     help: 'Reformats chat message timestamps using your Market date/time format settings instead of the browser default',
                 },
+                shop_maxBuyButton: {
+                    label: "Shop: Add 'Max' buy buttons",
+                    help: 'Adds a Max button to Shop, Task Shop, Labyrinth Shop, and Cowbell Store buy dialogs that fills in the most you can afford',
+                },
                 altClickNavigation: {
                     label: 'Alt+click items to navigate to crafting/gathering or dictionary',
                     help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
@@ -4743,6 +4747,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 chat_24hrTimestamps: {
                     label: '聊天：重新格式化消息时间戳',
                     help: '使用你的市场日期/时间格式设置来重新格式化聊天消息时间戳，而不是使用浏览器默认格式',
+                },
+                shop_maxBuyButton: {
+                    label: '商店：添加“最大”购买按钮',
+                    help: '在商店、任务商店、迷宫商店和铃铛商店的购买对话框中添加一个最大按钮，自动填入你能负担的最大数量',
                 },
                 altClickNavigation: {
                     label: '按住 Alt 点击物品，跳转制作/采集页面或物品词典',
