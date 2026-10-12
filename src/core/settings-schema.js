@@ -161,6 +161,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Reformats chat message timestamps using your Market date/time format settings instead of the browser default',
             },
+            chat_messageSpacing: {
+                id: 'chat_messageSpacing',
+                label: 'Chat: Add spacing between name and message',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds breathing room between the sender name and message text in chat channels',
+            },
             shop_maxBuyButton: {
                 id: 'shop_maxBuyButton',
                 label: "Shop: Add 'Max' buy buttons",

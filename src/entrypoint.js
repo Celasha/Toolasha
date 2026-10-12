@@ -647,6 +647,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'chat_messageSpacing',
+            name: 'Chat Message Spacing',
+            category: 'Chat',
+            module: UI.chatMessageSpacing,
+            async: false,
+        },
+        {
             key: 'shop_maxBuyButton',
             name: 'Shop Max Buy Button',
             category: 'Shop',

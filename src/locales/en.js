@@ -2801,6 +2801,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Chat: Reformat message timestamps',
                 help: 'Reformats chat message timestamps using your Market date/time format settings instead of the browser default',
             },
+            chat_messageSpacing: {
+                label: 'Chat: Add spacing between name and message',
+                help: 'Adds breathing room between the sender name and message text in chat channels',
+            },
             shop_maxBuyButton: {
                 label: "Shop: Add 'Max' buy buttons",
                 help: 'Adds a Max button to Shop, Task Shop, Labyrinth Shop, and Cowbell Store buy dialogs that fills in the most you can afford',

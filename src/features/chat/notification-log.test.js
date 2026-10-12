@@ -569,7 +569,7 @@ describe('NotificationLog - timestamp date and age-color ramp (#774)', () => {
 
         const timeSpan = feature.listEl.querySelector('.mwi-notiflog-time');
         expect(timeSpan.textContent).toContain('10-15'); // date is now always present
-        expect(timeSpan.style.color).toBe('rgb(255, 255, 255)'); // today = most prominent
+        expect(timeSpan.style.color).toBe('rgb(255, 166, 87)'); // today = most prominent
         expect(timeSpan.dataset.ts).toBe(String(feature.entries[0].timestamp));
     });
 
@@ -621,7 +621,7 @@ describe('NotificationLog - timestamp date and age-color ramp (#774)', () => {
         const colors = Array.from(spans).map((s) => s.style.color);
         // Oldest-first display order: 2-days-ago row, then yesterday row.
         expect(new Set(colors).size).toBe(2);
-        expect(colors).not.toContain('rgb(255, 255, 255)');
+        expect(colors).not.toContain('rgb(255, 166, 87)');
         expect(colors).not.toContain('rgb(139, 148, 158)');
     });
 
@@ -639,13 +639,13 @@ describe('NotificationLog - timestamp date and age-color ramp (#774)', () => {
         feature._activateTab();
 
         const timeSpan = feature.listEl.querySelector('.mwi-notiflog-time');
-        expect(timeSpan.style.color).toBe('rgb(255, 255, 255)'); // today
+        expect(timeSpan.style.color).toBe('rgb(255, 166, 87)'); // today
 
         // Cross midnight without any new entry being added.
         vi.setSystemTime(new Date(2026, 9, 16, 0, 2, 0));
         vi.advanceTimersByTime(60000);
 
-        expect(timeSpan.style.color).toBe('rgb(208, 215, 222)'); // now "yesterday" relative to new now
+        expect(timeSpan.style.color).toBe('rgb(255, 192, 138)'); // now "yesterday" relative to new now
     });
 
     test('_deactivateTab stops the periodic refresh so it does not keep running while the tab is hidden', async () => {
@@ -676,5 +676,65 @@ describe('NotificationLog - timestamp date and age-color ramp (#774)', () => {
 
         expect(clearSpy).toHaveBeenCalled();
         clearSpy.mockRestore();
+    });
+});
+
+describe('NotificationLog - category badges (#774 follow-up)', () => {
+    beforeEach(async () => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+        const config = (await import('../../core/config.js')).default;
+        config.getSetting.mockReturnValue(true);
+        config.getSettingValue.mockReturnValue(100);
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterId.mockReturnValue('111111');
+    });
+
+    test('a trading entry renders a badge labeled "Trading" in the mapped accent color', async () => {
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        await feature._onInfoMessage({ message: 'infoNotification.soldItem', variables: [] });
+
+        const badge = feature.listEl.querySelector('.mwi-notiflog-badge');
+        expect(badge.textContent).toBe('Trading');
+        expect(badge.style.color).toBe('rgb(227, 179, 65)'); // #e3b341
+    });
+
+    test('a mention entry renders the "Mentions" badge in its mapped color', async () => {
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        feature.logMention({
+            channel: 'party',
+            channelName: 'Party',
+            sName: 'Bob',
+            text: 'hi @you',
+            timestamp: Date.now(),
+        });
+
+        const badge = feature.listEl.querySelector('.mwi-notiflog-badge');
+        expect(badge.textContent).toBe('Mentions');
+        expect(badge.style.color).toBe('rgb(88, 166, 255)'); // #58a6ff
+    });
+
+    test('a category with no explicit color mapping falls back to the neutral/system tone', async () => {
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        // 'houseConstructed' maps to the 'house' category, which has no explicit badge color.
+        await feature._onInfoMessage({ message: 'infoNotification.houseConstructed', variables: [] });
+
+        const badge = feature.listEl.querySelector('.mwi-notiflog-badge');
+        expect(badge.style.color).toBe('rgb(139, 148, 158)'); // #8b949e, same as the age-ramp default
     });
 });

@@ -79,6 +79,14 @@ const CSS = `
     }
     #${PANEL_ID} .mwi-notiflog-row-text { flex: 1; }
     #${PANEL_ID} .mwi-notiflog-time { color: #8b949e; margin-right: 6px; }
+    #${PANEL_ID} .mwi-notiflog-badge {
+        flex-shrink: 0;
+        font-size: 0.85em;
+        padding: 1px 6px;
+        border-radius: 3px;
+        border: 1px solid currentColor;
+        line-height: 1.4;
+    }
     #${PANEL_ID} .mwi-notiflog-empty { color: #8b949e; font-style: italic; padding: 8px; }
     #${PANEL_ID} .mwi-notiflog-delete {
         background: none;
@@ -106,9 +114,12 @@ function formatTimestamp(ts) {
 // Age-based color ramp for the timestamp (see #774): today is most prominent, fading over the
 // next two days, then settling to the existing muted default. Calendar-day difference (not raw
 // ms/24h) so e.g. 11pm today vs. 1am tomorrow count as different days a few hours apart.
-const AGE_COLOR_TODAY = '#fff';
-const AGE_COLOR_DAY_1 = '#d0d7de';
-const AGE_COLOR_DAY_2 = '#9ea7b3';
+// Orange-to-muted hue ramp (requested follow-up) rather than gray steps - more distinguishable at
+// a glance. The 3+ day floor stays the existing muted gray (not literal white) - white would read
+// as MORE prominent than the orange "today" tone on this dark theme, inverting the intent.
+const AGE_COLOR_TODAY = '#ffa657';
+const AGE_COLOR_DAY_1 = '#ffc08a';
+const AGE_COLOR_DAY_2 = '#ffe0bd';
 const AGE_COLOR_DEFAULT = '#8b949e'; // 3+ days - matches the CSS base color for .mwi-notiflog-time
 function ageColor(ts, now = Date.now()) {
     const startOfDay = (ms) => {
@@ -169,6 +180,23 @@ function getCategoryLabel(category) {
     };
     const key = CATEGORY_LABEL_KEYS[category];
     return key ? t(key) : category;
+}
+
+/**
+ * Badge color per filter category (follow-up to #774) - a small set of categories get a distinct
+ * accent, everything else falls back to the same muted tone used for the "system" catch-all.
+ * @param {string} category
+ * @returns {string}
+ */
+function badgeColor(category) {
+    const CATEGORY_BADGE_COLOR = {
+        trading: '#e3b341',
+        progression: '#3fb950',
+        party: '#bc8cff',
+        guild: '#a371f7',
+        [MENTION_CATEGORY]: '#58a6ff',
+    };
+    return CATEGORY_BADGE_COLOR[category] || '#8b949e';
 }
 
 /**
@@ -536,8 +564,8 @@ class NotificationLog {
 
         // this.entries is stored newest-first (see _addEntry); reverse only for display.
         const visible = this.entries
-            .filter((entry) => this.activeFilters.has(getEntryCategory(entry)))
-            .slice()
+            .map((entry) => ({ entry, category: getEntryCategory(entry) }))
+            .filter(({ category }) => this.activeFilters.has(category))
             .reverse();
 
         if (visible.length === 0) {
@@ -548,7 +576,7 @@ class NotificationLog {
             return;
         }
 
-        for (const entry of visible) {
+        for (const { entry, category } of visible) {
             const row = document.createElement('div');
             row.className = 'mwi-notiflog-row';
 
@@ -557,6 +585,11 @@ class NotificationLog {
             time.textContent = formatTimestamp(entry.timestamp);
             time.dataset.ts = String(entry.timestamp);
             time.style.color = ageColor(entry.timestamp);
+
+            const badge = document.createElement('span');
+            badge.className = 'mwi-notiflog-badge';
+            badge.textContent = getCategoryLabel(category);
+            badge.style.color = badgeColor(category);
 
             const text = document.createElement('span');
             text.className = 'mwi-notiflog-row-text';
@@ -569,6 +602,7 @@ class NotificationLog {
             deleteBtn.addEventListener('click', () => this._removeEntry(entry));
 
             row.appendChild(time);
+            row.appendChild(badge);
             row.appendChild(text);
             row.appendChild(deleteBtn);
             this.listEl.appendChild(row);
