@@ -2919,11 +2919,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             actionPanel_showLevelProgress: {
                 label: 'Action panel: Show level progress',
-                help: 'Displays XP and level progress estimates inside action panels',
+                help: 'Displays XP and level progress estimates inside action panels, including the Alchemy panel',
             },
             actionPanel_showSpeedTime: {
                 label: 'Action panel: Show action speed & time',
-                help: 'Displays speed breakdown, efficiency, and total time inside action panels',
+                help: 'Displays speed breakdown, efficiency, and total time inside action panels, including the Alchemy panel',
             },
             requiredMaterials: {
                 label: 'Action panel: Show total required and missing materials',

@@ -262,6 +262,43 @@ describe('AlchemyProfitDisplay.createDisplay ownership split (TLA-026)', () => {
         expect(display.displayElement.id).not.toBe('mwi-alchemy-profit');
     });
 
+    test('12. actionPanel_showSpeedTime=false hides only Action Speed & Time', () => {
+        settingsState.actionPanel_showSpeedTime = false;
+
+        display.createDisplay(infoContainer, makeFullProfitData(), 'coinify', ITEM_HRID, true);
+
+        expect(document.getElementById('mwi-alchemy-speed-time')).toBeNull();
+        expect(document.getElementById('mwi-alchemy-level-progress')).not.toBeNull();
+        expect(document.getElementById('mwi-alchemy-profit')).not.toBeNull();
+    });
+
+    test('13. actionPanel_showLevelProgress=false hides only Level Progress', () => {
+        settingsState.actionPanel_showLevelProgress = false;
+
+        display.createDisplay(infoContainer, makeFullProfitData(), 'coinify', ITEM_HRID, true);
+
+        expect(document.getElementById('mwi-alchemy-level-progress')).toBeNull();
+        expect(document.getElementById('mwi-alchemy-speed-time')).not.toBeNull();
+        expect(document.getElementById('mwi-alchemy-profit')).not.toBeNull();
+    });
+
+    test('14. with every section hidden, a hidden anchor keeps the display counted as mounted and removeDisplay clears it', () => {
+        settingsState.alchemy_profitDisplay = false;
+        settingsState.actionPanel_showSpeedTime = false;
+        settingsState.actionPanel_showLevelProgress = false;
+
+        display.createDisplay(infoContainer, makeFullProfitData(), 'coinify', ITEM_HRID, true);
+
+        expect(document.getElementById('mwi-alchemy-profit')).toBeNull();
+        expect(document.getElementById('mwi-alchemy-speed-time')).toBeNull();
+        expect(document.getElementById('mwi-alchemy-level-progress')).toBeNull();
+        expect(display.displayElement?.parentNode).toBe(infoContainer);
+
+        display.removeDisplay();
+
+        expect(document.getElementById('mwi-alchemy-display-anchor')).toBeNull();
+    });
+
     test('transmute/decompose still work end-to-end through the non-market path', () => {
         display.createDisplay(
             buildAlchemyComponentDom(),

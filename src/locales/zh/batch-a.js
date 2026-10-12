@@ -193,11 +193,11 @@ export default {
             },
             actionPanel_showLevelProgress: {
                 label: '动作面板：显示等级进度',
-                help: '在动作面板中显示经验和等级进度估算',
+                help: '在动作面板（包括炼金面板）中显示经验和等级进度估算',
             },
             actionPanel_showSpeedTime: {
                 label: '动作面板：显示动作速度与时间',
-                help: '在动作面板中显示速度明细、效率和总时间',
+                help: '在动作面板（包括炼金面板）中显示速度明细、效率和总时间',
             },
             requiredMaterials: { label: '动作面板：显示所需材料总量与缺口', help: '输入数量后显示所需材料总量及缺口' },
             actionPanel_enhanceMatLimitProtections: {

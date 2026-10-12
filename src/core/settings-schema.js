@@ -426,14 +426,14 @@ export const settingsGroups = {
                 label: 'Action panel: Show level progress',
                 type: 'checkbox',
                 default: true,
-                help: 'Displays XP and level progress estimates inside action panels',
+                help: 'Displays XP and level progress estimates inside action panels, including the Alchemy panel',
             },
             actionPanel_showSpeedTime: {
                 id: 'actionPanel_showSpeedTime',
                 label: 'Action panel: Show action speed & time',
                 type: 'checkbox',
                 default: true,
-                help: 'Displays speed breakdown, efficiency, and total time inside action panels',
+                help: 'Displays speed breakdown, efficiency, and total time inside action panels, including the Alchemy panel',
             },
             requiredMaterials: {
                 id: 'requiredMaterials',

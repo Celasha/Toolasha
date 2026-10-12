@@ -476,9 +476,14 @@ export class AlchemyProfitDisplay {
         // Use cached input field if current one is not available
         const effectiveInputField = inputField || this.cachedInputField;
 
-        // Create Action Speed & Time section - price-independent, always attempted from `metrics`
+        // Create Action Speed & Time section - price-independent, gated only on its action-panel setting
         let speedTimeSection = null;
-        if (effectiveInputField && metrics.actionTime && metrics.efficiencyBreakdown) {
+        if (
+            config.getSetting('actionPanel_showSpeedTime') &&
+            effectiveInputField &&
+            metrics.actionTime &&
+            metrics.efficiencyBreakdown
+        ) {
             speedTimeSection = this.createActionSpeedTimeSection(metrics, effectiveInputField);
             if (speedTimeSection) {
                 speedTimeSection.id = 'mwi-alchemy-speed-time';
@@ -488,9 +493,9 @@ export class AlchemyProfitDisplay {
             }
         }
 
-        // Create Level Progress section - price-independent, always attempted from `metrics`
+        // Create Level Progress section - price-independent, gated only on its action-panel setting
         let levelProgressSection = null;
-        if (actionType && itemHrid) {
+        if (config.getSetting('actionPanel_showLevelProgress') && actionType && itemHrid) {
             levelProgressSection = this.createLevelProgressSection(actionType, itemHrid, metrics);
             if (levelProgressSection) {
                 levelProgressSection.id = 'mwi-alchemy-level-progress';
@@ -508,6 +513,17 @@ export class AlchemyProfitDisplay {
         // of which specific sections rendered, since Profitability alone may be legitimately
         // absent while the non-market sections are present.
         this.displayElement = profitSection || speedTimeSection || levelProgressSection;
+
+        // With every section hidden by settings there is nothing to mount; a hidden marker keeps
+        // checkAndUpdateDisplay from treating the panel as unmounted and rebuilding on every check.
+        if (!this.displayElement) {
+            const marker = document.createElement('div');
+            marker.id = 'mwi-alchemy-display-anchor';
+            marker.style.display = 'none';
+            marker.setAttribute('data-mwi-profit-display', 'true');
+            container.appendChild(marker);
+            this.displayElement = marker;
+        }
     }
 
     /**
@@ -1794,6 +1810,8 @@ export class AlchemyProfitDisplay {
         if (levelProgressSection && levelProgressSection.parentNode) {
             levelProgressSection.remove();
         }
+
+        document.getElementById('mwi-alchemy-display-anchor')?.remove();
 
         // Don't clear lastFingerprint here - we need to track state across recreations
     }
