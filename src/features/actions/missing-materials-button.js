@@ -1504,8 +1504,10 @@ function setupActionsCleanupObserver() {
                 isMarketplaceMarketListingsSelected(tabContainer) &&
                 reinjectActionsMarketplaceTabs(tabContainer)
             ) {
+                console.warn('[MissingMats] Marketplace tabs reinjected after a transient invalid state');
                 return;
             }
+            console.warn('[MissingMats] Marketplace tabs could not be reinjected - ending session');
             if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
         },
     });
