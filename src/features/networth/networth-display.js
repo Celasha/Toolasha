@@ -18,6 +18,57 @@ import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import networthExclusionPopup from './networth-exclusion-popup.js';
 import { removeExclusion } from './networth-exclusions.js';
 import { getItemName } from '../../utils/game-i18n.js';
+import { addStyles } from '../../utils/dom.js';
+
+// Chart series blue — matches networth-history-chart category colors.
+const FIXED_ASSET_COLOR = '#3b82f6';
+const PANEL_STYLES_ID = 'mwi-networth-panel-styles';
+
+function buildPanelCss() {
+    return `
+.mwi-nw-root { text-align: left; color: #ccc; font-size: 0.875rem; }
+.mwi-nw-iconrow { display: flex; align-items: center; gap: 6px; }
+.mwi-nw-headtoggle { cursor: pointer; font-weight: bold; flex: 1; display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.mwi-nw-headname { display: inline-flex; align-items: center; gap: 7px; color: #fff; }
+.mwi-nw-coin { width: 20px; height: 20px; border-radius: 6px; background: rgba(251,191,36,0.16); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; flex: none; }
+.mwi-nw-big { color: #fbbf24; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mwi-nw-chev { display: inline-block; width: 11px; color: rgba(255,255,255,0.4); font-size: 9px; transition: transform 0.15s; flex: none; }
+.mwi-nw-chev-open { transform: rotate(90deg); }
+details.mwi-nw-node { display: block; min-width: 0; }
+details.mwi-nw-node > summary { list-style: none; cursor: pointer; }
+details.mwi-nw-node > summary::-webkit-details-marker { display: none; }
+details.mwi-nw-node > summary .mwi-nw-chev { transform: rotate(0); }
+details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
+.mwi-nw-sharebar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 10px 2px 3px; }
+.mwi-nw-sharebar i { display: block; height: 100%; }
+.mwi-nw-sharelegend { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.45); padding: 0 4px 2px; }
+.mwi-nw-section { display: flex; align-items: center; justify-content: space-between; margin: 12px 2px 3px; padding: 3px 6px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.45); border-bottom: 1px solid rgba(255,255,255,0.08); }
+.mwi-nw-section-value { font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 600; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.mwi-nw-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 3px 6px; border-radius: 5px; font-size: 12px; min-width: 0; }
+.mwi-nw-kids > details > summary:hover, .mwi-nw-kids > .mwi-nw-row:hover { background: rgba(255,255,255,0.07); }
+.mwi-nw-kids > :nth-child(odd) > summary, .mwi-nw-kids > .mwi-nw-row:nth-child(odd) { background: rgba(255,255,255,0.03); }
+.mwi-nw-nm { color: inherit; overflow-wrap: anywhere; }
+.mwi-nw-count { color: rgba(255,255,255,0.4); font-size: 10.5px; margin-left: 4px; }
+.mwi-nw-val { color: #fbbf24; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mwi-nw-zero { color: rgba(255,255,255,0.3); font-weight: 400; }
+.mwi-nw-indent { border-left: 1px solid rgba(255,255,255,0.08); margin: 1px 0 1px 11px; padding-left: 9px; }
+.mwi-nw-lv1 { color: #ccc; }
+.mwi-nw-lv2 { color: #aaa; font-size: 11.5px; }
+.mwi-nw-lv3 { color: #999; font-size: 10.8px; }
+.mwi-nw-empty { color: rgba(255,255,255,0.45); }
+.mwi-nw-ev { padding: 4px 6px; margin: 1px 0; font-size: 10.3px; color: rgba(255,255,255,0.45); line-height: 1.7; border-radius: 5px; }
+.mwi-nw-ev div { color: rgba(255,255,255,0.45); }
+.mwi-nw-exclrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 6px; color: rgba(255,255,255,0.45); font-size: 11px; border-radius: 5px; }
+.mwi-nw-exclrow:nth-child(odd) { background: rgba(255,255,255,0.03); }
+.mwi-nw-exclname { text-decoration: line-through; overflow-wrap: anywhere; }
+.mwi-nw-iconbtn { cursor: pointer; font-size: 13px; opacity: 0.6; padding: 2px 3px; border-radius: 3px; line-height: 1; flex: none; }
+`;
+}
+
+function injectPanelStyles() {
+    document.getElementById(PANEL_STYLES_ID)?.remove();
+    addStyles(buildPanelCss(), PANEL_STYLES_ID);
+}
 
 /**
  * Header Display Component
@@ -258,6 +309,8 @@ class NetworthInventoryDisplay {
      * Initialize inventory panel display
      */
     initialize() {
+        injectPanelStyles();
+
         // 1. Check if element already exists (handles late initialization)
         const existingElem = document.querySelector('[class*="Inventory_items"]');
         if (existingElem) {
