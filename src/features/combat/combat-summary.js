@@ -5,8 +5,10 @@
 
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
+import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import { t } from '../../core/i18n.js';
+import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { formatLargeNumber } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { getItemPrices } from '../../utils/market-data.js';
@@ -154,6 +156,15 @@ class CombatSummary {
                 if (loot.itemHrid === '/items/coin') {
                     totalPriceAsk += itemCount;
                     totalPriceBid += itemCount;
+                } else if (dataManager.getItemDetails(loot.itemHrid)?.isOpenable) {
+                    // Openable containers have no market listing: value by expected value (matches Combat Stats)
+                    const ev =
+                        expectedValueCalculator.getCachedValue(loot.itemHrid) ||
+                        expectedValueCalculator.calculateSingleContainer(loot.itemHrid);
+                    if (ev !== null && ev > 0) {
+                        totalPriceAsk += ev * itemCount;
+                        totalPriceBid += ev * itemCount;
+                    }
                 } else {
                     // Other items: get market price
                     const prices = getItemPrices(loot.itemHrid);

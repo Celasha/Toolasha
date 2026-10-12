@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     getItemPrices: vi.fn(),
+    getItemDetails: vi.fn(),
+    getCachedValue: vi.fn(),
+    calculateSingleContainer: vi.fn(),
     capturedHandler: null,
 }));
 
@@ -35,7 +38,21 @@ vi.mock('../../utils/market-data.js', () => ({
     getItemPrices: (...args) => mocks.getItemPrices(...args),
 }));
 
+vi.mock('../../core/data-manager.js', () => ({
+    default: {
+        getItemDetails: (...args) => mocks.getItemDetails(...args),
+    },
+}));
+
+vi.mock('../market/expected-value-calculator.js', () => ({
+    default: {
+        getCachedValue: (...args) => mocks.getCachedValue(...args),
+        calculateSingleContainer: (...args) => mocks.calculateSingleContainer(...args),
+    },
+}));
+
 import combatSummary from './combat-summary.js';
+import { formatLargeNumber } from '../../utils/formatters.js';
 
 function battlePanelDom() {
     document.body.innerHTML = `
@@ -58,6 +75,9 @@ describe('CombatSummary - outlier guard propagation', () => {
         mocks.capturedHandler = null;
         combatSummary.disable();
         mocks.getItemPrices.mockReturnValue({ ask: 100, bid: 90, askOutlier: false, bidOutlier: false });
+        mocks.getItemDetails.mockReturnValue({});
+        mocks.getCachedValue.mockReturnValue(null);
+        mocks.calculateSingleContainer.mockReturnValue(null);
     });
 
     test('flags the revenue lines with the outlier warning when a loot item price was substituted', async () => {
@@ -116,5 +136,61 @@ describe('CombatSummary - outlier guard propagation', () => {
         expect(mocks.getItemPrices).not.toHaveBeenCalled();
         const revenueDiv = document.querySelector('#mwi-combat-revenue');
         expect(revenueDiv.innerHTML).not.toContain('⚠');
+    });
+
+    test('values openable containers by expected value instead of market price', async () => {
+        battlePanelDom();
+        mocks.getItemDetails.mockImplementation((hrid) => (hrid === '/items/purple_chest' ? { isOpenable: true } : {}));
+        mocks.getCachedValue.mockImplementation((hrid) => (hrid === '/items/purple_chest' ? 1000000 : null));
+        combatSummary.initialize();
+
+        await mocks.capturedHandler({
+            unit: {
+                totalLootMap: { a: { itemHrid: '/items/purple_chest', count: 3 } },
+                totalSkillExperienceMap: {},
+            },
+        });
+        await flushMicrotasks();
+
+        expect(mocks.getItemPrices).not.toHaveBeenCalled();
+        const revenueDiv = document.querySelector('#mwi-combat-revenue');
+        expect(revenueDiv.textContent).toContain(formatLargeNumber(3000000));
+    });
+
+    test('falls back to calculating the container expected value when it is not cached', async () => {
+        battlePanelDom();
+        mocks.getItemDetails.mockReturnValue({ isOpenable: true });
+        mocks.getCachedValue.mockReturnValue(null);
+        mocks.calculateSingleContainer.mockReturnValue(500000);
+        combatSummary.initialize();
+
+        await mocks.capturedHandler({
+            unit: {
+                totalLootMap: { a: { itemHrid: '/items/purple_chest', count: 2 } },
+                totalSkillExperienceMap: {},
+            },
+        });
+        await flushMicrotasks();
+
+        const revenueDiv = document.querySelector('#mwi-combat-revenue');
+        expect(revenueDiv.textContent).toContain(formatLargeNumber(1000000));
+    });
+
+    test('contributes nothing for an openable with no resolvable expected value', async () => {
+        battlePanelDom();
+        mocks.getItemDetails.mockReturnValue({ isOpenable: true });
+        combatSummary.initialize();
+
+        await mocks.capturedHandler({
+            unit: {
+                totalLootMap: { a: { itemHrid: '/items/purple_chest', count: 2 } },
+                totalSkillExperienceMap: {},
+            },
+        });
+        await flushMicrotasks();
+
+        expect(mocks.getItemPrices).not.toHaveBeenCalled();
+        const revenueDiv = document.querySelector('#mwi-combat-revenue');
+        expect(revenueDiv.textContent).toContain(formatLargeNumber(0));
     });
 });
