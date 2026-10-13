@@ -459,3 +459,57 @@ describe('_renderOptimizerResults - Equipment Progression sort control', () => {
         expect(slotLabelOrder(container)).toEqual(['Alpha', 'Bravo', 'Charlie']);
     });
 });
+
+describe("_groupTiers - tier cost follows the tier's first breakpoint", () => {
+    const entry = (itemHrid, enhancementLevel, cost, extra = {}) => ({
+        itemHrid,
+        itemName: itemHrid,
+        enhancementLevel,
+        score: 100,
+        hasMissingPrice: false,
+        isOutlier: false,
+        xpScore: 110,
+        goldScore: 120,
+        cost,
+        costIsIncomplete: false,
+        ...extra,
+    });
+
+    test('a tier spanning several breakpoints keeps the first breakpoint cost, matching its scores and label', () => {
+        const ui = new SkillingSimulatorUI();
+        const tiers = ui._groupTiers([
+            entry('/items/brewers_bottoms', 7, 285e6),
+            entry('/items/brewers_bottoms', 10, 5e9),
+            entry('/items/brewers_bottoms', 20, 577.7e9),
+        ]);
+
+        expect(tiers).toHaveLength(1);
+        expect(tiers[0].fromLevel).toBe(7);
+        expect(tiers[0].toLevel).toBe(20);
+        expect(tiers[0].cost).toBe(285e6);
+        expect(tiers[0].xpScore).toBe(110);
+        expect(tiers[0].goldScore).toBe(120);
+    });
+
+    test('costIsIncomplete also stays with the first breakpoint', () => {
+        const ui = new SkillingSimulatorUI();
+        const tiers = ui._groupTiers([
+            entry('/items/brewers_bottoms', 7, 285e6),
+            entry('/items/brewers_bottoms', 20, 0, { costIsIncomplete: true }),
+        ]);
+
+        expect(tiers[0].costIsIncomplete).toBe(false);
+    });
+
+    test('a new item starts a new tier with its own first-breakpoint cost', () => {
+        const ui = new SkillingSimulatorUI();
+        const tiers = ui._groupTiers([
+            entry('/items/a', 7, 1e6),
+            entry('/items/a', 10, 9e6),
+            entry('/items/b', 12, 4e6),
+            entry('/items/b', 20, 8e9),
+        ]);
+
+        expect(tiers.map((tier) => tier.cost)).toEqual([1e6, 4e6]);
+    });
+});

@@ -2376,8 +2376,9 @@ class SkillingSimulatorUI {
                 // tier, matching toLevel above.
                 current.hasMissingPrice = entry.hasMissingPrice;
                 current.isOutlier = entry.isOutlier;
-                current.cost = entry.cost;
-                current.costIsIncomplete = entry.costIsIncomplete;
+                // cost/costIsIncomplete deliberately stay with the tier's first breakpoint: the
+                // tier's label, xpScore and goldScore all describe that entry, so the cost of
+                // reaching it (and the payback/ratios derived from it) must too.
             }
         }
         if (current) tiers.push(current);
