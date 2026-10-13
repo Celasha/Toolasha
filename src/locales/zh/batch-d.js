@@ -333,6 +333,11 @@ export default {
         marketDataUnavailable: '⚠️ 市场数据不可用',
         outdatedData: '⚠️ 正在使用过期的市场数据',
     },
+    characterDataWarning: {
+        message: 'Toolasha 未收到你的角色数据，大部分功能将无法使用。请刷新页面以修复。',
+        reloadButton: '刷新页面',
+        dismissLabel: '关闭',
+    },
     marketData: {
         outlierPriceWarningTooltip:
             '该价格明显偏离游戏官方参考市场价值的正常区间，因此 Toolasha 已改用参考价值。可在“设置 → 定价与利润”中调整或关闭此功能。',

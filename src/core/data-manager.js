@@ -12,6 +12,21 @@ import storage from './storage.js';
 import { mergeMarketListings } from '../utils/market-listings.js';
 import { SCROLL_BUFF_VALUES } from '../utils/scroll-buff-values.js';
 import { getMonsterName } from '../utils/game-i18n.js';
+import { showCharacterDataWarning, hideCharacterDataWarning } from './character-data-warning.js';
+
+const LOGIN_SCREEN_SELECTORS = [
+    '[class*="AuthComponent_authComponent"]',
+    '[class*="CharacterSelectPage_characterSelectPage"]',
+];
+
+/**
+ * True while the game is showing the login form or Character Select.
+ * @returns {boolean}
+ */
+function isAwaitingPlayerLogin() {
+    if (typeof document === 'undefined') return false;
+    return LOGIN_SCREEN_SELECTORS.some((selector) => document.querySelector(selector));
+}
 
 class DataManager {
     constructor() {
@@ -127,11 +142,18 @@ class DataManager {
                 return;
             }
 
-            // Give up after max attempts
             if (fallbackAttempts >= maxAttempts) {
+                // init_character_data only arrives after login and character selection, so
+                // waiting on either of those screens is not a failure - restart the window.
+                if (isAwaitingPlayerLogin()) {
+                    fallbackAttempts = 0;
+                    return;
+                }
+
                 console.error(
                     '[DataManager] Character data not received after 30 seconds. WebSocket hook may have failed.'
                 );
+                showCharacterDataWarning();
                 stopFallbackInterval();
             }
         }, 500); // Check every 500ms
@@ -348,6 +370,7 @@ class DataManager {
             // Include flag to indicate if this is a character switch vs first load
             // IMPORTANT: Mutate data object instead of spreading to avoid copying MB of data
             data._isCharacterSwitch = isCharacterSwitch;
+            hideCharacterDataWarning();
             this.emit('character_initialized', data);
             connectionState.handleCharacterInitialized(data);
         });

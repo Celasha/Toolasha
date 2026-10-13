@@ -2575,6 +2575,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         marketDataUnavailable: '⚠️ Market data unavailable',
         outdatedData: '⚠️ Using outdated market data',
     },
+    characterDataWarning: {
+        message:
+            "Toolasha didn't receive your character data, so most features won't work. Refresh the page to fix this.",
+        reloadButton: 'Refresh page',
+        dismissLabel: 'Dismiss',
+    },
     networthCalculator: {
         guildBuffDisplayName: (p) => `Shrine of ${p.shrine} - ${p.type}`,
         otherCategoryFallbackLabel: 'Other',
