@@ -149,7 +149,9 @@ class MarketOrderTotals {
         this.displayElement.classList.add('mwi-market-order-totals');
         this.displayElement.style.cssText = `
             display: flex;
-            gap: 8px;
+            flex-wrap: wrap;
+            gap: 2px 8px;
+            max-width: 100%;
             font-size: 0.85em;
             color: #aaa;
             margin-top: 4px;
@@ -190,8 +192,10 @@ class MarketOrderTotals {
         // Check if we have no data yet (all zeros)
         const hasNoData = totals.buyOrders === 0 && totals.sellOrders === 0 && totals.unclaimed === 0;
 
-        this.displayElement.style.justifyContent = hasNoData ? 'flex-end' : 'flex-start';
-        this.displayElement.style.width = hasNoData ? '100%' : '';
+        // Right-align both states so wrapped rows line up with the header
+        // column; on desktop (single row) this is visually identical.
+        this.displayElement.style.justifyContent = 'flex-end';
+        this.displayElement.style.width = '100%';
 
         if (hasNoData) {
             const marketplaceIcon = this.getMarketplaceIcon();
@@ -221,7 +225,10 @@ class MarketOrderTotals {
         const soValue = formatKMB(totals.sellOrders);
         const unclaimedValue = formatKMB(totals.unclaimed);
 
-        const itemStyle = 'display: flex; align-items: center; gap: 4px;';
+        // flex:none + nowrap makes each item an atomic unit: on narrow
+        // screens the whole group wraps to the next line instead of breaking
+        // inside an item.
+        const itemStyle = 'display: flex; align-items: center; gap: 4px; flex: none; white-space: nowrap;';
         const tileStyle =
             'display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 8px; font-size: 11px; flex: none;';
 
