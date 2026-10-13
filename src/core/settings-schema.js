@@ -485,11 +485,11 @@ export const settingsGroups = {
                 type: 'select',
                 default: 'absolute',
                 options: [
-                    { value: 'absolute', label: 'Clock time only (Complete at 14:32)' },
+                    { value: 'absolute', label: 'Clock time only (Complete at 14:32 or 2:32 PM)' },
                     { value: 'relative', label: 'Cumulative duration only (Complete in 3h 40m)' },
                     { value: 'both', label: 'Both' },
                 ],
-                help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
+                help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip. Clock times follow the 12/24-hour and date order set under Market: Time format and Date format for date/time display.',
             },
         },
     },

@@ -2953,9 +2953,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             actionQueue_completionTimeStyle: {
                 label: 'Queued actions: Completion display',
-                help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
+                help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip. Clock times follow the 12/24-hour and date order set under Market: Time format and Date format for date/time display.',
                 options: {
-                    absolute: 'Clock time only (Complete at 14:32)',
+                    absolute: 'Clock time only (Complete at 14:32 or 2:32 PM)',
                     relative: 'Cumulative duration only (Complete in 3h 40m)',
                     both: 'Both',
                 },
