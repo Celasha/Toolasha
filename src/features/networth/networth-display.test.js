@@ -6,7 +6,6 @@ vi.mock('../../core/config.js', () => ({
     default: {
         COLOR_WARNING: '#ffa500',
         COLOR_ACCENT: '#22c55e',
-        COLOR_GOLD: '#ffa500',
         getSetting: vi.fn(() => true),
     },
 }));
@@ -242,19 +241,19 @@ describe('update() panel structure', () => {
     });
 });
 
-describe('gold color follows the color_gold setting', () => {
-    const originalGold = config.COLOR_GOLD;
+describe('gold and net worth values follow the accent color setting', () => {
+    const originalAccent = config.COLOR_ACCENT;
 
     afterEach(() => {
-        config.COLOR_GOLD = originalGold;
+        config.COLOR_ACCENT = originalAccent;
         networthInventoryDisplay.container = null;
         networthHeaderDisplay.container = null;
         document.head.querySelectorAll('#mwi-networth-panel-styles').forEach((el) => el.remove());
         document.body.innerHTML = '';
     });
 
-    test('panel value and total styles use COLOR_GOLD instead of a hardcoded amber', () => {
-        config.COLOR_GOLD = '#123456';
+    test('panel value and total styles use COLOR_ACCENT instead of a hardcoded amber', () => {
+        config.COLOR_ACCENT = '#123456';
         document.body.innerHTML = '<div id="mwi-nw-test-host"></div>';
         networthInventoryDisplay.container = document.getElementById('mwi-nw-test-host');
 
@@ -267,8 +266,8 @@ describe('gold color follows the color_gold setting', () => {
         expect(css).not.toContain('fbbf24');
     });
 
-    test('header gold line uses COLOR_GOLD', () => {
-        config.COLOR_GOLD = '#123456';
+    test('header gold line uses COLOR_ACCENT', () => {
+        config.COLOR_ACCENT = '#123456';
         document.body.innerHTML = '<div id="mwi-nw-header-host"></div>';
         networthHeaderDisplay.container = document.getElementById('mwi-nw-header-host');
 
