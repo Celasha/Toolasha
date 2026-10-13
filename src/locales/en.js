@@ -4015,4 +4015,169 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
         },
     },
+
+    // ------------------------------------------------------------------
+    // Battle Verifier — dev tool (?toolasha_dev=1), Issue #779 data capture
+    // ------------------------------------------------------------------
+    bv: {
+        fabLabel: '⚔️ Battle Verifier',
+        btnTitle: 'Battle Verifier (Issue #779 data capture)',
+        loaded: 'BattleVerifier v4.2 loaded (data owner: {{name}})',
+        resumed: 'Unfinished capture detected — resumed automatically',
+        unknownCharacter: 'Unknown character',
+        unknownVersion: 'unknown',
+
+        // Migration / compatibility logs
+        highVersionBackupFail: 'Failed to back up higher-version data: {{msg}}',
+        highVersionIsolated:
+            'Data version v{{v}} is newer than current v4; isolated as fresh data (original kept in backup key)',
+        legacyBackupFail: 'Failed to back up legacy data: {{msg}}',
+        legacyMigrated:
+            'Legacy v{{v}} data detected and migrated to v4 (original backed up; use "Restore legacy backup" to roll back)',
+        migratedAway:
+            'Legacy shared data already owned by another character ({{name}}); fresh data started for this character',
+        sharedOwnedByOther:
+            'Legacy shared data belongs to {{latest}}; fresh data started for this character ({{current}})',
+        claimed:
+            'Claimed legacy shared data for this character ({{owner}}); teammate name mistakenly stored during party play corrected to {{owner}}',
+        migrateFail: 'Failed to migrate legacy shared data: {{msg}} (original data remains in the legacy key)',
+        unknownStatus: 'Unknown capture status "{{status}}"; reset to not started',
+        degraded: 'Legacy status "{{status}}" is missing required snapshots; degraded to not started',
+        noBackup: '⚠️ No legacy data backup available to restore',
+        restored: 'Restored from legacy data backup (progress reflects the state at backup time)',
+        saveFail: 'Failed to save data: {{msg}}',
+        nameAligned: 'ℹ️ Character record aligned to current character {{name}} (was {{old}})',
+        postSampleDone: 'Post-offline consecutive message snapshot complete',
+
+        // State machine logs
+        g1Before: '✅ Group 1 pre-offline snapshot captured (battleId={{id}})',
+        g1WaitHint: '👉 Close the entire browser now, wait at least 30 minutes, then reopen',
+        g1Done: '✅ Group 1 offline test complete! Offline {{dur}}, battleId {{from}} → {{to}} (+{{delta}})',
+        g1NextHint: '👉 Next (Group 2): keep idling, then switch to a map you cannot beat',
+        g1Invalid:
+            '⚠️ Group 1 invalidated: combat restarted during offline. Click "Reset" and retry on a map without wipes',
+        g2Baseline: '✅ Group 2 baseline captured (battleId={{id}})',
+        g2Hint: '👉 Go to a map you are sure you cannot beat and start combat; let the party wipe naturally',
+        g2Death: '☠️ Entered death map (battleId={{id}}); waiting for wipe…',
+        g2HowFromScratch: 'combat restarted from scratch (same session, battleId fell back)',
+        g2HowRestart: 'combat restarted',
+        g2Done: '✅ Group 2 wipe test complete ({{how}})! Death-map max battleId={{max}}, after restart={{to}}',
+        g2NextHint: '👉 Next (Group 3): keep idling, then manually "Stop" and "Start" the same map',
+        g3Baseline: '✅ Group 3 baseline captured (battleId={{id}})',
+        g3Hint: '👉 Click the game "Stop", then immediately "Start" the same map',
+        allDone: '🎉 All three groups captured!',
+        reportGenerated: 'Standard report generated automatically',
+        reportCopied: '✅ Report copied to clipboard automatically',
+        reportCopyFail: '⚠️ Auto-copy failed; click the "Copy report" button on the panel',
+        copyOk: '✅ Report copied to clipboard',
+        copyFail: '❌ Copy failed',
+        exportedFile: '✅ Data exported to file {{file}}',
+        exportFail: 'Failed to export file: {{msg}}',
+        exportedClipboard: '✅ Data JSON also copied to clipboard',
+        exportClipboardFail: '⚠️ Clipboard copy failed (file download unaffected)',
+        dungeonNoMsg: '⚠️ Not enough messages yet; fight a few waves in a dungeon first',
+        dungeonReject: '⚠️ No messages are from dungeon combat (possibly on a regular map); sample not saved',
+        dungeonSaved: '✅ Dungeon consecutive message snapshot saved ({{n}} messages)',
+        captureStarted: 'Capture started; waiting for the first battle message…',
+        captureStartHint: '👉 Confirm idle combat has started (damage numbers visible on screen)',
+        captureContinued: 'Capture continued',
+        capturePaused: 'Capture paused (progress kept)',
+        resetDone: 'Data reset',
+        selfTestDone: 'Self-test complete: {{passed}}/{{total}} passed',
+        selfTestFail: '❌ Self-test failed: {{name}}',
+
+        // Self-test assertion names
+        st: {
+            g1Capture: 'G1-pre-offline capture',
+            g1Online5s: 'G1-no premature advance within 5s online',
+            g1InvalidOnRestart: 'G1-offline but combat restarted → marked invalid',
+            g1Offline40m: 'G1-same-session offline 40 min → complete',
+            g2Baseline: 'G2-baseline capture',
+            g2DeathMap: 'G2-enter death map → waiting for wipe',
+            g2MaxWave: 'G2-death map records max wave',
+            g2WipeDone: 'G2-new combat after wipe → complete',
+            g3Before: 'G3-pre-restart capture',
+            g3NoAdvance: 'G3-same session does not advance',
+            g3Done: 'G3-after restart → all complete with auto report',
+        },
+
+        // Panel rendering
+        itemG1: 'Group 1 offline test',
+        itemG1InvalidSuffix: ' (invalidated, reset required)',
+        itemG2: 'Group 2 wipe test',
+        itemG3: 'Group 3 restart test',
+        itemDungeon: 'Dungeon sample (optional)',
+        battleNow: 'Current battle: …',
+        reportAreaTitle: '📋 Auto-generated report',
+        btnStart: '▶ Start capture',
+        btnContinue: '▶ Resume capture',
+        btnPause: '⏸ Pause',
+        btnDungeon: '☠ Dungeon sample',
+        btnDungeonTitle: 'Click after fighting a few waves in a dungeon',
+        btnCopy: '📋 Copy report',
+        btnExport: '⬇ Export',
+        btnExportTitle: 'Export all capture data of the current character (JSON file download + clipboard)',
+        btnReset: 'Reset',
+        wsOk: 'WebSocket: <span style="color:#00ff99;">● OK</span> ({{n}} messages this session · {{age}}s ago)',
+        wsWaiting: 'WebSocket: <span style="color:#ffaa00;">○ Waiting for battle messages…</span>',
+        battleInfo: 'Current battle: battleId={{id}} · running {{dur}}',
+        battleNone: 'Current battle: none detected (has idling started?)',
+        g1CountdownWait:
+            'Group 1 waiting: <span style="color:#ffaa00;">{{dur}} remaining</span> (keep the browser closed)',
+        g1CountdownReady:
+            'Group 1 waiting: <span style="color:#00ff99;">30 min reached; reopening the game completes it automatically</span>',
+
+        // Step guidance
+        step: {
+            idle: {
+                title: 'Ready to start (3 groups total)',
+                waiting:
+                    'Waiting for the first battle message… Confirm <strong>idle combat has started</strong> (damage numbers visible).',
+                hint: '<strong>Order:</strong> ① Start idle combat (any map) ② Click "▶ Start capture" ③ Follow the guide; the report is generated automatically',
+            },
+            g1before: {
+                title: 'Step 1/3 · Offline test',
+                invalid:
+                    '⚠️ Combat restarted during offline; this group is invalidated. Click "Reset" and retry on a map without wipes.',
+                wait: '✅ Pre-offline captured (battleId={{id}}).<br><strong>Now: close the entire browser</strong> and wait at least 30 minutes.<br>After reopening, <strong>no action needed</strong> — it resumes automatically.',
+            },
+            g1after: {
+                title: 'Step 2/3 · Wipe test (post-offline snapshot in progress)',
+                instruction:
+                    'Auto-collecting post-offline consecutive messages…<br><strong>Just keep idling</strong>; the Group 2 baseline is set automatically in seconds.<br>Then: switch to a map you are sure you cannot beat.',
+            },
+            g2base: {
+                title: 'Step 2/3 · Wipe test (baseline captured)',
+                instruction:
+                    'Baseline battleId={{id}}.<br><strong>Go to a map you cannot beat and start combat</strong>; do not stop manually — let the party wipe naturally.',
+            },
+            g2wait: {
+                title: 'Step 2/3 · Wipe test (fighting in death map)',
+                instruction:
+                    '☠️ Death map has reached battleId={{id}}.<br><strong>Waiting for the wipe…</strong> After the wipe, reopening completes this group automatically.',
+            },
+            g2after: {
+                title: 'Step 3/3 · Restart test (baseline ready)',
+                instruction:
+                    'The next battle message becomes the Group 3 baseline.<br><strong>Then: manually click "Stop", then immediately "Start" the same map.</strong>',
+            },
+            g3before: {
+                title: 'Step 3/3 · Restart test (baseline captured)',
+                instruction:
+                    'Baseline battleId={{id}}.<br><strong>Now: click "Stop", then immediately "Start" the same map.</strong><br>The report is generated automatically on completion.',
+            },
+            done: {
+                title: '🎉 All complete · report generated',
+                instruction:
+                    'The standard report has been generated and copied to the clipboard (if permitted).<br>Click "📋 Copy report" to copy again, then paste it directly into Issue #779.',
+            },
+        },
+
+        // Duration formatting
+        duration: {
+            zero: '0m',
+            h: '{{h}}h{{min}}m',
+            m: '{{min}}m',
+        },
+    },
 };
