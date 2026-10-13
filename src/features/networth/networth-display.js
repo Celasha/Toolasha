@@ -32,7 +32,6 @@ function buildPanelCss() {
 .mwi-nw-headtoggle { cursor: pointer; font-weight: bold; flex: 1; display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .mwi-nw-headtoggle:hover .mwi-nw-chev { background: rgba(255,255,255,0.2); color: #fff; }
 .mwi-nw-headname { display: inline-flex; align-items: center; gap: 7px; color: #fff; }
-.mwi-nw-coin { width: 20px; height: 20px; border-radius: 6px; background: color-mix(in srgb, ${accent} 16%, transparent); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; flex: none; }
 .mwi-nw-big { color: ${accent}; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mwi-nw-chev { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.75); font-size: 10px; line-height: 1; transition: transform 0.15s, background 0.15s, color 0.15s; flex: none; }
 #mwi-networth-chev { width: 16px; height: 16px; font-size: 11px; }
@@ -600,7 +599,7 @@ class NetworthInventoryDisplay {
             <div class="mwi-nw-root">
                 <div class="mwi-networth-icon-row mwi-nw-iconrow">
                     <div class="mwi-nw-headtoggle" id="mwi-networth-toggle">
-                        <span class="mwi-nw-headname"><span class="mwi-nw-chev" id="mwi-networth-chev">▸</span><span class="mwi-nw-coin">🪙</span>${t('networthDisplay.netWorthName')}</span>
+                        <span class="mwi-nw-headname"><span class="mwi-nw-chev" id="mwi-networth-chev">▸</span>${t('networthDisplay.netWorthName')}</span>
                         <span class="mwi-nw-big">${totalNetworth}</span>
                     </div>
                     ${
