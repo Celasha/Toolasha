@@ -19,6 +19,7 @@ import {
     calculateEnhancementMaterialRequirements,
 } from '../../utils/material-calculator.js';
 import { calculateAlchemyMaterialRequirements } from '../../utils/alchemy-material-calculator.js';
+import { getCatalystWhatIfResult, onCatalystWhatIfChange } from '../alchemy/alchemy-catalyst-whatif.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createAutofillManager, getReactFiberFromElement } from '../../utils/marketplace-autofill.js';
@@ -58,6 +59,7 @@ let alchemyDomObserverUnregister = null;
 let processedAlchemyPanels = new WeakSet();
 const alchemyPanelWatchers = new Map();
 let alchemyDebounceTimeout = null;
+let catalystWhatIfUnsubscribe = null;
 let inventoryUpdateHandler = null;
 let activeWorkflowModel = null;
 let actionsSessionId = null;
@@ -101,6 +103,14 @@ export function initialize() {
         'SkillActionDetail_enhancingComponent__17bOx',
         (panel) => processEnhancingPanel(panel)
     );
+
+    // The Alchemy button also covers the catalyst picked in the profit display's what-if
+    catalystWhatIfUnsubscribe?.();
+    catalystWhatIfUnsubscribe = onCatalystWhatIfChange(() => {
+        document
+            .querySelectorAll('[class*="SkillActionDetail_alchemyComponent"]')
+            .forEach((panel) => updateAlchemyButton(panel));
+    });
 
     // Watch for Alchemy panels appearing
     alchemyDomObserverUnregister = domObserver.onClass(
@@ -154,6 +164,11 @@ export function cleanup() {
     if (alchemyDomObserverUnregister) {
         alchemyDomObserverUnregister();
         alchemyDomObserverUnregister = null;
+    }
+
+    if (catalystWhatIfUnsubscribe) {
+        catalystWhatIfUnsubscribe();
+        catalystWhatIfUnsubscribe = null;
     }
 
     if (actionsUpdatedHandler) {
@@ -1144,11 +1159,12 @@ function updateAlchemyButton(panel) {
 
     const numActions = parseInt(input?.value, 10) || 0;
     const accountForQueue = !(config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false);
+    const catalyst = getCatalystWhatIfResult();
 
     let materials = [];
     let disabled = true;
     if (numActions > 0) {
-        materials = calculateAlchemyMaterialRequirements(selection.itemHrid, numActions, accountForQueue);
+        materials = calculateAlchemyMaterialRequirements(selection.itemHrid, numActions, accountForQueue, catalyst);
         disabled = !materials.some((material) => material.isTradeable !== false && Number(material.missing) > 0);
     }
 
@@ -1156,7 +1172,7 @@ function updateAlchemyButton(panel) {
         selection.itemHrid,
         numActions,
         disabled,
-        ...materials.map((m) => `${m.required}:${m.have}:${m.queued}:${m.missing}`),
+        ...materials.map((m) => `${m.itemHrid}:${m.required}:${m.have}:${m.queued}:${m.missing}`),
     ].join('|');
     if (existingButton?.dataset.mwiState === stateKey) {
         return;
@@ -1164,7 +1180,7 @@ function updateAlchemyButton(panel) {
     existingButton?.remove();
 
     const button = createMissingMaterialsButton(materials, null, numActions, disabled, () =>
-        handleAlchemyMissingMaterialsClick(selection.itemHrid, numActions)
+        handleAlchemyMissingMaterialsClick(selection.itemHrid, numActions, catalyst)
     );
     button.dataset.mwiState = stateKey;
     button.style.boxSizing = 'border-box';
@@ -1360,18 +1376,19 @@ async function handleMissingMaterialsClick(actionHrid, numActions) {
  * Handle missing materials button click (Alchemy panel)
  * @param {string} itemHrid - Unenhanced item being processed
  * @param {number} numActions - Repeat count
+ * @param {{catalystHrid: string|null, successRate: number}|null} [catalyst] - What-if catalyst to include
  */
-async function handleAlchemyMissingMaterialsClick(itemHrid, numActions) {
+async function handleAlchemyMissingMaterialsClick(itemHrid, numActions, catalyst = null) {
     await startMarketplaceWorkflow({
         computeMaterials: () => {
             const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
-            return calculateAlchemyMaterialRequirements(itemHrid, numActions, !ignoreQueue);
+            return calculateAlchemyMaterialRequirements(itemHrid, numActions, !ignoreQueue, catalyst);
         },
         returnContext: {
             actionHrid: null,
             numActions: 0,
             enhancementContext: null,
-            alchemyContext: { itemHrid, numActions },
+            alchemyContext: { itemHrid, numActions, catalyst },
         },
     });
 }
@@ -1999,7 +2016,12 @@ function updateTabsOnInventoryChange() {
         // Alchemy mode
         const ctx = activeWorkflowModel.returnContext.alchemyContext;
         const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
-        updatedMaterials = calculateAlchemyMaterialRequirements(ctx.itemHrid, ctx.numActions, !ignoreQueue);
+        updatedMaterials = calculateAlchemyMaterialRequirements(
+            ctx.itemHrid,
+            ctx.numActions,
+            !ignoreQueue,
+            ctx.catalyst
+        );
     } else if (activeWorkflowModel?.returnContext?.actionHrid && activeWorkflowModel.returnContext.numActions > 0) {
         // Production mode
         const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;

@@ -6,7 +6,7 @@
  * disable) or market data is unavailable. Only Profitability is gated on those conditions.
  */
 
-import { describe, expect, test, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, test, vi, beforeEach } from 'vitest';
 
 const settingsState = {};
 
@@ -75,6 +75,7 @@ vi.mock('../../utils/timer-registry.js', () => ({
 }));
 
 const { AlchemyProfitDisplay } = await import('./alchemy-profit-display.js');
+const catalystWhatIf = await import('./alchemy-catalyst-whatif.js');
 
 function makeFullProfitData(overrides = {}) {
     return {
@@ -344,6 +345,66 @@ describe('AlchemyProfitDisplay.createDisplay ownership split (TLA-026)', () => {
         }
     });
 
+    describe('catalyst what-if', () => {
+        const primeData = () =>
+            makeFullProfitData({
+                successRate: 0.75,
+                profitPerHour: 5000,
+                profitPerDay: 120000,
+                catalystCost: {
+                    itemHrid: '/items/prime_catalyst',
+                    price: 9000,
+                    costPerSuccess: 9000,
+                    costPerAttempt: 6750,
+                    costPerHour: 1000,
+                },
+            });
+
+        afterEach(() => catalystWhatIf.resetCatalystWhatIf());
+
+        test('16. the picker offers equipped, none, type-specific and prime, and selecting one updates the shared choice', () => {
+            display.createDisplay(infoContainer, makeFullProfitData(), 'coinify', ITEM_HRID, true);
+
+            const buttons = Array.from(document.querySelectorAll('[data-mwi-catalyst-choice]'));
+            expect(buttons.map((b) => b.dataset.mwiCatalystChoice)).toEqual([
+                'equipped',
+                'none',
+                'typeSpecific',
+                'prime',
+            ]);
+
+            buttons[3].click();
+
+            expect(catalystWhatIf.getCatalystChoice()).toBe('prime');
+        });
+
+        test('17. no warning is shown while the equipped catalyst is selected', () => {
+            display.createDisplay(infoContainer, makeFullProfitData(), 'coinify', ITEM_HRID, true);
+
+            expect(document.getElementById('mwi-alchemy-profit').textContent).not.toContain(
+                'do not reflect your real outcome'
+            );
+        });
+
+        test('18. a what-if drives Profitability and warns, while Speed & Time and Level Progress keep the equipped metrics', () => {
+            catalystWhatIf.setCatalystChoice('prime');
+
+            display.createDisplay(infoContainer, makeFullProfitData(), 'coinify', ITEM_HRID, true, {
+                choice: 'prime',
+                data: primeData(),
+            });
+
+            const profitText = document.getElementById('mwi-alchemy-profit').textContent;
+            expect(profitText).toContain('do not reflect your real outcome');
+            expect(profitText).toContain('75');
+            expect(document.getElementById('mwi-alchemy-speed-time')).not.toBeNull();
+            expect(document.getElementById('mwi-alchemy-level-progress')).not.toBeNull();
+            const levelText = document.getElementById('mwi-alchemy-level-progress').textContent;
+            expect(levelText).toContain('70.00% success');
+            expect(levelText).not.toContain('75.00% success');
+        });
+    });
+
     test('transmute/decompose still work end-to-end through the non-market path', () => {
         display.createDisplay(
             buildAlchemyComponentDom(),
@@ -384,7 +445,14 @@ describe('AlchemyProfitDisplay.updateDisplay routing to the pure metrics fallbac
         await display.updateDisplay(infoContainer);
 
         expect(alchemyProfitCalculatorMock.calculateAlchemyActionMetrics).toHaveBeenCalledWith(ITEM_HRID, 'coinify');
-        expect(display.createDisplay).toHaveBeenCalledWith(infoContainer, pureMetrics, 'coinify', ITEM_HRID, false);
+        expect(display.createDisplay).toHaveBeenCalledWith(
+            infoContainer,
+            pureMetrics,
+            'coinify',
+            ITEM_HRID,
+            false,
+            null
+        );
     });
 
     test('10. uses the full profit data directly (no fallback call) and renders with hasProfitData=true when market data is available', async () => {
@@ -394,7 +462,61 @@ describe('AlchemyProfitDisplay.updateDisplay routing to the pure metrics fallbac
         await display.updateDisplay(infoContainer);
 
         expect(alchemyProfitCalculatorMock.calculateAlchemyActionMetrics).not.toHaveBeenCalled();
-        expect(display.createDisplay).toHaveBeenCalledWith(infoContainer, fullProfitData, 'coinify', ITEM_HRID, true);
+        expect(display.createDisplay).toHaveBeenCalledWith(
+            infoContainer,
+            fullProfitData,
+            'coinify',
+            ITEM_HRID,
+            true,
+            null
+        );
+    });
+
+    test('12. with a what-if catalyst chosen, Profitability gets the forced data and the shared result is published', async () => {
+        const liveData = makeFullProfitData();
+        const forcedData = makeFullProfitData({
+            successRate: 0.875,
+            catalystCost: {
+                itemHrid: '/items/prime_catalyst',
+                price: 1,
+                costPerSuccess: 1,
+                costPerAttempt: 1,
+                costPerHour: 1,
+            },
+        });
+        alchemyProfitCalculatorMock.calculateCoinifyProfit.mockImplementation((...args) =>
+            args[5] === 'prime' ? forcedData : liveData
+        );
+        catalystWhatIf.setCatalystChoice('prime');
+
+        await display.updateDisplay(infoContainer);
+
+        expect(alchemyProfitCalculatorMock.calculateCoinifyProfit).toHaveBeenCalledWith(
+            ITEM_HRID,
+            0,
+            true,
+            null,
+            null,
+            'prime'
+        );
+        expect(display.createDisplay).toHaveBeenCalledWith(infoContainer, liveData, 'coinify', ITEM_HRID, true, {
+            choice: 'prime',
+            data: forcedData,
+        });
+        expect(catalystWhatIf.getCatalystWhatIfResult()).toEqual({
+            catalystHrid: '/items/prime_catalyst',
+            successRate: 0.875,
+        });
+        catalystWhatIf.resetCatalystWhatIf();
+    });
+
+    test('13. with the equipped catalyst selected, no what-if is computed or published', async () => {
+        alchemyProfitCalculatorMock.calculateCoinifyProfit.mockReturnValue(makeFullProfitData());
+
+        await display.updateDisplay(infoContainer);
+
+        expect(alchemyProfitCalculatorMock.calculateCoinifyProfit).toHaveBeenCalledTimes(1);
+        expect(catalystWhatIf.getCatalystWhatIfResult()).toBeNull();
     });
 
     test('11. removes the display and renders nothing when neither market data nor the pure fallback are available', async () => {

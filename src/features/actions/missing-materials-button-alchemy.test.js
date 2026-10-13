@@ -95,6 +95,11 @@ vi.mock('./production-tools-layout.js', () => ({
 }));
 
 import missingMaterialsButton from './missing-materials-button.js';
+import {
+    publishCatalystWhatIfResult,
+    resetCatalystWhatIf,
+    setCatalystChoice,
+} from '../alchemy/alchemy-catalyst-whatif.js';
 
 const LEAF = '/items/emp_tea_leaf';
 const LEAF_HASH = `char-1::/item_locations/inventory::${LEAF}::0`;
@@ -152,6 +157,7 @@ beforeEach(() => {
 
 afterEach(() => {
     missingMaterialsButton.cleanup();
+    resetCatalystWhatIf();
     marketplaceSession.endAll();
     vi.clearAllTimers();
     vi.useRealTimers();
@@ -173,7 +179,7 @@ describe('Alchemy Missing Mats button', () => {
         expect(button).toBeTruthy();
         expect(button.disabled).toBe(false);
         expect(button.previousElementSibling.className).toBe('mwi-alchemy-gold-summary');
-        expect(mockCalculateAlchemy).toHaveBeenCalledWith(LEAF, 100, true);
+        expect(mockCalculateAlchemy).toHaveBeenCalledWith(LEAF, 100, true, null);
     });
 
     test('is disabled when nothing is missing', async () => {
@@ -210,7 +216,7 @@ describe('Alchemy Missing Mats button', () => {
 
         await initializeWithPanel();
 
-        expect(mockCalculateAlchemy).toHaveBeenCalledWith(LEAF, 100, false);
+        expect(mockCalculateAlchemy).toHaveBeenCalledWith(LEAF, 100, false, null);
     });
 
     test('typing a new Repeat count refreshes the button', async () => {
@@ -222,7 +228,7 @@ describe('Alchemy Missing Mats button', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }));
         await vi.advanceTimersByTimeAsync(100);
 
-        expect(mockCalculateAlchemy).toHaveBeenLastCalledWith(LEAF, 10, true);
+        expect(mockCalculateAlchemy).toHaveBeenLastCalledWith(LEAF, 10, true, null);
         expect(panel.querySelector('#mwi-missing-mats-button').disabled).toBe(true);
     });
 
@@ -243,6 +249,75 @@ describe('Alchemy Missing Mats button', () => {
         await vi.advanceTimersByTimeAsync(100);
 
         expect(panel.querySelector('#mwi-missing-mats-button')).toBe(button);
+    });
+});
+
+describe('Alchemy Missing Mats catalyst what-if', () => {
+    const PRIME = '/items/prime_catalyst';
+
+    test('passes the what-if catalyst into the calculation', async () => {
+        setCatalystChoice('prime');
+        publishCatalystWhatIfResult({ catalystHrid: PRIME, successRate: 0.875 });
+
+        await initializeWithPanel();
+
+        expect(mockCalculateAlchemy).toHaveBeenCalledWith(LEAF, 100, true, {
+            catalystHrid: PRIME,
+            successRate: 0.875,
+        });
+    });
+
+    test('refreshes the button when the what-if result changes', async () => {
+        const panel = await initializeWithPanel();
+        expect(mockCalculateAlchemy).toHaveBeenLastCalledWith(LEAF, 100, true, null);
+
+        setCatalystChoice('prime');
+        publishCatalystWhatIfResult({ catalystHrid: PRIME, successRate: 0.875 });
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(mockCalculateAlchemy).toHaveBeenLastCalledWith(LEAF, 100, true, {
+            catalystHrid: PRIME,
+            successRate: 0.875,
+        });
+        expect(panel.querySelectorAll('#mwi-missing-mats-button').length).toBe(1);
+    });
+
+    test('the Marketplace workflow recomputes materials with the same what-if catalyst', async () => {
+        shared.tabContainer = document.createElement('div');
+        shared.tabContainer.innerHTML = '<button><span class="TabsComponent_badge_x">My Listings</span></button>';
+        setCatalystChoice('prime');
+        publishCatalystWhatIfResult({ catalystHrid: PRIME, successRate: 0.875 });
+        const panel = await initializeWithPanel();
+        mockCalculateAlchemy.mockClear();
+
+        panel.querySelector('#mwi-missing-mats-button').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await vi.advanceTimersByTimeAsync(250);
+        await Promise.resolve();
+
+        expect(mockCalculateAlchemy).toHaveBeenCalledWith(LEAF, 100, true, { catalystHrid: PRIME, successRate: 0.875 });
+    });
+
+    test('rebuilds the button when a catalyst adds a missing material', async () => {
+        const panel = await initializeWithPanel();
+        const before = panel.querySelector('#mwi-missing-mats-button');
+        mockCalculateAlchemy.mockReturnValue([
+            ...missing(),
+            {
+                itemHrid: PRIME,
+                itemName: 'Prime Catalyst',
+                required: 875,
+                have: 0,
+                queued: 0,
+                missing: 875,
+                isTradeable: true,
+            },
+        ]);
+
+        setCatalystChoice('prime');
+        publishCatalystWhatIfResult({ catalystHrid: PRIME, successRate: 0.875 });
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(panel.querySelector('#mwi-missing-mats-button')).not.toBe(before);
     });
 });
 

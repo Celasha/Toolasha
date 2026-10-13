@@ -49,13 +49,15 @@ function calculateQueuedAlchemyItems(itemHrid) {
 
 /**
  * Material requirements for repeating an Alchemy action on one unenhanced item.
- * Coins and catalysts are not included.
+ * Coins are not included. A catalyst is added only when one is passed in.
  * @param {string} itemHrid - Item being processed
  * @param {number} numActions - Repeat count
  * @param {boolean} [accountForQueue=false] - Subtract items already reserved by the queue
- * @returns {Array<Object>} Single material entry (same shape as calculateMaterialRequirements), or [] if unknown
+ * @param {{catalystHrid: string|null, successRate: number}|null} [catalyst=null] - Catalyst to include;
+ *   it is consumed once per success, so the amount is an estimate (Repeat count x success rate, rounded up)
+ * @returns {Array<Object>} Material entries (same shape as calculateMaterialRequirements), or [] if unknown
  */
-export function calculateAlchemyMaterialRequirements(itemHrid, numActions, accountForQueue = false) {
+export function calculateAlchemyMaterialRequirements(itemHrid, numActions, accountForQueue = false, catalyst = null) {
     const itemDetails = dataManager.getItemDetails(itemHrid);
     if (!itemDetails || !(numActions > 0)) return [];
 
@@ -68,7 +70,7 @@ export function calculateAlchemyMaterialRequirements(itemHrid, numActions, accou
         : 0;
     const available = Math.max(0, have - queued);
 
-    return [
+    const materials = [
         {
             itemHrid,
             itemName: itemDetails.name,
@@ -81,4 +83,26 @@ export function calculateAlchemyMaterialRequirements(itemHrid, numActions, accou
             isUpgradeItem: false,
         },
     ];
+
+    const catalystDetails = catalyst?.catalystHrid ? dataManager.getItemDetails(catalyst.catalystHrid) : null;
+    if (catalystDetails && catalyst.successRate > 0) {
+        const catalystRequired = Math.ceil(numActions * catalyst.successRate);
+        const catalystHave = (dataManager.getInventory() || [])
+            .filter((item) => item.itemHrid === catalyst.catalystHrid && !item.enhancementLevel)
+            .reduce((sum, item) => sum + (item.count || 0), 0);
+        materials.push({
+            itemHrid: catalyst.catalystHrid,
+            itemName: catalystDetails.name,
+            required: catalystRequired,
+            have: catalystHave,
+            queued: 0,
+            available: catalystHave,
+            missing: Math.max(0, catalystRequired - catalystHave),
+            isTradeable: catalystDetails.isTradable === true,
+            isUpgradeItem: false,
+            isEstimate: true,
+        });
+    }
+
+    return materials;
 }

@@ -118,4 +118,47 @@ describe('alchemy-material-calculator', () => {
         mockGetItemDetails.mockReturnValue(undefined);
         expect(calculateAlchemyMaterialRequirements(LEAF, 10)).toEqual([]);
     });
+
+    describe('catalyst what-if', () => {
+        const PRIME = '/items/prime_catalyst';
+
+        beforeEach(() => {
+            mockGetItemDetails.mockImplementation((hrid) =>
+                hrid === PRIME
+                    ? { name: 'Prime Catalyst', isTradable: true }
+                    : { name: 'Emp Tea Leaf', isTradable: true, alchemyDetail: { bulkMultiplier: 2 } }
+            );
+            mockGetInventory.mockReturnValue([
+                { itemHrid: LEAF, count: 2798, enhancementLevel: 0 },
+                { itemHrid: PRIME, count: 100, enhancementLevel: 0 },
+            ]);
+        });
+
+        test('adds the catalyst sized as Repeat count times success rate, rounded up, flagged as an estimate', () => {
+            const materials = calculateAlchemyMaterialRequirements(LEAF, 1000, false, {
+                catalystHrid: PRIME,
+                successRate: 0.875,
+            });
+
+            expect(materials).toHaveLength(2);
+            expect(materials[1]).toMatchObject({
+                itemHrid: PRIME,
+                required: 875,
+                have: 100,
+                missing: 775,
+                isTradeable: true,
+                isEstimate: true,
+            });
+        });
+
+        test('adds nothing for a no-catalyst what-if or a zero success rate', () => {
+            expect(
+                calculateAlchemyMaterialRequirements(LEAF, 10, false, { catalystHrid: null, successRate: 0.6 })
+            ).toHaveLength(1);
+            expect(
+                calculateAlchemyMaterialRequirements(LEAF, 10, false, { catalystHrid: PRIME, successRate: 0 })
+            ).toHaveLength(1);
+            expect(calculateAlchemyMaterialRequirements(LEAF, 10, false, null)).toHaveLength(1);
+        });
+    });
 });

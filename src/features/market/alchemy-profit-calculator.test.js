@@ -555,3 +555,67 @@ describe('actionContext atomicity for Coinify/Decompose/Transmute (TLA-027)', ()
         expect(dataManagerMock.getActionDrinkSlots).not.toHaveBeenCalled();
     });
 });
+
+describe('catalystChoice on Coinify and Decompose', () => {
+    const DECOMPOSE_ITEM = '/items/test_choice_decompose';
+    const COINIFY_ITEM = '/items/test_choice_coinify';
+    const OUTPUT = '/items/test_choice_output';
+
+    function setup() {
+        const itemDetailMap = {
+            [DECOMPOSE_ITEM]: {
+                itemLevel: 10,
+                sellPrice: 40,
+                alchemyDetail: { bulkMultiplier: 1, decomposeItems: [{ itemHrid: OUTPUT, count: 10 }] },
+            },
+            [COINIFY_ITEM]: { itemLevel: 10, sellPrice: 40, alchemyDetail: { bulkMultiplier: 1, isCoinifiable: true } },
+        };
+        const actionDetailMap = {
+            '/actions/alchemy/decompose': {
+                type: '/action_types/alchemy',
+                baseTimeCost: 20e9,
+                levelRequirement: { level: 1 },
+            },
+            '/actions/alchemy/coinify': {
+                type: '/action_types/alchemy',
+                baseTimeCost: 20e9,
+                levelRequirement: { level: 1 },
+            },
+        };
+        dataManagerMock.getInitClientData.mockReturnValue({ itemDetailMap, actionDetailMap });
+        dataManagerMock.getItemDetails.mockImplementation((hrid) => itemDetailMap[hrid] || null);
+        dataManagerMock.getSkills.mockReturnValue([{ skillHrid: '/skills/alchemy', level: 10 }]);
+        marketPrices[DECOMPOSE_ITEM] = 1000;
+        marketPrices[COINIFY_ITEM] = 1000;
+        marketPrices[OUTPUT] = 500;
+        marketPrices['/items/catalyst_of_decomposition'] = 4000;
+        marketPrices['/items/catalyst_of_coinification'] = 3000;
+        marketPrices['/items/prime_catalyst'] = 9000;
+    }
+
+    beforeEach(setup);
+
+    test('Decompose: none / type-specific / prime force the success rate and catalyst cost', () => {
+        const none = alchemyProfitCalculator.calculateDecomposeProfit(DECOMPOSE_ITEM, 0, true, 0, null, 'none');
+        const type = alchemyProfitCalculator.calculateDecomposeProfit(DECOMPOSE_ITEM, 0, true, 0, null, 'typeSpecific');
+        const prime = alchemyProfitCalculator.calculateDecomposeProfit(DECOMPOSE_ITEM, 0, true, 0, null, 'prime');
+
+        expect(none.successRate).toBeCloseTo(0.6, 8);
+        expect(none.catalystCost.itemHrid).toBeNull();
+        expect(type.successRate).toBeCloseTo(0.6 * 1.15, 8);
+        expect(type.catalystCost.itemHrid).toBe('/items/catalyst_of_decomposition');
+        expect(prime.successRate).toBeCloseTo(0.6 * 1.25, 8);
+        expect(prime.catalystCost.itemHrid).toBe('/items/prime_catalyst');
+        expect(prime.catalystCost.costPerAttempt).toBeCloseTo(9000 * prime.successRate, 8);
+    });
+
+    test('Coinify: type-specific and prime force the catalyst', () => {
+        const type = alchemyProfitCalculator.calculateCoinifyProfit(COINIFY_ITEM, 0, true, 0, null, 'typeSpecific');
+        const prime = alchemyProfitCalculator.calculateCoinifyProfit(COINIFY_ITEM, 0, true, 0, null, 'prime');
+
+        expect(type.catalystCost.itemHrid).toBe('/items/catalyst_of_coinification');
+        expect(type.successRate).toBeCloseTo(0.7 * 1.15, 8);
+        expect(prime.catalystCost.itemHrid).toBe('/items/prime_catalyst');
+        expect(prime.successRate).toBeCloseTo(0.7 * 1.25, 8);
+    });
+});

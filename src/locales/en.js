@@ -1123,6 +1123,14 @@ export default {
         catalystCostLine:
             '• {{itemName}}: {{amount}}/hr (consumed only on success, {{successRate}}) @ {{price}} → {{cost}}/hr',
         catalystCostSectionTitle: 'Catalyst Cost: {{cost}}/hr',
+        catalystWhatIfLabel: 'Catalyst what-if:',
+        catalystOptionEquipped: 'Equipped',
+        catalystOptionNone: 'None',
+        catalystWhatIfWarning:
+            'What-if: figures assume {{catalyst}}, which is not what you have equipped. They do not reflect your real outcome.',
+        catalystWhatIfWarningNone:
+            'What-if: figures assume no catalyst, which is not what you have equipped. They do not reflect your real outcome.',
+        catalystWhatIfSummaryTag: 'what-if',
         drinkCostLine: '• {{itemName}}: {{amount}}/hr @ {{price}} → {{cost}}/hr',
         drinkCostsSectionTitle: (p) => `Drink Costs: ${p.cost}/hr (${p.count} drink${p.count !== 1 ? 's' : ''})`,
         modifiersHeader: 'Modifiers:',

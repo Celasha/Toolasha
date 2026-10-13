@@ -18,8 +18,21 @@ import { calculateActionsPerHour } from '../../utils/profit-helpers.js';
 import { calculateMultiLevelProgress } from '../../utils/experience-calculator.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { compactActionPanelSection } from '../actions/production-tools-layout.js';
+import {
+    getCatalystChoice,
+    onCatalystWhatIfChange,
+    publishCatalystWhatIfResult,
+    setCatalystChoice,
+} from './alchemy-catalyst-whatif.js';
 import { removeInlineXpRate, renderInlineXpRate } from '../actions/inline-xp-rate.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
+
+const TYPE_CATALYST_HRIDS = {
+    coinify: '/items/catalyst_of_coinification',
+    decompose: '/items/catalyst_of_decomposition',
+    transmute: '/items/catalyst_of_transmutation',
+};
+const PRIME_CATALYST_HRID = '/items/prime_catalyst';
 
 export class AlchemyProfitDisplay {
     constructor() {
@@ -37,6 +50,8 @@ export class AlchemyProfitDisplay {
         this.cachedInputField = null; // Cache input field since it gets removed when action starts
         this._alchemyTargetLevel = null;
         this.inlineXpPerHour = 0;
+        this.catalystWhatIfUnsubscribe = null;
+        this.renderedCatalystChoice = 'equipped';
     }
 
     /**
@@ -53,6 +68,13 @@ export class AlchemyProfitDisplay {
 
         this.isInitialized = true;
         this.setupObserver();
+
+        // Re-render when the player picks a different what-if catalyst
+        this.catalystWhatIfUnsubscribe = onCatalystWhatIfChange(() => {
+            if (!this.isActive || getCatalystChoice() === this.renderedCatalystChoice) return;
+            this.lastFingerprint = null;
+            this.checkAndUpdateDisplay();
+        });
 
         // Listen for equipment changes (alchemy allows equipment changes while panel is open)
         this.equipmentChangeHandler = () => {
@@ -396,12 +418,112 @@ export class AlchemyProfitDisplay {
                 return;
             }
 
+            // What-if: Profitability only is recomputed for the chosen catalyst; the other sections
+            // keep describing the equipped setup so they still match the game's own panel.
+            const catalystChoice = getCatalystChoice();
+            this.renderedCatalystChoice = catalystChoice;
+            let whatIf = null;
+            if (catalystChoice !== 'equipped' && hasProfitData && actionType && itemHrid) {
+                const enhancementLevel = requirements?.[0]?.enhancementLevel || 0;
+                const whatIfData = this.calculateWhatIfProfit(actionType, itemHrid, enhancementLevel, catalystChoice);
+                if (whatIfData) whatIf = { choice: catalystChoice, data: whatIfData };
+            }
+            publishCatalystWhatIfResult(
+                whatIf
+                    ? { catalystHrid: whatIf.data.catalystCost?.itemHrid ?? null, successRate: whatIf.data.successRate }
+                    : null
+            );
+
             // Always recreate display (complex collapsible structure makes refresh difficult)
-            this.createDisplay(infoContainer, metrics, actionType, itemHrid, hasProfitData);
+            this.createDisplay(infoContainer, metrics, actionType, itemHrid, hasProfitData, whatIf);
         } catch (error) {
             console.error('[AlchemyProfitDisplay] Failed to update display:', error);
             this.removeDisplay();
         }
+    }
+
+    /**
+     * Profit data for a forced catalyst choice (no, type-specific or prime catalyst)
+     * @param {'coinify'|'decompose'|'transmute'} actionType
+     * @param {string} itemHrid
+     * @param {number} enhancementLevel
+     * @param {'none'|'typeSpecific'|'prime'} catalystChoice
+     * @returns {Object|null} Profit data, or null when it can't be computed
+     */
+    calculateWhatIfProfit(actionType, itemHrid, enhancementLevel, catalystChoice) {
+        if (actionType === 'coinify') {
+            return alchemyProfitCalculator.calculateCoinifyProfit(
+                itemHrid,
+                enhancementLevel,
+                true,
+                null,
+                null,
+                catalystChoice
+            );
+        }
+        if (actionType === 'transmute') {
+            return alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true, null, catalystChoice);
+        }
+        if (actionType === 'decompose') {
+            return alchemyProfitCalculator.calculateDecomposeProfit(
+                itemHrid,
+                enhancementLevel,
+                true,
+                null,
+                null,
+                catalystChoice
+            );
+        }
+        return null;
+    }
+
+    /**
+     * Catalyst choice selector shown at the top of the Profitability section
+     * @param {'coinify'|'decompose'|'transmute'|null} actionType
+     * @param {'equipped'|'none'|'typeSpecific'|'prime'} choice - Current choice
+     * @returns {HTMLElement} Picker row
+     */
+    buildCatalystPicker(actionType, choice) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 6px;';
+
+        const label = document.createElement('span');
+        label.style.cssText = 'color: #888; font-size: 0.85em; margin-right: 2px;';
+        label.textContent = t('alchemyProfitDisplay.catalystWhatIfLabel');
+        row.appendChild(label);
+
+        const itemLabel = (hrid) => getItemName(hrid, dataManager.getItemDetails(hrid)?.name || hrid);
+        const options = [
+            { value: 'equipped', text: t('alchemyProfitDisplay.catalystOptionEquipped') },
+            { value: 'none', text: t('alchemyProfitDisplay.catalystOptionNone') },
+        ];
+        if (TYPE_CATALYST_HRIDS[actionType]) {
+            options.push({ value: 'typeSpecific', text: itemLabel(TYPE_CATALYST_HRIDS[actionType]) });
+        }
+        options.push({ value: 'prime', text: itemLabel(PRIME_CATALYST_HRID) });
+
+        for (const option of options) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.dataset.mwiCatalystChoice = option.value;
+            button.textContent = option.text;
+            const active = option.value === choice;
+            button.style.cssText = `
+                padding: 2px 8px;
+                font-size: 0.85em;
+                border-radius: 4px;
+                cursor: pointer;
+                color: #fff;
+                border: 1px solid ${active ? 'rgba(91, 141, 239, 0.9)' : 'rgba(255, 255, 255, 0.2)'};
+                background: ${active ? 'rgba(91, 141, 239, 0.35)' : 'transparent'};
+            `;
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                setCatalystChoice(option.value);
+            });
+            row.appendChild(button);
+        }
+        return row;
     }
 
     /**
@@ -445,8 +567,10 @@ export class AlchemyProfitDisplay {
      * @param {string} itemHrid - Item HRID being processed
      * @param {boolean} hasProfitData - Whether `metrics` is full market-valued profit data
      *   (required for Profitability) as opposed to the price-independent fallback scenario
+     * @param {{choice: string, data: Object}|null} [whatIf] - Profit data for a what-if catalyst;
+     *   replaces `metrics` for Profitability only
      */
-    createDisplay(container, metrics, actionType, itemHrid, hasProfitData) {
+    createDisplay(container, metrics, actionType, itemHrid, hasProfitData, whatIf = null) {
         // Remove any existing display
         this.removeDisplay();
 
@@ -459,7 +583,13 @@ export class AlchemyProfitDisplay {
             config.getSetting('alchemy_profitDisplay') &&
             config.getSetting('actionPanel_showProfitDetail');
 
-        const profitSection = canShowProfitability ? this.buildProfitabilitySection(metrics) : null;
+        const profitSection = canShowProfitability
+            ? this.buildProfitabilitySection(whatIf?.data ?? metrics, {
+                  actionType,
+                  choice: getCatalystChoice(),
+                  whatIfActive: !!whatIf,
+              })
+            : null;
         if (profitSection) {
             container.appendChild(profitSection);
         }
@@ -531,9 +661,11 @@ export class AlchemyProfitDisplay {
      * Build the market-valued Profitability section (revenue/costs/modifiers breakdown).
      * Does not append to the DOM - the caller decides whether/where to mount it.
      * @param {Object} profitData - Full profit data from calculateCoinifyProfit/DecomposeProfit/TransmuteProfit
+     * @param {{actionType: string|null, choice: string, whatIfActive: boolean}|null} [catalystOptions] -
+     *   Catalyst picker state; omitted when there is nothing to choose
      * @returns {HTMLElement|null} Profitability section element, or null if data is incomplete
      */
-    buildProfitabilitySection(profitData) {
+    buildProfitabilitySection(profitData, catalystOptions = null) {
         // Validate required data
         if (
             !profitData ||
@@ -557,7 +689,9 @@ export class AlchemyProfitDisplay {
             t('alchemyProfitDisplay.profitPerHourPerDaySummary', {
                 profit: formatLargeNumber(profit),
                 profitPerDay: formatLargeNumber(profitPerDay),
-            }) + (profitData.hasOutlierPrices ? ' ⚠' : '');
+            }) +
+            (profitData.hasOutlierPrices ? ' ⚠' : '') +
+            (catalystOptions?.whatIfActive ? ` ⚠ ${t('alchemyProfitDisplay.catalystWhatIfSummaryTag')}` : '');
 
         const detailsContent = document.createElement('div');
 
@@ -1144,12 +1278,31 @@ export class AlchemyProfitDisplay {
 
         // Create "Detailed Breakdown" collapsible
         const topLevelContent = document.createElement('div');
-        topLevelContent.innerHTML = `
+        if (catalystOptions) {
+            topLevelContent.appendChild(this.buildCatalystPicker(catalystOptions.actionType, catalystOptions.choice));
+            if (catalystOptions.whatIfActive) {
+                const warning = document.createElement('div');
+                warning.style.cssText = 'color: #fbbf24; font-size: 0.85em; margin-bottom: 6px;';
+                const catalystHrid = profitData.catalystCost?.itemHrid;
+                warning.textContent = catalystHrid
+                    ? t('alchemyProfitDisplay.catalystWhatIfWarning', {
+                          catalyst: getItemName(
+                              catalystHrid,
+                              dataManager.getItemDetails(catalystHrid)?.name || catalystHrid
+                          ),
+                      })
+                    : t('alchemyProfitDisplay.catalystWhatIfWarningNone');
+                topLevelContent.appendChild(warning);
+            }
+        }
+        const summaryLines = document.createElement('div');
+        summaryLines.innerHTML = `
             <div style="margin-bottom: 4px;">${t('alchemyProfitDisplay.actionsSuccessRateLine', {
                 actions: profitData.actionsPerHour.toFixed(2),
                 rate: formatPercentage(profitData.successRate, 2),
             })}</div>
         `;
+        topLevelContent.appendChild(summaryLines);
 
         // Add Net Profit line at top level (always visible when Profitability is expanded)
         const profitColor = profit >= 0 ? '#4ade80' : config.getSetting('color_loss') || '#f87171';
@@ -1827,6 +1980,11 @@ export class AlchemyProfitDisplay {
      * Disable the display
      */
     disable() {
+        if (this.catalystWhatIfUnsubscribe) {
+            this.catalystWhatIfUnsubscribe();
+            this.catalystWhatIfUnsubscribe = null;
+        }
+
         if (this.updateTimeout) {
             clearTimeout(this.updateTimeout);
             this.updateTimeout = null;
