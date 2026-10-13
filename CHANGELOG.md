@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.17.0](https://github.com/Celasha/Toolasha/compare/v3.16.0...v3.17.0) (2026-10-13)
+
+### Features
+
+- add a catalyst what-if picker to the Alchemy Profitability section ([54fef73](https://github.com/Celasha/Toolasha/commit/54fef73d16b49a469373c7681ab3173dbd7afc38))
+- add the Missing Mats Marketplace button and Return tab to the Alchemy panel ([091f6f2](https://github.com/Celasha/Toolasha/commit/091f6f259b8083d283165cff03fc2dbeec8c6058))
+- warn with a refresh banner when character data never arrives ([7957c8d](https://github.com/Celasha/Toolasha/commit/7957c8d2504033be84e4b67c554c34aa793df9b2))
+
+### Bug Fixes
+
+- count coin cost against the budget calculator budget ([e272369](https://github.com/Celasha/Toolasha/commit/e272369f30ccfc2b0ef74b836ca635cd6d76fdc1))
+- fill the Alchemy Repeat input from the Level Progress target level ([faa06b3](https://github.com/Celasha/Toolasha/commit/faa06b3f71e9f31b285ba18444cd4d9aeec1afcb))
+- keep the first breakpoint cost on grouped skilling optimizer tiers ([bca5e84](https://github.com/Celasha/Toolasha/commit/bca5e8402488fdff07efa43577f228b2e2bb2953))
+- **labyrinth:** shorten live clear-chance text so it fits the compact action bar ([5776195](https://github.com/Celasha/Toolasha/commit/577619536cb33650d083ca173940093575ffffb1))
+- log a full self-contained report when marketplace tabs are torn down ([12b71f3](https://github.com/Celasha/Toolasha/commit/12b71f3e23cdfd3d0edbffc0b62ca939730b07c4))
+- make the Alchemy panel honor the action speed & time and level progress settings ([44615d5](https://github.com/Celasha/Toolasha/commit/44615d5a3fe65eb8ac6c809ef9967594cdff0f7f))
+- **networth:** follow the accent color for gold and net worth values ([3f8d41d](https://github.com/Celasha/Toolasha/commit/3f8d41d4c02b961b8806aba71fecd4977aa2123b))
+- **networth:** use the configured gold color instead of a hardcoded amber ([0ac0083](https://github.com/Celasha/Toolasha/commit/0ac00837590431f8bdc62560fb072261b62de01e))
+- point queued completion setting at the global time format ([78f2d84](https://github.com/Celasha/Toolasha/commit/78f2d8427c6ee75004daac805e47dcbd2b118c51))
+- respect disabled settings for four ungated features ([971f74f](https://github.com/Celasha/Toolasha/commit/971f74fd5cb1572b9fc441cec0aedcb8b3287cf0))
+- use the saved alchemy loadout in the tooltip and pinned page ([4bc7450](https://github.com/Celasha/Toolasha/commit/4bc74504742c880db1a696c8d55bef59dc612b83))
+
 ## [3.16.0](https://github.com/Celasha/Toolasha/compare/v3.15.1...v3.16.0) (2026-10-12)
 
 ### Features
