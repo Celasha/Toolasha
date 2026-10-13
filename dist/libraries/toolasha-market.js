@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.16.0
+ * Version: 3.17.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, marketplaceSession_js, actionCalculator_js, materialCalculator_js, warningIcon_js, profitHelpers_js, buffParser_js, equipmentParser_js, tokenValuation_js, storage, enhancementConfig_js, dom, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, loadoutState, tooltipObserver) {
+(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, marketplaceSession_js, actionCalculator_js, materialCalculator_js, warningIcon_js, profitHelpers_js, buffParser_js, equipmentParser_js, tokenValuation_js, storage, enhancementConfig_js, dom, loadoutState, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -4593,6 +4593,8 @@ self.onmessage = function (e) {
          * @param {number|null} [teaBonusOverride=null]
          * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
          *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar.
+         * @param {'none'|'typeSpecific'|'prime'|null} [catalystChoice=null] - Force a specific catalyst
+         *   instead of the live panel's or the best one.
          * @returns {Object|null} Detailed profit data or null if not coinifiable
          */
         calculateCoinifyProfit(
@@ -4600,7 +4602,8 @@ self.onmessage = function (e) {
             enhancementLevel = 0,
             useLiveSetup = false,
             teaBonusOverride = null,
-            actionContext = null
+            actionContext = null,
+            catalystChoice = null
         ) {
             try {
                 const gameData = dataManager.getInitClientData();
@@ -4718,7 +4721,11 @@ self.onmessage = function (e) {
                 });
 
                 // Find the best catalyst+tea combination (tooltip) or use live setup (action page)
-                const _comboFn = useLiveSetup ? this._liveSetupCombo.bind(this) : this._bestCatalystCombo.bind(this);
+                const _comboFn = catalystChoice
+                    ? this._forcedCatalystCombo.bind(this)
+                    : useLiveSetup
+                      ? this._liveSetupCombo.bind(this)
+                      : this._bestCatalystCombo.bind(this);
                 const combo = _comboFn({
                     actionType: 'coinify',
                     baseSuccessRate: BASE_SUCCESS_RATES.COINIFY,
@@ -4729,6 +4736,7 @@ self.onmessage = function (e) {
                     computeNetProfit: (successRate) => coinsProduced * successRate - (materialCost + coinCost),
                     computeTeaCost: () => teaCostData.totalCostPerHour,
                     teaBonusOverride,
+                    catalystChoice,
                 });
 
                 const {
@@ -4882,6 +4890,8 @@ self.onmessage = function (e) {
          * @param {number|null} [teaBonusOverride=null]
          * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
          *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar.
+         * @param {'none'|'typeSpecific'|'prime'|null} [catalystChoice=null] - Force a specific catalyst
+         *   instead of the live panel's or the best one.
          * @returns {Object|null} Profit data or null if not decomposable
          */
         calculateDecomposeProfit(
@@ -4889,7 +4899,8 @@ self.onmessage = function (e) {
             enhancementLevel = 0,
             useLiveSetup = false,
             teaBonusOverride = null,
-            actionContext = null
+            actionContext = null,
+            catalystChoice = null
         ) {
             try {
                 const gameData = dataManager.getInitClientData();
@@ -5055,7 +5066,11 @@ self.onmessage = function (e) {
                 });
 
                 // Find the best catalyst+tea combination (tooltip) or use live setup (action page)
-                const _comboFn = useLiveSetup ? this._liveSetupCombo.bind(this) : this._bestCatalystCombo.bind(this);
+                const _comboFn = catalystChoice
+                    ? this._forcedCatalystCombo.bind(this)
+                    : useLiveSetup
+                      ? this._liveSetupCombo.bind(this)
+                      : this._bestCatalystCombo.bind(this);
                 const combo = _comboFn({
                     actionType: 'decompose',
                     baseSuccessRate: BASE_SUCCESS_RATES.DECOMPOSE,
@@ -5066,6 +5081,7 @@ self.onmessage = function (e) {
                     computeNetProfit: (successRate) => outputValue * successRate - (inputPrice + coinCost),
                     computeTeaCost: () => teaCostData.totalCostPerHour,
                     teaBonusOverride,
+                    catalystChoice,
                 });
 
                 const {
@@ -5988,26 +6004,28 @@ self.onmessage = function (e) {
          * Calculate all applicable profits for an item
          * @param {string} itemHrid - Item HRID
          * @param {number} enhancementLevel - Enhancement level (default 0)
+         * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Equipment/drinks to predict
+         *   with (e.g. from resolveActionContext). When omitted, the live equipped setup is used.
          * @returns {Object} Object with all applicable profit calculations
          */
-        calculateAllProfits(itemHrid, enhancementLevel = 0) {
+        calculateAllProfits(itemHrid, enhancementLevel = 0, actionContext = null) {
             const results = {};
 
             // Try coinify
-            const coinifyProfit = this.calculateCoinifyProfit(itemHrid, enhancementLevel);
+            const coinifyProfit = this.calculateCoinifyProfit(itemHrid, enhancementLevel, false, null, actionContext);
             if (coinifyProfit) {
                 results.coinify = coinifyProfit;
             }
 
             // Try decompose
-            const decomposeProfit = this.calculateDecomposeProfit(itemHrid, enhancementLevel);
+            const decomposeProfit = this.calculateDecomposeProfit(itemHrid, enhancementLevel, false, null, actionContext);
             if (decomposeProfit) {
                 results.decompose = decomposeProfit;
             }
 
             // Try transmute (only for base items)
             if (enhancementLevel === 0) {
-                const transmuteProfit = this.calculateTransmuteProfit(itemHrid);
+                const transmuteProfit = this.calculateTransmuteProfit(itemHrid, false, null, null, actionContext);
                 if (transmuteProfit) {
                     results.transmute = transmuteProfit;
                 }
@@ -6015,7 +6033,7 @@ self.onmessage = function (e) {
 
             // Try unrefine (applies at any enhancement level - it preserves the level, unlike
             // transmute which only operates on base/unenhanced items)
-            const unrefineProfit = this.calculateUnrefineProfit(itemHrid, enhancementLevel);
+            const unrefineProfit = this.calculateUnrefineProfit(itemHrid, enhancementLevel, false, null, actionContext);
             if (unrefineProfit) {
                 results.unrefine = unrefineProfit;
             }
@@ -6493,6 +6511,91 @@ self.onmessage = function (e) {
         '/items/enchanted_refinement_chest': '/items/enchanted_chest_key',
         '/items/pirate_refinement_chest': '/items/pirate_chest_key',
     };
+
+    /**
+     * Action context resolver
+     *
+     * Returns the equipment and active drinks to use when predicting an action's
+     * outcome (XP, time, profit, materials). When automatic saved-loadout use is
+     * enabled and a saved loadout matches the action type, the canonical Core
+     * loadout state is resolved against current ownership at read time.
+     *
+     * Resolution priority (handled inside loadoutState.findSnapshotForActionType):
+     *   1. Skill-specific default loadout
+     *   2. All-skills default loadout
+     *   3. Skill-specific non-default
+     *   4. All-skills non-default
+     *   5. Fall back to currently-equipped gear / current drinks
+     *
+     * Intentional empty state is preserved: a matching skill-specific saved loadout with no
+     * equipment or no drinks resolves to an empty Map/array rather than falling through to the
+     * character's currently equipped setup. An All Skills loadout (actionTypeHrid === '') is the one
+     * exception for drinks: the game never lets that loadout type carry drink slots at all, so its
+     * always-blank drinks are a structural void, not a player choice, and fall back to the
+     * character's current drinks for that action type instead.
+     *
+     * resolveCurrentActionContext() is the separate live-state counterpart: it always ignores
+     * saved-loadout prediction and returns the character's actual current setup, for surfaces (like
+     * the Current Action Bar) that describe what is actually running now rather than a prediction.
+     */
+
+
+    /**
+     * Resolve the character's proven current live setup, ignoring saved-loadout prediction settings.
+     * Equipment and drinks are returned as one atomic context so callers cannot accidentally mix
+     * current equipment with saved-loadout consumables (or vice versa). Used by live-state surfaces
+     * (e.g. the Current Action Bar) that describe the action actually running now, as opposed to
+     * predictive action cards/future queue entries which use resolveActionContext().
+     * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
+     * @returns {{equipment: Map, drinks: Array, source: string, loadoutSelection: null}}
+     */
+    function resolveCurrentActionContext(actionTypeHrid) {
+        const rawDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+        const inventory = dataManager.getInventory();
+        const drinks = (rawDrinks || []).filter(
+            (drink) => drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
+        );
+
+        return {
+            equipment: dataManager.getEquipment(),
+            drinks,
+            source: 'current',
+            loadoutSelection: null,
+        };
+    }
+
+    /**
+     * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
+     * @returns {{equipment: Map, drinks: Array, source: string, loadoutSelection: Object|null}}
+     */
+    function resolveActionContext(actionTypeHrid) {
+        const selection = config.getSetting('loadoutSnapshot')
+            ? loadoutState.findCalculationSelectionForActionType(actionTypeHrid)
+            : { status: 'disabled', snapshot: null };
+        const snapshot = selection.status === 'usable' ? selection.snapshot : null;
+
+        // A matching-but-unavailable saved loadout is not equivalent to "no loadout" semantically.
+        // We fail closed to the character's proven current setup rather than inventing how the MWI
+        // server would execute missing loadout items. The returned selection metadata lets UIs make
+        // that fallback visible instead of silently claiming the saved loadout was used.
+        let drinks;
+        if (snapshot && snapshot.drinksApplicable) {
+            // Core already resolved saved consumables against live inventory and blanked unavailable
+            // slots. Do not rescan the full inventory again on every action calculation.
+            drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);
+        } else {
+            drinks = resolveCurrentActionContext(actionTypeHrid).drinks;
+        }
+
+        return {
+            equipment: snapshot
+                ? new Map((snapshot.equipment || []).map((entry) => [entry.itemLocationHrid, entry]))
+                : dataManager.getEquipment(),
+            drinks,
+            source: snapshot ? 'saved-loadout' : 'current',
+            loadoutSelection: selection,
+        };
+    }
 
     /**
      * Market Tooltip Prices Feature
@@ -7715,7 +7818,12 @@ self.onmessage = function (e) {
             const allProfits = [];
 
             // Try alchemy profits (coinify, decompose, transmute)
-            const alchemyProfits = alchemyProfitCalculator.calculateAllProfits(itemHrid, enhancementLevel);
+            // Predict with the saved alchemy loadout when "Use saved loadouts" is on (current gear otherwise)
+            const alchemyProfits = alchemyProfitCalculator.calculateAllProfits(
+                itemHrid,
+                enhancementLevel,
+                resolveActionContext('/action_types/alchemy')
+            );
 
             if (alchemyProfits.coinify) {
                 allProfits.push(alchemyProfits.coinify);
@@ -16160,12 +16268,36 @@ self.onmessage = function (e) {
         return tab;
     }
 
+    const MARKETPLACE_PANEL_SELECTOR = '[class*="MarketplacePanel_marketplacePanel"]';
+    const MARKETPLACE_TAB_STRUCTURE_SELECTOR = '.MuiTabs-flexContainer[role="tablist"], [role="tab"], [role="tabpanel"]';
+
+    function truncateText(text, max) {
+        const value = String(text ?? '');
+        return value.length > max ? `${value.slice(0, max)}...` : value;
+    }
+
+    /**
+     * Diagnostic-only: one-line description of an element including every attribute (so
+     * aria-*, role, id, class, style and data-* are all visible in a console screenshot).
+     * @param {Element} element
+     * @param {boolean} [withText]
+     * @returns {string}
+     */
+    function describeElement(element, withText = true) {
+        const attrs = Array.from(element.attributes)
+            .map((attr) => `${attr.name}="${truncateText(attr.value, 160)}"`)
+            .join(' ');
+        const text = withText ? ` "${truncateText((element.textContent || '').trim().replace(/\s+/g, ' '), 30)}"` : '';
+        return `<${element.tagName.toLowerCase()}${attrs ? ` ${attrs}` : ''}>${text}`;
+    }
+
     /**
      * Diagnostic-only: whether a mutation's target is relevant to the tab-selection investigation -
-     * a tab element itself (native or Toolasha-injected), or anything inside the native tablist.
-     * Document-body-wide subtree observation sees constant unrelated page churn (chat, timers,
-     * etc.) - this keeps the captured trail limited to the one question that matters: what,
-     * specifically, changed on or near the tabs right before selection was lost.
+     * a tab element itself (native or Toolasha-injected), anything inside the native tablist, the
+     * Marketplace panel itself, or a tab panel inside it. Document-body-wide subtree observation sees
+     * constant unrelated page churn (chat, timers, etc.) - this keeps the captured trail limited to
+     * the one question that matters: what, specifically, changed on or near the tabs right before
+     * selection was lost.
      * @param {Node} node
      * @returns {boolean}
      */
@@ -16173,36 +16305,171 @@ self.onmessage = function (e) {
         if (!node || node.nodeType !== 1) return false;
         if (node.getAttribute('role') === 'tab') return true;
         if (node.hasAttribute('data-mwi-custom-tab') || node.hasAttribute('data-mwi-tab-owner')) return true;
+        if (node.matches(MARKETPLACE_PANEL_SELECTOR)) return true;
+        if (node.getAttribute('role') === 'tabpanel' && node.closest(MARKETPLACE_PANEL_SELECTOR)) return true;
         return Boolean(node.closest && node.closest('.MuiTabs-flexContainer[role="tablist"]'));
     }
 
     function describeMutationTarget(node) {
         const tag = node.tagName.toLowerCase();
         const role = node.getAttribute('role') || '';
-        const kind = node.hasAttribute('data-mwi-custom-tab') ? 'custom' : role === 'tab' ? 'native' : 'other';
+        let kind = 'other';
+        if (node.hasAttribute('data-mwi-custom-tab')) kind = 'custom';
+        else if (role === 'tab') kind = 'native';
+        else if (node.matches(MARKETPLACE_PANEL_SELECTOR)) kind = 'marketplace-panel';
+        else if (role === 'tabpanel') kind = 'tabpanel';
         const text = (node.textContent || '').trim().slice(0, 24).replace(/\s+/g, ' ');
         return `<${tag}${role ? ` role="${role}"` : ''}> [${kind}] "${text}"`;
+    }
+
+    /**
+     * Diagnostic-only: nodes added/removed by a childList record that are, or contain, the
+     * Marketplace panel (a whole-panel remount) or - when the record is inside the panel - tab
+     * strip structure. The target of such a record is an ancestor, which the target check above
+     * would miss, so a full remount previously left an empty trail.
+     * @param {MutationRecord} record
+     * @returns {string[]}
+     */
+    function summarizeStructuralNodes(record) {
+        const inPanel = Boolean(record.target.closest?.(MARKETPLACE_PANEL_SELECTOR));
+        const hits = [];
+        const consider = (sign, node) => {
+            if (node.nodeType !== 1) return;
+            const isPanel = node.matches(MARKETPLACE_PANEL_SELECTOR) || node.querySelector(MARKETPLACE_PANEL_SELECTOR);
+            const isTabStructure =
+                inPanel &&
+                (node.matches(MARKETPLACE_TAB_STRUCTURE_SELECTOR) ||
+                    node.querySelector(MARKETPLACE_TAB_STRUCTURE_SELECTOR));
+            if (isPanel || isTabStructure) {
+                hits.push(
+                    `${sign}${isPanel ? 'marketplace-panel-subtree' : 'tab-structure'} ${describeMutationTarget(node)}`
+                );
+            }
+        };
+        record.removedNodes.forEach((node) => consider('-', node));
+        record.addedNodes.forEach((node) => consider('+', node));
+        return hits;
     }
 
     /**
      * Diagnostic-only: summarize a MutationRecord relevant to marketplace tab selection, to
      * distinguish a native React/MUI selection glitch (mutation lands on a native tab) from one
      * caused by Toolasha's own injected tabs (mutation lands on a custom tab, or a childList churn
-     * on the shared tablist container itself). Returns null for anything outside the tab area.
+     * on the shared tablist container itself) or from a whole-panel remount. Returns null for
+     * anything outside the tab area.
      * @param {MutationRecord} record
+     * @param {number} sinceArmedMs - Time since the observer was armed, to order entries
      * @returns {string|null}
      */
-    function summarizeMutation(record) {
-        if (!isDiagnosticMutationTarget(record.target)) return null;
-        const label = describeMutationTarget(record.target);
-        if (record.type === 'attributes') {
-            const newValue = record.target.getAttribute(record.attributeName);
-            return `attr "${record.attributeName}" on ${label}: "${record.oldValue}" -> "${newValue}"`;
+    function summarizeMutation(record, sinceArmedMs) {
+        const stamp = `+${sinceArmedMs}ms`;
+        if (isDiagnosticMutationTarget(record.target)) {
+            const label = describeMutationTarget(record.target);
+            if (record.type === 'attributes') {
+                const newValue = record.target.getAttribute(record.attributeName);
+                return `${stamp} attr "${record.attributeName}" on ${label}: "${record.oldValue}" -> "${newValue}"`;
+            }
+            if (record.type === 'childList') {
+                return `${stamp} childList on ${label}: +${record.addedNodes.length}/-${record.removedNodes.length}`;
+            }
+            return `${stamp} ${record.type} on ${label}`;
         }
+
         if (record.type === 'childList') {
-            return `childList on ${label}: +${record.addedNodes.length}/-${record.removedNodes.length}`;
+            const hits = summarizeStructuralNodes(record);
+            if (hits.length) return `${stamp} childList on <${record.target.tagName.toLowerCase()}>: ${hits.join(', ')}`;
         }
-        return `${record.type} on ${label}`;
+        return null;
+    }
+
+    /**
+     * Diagnostic-only: native-tab selection markers, for a one-line comparison of the state at
+     * different moments (armed / first invalid / now).
+     * @returns {string}
+     */
+    function summarizeNativeTabMarkers() {
+        const candidates = getMarketplaceTabContainerCandidates();
+        if (candidates.size !== 1) return `${candidates.size} visible marketplace tab container(s)`;
+        const container = candidates.values().next().value;
+        const states = Array.from(container.children)
+            .filter(
+                (tab) =>
+                    tab.getAttribute('role') === 'tab' &&
+                    !tab.hasAttribute('data-mwi-custom-tab') &&
+                    !tab.hasAttribute('data-mwi-shrine-tab')
+            )
+            .map(
+                (tab) =>
+                    `"${(tab.textContent || '').trim()}" aria-selected=${tab.getAttribute('aria-selected')} Mui-selected=${tab.classList.contains('Mui-selected')}`
+            );
+        return states.join('; ') || 'no native tabs found';
+    }
+
+    /**
+     * Diagnostic-only: a self-contained structural dump of everything that could explain why the
+     * native tabs carry no selected marker - environment, every Marketplace panel with its tablists
+     * (all attributes of every child), tab panels and their visibility, and the custom tabs present.
+     * Built as flat text so it is fully readable in a console screenshot without expanding anything.
+     * @returns {string}
+     */
+    function buildMarketplaceStructureSnapshot() {
+        const lines = [];
+
+        const gameChunks = Array.from(document.scripts)
+            .map((script) => script.src || '')
+            .filter((src) => /main\.[\w]+\.chunk\.js/.test(src))
+            .map((src) => src.split('/').pop());
+        lines.push(
+            `env: host=${window.location.hostname} path=${window.location.pathname} frame=${window.top === window.self ? 'top' : 'iframe'} visibility=${document.visibilityState} gameChunk=${gameChunks.join(',') || 'unknown'} ua=${navigator.userAgent}`
+        );
+
+        const panels = Array.from(document.querySelectorAll(MARKETPLACE_PANEL_SELECTOR));
+        lines.push(`marketplace panels in document: ${panels.length}`);
+        panels.slice(0, 3).forEach((panel, panelIndex) => {
+            lines.push(
+                `  panel[${panelIndex}] visible=${isElementActuallyVisible(panel)} ${describeElement(panel, false)}`
+            );
+
+            panel.querySelectorAll('.MuiTabs-flexContainer[role="tablist"]').forEach((tablist, tablistIndex) => {
+                lines.push(
+                    `    tablist[${tablistIndex}] visible=${isElementActuallyVisible(tablist)} ${describeElement(tablist, false)}`
+                );
+                const ancestors = [];
+                for (let el = tablist.parentElement; el && el !== panel && ancestors.length < 6; el = el.parentElement) {
+                    ancestors.push(`${el.tagName.toLowerCase()}.${truncateText(el.getAttribute('class') || '', 60)}`);
+                }
+                lines.push(`      ancestors (inner to outer): ${ancestors.join(' < ') || 'none'}`);
+                Array.from(tablist.children).forEach((child, childIndex) => {
+                    lines.push(`      child[${childIndex}] ${describeElement(child)}`);
+                });
+            });
+
+            panel.querySelectorAll('[role="tabpanel"]').forEach((tabpanel, tabpanelIndex) => {
+                const content = Array.from(tabpanel.children)
+                    .slice(0, 3)
+                    .map((child) => truncateText(child.getAttribute('class') || child.tagName.toLowerCase(), 70))
+                    .join(' | ');
+                lines.push(
+                    `    tabpanel[${tabpanelIndex}] visible=${isElementActuallyVisible(tabpanel)} ${describeElement(tabpanel, false)} content: ${content || 'empty'}`
+                );
+            });
+        });
+
+        const customTabs = Array.from(document.querySelectorAll('[data-mwi-custom-tab]'));
+        const byOwner = {};
+        for (const tab of customTabs) {
+            const key = tab.getAttribute('data-mwi-tab-owner') || 'none';
+            byOwner[key] = (byOwner[key] || 0) + 1;
+        }
+        lines.push(
+            `custom tabs in document: ${customTabs.length} (${
+            Object.entries(byOwner)
+                .map(([owner, count]) => `${owner}=${count}`)
+                .join(', ') || 'none'
+        }), visible=${customTabs.filter(isElementActuallyVisible).length}`
+        );
+
+        return lines.join('\n');
     }
 
     /**
@@ -16246,6 +16513,12 @@ self.onmessage = function (e) {
         // Diagnostic-only: bounded trail of relevant mutations leading up to an invalid-state
         // episode, cleared on recovery so a later failure is never attributed to stale entries.
         const mutationTrail = [];
+        // Diagnostic-only timeline: distinguishes "native tabs never carried a selected marker since
+        // this observer armed" from "they lost it", which no single end-state snapshot can.
+        const armedAt = Date.now();
+        let lastValidAt = null;
+        let firstInvalidAt = null;
+        let markersAtFirstInvalid = null;
 
         function hasValidState() {
             const visibleContainer = getVisibleMarketplaceTabContainer();
@@ -16311,12 +16584,32 @@ self.onmessage = function (e) {
         // shows exactly what changed right before selection was lost - distinguishing a native
         // React/MUI glitch (mutation lands on a native tab) from Toolasha's own injected tabs
         // disrupting the shared tablist (mutation lands on a custom tab, or childList churn on the
-        // container itself).
+        // container itself) or a whole-panel remount.
         function formatMutationTrail() {
             if (!mutationTrail.length) {
-                return ' (no relevant DOM mutations captured - detected via the 1s poll interval, not a live mutation)';
+                return '  No relevant DOM mutations were captured since the last valid state (detected via the 1s poll interval, not a live mutation)';
             }
-            return `\n  Recent relevant mutations leading up to this:\n  - ${mutationTrail.join('\n  - ')}`;
+            return `  Recent relevant mutations leading up to this:\n  - ${mutationTrail.join('\n  - ')}`;
+        }
+
+        // Diagnostic-only: the complete, self-contained report logged when custom tabs are torn
+        // down. Reporters cannot run console snippets, so everything needed to diagnose must be in
+        // this one message as flat text.
+        function buildCleanupReport() {
+            const now = Date.now();
+            const ago = (timestamp) => (timestamp === null ? 'never' : `${now - timestamp}ms ago`);
+            return [
+                `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}`,
+                `  timeline: armed ${now - armedAt}ms ago, valid since arm: ${lastValidAt === null ? 'NEVER' : 'yes'}, last valid ${ago(lastValidAt)}, first invalid ${ago(firstInvalidAt)}, grace ${invalidStateGraceMs}ms`,
+                `  native tab markers at arm: ${markersAtArm}`,
+                `  native tab markers at first invalid detection: ${markersAtFirstInvalid ?? 'n/a'}`,
+                `  native tab markers now: ${summarizeNativeTabMarkers()}`,
+                formatMutationTrail(),
+                buildMarketplaceStructureSnapshot()
+                    .split('\n')
+                    .map((line) => `  ${line}`)
+                    .join('\n'),
+            ].join('\n');
         }
 
         function notifyInvalidState() {
@@ -16324,9 +16617,7 @@ self.onmessage = function (e) {
 
             if (invalidStateGraceMs <= 0) {
                 invalidStateNotified = true;
-                console.warn(
-                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
-                );
+                console.warn(buildCleanupReport());
                 onTabsGone();
                 return;
             }
@@ -16335,9 +16626,7 @@ self.onmessage = function (e) {
                 invalidStateTimer = null;
                 if (isStopped || invalidStateNotified || hasValidState()) return;
                 invalidStateNotified = true;
-                console.warn(
-                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
-                );
+                console.warn(buildCleanupReport());
                 onTabsGone();
             }, invalidStateGraceMs);
         }
@@ -16349,22 +16638,33 @@ self.onmessage = function (e) {
             // 1s setInterval fallback below calls poll() with no arguments) - diagnostic-only.
             if (mutations) {
                 for (const record of mutations) {
-                    const summary = summarizeMutation(record);
+                    const summary = summarizeMutation(record, Date.now() - armedAt);
                     if (!summary) continue;
                     mutationTrail.push(summary);
-                    if (mutationTrail.length > 8) mutationTrail.shift();
+                    if (mutationTrail.length > 15) mutationTrail.shift();
                 }
             }
 
             if (!hasValidState()) {
+                if (firstInvalidAt === null) {
+                    firstInvalidAt = Date.now();
+                    markersAtFirstInvalid = summarizeNativeTabMarkers();
+                }
                 notifyInvalidState();
                 return;
             }
 
+            lastValidAt = Date.now();
+            firstInvalidAt = null;
+            markersAtFirstInvalid = null;
             clearInvalidStateTimer();
             invalidStateNotified = false;
             mutationTrail.length = 0;
         }
+
+        const validAtArm = hasValidState();
+        if (validAtArm) lastValidAt = armedAt;
+        const markersAtArm = summarizeNativeTabMarkers();
 
         if (document.body && typeof MutationObserver === 'function') {
             mutationObserver = new MutationObserver(poll);
@@ -16372,6 +16672,8 @@ self.onmessage = function (e) {
                 childList: true,
                 subtree: true,
                 attributes: true,
+                // Required for the "old -> new" values in the diagnostic mutation trail.
+                attributeOldValue: true,
                 // React changes native tab selection through aria-selected/class without
                 // necessarily mutating children. Observe both so native-tab exits are prompt
                 // even when navigation was triggered programmatically rather than by a click.
@@ -19685,7 +19987,11 @@ self.onmessage = function (e) {
             onTabsGone: () => {
                 if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return;
                 const container = getVisibleMarketplaceTabContainer();
-                if (container && isMarketplaceMarketListingsSelected(container) && injectTabs(container, sessionId)) return;
+                const marketListingsSelected = Boolean(container) && isMarketplaceMarketListingsSelected(container);
+                if (container && marketListingsSelected && injectTabs(container, sessionId)) return;
+                console.warn(
+                    `[SellQueue] Marketplace tabs could not be reinjected - ending session (visible tab container found: ${Boolean(container)}, Market Listings selected: ${marketListingsSelected})`
+                );
                 marketplaceSession_js.marketplaceSession.end(sessionId);
             },
         });
@@ -24886,14 +25192,15 @@ self.onmessage = function (e) {
     const PANEL_STYLES_ID = 'mwi-networth-panel-styles';
 
     function buildPanelCss() {
+        const accent = config.COLOR_ACCENT;
         return `
 .mwi-nw-root { text-align: left; color: #ccc; font-size: 0.875rem; }
 .mwi-nw-iconrow { display: flex; align-items: center; gap: 6px; }
 .mwi-nw-headtoggle { cursor: pointer; font-weight: bold; flex: 1; display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .mwi-nw-headtoggle:hover .mwi-nw-chev { background: rgba(255,255,255,0.2); color: #fff; }
 .mwi-nw-headname { display: inline-flex; align-items: center; gap: 7px; color: #fff; }
-.mwi-nw-coin { width: 20px; height: 20px; border-radius: 6px; background: rgba(251,191,36,0.16); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; flex: none; }
-.mwi-nw-big { color: #fbbf24; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mwi-nw-coin { width: 20px; height: 20px; border-radius: 6px; background: color-mix(in srgb, ${accent} 16%, transparent); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; flex: none; }
+.mwi-nw-big { color: ${accent}; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mwi-nw-chev { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.75); font-size: 10px; line-height: 1; transition: transform 0.15s, background 0.15s, color 0.15s; flex: none; }
 #mwi-networth-chev { width: 16px; height: 16px; font-size: 11px; }
 #mwi-networth-details > .mwi-nw-kids > details.mwi-nw-node > summary .mwi-nw-chev { width: 20px; height: 20px; border-radius: 5px; font-size: 13px; }
@@ -24918,7 +25225,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 .mwi-nw-kids > details.mwi-nw-node[open] > summary { color: #fff; }
 .mwi-nw-nm { color: inherit; overflow-wrap: anywhere; }
 .mwi-nw-count { color: rgba(255,255,255,0.4); font-size: 10.5px; margin-left: 4px; }
-.mwi-nw-val { color: #fbbf24; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mwi-nw-val { color: ${accent}; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mwi-nw-zero { color: rgba(255,255,255,0.3); font-weight: 400; }
 .mwi-nw-indent { border-left: 1px solid rgba(255,255,255,0.08); margin: 1px 0 1px 14px; padding-left: 9px; }
 .mwi-nw-lv1 { color: #ccc; }
@@ -25143,7 +25450,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                 svg.setAttribute('width', '12');
                 svg.setAttribute('height', '12');
                 svg.style.cssText = `
-                color: #fbbf24;
+                color: ${config.COLOR_ACCENT};
                 fill: currentColor;
             `;
 
@@ -25165,7 +25472,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             labelSpan.textContent = i18n_js.t('networthDisplay.goldLabel');
 
             const valueSpan = document.createElement('span');
-            valueSpan.style.cssText = 'color: #fbbf24; font-weight: 600;';
+            valueSpan.style.cssText = `color: ${config.COLOR_ACCENT}; font-weight: 600;`;
             valueSpan.textContent = value;
 
             // Assemble
@@ -37133,4 +37440,4 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.materialCalculator, Toolasha.Utils.warningIcon, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.loadoutState, Toolasha.Core.tooltipObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.materialCalculator, Toolasha.Utils.warningIcon, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Core.loadoutState, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);

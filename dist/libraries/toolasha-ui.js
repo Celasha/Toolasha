@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.16.0
+ * Version: 3.17.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15097,6 +15097,7 @@ ${starCSS}
          */
         initialize() {
             if (this.initialized) return;
+            if (!config.getSetting('taskInventoryHighlighter')) return;
 
             // Watch for task panel header to add button
             this.watchTaskPanel();

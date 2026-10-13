@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.16.0
+ * Version: 3.17.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1803,6 +1803,14 @@
             catalystCostLine:
                 '• {{itemName}}: {{amount}}/hr (consumed only on success, {{successRate}}) @ {{price}} → {{cost}}/hr',
             catalystCostSectionTitle: 'Catalyst Cost: {{cost}}/hr',
+            catalystWhatIfLabel: 'Catalyst what-if:',
+            catalystOptionEquipped: 'Equipped',
+            catalystOptionNone: 'None',
+            catalystWhatIfWarning:
+                'What-if: figures assume {{catalyst}}, which is not what you have equipped. They do not reflect your real outcome.',
+            catalystWhatIfWarningNone:
+                'What-if: figures assume no catalyst, which is not what you have equipped. They do not reflect your real outcome.',
+            catalystWhatIfSummaryTag: 'what-if',
             drinkCostLine: '• {{itemName}}: {{amount}}/hr @ {{price}} → {{cost}}/hr',
             drinkCostsSectionTitle: (p) => `Drink Costs: ${p.cost}/hr (${p.count} drink${p.count !== 1 ? 's' : ''})`,
             modifiersHeader: 'Modifiers:',
@@ -2007,8 +2015,9 @@
             applySkipButton: 'Apply Skip ({{count}})',
             targetWinPercentLabel: 'Target Win %',
             simHoursLabel: 'Sim Hours',
-            liveClearEnhancing: ' [Clear {{pct}}% | +{{current}}/+{{target}} | {{left}} left]',
-            liveClearSkilling: ' [Clear {{pct}}% | {{left}} left]',
+            liveClearEnhancing: ' [{{pct}}% | +{{current}}/+{{target}} | {{left}} left]',
+            liveClearSkilling: ' [{{pct}}% | {{left}} left]',
+            liveClearChanceLine: 'Clear chance: {{pct}}%',
             successDoubleLine: 'Success: {{success}}% | Double: {{double}}%',
             liveActionsLine: 'Actions: {{current}}/{{total}}',
             liveEnhanceLine: 'Enhance: +{{current}}/+{{target}}',
@@ -3246,6 +3255,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             marketDataUnavailable: '⚠️ Market data unavailable',
             outdatedData: '⚠️ Using outdated market data',
         },
+        characterDataWarning: {
+            message:
+                "Toolasha didn't receive your character data, so most features won't work. Refresh the page to fix this.",
+            reloadButton: 'Refresh page',
+            dismissLabel: 'Dismiss',
+        },
         networthCalculator: {
             guildBuffDisplayName: (p) => `Shrine of ${p.shrine} - ${p.type}`,
             otherCategoryFallbackLabel: 'Other',
@@ -3598,11 +3613,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 actionPanel_showLevelProgress: {
                     label: 'Action panel: Show level progress',
-                    help: 'Displays XP and level progress estimates inside action panels',
+                    help: 'Displays XP and level progress estimates inside action panels, including the Alchemy panel',
                 },
                 actionPanel_showSpeedTime: {
                     label: 'Action panel: Show action speed & time',
-                    help: 'Displays speed breakdown, efficiency, and total time inside action panels',
+                    help: 'Displays speed breakdown, efficiency, and total time inside action panels, including the Alchemy panel',
                 },
                 requiredMaterials: {
                     label: 'Action panel: Show total required and missing materials',
@@ -3624,9 +3639,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 actionQueue_completionTimeStyle: {
                     label: 'Queued actions: Completion display',
-                    help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
+                    help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip. Clock times follow the 12/24-hour and date order set under Market: Time format and Date format for date/time display.',
                     options: {
-                        absolute: 'Clock time only (Complete at 14:32)',
+                        absolute: 'Clock time only (Complete at 14:32 or 2:32 PM)',
                         relative: 'Cumulative duration only (Complete in 3h 40m)',
                         both: 'Both',
                     },
@@ -3661,8 +3676,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: 'When opening Best Items, sets the max level filter to your current Alchemy skill level. Off by default - alchemy has no hard level requirement (being under-leveled only lowers success rate, which profit/hr already accounts for), so the highest-profit item may genuinely be above your level.',
                 },
                 actions_missingMaterialsButton: {
-                    label: 'Show "Missing Mats Marketplace" button on production panels',
-                    help: 'Adds button to production panels that opens marketplace with tabs for missing materials',
+                    label: 'Show "Missing Mats Marketplace" button on production and alchemy panels',
+                    help: 'Adds button to production and alchemy panels that opens marketplace with tabs for missing materials',
                 },
                 actions_missingMaterialsButton_ignoreQueue: {
                     label: 'Ignore queued actions when calculating missing materials',
@@ -4877,11 +4892,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 actionPanel_showLevelProgress: {
                     label: '动作面板：显示等级进度',
-                    help: '在动作面板中显示经验和等级进度估算',
+                    help: '在动作面板（包括炼金面板）中显示经验和等级进度估算',
                 },
                 actionPanel_showSpeedTime: {
                     label: '动作面板：显示动作速度与时间',
-                    help: '在动作面板中显示速度明细、效率和总时间',
+                    help: '在动作面板（包括炼金面板）中显示速度明细、效率和总时间',
                 },
                 requiredMaterials: { label: '动作面板：显示所需材料总量与缺口', help: '输入数量后显示所需材料总量及缺口' },
                 actionPanel_enhanceMatLimitProtections: {
@@ -4900,9 +4915,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 actionQueue_completionTimeStyle: {
                     label: '队列中的动作：完成时间显示方式',
-                    help: '队列动作弹窗及悬浮提示中完成时间的显示方式',
+                    help: '队列动作弹窗及悬浮提示中完成时间的显示方式。时钟时间的12/24小时制和日期顺序取决于“市场”设置中的“时间显示格式”和“日期显示格式”。',
                     options: {
-                        absolute: '仅时钟时间（14:32 完成）',
+                        absolute: '仅时钟时间（14:32 或下午 2:32 完成）',
                         relative: '仅累计时长（3 小时 40 分后完成）',
                         both: '两者都显示',
                     },
@@ -4937,8 +4952,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '打开最佳物品时，将最高等级筛选预填为你当前的炼金技能等级。默认关闭——炼金没有硬性等级要求（等级不足只会降低成功率，而每小时利润已经计入了这一点），因此利润最高的物品可能本来就高于你的等级。',
                 },
                 actions_missingMaterialsButton: {
-                    label: '在生产面板显示“购买缺失材料”按钮',
-                    help: '在生产面板添加按钮，点击后打开市场并自动创建缺失材料的标签页',
+                    label: '在生产和炼金面板显示“购买缺失材料”按钮',
+                    help: '在生产和炼金面板添加按钮，点击后打开市场并自动创建缺失材料的标签页',
                 },
                 actions_missingMaterialsButton_ignoreQueue: {
                     label: '计算缺失材料时忽略队列中的动作',
@@ -6575,8 +6590,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             applySkipButton: '应用跳过（{{count}}）',
             targetWinPercentLabel: '目标胜率 %',
             simHoursLabel: '模拟小时数',
-            liveClearEnhancing: ' [通关率 {{pct}}% | +{{current}}/+{{target}} | 剩余 {{left}}]',
-            liveClearSkilling: ' [通关率 {{pct}}% | 剩余 {{left}}]',
+            liveClearEnhancing: ' [{{pct}}% | +{{current}}/+{{target}} | 剩余 {{left}}]',
+            liveClearSkilling: ' [{{pct}}% | 剩余 {{left}}]',
+            liveClearChanceLine: '通关率：{{pct}}%',
             successDoubleLine: '成功率：{{success}}% | 双倍：{{double}}%',
             liveActionsLine: '次数：{{current}}/{{total}}',
             liveEnhanceLine: '强化：+{{current}}/+{{target}}',
@@ -6923,6 +6939,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             materialCostsSectionTitle: (p) => `材料成本：${p.cost}/时（${p.count} 种材料）`,
             catalystCostLine: '• {{itemName}}：{{amount}}/时（仅成功时消耗，{{successRate}}）@ {{price}} → {{cost}}/时',
             catalystCostSectionTitle: '催化剂成本：{{cost}}/时',
+            catalystWhatIfLabel: '催化剂假设：',
+            catalystOptionEquipped: '当前装备',
+            catalystOptionNone: '不使用',
+            catalystWhatIfWarning: '假设：以下数据按{{catalyst}}计算，但你并未装备它，不代表实际结果。',
+            catalystWhatIfWarningNone: '假设：以下数据按不使用催化剂计算，但这与你当前装备不同，不代表实际结果。',
+            catalystWhatIfSummaryTag: '假设',
             drinkCostLine: '• {{itemName}}：{{amount}}/时 @ {{price}} → {{cost}}/时',
             drinkCostsSectionTitle: (p) => `饮品成本：${p.cost}/时（${p.count} 种饮品）`,
             modifiersHeader: '加成：',
@@ -7566,6 +7588,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         networkAlert: {
             marketDataUnavailable: '⚠️ 市场数据不可用',
             outdatedData: '⚠️ 正在使用过期的市场数据',
+        },
+        characterDataWarning: {
+            message: 'Toolasha 未收到你的角色数据，大部分功能将无法使用。请刷新页面以修复。',
+            reloadButton: '刷新页面',
+            dismissLabel: '关闭',
         },
         marketData: {
             outlierPriceWarningTooltip:
@@ -9065,14 +9092,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Action panel: Show level progress',
                     type: 'checkbox',
                     default: true,
-                    help: 'Displays XP and level progress estimates inside action panels',
+                    help: 'Displays XP and level progress estimates inside action panels, including the Alchemy panel',
                 },
                 actionPanel_showSpeedTime: {
                     id: 'actionPanel_showSpeedTime',
                     label: 'Action panel: Show action speed & time',
                     type: 'checkbox',
                     default: true,
-                    help: 'Displays speed breakdown, efficiency, and total time inside action panels',
+                    help: 'Displays speed breakdown, efficiency, and total time inside action panels, including the Alchemy panel',
                 },
                 requiredMaterials: {
                     id: 'requiredMaterials',
@@ -9124,11 +9151,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'select',
                     default: 'absolute',
                     options: [
-                        { value: 'absolute', label: 'Clock time only (Complete at 14:32)' },
+                        { value: 'absolute', label: 'Clock time only (Complete at 14:32 or 2:32 PM)' },
                         { value: 'relative', label: 'Cumulative duration only (Complete in 3h 40m)' },
                         { value: 'both', label: 'Both' },
                     ],
-                    help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
+                    help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip. Clock times follow the 12/24-hour and date order set under Market: Time format and Date format for date/time display.',
                 },
             },
         },
@@ -9201,10 +9228,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             settings: {
                 actions_missingMaterialsButton: {
                     id: 'actions_missingMaterialsButton',
-                    label: 'Show "Missing Mats Marketplace" button on production panels',
+                    label: 'Show "Missing Mats Marketplace" button on production and alchemy panels',
                     type: 'checkbox',
                     default: true,
-                    help: 'Adds button to production panels that opens marketplace with tabs for missing materials',
+                    help: 'Adds button to production and alchemy panels that opens marketplace with tabs for missing materials',
                 },
                 actions_missingMaterialsButton_ignoreQueue: {
                     id: 'actions_missingMaterialsButton_ignoreQueue',
@@ -12899,6 +12926,69 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
     };
 
     /**
+     * Character Data Warning
+     * Full-width banner shown when init_character_data never arrives, since most features depend on it
+     * and only a page refresh recovers.
+     */
+
+
+    const BANNER_ID = 'mwi-character-data-warning';
+
+    /**
+     * Show the banner (no-op if already shown or the document isn't ready).
+     */
+    function showCharacterDataWarning() {
+        if (typeof document === 'undefined' || !document.body) return;
+        if (document.getElementById(BANNER_ID)) return;
+
+        const banner = document.createElement('div');
+        banner.id = BANNER_ID;
+        banner.setAttribute('role', 'alert');
+        banner.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0;
+        z-index: 100000;
+        display: flex; align-items: center; justify-content: center; gap: 12px;
+        padding: 8px 40px 8px 12px;
+        background: #b91c1c; color: #fff;
+        font-size: 14px; font-weight: 600;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    `;
+
+        const message = document.createElement('span');
+        message.textContent = t('characterDataWarning.message');
+
+        const reloadButton = document.createElement('button');
+        reloadButton.textContent = t('characterDataWarning.reloadButton');
+        reloadButton.style.cssText = `
+        background: #fff; color: #b91c1c;
+        border: none; border-radius: 4px;
+        padding: 4px 12px; font-weight: 700; cursor: pointer;
+    `;
+        reloadButton.addEventListener('click', () => window.location.reload());
+
+        const dismissButton = document.createElement('button');
+        dismissButton.textContent = '×';
+        dismissButton.setAttribute('aria-label', t('characterDataWarning.dismissLabel'));
+        dismissButton.style.cssText = `
+        position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+        background: none; border: none; color: #fff;
+        font-size: 22px; line-height: 1; cursor: pointer;
+    `;
+        dismissButton.addEventListener('click', () => banner.remove());
+
+        banner.append(message, reloadButton, dismissButton);
+        document.body.appendChild(banner);
+    }
+
+    /**
+     * Remove the banner if present.
+     */
+    function hideCharacterDataWarning() {
+        if (typeof document === 'undefined') return;
+        document.getElementById(BANNER_ID)?.remove();
+    }
+
+    /**
      * Data Manager Module
      * Central hub for accessing game data
      *
@@ -12906,6 +12996,20 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
      * Listens to WebSocket messages for player data updates
      */
 
+
+    const LOGIN_SCREEN_SELECTORS = [
+        '[class*="AuthComponent_authComponent"]',
+        '[class*="CharacterSelectPage_characterSelectPage"]',
+    ];
+
+    /**
+     * True while the game is showing the login form or Character Select.
+     * @returns {boolean}
+     */
+    function isAwaitingPlayerLogin() {
+        if (typeof document === 'undefined') return false;
+        return LOGIN_SCREEN_SELECTORS.some((selector) => document.querySelector(selector));
+    }
 
     class DataManager {
         constructor() {
@@ -13021,11 +13125,18 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     return;
                 }
 
-                // Give up after max attempts
                 if (fallbackAttempts >= maxAttempts) {
+                    // init_character_data only arrives after login and character selection, so
+                    // waiting on either of those screens is not a failure - restart the window.
+                    if (isAwaitingPlayerLogin()) {
+                        fallbackAttempts = 0;
+                        return;
+                    }
+
                     console.error(
                         '[DataManager] Character data not received after 30 seconds. WebSocket hook may have failed.'
                     );
+                    showCharacterDataWarning();
                     stopFallbackInterval();
                 }
             }, 500); // Check every 500ms
@@ -13242,6 +13353,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 // Include flag to indicate if this is a character switch vs first load
                 // IMPORTANT: Mutate data object instead of spreading to avoid copying MB of data
                 data._isCharacterSwitch = isCharacterSwitch;
+                hideCharacterDataWarning();
                 this.emit('character_initialized', data);
                 connectionState.handleCharacterInitialized(data);
             });

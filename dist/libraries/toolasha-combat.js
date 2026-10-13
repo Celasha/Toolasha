@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.16.0
+ * Version: 3.17.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -98,7 +98,7 @@
      */
 
 
-    const MARKETPLACE_PANEL_SELECTOR = '[class*="MarketplacePanel_marketplacePanel"]';
+    const MARKETPLACE_PANEL_SELECTOR$1 = '[class*="MarketplacePanel_marketplacePanel"]';
     const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
     const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
     const MAX_REACT_TREE_FIBERS = 50000;
@@ -251,7 +251,7 @@
     }
 
     function readMarketplaceRuntimeState() {
-        const visiblePanels = Array.from(document.querySelectorAll(MARKETPLACE_PANEL_SELECTOR)).filter(isElementVisible);
+        const visiblePanels = Array.from(document.querySelectorAll(MARKETPLACE_PANEL_SELECTOR$1)).filter(isElementVisible);
         if (visiblePanels.length !== 1) return null;
         return readMarketplaceRuntimeStateFromElement(visiblePanels[0]);
     }
@@ -4164,6 +4164,8 @@
          * Initialize chat annotation monitor
          */
         async initialize() {
+            if (!config.getSetting('dungeonTrackerChatAnnotations')) return;
+
             // Load run counts from storage to sync with UI
             await this.loadRunCountsFromStorage();
 
@@ -4437,7 +4439,11 @@
          * Called on page load and when needed
          */
         async annotateAllMessages() {
-            if (!this.enabled || !config.isFeatureEnabled('dungeonTracker')) {
+            if (
+                !this.enabled ||
+                !config.getSetting('dungeonTrackerChatAnnotations') ||
+                !config.isFeatureEnabled('dungeonTracker')
+            ) {
                 return;
             }
 
@@ -12422,6 +12428,7 @@
             }
 
             const tooltipLines = [
+                i18n_js.t('labyrinthClearRate.liveClearChanceLine', { pct: chancePct }),
                 i18n_js.t('labyrinthClearRate.successDoubleLine', {
                     success: (estimate.successChance * 100).toFixed(1),
                     double: (estimate.doubleChance * 100).toFixed(1),
@@ -13214,12 +13221,36 @@
         }
     }
 
+    const MARKETPLACE_PANEL_SELECTOR = '[class*="MarketplacePanel_marketplacePanel"]';
+    const MARKETPLACE_TAB_STRUCTURE_SELECTOR = '.MuiTabs-flexContainer[role="tablist"], [role="tab"], [role="tabpanel"]';
+
+    function truncateText(text, max) {
+        const value = String(text ?? '');
+        return value.length > max ? `${value.slice(0, max)}...` : value;
+    }
+
+    /**
+     * Diagnostic-only: one-line description of an element including every attribute (so
+     * aria-*, role, id, class, style and data-* are all visible in a console screenshot).
+     * @param {Element} element
+     * @param {boolean} [withText]
+     * @returns {string}
+     */
+    function describeElement(element, withText = true) {
+        const attrs = Array.from(element.attributes)
+            .map((attr) => `${attr.name}="${truncateText(attr.value, 160)}"`)
+            .join(' ');
+        const text = withText ? ` "${truncateText((element.textContent || '').trim().replace(/\s+/g, ' '), 30)}"` : '';
+        return `<${element.tagName.toLowerCase()}${attrs ? ` ${attrs}` : ''}>${text}`;
+    }
+
     /**
      * Diagnostic-only: whether a mutation's target is relevant to the tab-selection investigation -
-     * a tab element itself (native or Toolasha-injected), or anything inside the native tablist.
-     * Document-body-wide subtree observation sees constant unrelated page churn (chat, timers,
-     * etc.) - this keeps the captured trail limited to the one question that matters: what,
-     * specifically, changed on or near the tabs right before selection was lost.
+     * a tab element itself (native or Toolasha-injected), anything inside the native tablist, the
+     * Marketplace panel itself, or a tab panel inside it. Document-body-wide subtree observation sees
+     * constant unrelated page churn (chat, timers, etc.) - this keeps the captured trail limited to
+     * the one question that matters: what, specifically, changed on or near the tabs right before
+     * selection was lost.
      * @param {Node} node
      * @returns {boolean}
      */
@@ -13227,36 +13258,171 @@
         if (!node || node.nodeType !== 1) return false;
         if (node.getAttribute('role') === 'tab') return true;
         if (node.hasAttribute('data-mwi-custom-tab') || node.hasAttribute('data-mwi-tab-owner')) return true;
+        if (node.matches(MARKETPLACE_PANEL_SELECTOR)) return true;
+        if (node.getAttribute('role') === 'tabpanel' && node.closest(MARKETPLACE_PANEL_SELECTOR)) return true;
         return Boolean(node.closest && node.closest('.MuiTabs-flexContainer[role="tablist"]'));
     }
 
     function describeMutationTarget(node) {
         const tag = node.tagName.toLowerCase();
         const role = node.getAttribute('role') || '';
-        const kind = node.hasAttribute('data-mwi-custom-tab') ? 'custom' : role === 'tab' ? 'native' : 'other';
+        let kind = 'other';
+        if (node.hasAttribute('data-mwi-custom-tab')) kind = 'custom';
+        else if (role === 'tab') kind = 'native';
+        else if (node.matches(MARKETPLACE_PANEL_SELECTOR)) kind = 'marketplace-panel';
+        else if (role === 'tabpanel') kind = 'tabpanel';
         const text = (node.textContent || '').trim().slice(0, 24).replace(/\s+/g, ' ');
         return `<${tag}${role ? ` role="${role}"` : ''}> [${kind}] "${text}"`;
+    }
+
+    /**
+     * Diagnostic-only: nodes added/removed by a childList record that are, or contain, the
+     * Marketplace panel (a whole-panel remount) or - when the record is inside the panel - tab
+     * strip structure. The target of such a record is an ancestor, which the target check above
+     * would miss, so a full remount previously left an empty trail.
+     * @param {MutationRecord} record
+     * @returns {string[]}
+     */
+    function summarizeStructuralNodes(record) {
+        const inPanel = Boolean(record.target.closest?.(MARKETPLACE_PANEL_SELECTOR));
+        const hits = [];
+        const consider = (sign, node) => {
+            if (node.nodeType !== 1) return;
+            const isPanel = node.matches(MARKETPLACE_PANEL_SELECTOR) || node.querySelector(MARKETPLACE_PANEL_SELECTOR);
+            const isTabStructure =
+                inPanel &&
+                (node.matches(MARKETPLACE_TAB_STRUCTURE_SELECTOR) ||
+                    node.querySelector(MARKETPLACE_TAB_STRUCTURE_SELECTOR));
+            if (isPanel || isTabStructure) {
+                hits.push(
+                    `${sign}${isPanel ? 'marketplace-panel-subtree' : 'tab-structure'} ${describeMutationTarget(node)}`
+                );
+            }
+        };
+        record.removedNodes.forEach((node) => consider('-', node));
+        record.addedNodes.forEach((node) => consider('+', node));
+        return hits;
     }
 
     /**
      * Diagnostic-only: summarize a MutationRecord relevant to marketplace tab selection, to
      * distinguish a native React/MUI selection glitch (mutation lands on a native tab) from one
      * caused by Toolasha's own injected tabs (mutation lands on a custom tab, or a childList churn
-     * on the shared tablist container itself). Returns null for anything outside the tab area.
+     * on the shared tablist container itself) or from a whole-panel remount. Returns null for
+     * anything outside the tab area.
      * @param {MutationRecord} record
+     * @param {number} sinceArmedMs - Time since the observer was armed, to order entries
      * @returns {string|null}
      */
-    function summarizeMutation(record) {
-        if (!isDiagnosticMutationTarget(record.target)) return null;
-        const label = describeMutationTarget(record.target);
-        if (record.type === 'attributes') {
-            const newValue = record.target.getAttribute(record.attributeName);
-            return `attr "${record.attributeName}" on ${label}: "${record.oldValue}" -> "${newValue}"`;
+    function summarizeMutation(record, sinceArmedMs) {
+        const stamp = `+${sinceArmedMs}ms`;
+        if (isDiagnosticMutationTarget(record.target)) {
+            const label = describeMutationTarget(record.target);
+            if (record.type === 'attributes') {
+                const newValue = record.target.getAttribute(record.attributeName);
+                return `${stamp} attr "${record.attributeName}" on ${label}: "${record.oldValue}" -> "${newValue}"`;
+            }
+            if (record.type === 'childList') {
+                return `${stamp} childList on ${label}: +${record.addedNodes.length}/-${record.removedNodes.length}`;
+            }
+            return `${stamp} ${record.type} on ${label}`;
         }
+
         if (record.type === 'childList') {
-            return `childList on ${label}: +${record.addedNodes.length}/-${record.removedNodes.length}`;
+            const hits = summarizeStructuralNodes(record);
+            if (hits.length) return `${stamp} childList on <${record.target.tagName.toLowerCase()}>: ${hits.join(', ')}`;
         }
-        return `${record.type} on ${label}`;
+        return null;
+    }
+
+    /**
+     * Diagnostic-only: native-tab selection markers, for a one-line comparison of the state at
+     * different moments (armed / first invalid / now).
+     * @returns {string}
+     */
+    function summarizeNativeTabMarkers() {
+        const candidates = getMarketplaceTabContainerCandidates();
+        if (candidates.size !== 1) return `${candidates.size} visible marketplace tab container(s)`;
+        const container = candidates.values().next().value;
+        const states = Array.from(container.children)
+            .filter(
+                (tab) =>
+                    tab.getAttribute('role') === 'tab' &&
+                    !tab.hasAttribute('data-mwi-custom-tab') &&
+                    !tab.hasAttribute('data-mwi-shrine-tab')
+            )
+            .map(
+                (tab) =>
+                    `"${(tab.textContent || '').trim()}" aria-selected=${tab.getAttribute('aria-selected')} Mui-selected=${tab.classList.contains('Mui-selected')}`
+            );
+        return states.join('; ') || 'no native tabs found';
+    }
+
+    /**
+     * Diagnostic-only: a self-contained structural dump of everything that could explain why the
+     * native tabs carry no selected marker - environment, every Marketplace panel with its tablists
+     * (all attributes of every child), tab panels and their visibility, and the custom tabs present.
+     * Built as flat text so it is fully readable in a console screenshot without expanding anything.
+     * @returns {string}
+     */
+    function buildMarketplaceStructureSnapshot() {
+        const lines = [];
+
+        const gameChunks = Array.from(document.scripts)
+            .map((script) => script.src || '')
+            .filter((src) => /main\.[\w]+\.chunk\.js/.test(src))
+            .map((src) => src.split('/').pop());
+        lines.push(
+            `env: host=${window.location.hostname} path=${window.location.pathname} frame=${window.top === window.self ? 'top' : 'iframe'} visibility=${document.visibilityState} gameChunk=${gameChunks.join(',') || 'unknown'} ua=${navigator.userAgent}`
+        );
+
+        const panels = Array.from(document.querySelectorAll(MARKETPLACE_PANEL_SELECTOR));
+        lines.push(`marketplace panels in document: ${panels.length}`);
+        panels.slice(0, 3).forEach((panel, panelIndex) => {
+            lines.push(
+                `  panel[${panelIndex}] visible=${isElementActuallyVisible(panel)} ${describeElement(panel, false)}`
+            );
+
+            panel.querySelectorAll('.MuiTabs-flexContainer[role="tablist"]').forEach((tablist, tablistIndex) => {
+                lines.push(
+                    `    tablist[${tablistIndex}] visible=${isElementActuallyVisible(tablist)} ${describeElement(tablist, false)}`
+                );
+                const ancestors = [];
+                for (let el = tablist.parentElement; el && el !== panel && ancestors.length < 6; el = el.parentElement) {
+                    ancestors.push(`${el.tagName.toLowerCase()}.${truncateText(el.getAttribute('class') || '', 60)}`);
+                }
+                lines.push(`      ancestors (inner to outer): ${ancestors.join(' < ') || 'none'}`);
+                Array.from(tablist.children).forEach((child, childIndex) => {
+                    lines.push(`      child[${childIndex}] ${describeElement(child)}`);
+                });
+            });
+
+            panel.querySelectorAll('[role="tabpanel"]').forEach((tabpanel, tabpanelIndex) => {
+                const content = Array.from(tabpanel.children)
+                    .slice(0, 3)
+                    .map((child) => truncateText(child.getAttribute('class') || child.tagName.toLowerCase(), 70))
+                    .join(' | ');
+                lines.push(
+                    `    tabpanel[${tabpanelIndex}] visible=${isElementActuallyVisible(tabpanel)} ${describeElement(tabpanel, false)} content: ${content || 'empty'}`
+                );
+            });
+        });
+
+        const customTabs = Array.from(document.querySelectorAll('[data-mwi-custom-tab]'));
+        const byOwner = {};
+        for (const tab of customTabs) {
+            const key = tab.getAttribute('data-mwi-tab-owner') || 'none';
+            byOwner[key] = (byOwner[key] || 0) + 1;
+        }
+        lines.push(
+            `custom tabs in document: ${customTabs.length} (${
+            Object.entries(byOwner)
+                .map(([owner, count]) => `${owner}=${count}`)
+                .join(', ') || 'none'
+        }), visible=${customTabs.filter(isElementActuallyVisible).length}`
+        );
+
+        return lines.join('\n');
     }
 
     /**
@@ -13300,6 +13466,12 @@
         // Diagnostic-only: bounded trail of relevant mutations leading up to an invalid-state
         // episode, cleared on recovery so a later failure is never attributed to stale entries.
         const mutationTrail = [];
+        // Diagnostic-only timeline: distinguishes "native tabs never carried a selected marker since
+        // this observer armed" from "they lost it", which no single end-state snapshot can.
+        const armedAt = Date.now();
+        let lastValidAt = null;
+        let firstInvalidAt = null;
+        let markersAtFirstInvalid = null;
 
         function hasValidState() {
             const visibleContainer = getVisibleMarketplaceTabContainer();
@@ -13365,12 +13537,32 @@
         // shows exactly what changed right before selection was lost - distinguishing a native
         // React/MUI glitch (mutation lands on a native tab) from Toolasha's own injected tabs
         // disrupting the shared tablist (mutation lands on a custom tab, or childList churn on the
-        // container itself).
+        // container itself) or a whole-panel remount.
         function formatMutationTrail() {
             if (!mutationTrail.length) {
-                return ' (no relevant DOM mutations captured - detected via the 1s poll interval, not a live mutation)';
+                return '  No relevant DOM mutations were captured since the last valid state (detected via the 1s poll interval, not a live mutation)';
             }
-            return `\n  Recent relevant mutations leading up to this:\n  - ${mutationTrail.join('\n  - ')}`;
+            return `  Recent relevant mutations leading up to this:\n  - ${mutationTrail.join('\n  - ')}`;
+        }
+
+        // Diagnostic-only: the complete, self-contained report logged when custom tabs are torn
+        // down. Reporters cannot run console snippets, so everything needed to diagnose must be in
+        // this one message as flat text.
+        function buildCleanupReport() {
+            const now = Date.now();
+            const ago = (timestamp) => (timestamp === null ? 'never' : `${now - timestamp}ms ago`);
+            return [
+                `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}`,
+                `  timeline: armed ${now - armedAt}ms ago, valid since arm: ${lastValidAt === null ? 'NEVER' : 'yes'}, last valid ${ago(lastValidAt)}, first invalid ${ago(firstInvalidAt)}, grace ${invalidStateGraceMs}ms`,
+                `  native tab markers at arm: ${markersAtArm}`,
+                `  native tab markers at first invalid detection: ${markersAtFirstInvalid ?? 'n/a'}`,
+                `  native tab markers now: ${summarizeNativeTabMarkers()}`,
+                formatMutationTrail(),
+                buildMarketplaceStructureSnapshot()
+                    .split('\n')
+                    .map((line) => `  ${line}`)
+                    .join('\n'),
+            ].join('\n');
         }
 
         function notifyInvalidState() {
@@ -13378,9 +13570,7 @@
 
             if (invalidStateGraceMs <= 0) {
                 invalidStateNotified = true;
-                console.warn(
-                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
-                );
+                console.warn(buildCleanupReport());
                 onTabsGone();
                 return;
             }
@@ -13389,9 +13579,7 @@
                 invalidStateTimer = null;
                 if (isStopped || invalidStateNotified || hasValidState()) return;
                 invalidStateNotified = true;
-                console.warn(
-                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
-                );
+                console.warn(buildCleanupReport());
                 onTabsGone();
             }, invalidStateGraceMs);
         }
@@ -13403,22 +13591,33 @@
             // 1s setInterval fallback below calls poll() with no arguments) - diagnostic-only.
             if (mutations) {
                 for (const record of mutations) {
-                    const summary = summarizeMutation(record);
+                    const summary = summarizeMutation(record, Date.now() - armedAt);
                     if (!summary) continue;
                     mutationTrail.push(summary);
-                    if (mutationTrail.length > 8) mutationTrail.shift();
+                    if (mutationTrail.length > 15) mutationTrail.shift();
                 }
             }
 
             if (!hasValidState()) {
+                if (firstInvalidAt === null) {
+                    firstInvalidAt = Date.now();
+                    markersAtFirstInvalid = summarizeNativeTabMarkers();
+                }
                 notifyInvalidState();
                 return;
             }
 
+            lastValidAt = Date.now();
+            firstInvalidAt = null;
+            markersAtFirstInvalid = null;
             clearInvalidStateTimer();
             invalidStateNotified = false;
             mutationTrail.length = 0;
         }
+
+        const validAtArm = hasValidState();
+        if (validAtArm) lastValidAt = armedAt;
+        const markersAtArm = summarizeNativeTabMarkers();
 
         if (document.body && typeof MutationObserver === 'function') {
             mutationObserver = new MutationObserver(poll);
@@ -13426,6 +13625,8 @@
                 childList: true,
                 subtree: true,
                 attributes: true,
+                // Required for the "old -> new" values in the diagnostic mutation trail.
+                attributeOldValue: true,
                 // React changes native tab selection through aria-selected/class without
                 // necessarily mutating children. Observe both so native-tab exits are prompt
                 // even when navigation was triggered programmatically rather than by a click.

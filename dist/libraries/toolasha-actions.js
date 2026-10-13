@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.16.0
+ * Version: 3.17.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17227,6 +17227,178 @@
     const requiredMaterials = new RequiredMaterials();
 
     /**
+     * Alchemy Material Calculator
+     * Missing-material math for the Alchemy panel: the selected item is consumed
+     * `bulkMultiplier` times per action, and the Repeat count already includes efficiency repeats.
+     */
+
+
+    /**
+     * Split an inventory item hash ("{characterId}::{location}::{itemHrid}::{level}").
+     * @param {string} itemHash - Inventory item hash
+     * @returns {{itemHrid: string, enhancementLevel: number}|null} Parsed parts, or null if malformed
+     */
+    function parseInventoryItemHash(itemHash) {
+        const parts = typeof itemHash === 'string' ? itemHash.split('::') : [];
+        if (parts.length < 4) return null;
+        const enhancementLevel = Number.parseInt(parts.at(-1), 10);
+        if (!parts.at(-2) || !Number.isInteger(enhancementLevel)) return null;
+        return { itemHrid: parts.at(-2), enhancementLevel };
+    }
+
+    /**
+     * Items consumed per Alchemy action for an item.
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Items consumed per action (at least 1)
+     */
+    function getAlchemyItemsPerAction(itemHrid) {
+        const bulk = Number(dataManager.getItemDetails(itemHrid)?.alchemyDetail?.bulkMultiplier);
+        return Number.isFinite(bulk) && bulk >= 1 ? bulk : 1;
+    }
+
+    /**
+     * Items already reserved by finite queued Alchemy actions on the same unenhanced item.
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Reserved item count
+     */
+    function calculateQueuedAlchemyItems(itemHrid) {
+        let reserved = 0;
+        for (const queued of dataManager.getCurrentActions() || []) {
+            if (!queued.hasMaxCount || !queued.primaryItemHash) continue;
+            const parsed = parseInventoryItemHash(queued.primaryItemHash);
+            if (!parsed || parsed.itemHrid !== itemHrid || parsed.enhancementLevel !== 0) continue;
+            const remaining = (queued.maxCount ?? 0) - (queued.currentCount ?? 0);
+            if (remaining > 0) reserved += remaining * getAlchemyItemsPerAction(itemHrid);
+        }
+        return reserved;
+    }
+
+    /**
+     * Material requirements for repeating an Alchemy action on one unenhanced item.
+     * Coins are not included. A catalyst is added only when one is passed in.
+     * @param {string} itemHrid - Item being processed
+     * @param {number} numActions - Repeat count
+     * @param {boolean} [accountForQueue=false] - Subtract items already reserved by the queue
+     * @param {{catalystHrid: string|null, successRate: number}|null} [catalyst=null] - Catalyst to include;
+     *   it is consumed once per success, so the amount is an estimate (Repeat count x success rate, rounded up)
+     * @returns {Array<Object>} Material entries (same shape as calculateMaterialRequirements), or [] if unknown
+     */
+    function calculateAlchemyMaterialRequirements(itemHrid, numActions, accountForQueue = false, catalyst = null) {
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        if (!itemDetails || !(numActions > 0)) return [];
+
+        const required = numActions * getAlchemyItemsPerAction(itemHrid);
+        const have = (dataManager.getInventory() || [])
+            .filter((item) => item.itemHrid === itemHrid && !item.enhancementLevel)
+            .reduce((sum, item) => sum + (item.count || 0), 0);
+        const queued = accountForQueue
+            ? (materialCalculator_js.calculateQueuedMaterialsForAction(null).get(itemHrid) || 0) + calculateQueuedAlchemyItems(itemHrid)
+            : 0;
+        const available = Math.max(0, have - queued);
+
+        const materials = [
+            {
+                itemHrid,
+                itemName: itemDetails.name,
+                required,
+                have,
+                queued,
+                available,
+                missing: Math.max(0, required - available),
+                isTradeable: itemDetails.isTradable === true,
+                isUpgradeItem: false,
+            },
+        ];
+
+        const catalystDetails = catalyst?.catalystHrid ? dataManager.getItemDetails(catalyst.catalystHrid) : null;
+        if (catalystDetails && catalyst.successRate > 0) {
+            const catalystRequired = Math.ceil(numActions * catalyst.successRate);
+            const catalystHave = (dataManager.getInventory() || [])
+                .filter((item) => item.itemHrid === catalyst.catalystHrid && !item.enhancementLevel)
+                .reduce((sum, item) => sum + (item.count || 0), 0);
+            materials.push({
+                itemHrid: catalyst.catalystHrid,
+                itemName: catalystDetails.name,
+                required: catalystRequired,
+                have: catalystHave,
+                queued: 0,
+                available: catalystHave,
+                missing: Math.max(0, catalystRequired - catalystHave),
+                isTradeable: catalystDetails.isTradable === true,
+                isUpgradeItem: false,
+                isEstimate: true,
+            });
+        }
+
+        return materials;
+    }
+
+    /**
+     * Alchemy catalyst what-if state
+     * The catalyst the player wants to compare in the Alchemy panel, which may differ from the one
+     * equipped. 'equipped' means no what-if. The profit display publishes the resulting catalyst and
+     * success rate so Missing Mats can size the catalyst for it.
+     */
+
+    const CATALYST_CHOICES = ['equipped', 'none', 'typeSpecific', 'prime'];
+
+    let choice = 'equipped';
+    let result = null;
+    const listeners = new Set();
+
+    function notify() {
+        for (const listener of Array.from(listeners)) {
+            listener();
+        }
+    }
+
+    /**
+     * @returns {'equipped'|'none'|'typeSpecific'|'prime'} Current choice
+     */
+    function getCatalystChoice() {
+        return choice;
+    }
+
+    /**
+     * @param {'equipped'|'none'|'typeSpecific'|'prime'} next - Catalyst to compare
+     */
+    function setCatalystChoice(next) {
+        if (!CATALYST_CHOICES.includes(next) || next === choice) return;
+        choice = next;
+        result = null;
+        notify();
+    }
+
+    /**
+     * Catalyst and success rate the what-if produced, or null when no what-if is active.
+     * @returns {{catalystHrid: string|null, successRate: number}|null}
+     */
+    function getCatalystWhatIfResult() {
+        return choice === 'equipped' ? null : result;
+    }
+
+    /**
+     * @param {{catalystHrid: string|null, successRate: number}|null} next - Published by the profit display
+     */
+    function publishCatalystWhatIfResult(next) {
+        const unchanged =
+            (next === null && result === null) ||
+            (next && result && next.catalystHrid === result.catalystHrid && next.successRate === result.successRate);
+        if (unchanged) return;
+        result = next;
+        notify();
+    }
+
+    /**
+     * @param {Function} listener - Called whenever the choice or published result changes
+     * @returns {Function} Unsubscribe
+     */
+    function onCatalystWhatIfChange(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+    }
+
+    /**
      * Marketplace Custom Tabs Utility
      * Provides shared functionality for creating and managing custom marketplace tabs
      * Used by missing materials features (actions, houses, etc.)
@@ -17497,12 +17669,36 @@
         }
     }
 
+    const MARKETPLACE_PANEL_SELECTOR = '[class*="MarketplacePanel_marketplacePanel"]';
+    const MARKETPLACE_TAB_STRUCTURE_SELECTOR = '.MuiTabs-flexContainer[role="tablist"], [role="tab"], [role="tabpanel"]';
+
+    function truncateText(text, max) {
+        const value = String(text ?? '');
+        return value.length > max ? `${value.slice(0, max)}...` : value;
+    }
+
+    /**
+     * Diagnostic-only: one-line description of an element including every attribute (so
+     * aria-*, role, id, class, style and data-* are all visible in a console screenshot).
+     * @param {Element} element
+     * @param {boolean} [withText]
+     * @returns {string}
+     */
+    function describeElement(element, withText = true) {
+        const attrs = Array.from(element.attributes)
+            .map((attr) => `${attr.name}="${truncateText(attr.value, 160)}"`)
+            .join(' ');
+        const text = withText ? ` "${truncateText((element.textContent || '').trim().replace(/\s+/g, ' '), 30)}"` : '';
+        return `<${element.tagName.toLowerCase()}${attrs ? ` ${attrs}` : ''}>${text}`;
+    }
+
     /**
      * Diagnostic-only: whether a mutation's target is relevant to the tab-selection investigation -
-     * a tab element itself (native or Toolasha-injected), or anything inside the native tablist.
-     * Document-body-wide subtree observation sees constant unrelated page churn (chat, timers,
-     * etc.) - this keeps the captured trail limited to the one question that matters: what,
-     * specifically, changed on or near the tabs right before selection was lost.
+     * a tab element itself (native or Toolasha-injected), anything inside the native tablist, the
+     * Marketplace panel itself, or a tab panel inside it. Document-body-wide subtree observation sees
+     * constant unrelated page churn (chat, timers, etc.) - this keeps the captured trail limited to
+     * the one question that matters: what, specifically, changed on or near the tabs right before
+     * selection was lost.
      * @param {Node} node
      * @returns {boolean}
      */
@@ -17510,36 +17706,171 @@
         if (!node || node.nodeType !== 1) return false;
         if (node.getAttribute('role') === 'tab') return true;
         if (node.hasAttribute('data-mwi-custom-tab') || node.hasAttribute('data-mwi-tab-owner')) return true;
+        if (node.matches(MARKETPLACE_PANEL_SELECTOR)) return true;
+        if (node.getAttribute('role') === 'tabpanel' && node.closest(MARKETPLACE_PANEL_SELECTOR)) return true;
         return Boolean(node.closest && node.closest('.MuiTabs-flexContainer[role="tablist"]'));
     }
 
     function describeMutationTarget(node) {
         const tag = node.tagName.toLowerCase();
         const role = node.getAttribute('role') || '';
-        const kind = node.hasAttribute('data-mwi-custom-tab') ? 'custom' : role === 'tab' ? 'native' : 'other';
+        let kind = 'other';
+        if (node.hasAttribute('data-mwi-custom-tab')) kind = 'custom';
+        else if (role === 'tab') kind = 'native';
+        else if (node.matches(MARKETPLACE_PANEL_SELECTOR)) kind = 'marketplace-panel';
+        else if (role === 'tabpanel') kind = 'tabpanel';
         const text = (node.textContent || '').trim().slice(0, 24).replace(/\s+/g, ' ');
         return `<${tag}${role ? ` role="${role}"` : ''}> [${kind}] "${text}"`;
+    }
+
+    /**
+     * Diagnostic-only: nodes added/removed by a childList record that are, or contain, the
+     * Marketplace panel (a whole-panel remount) or - when the record is inside the panel - tab
+     * strip structure. The target of such a record is an ancestor, which the target check above
+     * would miss, so a full remount previously left an empty trail.
+     * @param {MutationRecord} record
+     * @returns {string[]}
+     */
+    function summarizeStructuralNodes(record) {
+        const inPanel = Boolean(record.target.closest?.(MARKETPLACE_PANEL_SELECTOR));
+        const hits = [];
+        const consider = (sign, node) => {
+            if (node.nodeType !== 1) return;
+            const isPanel = node.matches(MARKETPLACE_PANEL_SELECTOR) || node.querySelector(MARKETPLACE_PANEL_SELECTOR);
+            const isTabStructure =
+                inPanel &&
+                (node.matches(MARKETPLACE_TAB_STRUCTURE_SELECTOR) ||
+                    node.querySelector(MARKETPLACE_TAB_STRUCTURE_SELECTOR));
+            if (isPanel || isTabStructure) {
+                hits.push(
+                    `${sign}${isPanel ? 'marketplace-panel-subtree' : 'tab-structure'} ${describeMutationTarget(node)}`
+                );
+            }
+        };
+        record.removedNodes.forEach((node) => consider('-', node));
+        record.addedNodes.forEach((node) => consider('+', node));
+        return hits;
     }
 
     /**
      * Diagnostic-only: summarize a MutationRecord relevant to marketplace tab selection, to
      * distinguish a native React/MUI selection glitch (mutation lands on a native tab) from one
      * caused by Toolasha's own injected tabs (mutation lands on a custom tab, or a childList churn
-     * on the shared tablist container itself). Returns null for anything outside the tab area.
+     * on the shared tablist container itself) or from a whole-panel remount. Returns null for
+     * anything outside the tab area.
      * @param {MutationRecord} record
+     * @param {number} sinceArmedMs - Time since the observer was armed, to order entries
      * @returns {string|null}
      */
-    function summarizeMutation(record) {
-        if (!isDiagnosticMutationTarget(record.target)) return null;
-        const label = describeMutationTarget(record.target);
-        if (record.type === 'attributes') {
-            const newValue = record.target.getAttribute(record.attributeName);
-            return `attr "${record.attributeName}" on ${label}: "${record.oldValue}" -> "${newValue}"`;
+    function summarizeMutation(record, sinceArmedMs) {
+        const stamp = `+${sinceArmedMs}ms`;
+        if (isDiagnosticMutationTarget(record.target)) {
+            const label = describeMutationTarget(record.target);
+            if (record.type === 'attributes') {
+                const newValue = record.target.getAttribute(record.attributeName);
+                return `${stamp} attr "${record.attributeName}" on ${label}: "${record.oldValue}" -> "${newValue}"`;
+            }
+            if (record.type === 'childList') {
+                return `${stamp} childList on ${label}: +${record.addedNodes.length}/-${record.removedNodes.length}`;
+            }
+            return `${stamp} ${record.type} on ${label}`;
         }
+
         if (record.type === 'childList') {
-            return `childList on ${label}: +${record.addedNodes.length}/-${record.removedNodes.length}`;
+            const hits = summarizeStructuralNodes(record);
+            if (hits.length) return `${stamp} childList on <${record.target.tagName.toLowerCase()}>: ${hits.join(', ')}`;
         }
-        return `${record.type} on ${label}`;
+        return null;
+    }
+
+    /**
+     * Diagnostic-only: native-tab selection markers, for a one-line comparison of the state at
+     * different moments (armed / first invalid / now).
+     * @returns {string}
+     */
+    function summarizeNativeTabMarkers() {
+        const candidates = getMarketplaceTabContainerCandidates();
+        if (candidates.size !== 1) return `${candidates.size} visible marketplace tab container(s)`;
+        const container = candidates.values().next().value;
+        const states = Array.from(container.children)
+            .filter(
+                (tab) =>
+                    tab.getAttribute('role') === 'tab' &&
+                    !tab.hasAttribute('data-mwi-custom-tab') &&
+                    !tab.hasAttribute('data-mwi-shrine-tab')
+            )
+            .map(
+                (tab) =>
+                    `"${(tab.textContent || '').trim()}" aria-selected=${tab.getAttribute('aria-selected')} Mui-selected=${tab.classList.contains('Mui-selected')}`
+            );
+        return states.join('; ') || 'no native tabs found';
+    }
+
+    /**
+     * Diagnostic-only: a self-contained structural dump of everything that could explain why the
+     * native tabs carry no selected marker - environment, every Marketplace panel with its tablists
+     * (all attributes of every child), tab panels and their visibility, and the custom tabs present.
+     * Built as flat text so it is fully readable in a console screenshot without expanding anything.
+     * @returns {string}
+     */
+    function buildMarketplaceStructureSnapshot() {
+        const lines = [];
+
+        const gameChunks = Array.from(document.scripts)
+            .map((script) => script.src || '')
+            .filter((src) => /main\.[\w]+\.chunk\.js/.test(src))
+            .map((src) => src.split('/').pop());
+        lines.push(
+            `env: host=${window.location.hostname} path=${window.location.pathname} frame=${window.top === window.self ? 'top' : 'iframe'} visibility=${document.visibilityState} gameChunk=${gameChunks.join(',') || 'unknown'} ua=${navigator.userAgent}`
+        );
+
+        const panels = Array.from(document.querySelectorAll(MARKETPLACE_PANEL_SELECTOR));
+        lines.push(`marketplace panels in document: ${panels.length}`);
+        panels.slice(0, 3).forEach((panel, panelIndex) => {
+            lines.push(
+                `  panel[${panelIndex}] visible=${isElementActuallyVisible(panel)} ${describeElement(panel, false)}`
+            );
+
+            panel.querySelectorAll('.MuiTabs-flexContainer[role="tablist"]').forEach((tablist, tablistIndex) => {
+                lines.push(
+                    `    tablist[${tablistIndex}] visible=${isElementActuallyVisible(tablist)} ${describeElement(tablist, false)}`
+                );
+                const ancestors = [];
+                for (let el = tablist.parentElement; el && el !== panel && ancestors.length < 6; el = el.parentElement) {
+                    ancestors.push(`${el.tagName.toLowerCase()}.${truncateText(el.getAttribute('class') || '', 60)}`);
+                }
+                lines.push(`      ancestors (inner to outer): ${ancestors.join(' < ') || 'none'}`);
+                Array.from(tablist.children).forEach((child, childIndex) => {
+                    lines.push(`      child[${childIndex}] ${describeElement(child)}`);
+                });
+            });
+
+            panel.querySelectorAll('[role="tabpanel"]').forEach((tabpanel, tabpanelIndex) => {
+                const content = Array.from(tabpanel.children)
+                    .slice(0, 3)
+                    .map((child) => truncateText(child.getAttribute('class') || child.tagName.toLowerCase(), 70))
+                    .join(' | ');
+                lines.push(
+                    `    tabpanel[${tabpanelIndex}] visible=${isElementActuallyVisible(tabpanel)} ${describeElement(tabpanel, false)} content: ${content || 'empty'}`
+                );
+            });
+        });
+
+        const customTabs = Array.from(document.querySelectorAll('[data-mwi-custom-tab]'));
+        const byOwner = {};
+        for (const tab of customTabs) {
+            const key = tab.getAttribute('data-mwi-tab-owner') || 'none';
+            byOwner[key] = (byOwner[key] || 0) + 1;
+        }
+        lines.push(
+            `custom tabs in document: ${customTabs.length} (${
+            Object.entries(byOwner)
+                .map(([owner, count]) => `${owner}=${count}`)
+                .join(', ') || 'none'
+        }), visible=${customTabs.filter(isElementActuallyVisible).length}`
+        );
+
+        return lines.join('\n');
     }
 
     /**
@@ -17583,6 +17914,12 @@
         // Diagnostic-only: bounded trail of relevant mutations leading up to an invalid-state
         // episode, cleared on recovery so a later failure is never attributed to stale entries.
         const mutationTrail = [];
+        // Diagnostic-only timeline: distinguishes "native tabs never carried a selected marker since
+        // this observer armed" from "they lost it", which no single end-state snapshot can.
+        const armedAt = Date.now();
+        let lastValidAt = null;
+        let firstInvalidAt = null;
+        let markersAtFirstInvalid = null;
 
         function hasValidState() {
             const visibleContainer = getVisibleMarketplaceTabContainer();
@@ -17648,12 +17985,32 @@
         // shows exactly what changed right before selection was lost - distinguishing a native
         // React/MUI glitch (mutation lands on a native tab) from Toolasha's own injected tabs
         // disrupting the shared tablist (mutation lands on a custom tab, or childList churn on the
-        // container itself).
+        // container itself) or a whole-panel remount.
         function formatMutationTrail() {
             if (!mutationTrail.length) {
-                return ' (no relevant DOM mutations captured - detected via the 1s poll interval, not a live mutation)';
+                return '  No relevant DOM mutations were captured since the last valid state (detected via the 1s poll interval, not a live mutation)';
             }
-            return `\n  Recent relevant mutations leading up to this:\n  - ${mutationTrail.join('\n  - ')}`;
+            return `  Recent relevant mutations leading up to this:\n  - ${mutationTrail.join('\n  - ')}`;
+        }
+
+        // Diagnostic-only: the complete, self-contained report logged when custom tabs are torn
+        // down. Reporters cannot run console snippets, so everything needed to diagnose must be in
+        // this one message as flat text.
+        function buildCleanupReport() {
+            const now = Date.now();
+            const ago = (timestamp) => (timestamp === null ? 'never' : `${now - timestamp}ms ago`);
+            return [
+                `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}`,
+                `  timeline: armed ${now - armedAt}ms ago, valid since arm: ${lastValidAt === null ? 'NEVER' : 'yes'}, last valid ${ago(lastValidAt)}, first invalid ${ago(firstInvalidAt)}, grace ${invalidStateGraceMs}ms`,
+                `  native tab markers at arm: ${markersAtArm}`,
+                `  native tab markers at first invalid detection: ${markersAtFirstInvalid ?? 'n/a'}`,
+                `  native tab markers now: ${summarizeNativeTabMarkers()}`,
+                formatMutationTrail(),
+                buildMarketplaceStructureSnapshot()
+                    .split('\n')
+                    .map((line) => `  ${line}`)
+                    .join('\n'),
+            ].join('\n');
         }
 
         function notifyInvalidState() {
@@ -17661,9 +18018,7 @@
 
             if (invalidStateGraceMs <= 0) {
                 invalidStateNotified = true;
-                console.warn(
-                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
-                );
+                console.warn(buildCleanupReport());
                 onTabsGone();
                 return;
             }
@@ -17672,9 +18027,7 @@
                 invalidStateTimer = null;
                 if (isStopped || invalidStateNotified || hasValidState()) return;
                 invalidStateNotified = true;
-                console.warn(
-                    `[MarketplaceTabs] Cleanup triggered${owner ? ` for owner "${owner}"` : ''}: ${describeInvalidState()}${formatMutationTrail()}`
-                );
+                console.warn(buildCleanupReport());
                 onTabsGone();
             }, invalidStateGraceMs);
         }
@@ -17686,22 +18039,33 @@
             // 1s setInterval fallback below calls poll() with no arguments) - diagnostic-only.
             if (mutations) {
                 for (const record of mutations) {
-                    const summary = summarizeMutation(record);
+                    const summary = summarizeMutation(record, Date.now() - armedAt);
                     if (!summary) continue;
                     mutationTrail.push(summary);
-                    if (mutationTrail.length > 8) mutationTrail.shift();
+                    if (mutationTrail.length > 15) mutationTrail.shift();
                 }
             }
 
             if (!hasValidState()) {
+                if (firstInvalidAt === null) {
+                    firstInvalidAt = Date.now();
+                    markersAtFirstInvalid = summarizeNativeTabMarkers();
+                }
                 notifyInvalidState();
                 return;
             }
 
+            lastValidAt = Date.now();
+            firstInvalidAt = null;
+            markersAtFirstInvalid = null;
             clearInvalidStateTimer();
             invalidStateNotified = false;
             mutationTrail.length = 0;
         }
+
+        const validAtArm = hasValidState();
+        if (validAtArm) lastValidAt = armedAt;
+        const markersAtArm = summarizeNativeTabMarkers();
 
         if (document.body && typeof MutationObserver === 'function') {
             mutationObserver = new MutationObserver(poll);
@@ -17709,6 +18073,8 @@
                 childList: true,
                 subtree: true,
                 attributes: true,
+                // Required for the "old -> new" values in the diagnostic mutation trail.
+                attributeOldValue: true,
                 // React changes native tab selection through aria-selected/class without
                 // necessarily mutating children. Observe both so native-tab exits are prompt
                 // even when navigation was triggered programmatically rather than by a click.
@@ -17805,6 +18171,11 @@
     let processedPanels$1 = new WeakSet();
     let processedEnhancingPanels = new WeakSet();
     const enhancingPanelWatchers = new Map();
+    let alchemyDomObserverUnregister = null;
+    let processedAlchemyPanels = new WeakSet();
+    const alchemyPanelWatchers = new Map();
+    let alchemyDebounceTimeout = null;
+    let catalystWhatIfUnsubscribe = null;
     let inventoryUpdateHandler$1 = null;
     let activeWorkflowModel$1 = null;
     let actionsSessionId = null;
@@ -17849,18 +18220,39 @@
             (panel) => processEnhancingPanel(panel)
         );
 
+        // The Alchemy button also covers the catalyst picked in the profit display's what-if
+        catalystWhatIfUnsubscribe?.();
+        catalystWhatIfUnsubscribe = onCatalystWhatIfChange(() => {
+            document
+                .querySelectorAll('[class*="SkillActionDetail_alchemyComponent"]')
+                .forEach((panel) => updateAlchemyButton(panel));
+        });
+
+        // Watch for Alchemy panels appearing
+        alchemyDomObserverUnregister = domObserver.onClass(
+            'MissingMaterialsButton-AlchemyPanel',
+            'SkillActionDetail_alchemyComponent',
+            (panel) => processAlchemyPanel(panel)
+        );
+
         // Refresh the queue-aware button state when the finite action queue changes (add/remove),
         // since the calculation reads dataManager.getCurrentActions() but nothing else invalidates
         // an already-rendered panel.
         if (actionsUpdatedHandler$1) {
             dataManager.off('actions_updated', actionsUpdatedHandler$1);
         }
-        actionsUpdatedHandler$1 = () => actionPanelHelper_js.refreshActionPanels((panel, value) => updateButtonForPanel(panel, value));
+        actionsUpdatedHandler$1 = () => {
+            actionPanelHelper_js.refreshActionPanels((panel, value) => updateButtonForPanel(panel, value));
+            document
+                .querySelectorAll('[class*="SkillActionDetail_alchemyComponent"]')
+                .forEach((panel) => updateAlchemyButton(panel));
+        };
         dataManager.on('actions_updated', actionsUpdatedHandler$1);
 
         // Process existing panels
         processActionPanels$1();
         processExistingEnhancingPanels();
+        processExistingAlchemyPanels();
     }
 
     /**
@@ -17885,6 +18277,16 @@
             enhancementDomObserverUnregister = null;
         }
 
+        if (alchemyDomObserverUnregister) {
+            alchemyDomObserverUnregister();
+            alchemyDomObserverUnregister = null;
+        }
+
+        if (catalystWhatIfUnsubscribe) {
+            catalystWhatIfUnsubscribe();
+            catalystWhatIfUnsubscribe = null;
+        }
+
         if (actionsUpdatedHandler$1) {
             dataManager.off('actions_updated', actionsUpdatedHandler$1);
             actionsUpdatedHandler$1 = null;
@@ -17906,14 +18308,25 @@
         }
         enhancingPanelWatchers.clear();
 
+        for (const unwatchPanel of alchemyPanelWatchers.values()) {
+            unwatchPanel();
+        }
+        alchemyPanelWatchers.clear();
+
         // Clear processed panels
         processedPanels$1 = new WeakSet();
         processedEnhancingPanels = new WeakSet();
+        processedAlchemyPanels = new WeakSet();
 
         // Clear enhancement debounce
         if (enhancementDebounceTimeout) {
             clearTimeout(enhancementDebounceTimeout);
             enhancementDebounceTimeout = null;
+        }
+
+        if (alchemyDebounceTimeout) {
+            clearTimeout(alchemyDebounceTimeout);
+            alchemyDebounceTimeout = null;
         }
 
         timerRegistry.clearAll();
@@ -17957,6 +18370,11 @@
      * @param {string} value - Input value (number of actions)
      */
     function updateButtonForPanel(panel, value) {
+        // Alchemy panels own their button (see updateAlchemyButton); removing it here would erase it.
+        if (panel.querySelector('[class*="SkillActionDetail_alchemyComponent"]')) {
+            return;
+        }
+
         const numActions = parseInt(value) || 0;
 
         // Recreate only the button. The shared production tools block remains in
@@ -18165,6 +18583,37 @@
     }
 
     function getEnhancingActionComponent(panel) {
+        return findActionDetailComponent(panel, isEnhancingActionComponent);
+    }
+
+    /**
+     * True when a React class instance is the SkillActionDetail owning an Alchemy action.
+     * @param {Object} node
+     * @returns {boolean}
+     */
+    function isAlchemyActionComponent(node) {
+        if (
+            !node ||
+            typeof node.setState !== 'function' ||
+            typeof node.selectAlchemyItemHandler !== 'function' ||
+            typeof node.maxActionCountChanged !== 'function' ||
+            typeof node.unlimitedActionCountClicked !== 'function' ||
+            !node.state ||
+            !Object.prototype.hasOwnProperty.call(node.state, 'primaryItemHash') ||
+            !Object.prototype.hasOwnProperty.call(node.state, 'maxActionCount')
+        ) {
+            return false;
+        }
+
+        const actionHrid = node.props?.actionDetail?.hrid || node.state?.actionDetail?.hrid;
+        return typeof actionHrid === 'string' && actionHrid.startsWith('/actions/alchemy/');
+    }
+
+    function getAlchemyActionComponent(panel) {
+        return findActionDetailComponent(panel, isAlchemyActionComponent);
+    }
+
+    function findActionDetailComponent(panel, isMatch) {
         // Different renders attach the useful fiber key to different descendants.
         // Probe concrete controls first, then use a bounded unique root-tree fallback.
         const anchors = panel
@@ -18179,7 +18628,7 @@
             while (fiber && depth < 160) {
                 if (visitedFibers.has(fiber)) break;
                 visitedFibers.add(fiber);
-                if (isEnhancingActionComponent(fiber.stateNode)) anchoredMatches.add(fiber.stateNode);
+                if (isMatch(fiber.stateNode)) anchoredMatches.add(fiber.stateNode);
                 fiber = fiber.return;
                 depth += 1;
             }
@@ -18199,7 +18648,7 @@
             const fiber = stack.pop();
             if (!fiber) continue;
             visited += 1;
-            if (isEnhancingActionComponent(fiber.stateNode)) matches.add(fiber.stateNode);
+            if (isMatch(fiber.stateNode)) matches.add(fiber.stateNode);
             if (fiber.sibling) stack.push(fiber.sibling);
             if (fiber.child) stack.push(fiber.child);
         }
@@ -18714,15 +19163,170 @@
         setupInventoryListener();
     }
 
+    const ALCHEMY_PANEL_SELECTOR = '[class*="SkillActionDetail_alchemyComponent"]';
+    const alchemyBoundInputs = new WeakSet();
+
+    /**
+     * Process existing Alchemy panels on the page
+     */
+    function processExistingAlchemyPanels() {
+        document.querySelectorAll(ALCHEMY_PANEL_SELECTOR).forEach((panel) => processAlchemyPanel(panel));
+    }
+
+    function scheduleAlchemyUpdate(panel) {
+        if (alchemyDebounceTimeout) {
+            clearTimeout(alchemyDebounceTimeout);
+        }
+        alchemyDebounceTimeout = setTimeout(() => {
+            alchemyDebounceTimeout = null;
+            updateAlchemyButton(panel);
+        }, 60);
+    }
+
+    /**
+     * Watch an Alchemy panel for item/tab/queue changes and keep its button current
+     * @param {HTMLElement} panel - Alchemy component element
+     */
+    function processAlchemyPanel(panel) {
+        if (!panel || processedAlchemyPanels.has(panel)) {
+            return;
+        }
+
+        for (const [trackedPanel, unwatchPanel] of alchemyPanelWatchers) {
+            if (trackedPanel.isConnected) continue;
+            unwatchPanel();
+            alchemyPanelWatchers.delete(trackedPanel);
+        }
+
+        processedAlchemyPanels.add(panel);
+
+        const unwatchPanel = domObserverHelpers_js.createMutationWatcher(
+            panel,
+            (mutations) => {
+                const isOwnButtonMutation = mutations.every((m) => {
+                    const targetElement = m.target?.nodeType === Node.ELEMENT_NODE ? m.target : m.target?.parentElement;
+                    if (targetElement?.closest?.('#mwi-missing-mats-button')) return true;
+
+                    const nodes = [...m.addedNodes, ...m.removedNodes];
+                    return (
+                        nodes.length > 0 &&
+                        nodes.every((n) => n?.nodeType !== Node.ELEMENT_NODE || n.id === 'mwi-missing-mats-button')
+                    );
+                });
+                if (isOwnButtonMutation) return;
+
+                scheduleAlchemyUpdate(panel);
+            },
+            { childList: true, subtree: true, attributes: true }
+        );
+        alchemyPanelWatchers.set(panel, unwatchPanel);
+
+        // The quick Repeat buttons (1 / infinity) change the count without an input event.
+        panel.addEventListener('click', () => {
+            const clickTimer = setTimeout(() => scheduleAlchemyUpdate(panel), 50);
+            timerRegistry.registerTimeout(clickTimer);
+        });
+
+        const initialTimer = setTimeout(() => updateAlchemyButton(panel), 0);
+        timerRegistry.registerTimeout(initialTimer);
+    }
+
+    /**
+     * Read the item currently selected in the Alchemy panel (the first Costs entry)
+     * @param {HTMLElement} panel - Alchemy component element
+     * @returns {{itemHrid: string, enhancementLevel: number}|null} Selected item, or null when none
+     */
+    function readAlchemySelection(panel) {
+        const container = panel.querySelector(
+            '[class*="SkillActionDetail_itemRequirements"] [class*="Item_itemContainer"]'
+        );
+        const href = container?.querySelector('svg use')?.getAttribute('href');
+        const itemId = href?.split('#')[1];
+        if (!itemId) return null;
+
+        const enhancementText = container.querySelector('[class*="Item_enhancementLevel"]')?.textContent || '';
+        const enhancementMatch = enhancementText.match(/\+(\d+)/);
+        return { itemHrid: `/items/${itemId}`, enhancementLevel: enhancementMatch ? parseInt(enhancementMatch[1], 10) : 0 };
+    }
+
+    /**
+     * Re-render the Missing Mats button for an Alchemy panel from its selected item and Repeat count.
+     * Enhanced items are skipped: the Marketplace tabs only support unenhanced materials.
+     * @param {HTMLElement} panel - Alchemy component element
+     */
+    function updateAlchemyButton(panel) {
+        if (!panel?.isConnected) {
+            return;
+        }
+
+        const input = actionPanelHelper_js.findActionInput(panel);
+        if (input && !alchemyBoundInputs.has(input)) {
+            alchemyBoundInputs.add(input);
+            input.addEventListener('input', () => scheduleAlchemyUpdate(panel));
+            input.addEventListener('keyup', () => scheduleAlchemyUpdate(panel));
+        }
+
+        const existingButton = panel.querySelector('#mwi-missing-mats-button');
+        const selection = config.getSetting('actions_missingMaterialsButton') ? readAlchemySelection(panel) : null;
+        if (!selection || selection.enhancementLevel > 0) {
+            existingButton?.remove();
+            return;
+        }
+
+        const numActions = parseInt(input?.value, 10) || 0;
+        const accountForQueue = !(config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false);
+        const catalyst = getCatalystWhatIfResult();
+
+        let materials = [];
+        let disabled = true;
+        if (numActions > 0) {
+            materials = calculateAlchemyMaterialRequirements(selection.itemHrid, numActions, accountForQueue, catalyst);
+            disabled = !materials.some((material) => material.isTradeable !== false && Number(material.missing) > 0);
+        }
+
+        const stateKey = [
+            selection.itemHrid,
+            numActions,
+            disabled,
+            ...materials.map((m) => `${m.itemHrid}:${m.required}:${m.have}:${m.queued}:${m.missing}`),
+        ].join('|');
+        if (existingButton?.dataset.mwiState === stateKey) {
+            return;
+        }
+        existingButton?.remove();
+
+        const button = createMissingMaterialsButton(materials, null, numActions, disabled, () =>
+            handleAlchemyMissingMaterialsClick(selection.itemHrid, numActions, catalyst)
+        );
+        button.dataset.mwiState = stateKey;
+        button.style.boxSizing = 'border-box';
+        button.style.width = '100%';
+        button.style.maxWidth = '360px';
+        button.style.alignSelf = 'flex-start';
+
+        const infoColumn = panel.querySelector('[class*="SkillActionDetail_info"]');
+        const anchor =
+            infoColumn?.querySelector('.mwi-alchemy-gold-summary') ||
+            infoColumn?.querySelector('[class*="SkillActionDetail_alchemyCosts"]');
+        if (anchor?.parentElement) {
+            anchor.after(button);
+        } else if (infoColumn) {
+            infoColumn.prepend(button);
+        } else {
+            panel.prepend(button);
+        }
+    }
+
     /**
      * Create missing materials marketplace button
      * @param {Array} missingMaterials - Array of missing material objects
      * @param {string} actionHrid - Action HRID for recalculating materials
      * @param {number} numActions - Number of actions for recalculating materials
      * @param {boolean} disabled - Whether the button should be rendered in a disabled state
+     * @param {Function|null} [onClick] - Replaces the default production workflow when provided
      * @returns {HTMLElement} Button element
      */
-    function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled = false) {
+    function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled = false, onClick = null) {
         const button = document.createElement('button');
         button.id = 'mwi-missing-mats-button';
         button.type = 'button';
@@ -18765,7 +19369,7 @@
             // Click handler
             button.addEventListener('click', async () => {
                 try {
-                    await handleMissingMaterialsClick(actionHrid, numActions);
+                    await (onClick ? onClick() : handleMissingMaterialsClick(actionHrid, numActions));
                 } catch (error) {
                     console.error('[MissingMats] Production workflow failed:', error);
                     const sessionId = actionsSessionId ?? activeWorkflowModel$1?.sessionId ?? null;
@@ -18778,12 +19382,13 @@
     }
 
     /**
-     * Handle missing materials button click
-     * @param {Array} missingMaterials - Array of missing material objects
-     * @param {string} actionHrid - Action HRID for recalculating materials
-     * @param {number} numActions - Number of actions for recalculating materials
+     * Open the Marketplace with a tab per missing material and arm the first one
+     * @param {Object} options
+     * @param {Function} options.computeMaterials - Recomputes materials once the Marketplace is open
+     *   (inventory may have changed since the button rendered)
+     * @param {Object} options.returnContext - Stored on the workflow model for the Return tab
      */
-    async function handleMissingMaterialsClick(actionHrid, numActions) {
+    async function startMarketplaceWorkflow({ computeMaterials, returnContext }) {
         // Starting any new ACTIONS workflow invalidates an older asynchronous Enhancing Return.
         enhancingReturnGeneration += 1;
 
@@ -18819,20 +19424,14 @@
         }
 
         // Recalculate materials fresh (inventory may have changed since button was rendered)
-        const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
-        const accountForQueue = !ignoreQueue;
-        const freshMaterials = materialCalculator_js.calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
+        const freshMaterials = computeMaterials();
 
         // Set activeWorkflowModel AFTER startSession
         autofillManager$1.startSession({ sessionId: capturedSessionId, quantityProvider: null });
         activeWorkflowModel$1 = {
             sessionId: capturedSessionId,
             materials: freshMaterials.map((m) => ({ ...m })),
-            returnContext: {
-                actionHrid,
-                numActions,
-                enhancementContext: null,
-            },
+            returnContext,
         };
 
         // Create custom tabs in the unique visible Marketplace tablist.
@@ -18871,6 +19470,43 @@
 
         // Setup inventory listener for live updates
         setupInventoryListener();
+    }
+
+    /**
+     * Handle missing materials button click (production panels)
+     * @param {string} actionHrid - Action HRID for recalculating materials
+     * @param {number} numActions - Number of actions for recalculating materials
+     */
+    async function handleMissingMaterialsClick(actionHrid, numActions) {
+        await startMarketplaceWorkflow({
+            computeMaterials: () => {
+                // Default (off) accounts for materials already reserved by the queue.
+                const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+                return materialCalculator_js.calculateMaterialRequirements(actionHrid, numActions, !ignoreQueue);
+            },
+            returnContext: { actionHrid, numActions, enhancementContext: null },
+        });
+    }
+
+    /**
+     * Handle missing materials button click (Alchemy panel)
+     * @param {string} itemHrid - Unenhanced item being processed
+     * @param {number} numActions - Repeat count
+     * @param {{catalystHrid: string|null, successRate: number}|null} [catalyst] - What-if catalyst to include
+     */
+    async function handleAlchemyMissingMaterialsClick(itemHrid, numActions, catalyst = null) {
+        await startMarketplaceWorkflow({
+            computeMaterials: () => {
+                const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+                return calculateAlchemyMaterialRequirements(itemHrid, numActions, !ignoreQueue, catalyst);
+            },
+            returnContext: {
+                actionHrid: null,
+                numActions: 0,
+                enhancementContext: null,
+                alchemyContext: { itemHrid, numActions, catalyst },
+            },
+        });
     }
 
     /**
@@ -19016,6 +19652,10 @@
                 details?.name || returnContext.actionHrid.split('/').pop()
             );
             if (returnContext.numActions > 0) displayName += ` (\u00d7${formatters_js.formatWithSeparator(returnContext.numActions)})`;
+        } else if (returnContext?.alchemyContext) {
+            const ctx = returnContext.alchemyContext;
+            const itemName = getItemName(ctx.itemHrid, dataManager.getItemDetails(ctx.itemHrid)?.name || '...');
+            displayName = `${itemName} (\u00d7${formatters_js.formatWithSeparator(ctx.numActions)})`;
         } else if (returnContext?.enhancementContext) {
             const ctx = returnContext.enhancementContext;
             const itemName = getItemName(ctx.itemHrid, dataManager.getItemDetails(ctx.itemHrid)?.name || '...');
@@ -19099,6 +19739,11 @@
             // The native override restores both the exact action and its count.
             game.handleGoToAction(returnContext.actionHrid, returnContext.numActions || undefined);
             if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        if (returnContext.alchemyContext) {
+            await restoreAlchemyPanel(returnContext.alchemyContext, returnGeneration, capturedSessionId, game);
             return;
         }
 
@@ -19236,6 +19881,85 @@
     }
 
     /**
+     * Reopen the Alchemy panel on the same item and Repeat count. The game keeps the selected tab
+     * across navigation but drops the item, so reselect it through the native handler and verify the
+     * component state before ending the session.
+     * @param {{itemHrid: string, numActions: number}} ctx
+     * @param {number} returnGeneration
+     * @param {number|null} capturedSessionId
+     * @param {Object} game - Game navigation component
+     */
+    async function restoreAlchemyPanel(ctx, returnGeneration, capturedSessionId, game) {
+        const endSession = () => {
+            if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+        };
+        const itemHash = buildInventoryItemHash(ctx.itemHrid, 0);
+        if (!itemHash || typeof game.handleAlchemizeItem !== 'function') {
+            console.error('[MissingMats] Alchemy Return could not navigate back');
+            endSession();
+            return;
+        }
+
+        game.handleAlchemizeItem(itemHash);
+
+        let component = null;
+        for (let attempt = 0; attempt < 120; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+
+            const panels = Array.from(document.querySelectorAll(ALCHEMY_PANEL_SELECTOR)).filter(
+                (panel) => panel.isConnected && isElementActuallyVisible(panel)
+            );
+            if (panels.length !== 1) continue;
+
+            const candidate = getAlchemyActionComponent(panels[0]);
+            if (!candidate) continue;
+
+            // The native override is transient; select again if the first render missed it.
+            if (candidate.state?.primaryItemHash !== itemHash) {
+                try {
+                    candidate.selectAlchemyItemHandler(itemHash);
+                } catch (error) {
+                    console.error('[MissingMats] Alchemy item restore failed:', error);
+                }
+                continue;
+            }
+
+            component = candidate;
+            break;
+        }
+
+        if (!component) {
+            console.error('[MissingMats] Alchemy Return could not restore the selected item');
+            endSession();
+            return;
+        }
+
+        try {
+            component.maxActionCountChanged({ target: { value: String(ctx.numActions) } });
+
+            for (let attempt = 0; attempt < 80; attempt++) {
+                await new Promise((resolve) => setTimeout(resolve, 25));
+                if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+                const state = component.state || {};
+                if (
+                    state.primaryItemHash === itemHash &&
+                    Boolean(state.hasMaxCount) &&
+                    Number(state.maxActionCount) === Number(ctx.numActions)
+                ) {
+                    endSession();
+                    return;
+                }
+            }
+        } catch (error) {
+            console.error('[MissingMats] Alchemy native restore failed:', error);
+        }
+
+        console.error('[MissingMats] Alchemy Return could not restore the Repeat count');
+        endSession();
+    }
+
+    /**
      * Set up (or re-establish) the marketplace cleanup observer for the ACTIONS owner.
      * Safe to call multiple times — stops any existing observer before creating a new one.
      */
@@ -19251,15 +19975,14 @@
                 const capturedSessionId = activeWorkflowModel$1?.sessionId ?? null;
                 if (capturedSessionId !== null && !marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) return;
                 const tabContainer = getVisibleMarketplaceTabContainer();
-                if (
-                    tabContainer &&
-                    isMarketplaceMarketListingsSelected(tabContainer) &&
-                    reinjectActionsMarketplaceTabs(tabContainer)
-                ) {
+                const marketListingsSelected = Boolean(tabContainer) && isMarketplaceMarketListingsSelected(tabContainer);
+                if (tabContainer && marketListingsSelected && reinjectActionsMarketplaceTabs(tabContainer)) {
                     console.warn('[MissingMats] Marketplace tabs reinjected after a transient invalid state');
                     return;
                 }
-                console.warn('[MissingMats] Marketplace tabs could not be reinjected - ending session');
+                console.warn(
+                    `[MissingMats] Marketplace tabs could not be reinjected - ending session (visible tab container found: ${Boolean(tabContainer)}, Market Listings selected: ${marketListingsSelected}, active workflow model: ${Boolean(activeWorkflowModel$1)})`
+                );
                 if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
             },
         });
@@ -19399,6 +20122,16 @@
                 ctx.protectFromLevel,
                 ctx.repeatCount
             );
+        } else if (activeWorkflowModel$1?.returnContext?.alchemyContext) {
+            // Alchemy mode
+            const ctx = activeWorkflowModel$1.returnContext.alchemyContext;
+            const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+            updatedMaterials = calculateAlchemyMaterialRequirements(
+                ctx.itemHrid,
+                ctx.numActions,
+                !ignoreQueue,
+                ctx.catalyst
+            );
         } else if (activeWorkflowModel$1?.returnContext?.actionHrid && activeWorkflowModel$1.returnContext.numActions > 0) {
             // Production mode
             const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
@@ -19467,6 +20200,7 @@
     ];
 
     const UI_ID$2 = 'mwi-budget-calculator';
+    const COIN_HRID = '/items/coin';
 
     /**
      * Parse a KMB shorthand string to a number.
@@ -19546,6 +20280,10 @@
             const mats = materialCalculator_js.calculateMaterialRequirements(actionHrid, n, false);
             let total = 0;
             for (const mat of mats) {
+                if (mat.itemHrid === COIN_HRID) {
+                    total += mat.required;
+                    continue;
+                }
                 if (!mat.isTradeable || mat.missing <= 0) continue;
                 const priceInfo = marketData_js.getItemPriceOutlierInfo(mat.itemHrid, { mode: 'ask' });
                 if (!priceInfo.value) continue;
@@ -19652,9 +20390,11 @@
                 const ask = priceInfo?.value > 0 ? priceInfo.value : null;
                 const askIsOutlier = ask ? priceInfo.isOutlier : false;
                 if (askIsOutlier) hasOutlierPrices = true;
-                const lineCost = ask && mat.missing > 0 ? mat.missing * ask : 0;
+                const isCoin = mat.itemHrid === COIN_HRID;
+                const lineCost = isCoin ? mat.required : ask && mat.missing > 0 ? mat.missing * ask : 0;
                 totalSpend += lineCost;
-                if (ask) perUnitCost += ask * (mat.required / (result.n || 1));
+                if (isCoin) perUnitCost += mat.required / (result.n || 1);
+                else if (ask) perUnitCost += ask * (mat.required / (result.n || 1));
 
                 const toBuyCell = mat.isTradeable
                     ? `<td style="${tdStyle}; color:${mat.missing > 0 ? '#e8a87c' : '#7ec87e'};">${formatters_js.formatWithSeparator(mat.missing)}</td>`
@@ -26876,13 +27616,21 @@
          */
         _computeAlchemyStats(alchemyType, itemHrid) {
             try {
+                // Predict with the saved alchemy loadout when "Use saved loadouts" is on (current gear otherwise)
+                const actionContext = resolveActionContext('/action_types/alchemy');
                 let profitData;
                 if (alchemyType === 'transmute') {
-                    profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid);
+                    profitData = alchemyProfitCalculator.calculateTransmuteProfit(
+                        itemHrid,
+                        false,
+                        null,
+                        null,
+                        actionContext
+                    );
                 } else if (alchemyType === 'decompose') {
-                    profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, 0);
+                    profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, 0, false, null, actionContext);
                 } else {
-                    profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, 0);
+                    profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, 0, false, null, actionContext);
                 }
 
                 if (!profitData) return null;
@@ -27401,6 +28149,13 @@
      */
 
 
+    const TYPE_CATALYST_HRIDS = {
+        coinify: '/items/catalyst_of_coinification',
+        decompose: '/items/catalyst_of_decomposition',
+        transmute: '/items/catalyst_of_transmutation',
+    };
+    const PRIME_CATALYST_HRID = '/items/prime_catalyst';
+
     class AlchemyProfitDisplay {
         constructor() {
             this.isActive = false;
@@ -27417,6 +28172,8 @@
             this.cachedInputField = null; // Cache input field since it gets removed when action starts
             this._alchemyTargetLevel = null;
             this.inlineXpPerHour = 0;
+            this.catalystWhatIfUnsubscribe = null;
+            this.renderedCatalystChoice = 'equipped';
         }
 
         /**
@@ -27433,6 +28190,13 @@
 
             this.isInitialized = true;
             this.setupObserver();
+
+            // Re-render when the player picks a different what-if catalyst
+            this.catalystWhatIfUnsubscribe = onCatalystWhatIfChange(() => {
+                if (!this.isActive || getCatalystChoice() === this.renderedCatalystChoice) return;
+                this.lastFingerprint = null;
+                this.checkAndUpdateDisplay();
+            });
 
             // Listen for equipment changes (alchemy allows equipment changes while panel is open)
             this.equipmentChangeHandler = () => {
@@ -27776,12 +28540,112 @@
                     return;
                 }
 
+                // What-if: Profitability only is recomputed for the chosen catalyst; the other sections
+                // keep describing the equipped setup so they still match the game's own panel.
+                const catalystChoice = getCatalystChoice();
+                this.renderedCatalystChoice = catalystChoice;
+                let whatIf = null;
+                if (catalystChoice !== 'equipped' && hasProfitData && actionType && itemHrid) {
+                    const enhancementLevel = requirements?.[0]?.enhancementLevel || 0;
+                    const whatIfData = this.calculateWhatIfProfit(actionType, itemHrid, enhancementLevel, catalystChoice);
+                    if (whatIfData) whatIf = { choice: catalystChoice, data: whatIfData };
+                }
+                publishCatalystWhatIfResult(
+                    whatIf
+                        ? { catalystHrid: whatIf.data.catalystCost?.itemHrid ?? null, successRate: whatIf.data.successRate }
+                        : null
+                );
+
                 // Always recreate display (complex collapsible structure makes refresh difficult)
-                this.createDisplay(infoContainer, metrics, actionType, itemHrid, hasProfitData);
+                this.createDisplay(infoContainer, metrics, actionType, itemHrid, hasProfitData, whatIf);
             } catch (error) {
                 console.error('[AlchemyProfitDisplay] Failed to update display:', error);
                 this.removeDisplay();
             }
+        }
+
+        /**
+         * Profit data for a forced catalyst choice (no, type-specific or prime catalyst)
+         * @param {'coinify'|'decompose'|'transmute'} actionType
+         * @param {string} itemHrid
+         * @param {number} enhancementLevel
+         * @param {'none'|'typeSpecific'|'prime'} catalystChoice
+         * @returns {Object|null} Profit data, or null when it can't be computed
+         */
+        calculateWhatIfProfit(actionType, itemHrid, enhancementLevel, catalystChoice) {
+            if (actionType === 'coinify') {
+                return alchemyProfitCalculator.calculateCoinifyProfit(
+                    itemHrid,
+                    enhancementLevel,
+                    true,
+                    null,
+                    null,
+                    catalystChoice
+                );
+            }
+            if (actionType === 'transmute') {
+                return alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true, null, catalystChoice);
+            }
+            if (actionType === 'decompose') {
+                return alchemyProfitCalculator.calculateDecomposeProfit(
+                    itemHrid,
+                    enhancementLevel,
+                    true,
+                    null,
+                    null,
+                    catalystChoice
+                );
+            }
+            return null;
+        }
+
+        /**
+         * Catalyst choice selector shown at the top of the Profitability section
+         * @param {'coinify'|'decompose'|'transmute'|null} actionType
+         * @param {'equipped'|'none'|'typeSpecific'|'prime'} choice - Current choice
+         * @returns {HTMLElement} Picker row
+         */
+        buildCatalystPicker(actionType, choice) {
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 6px;';
+
+            const label = document.createElement('span');
+            label.style.cssText = 'color: #888; font-size: 0.85em; margin-right: 2px;';
+            label.textContent = i18n_js.t('alchemyProfitDisplay.catalystWhatIfLabel');
+            row.appendChild(label);
+
+            const itemLabel = (hrid) => getItemName(hrid, dataManager.getItemDetails(hrid)?.name || hrid);
+            const options = [
+                { value: 'equipped', text: i18n_js.t('alchemyProfitDisplay.catalystOptionEquipped') },
+                { value: 'none', text: i18n_js.t('alchemyProfitDisplay.catalystOptionNone') },
+            ];
+            if (TYPE_CATALYST_HRIDS[actionType]) {
+                options.push({ value: 'typeSpecific', text: itemLabel(TYPE_CATALYST_HRIDS[actionType]) });
+            }
+            options.push({ value: 'prime', text: itemLabel(PRIME_CATALYST_HRID) });
+
+            for (const option of options) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.dataset.mwiCatalystChoice = option.value;
+                button.textContent = option.text;
+                const active = option.value === choice;
+                button.style.cssText = `
+                padding: 2px 8px;
+                font-size: 0.85em;
+                border-radius: 4px;
+                cursor: pointer;
+                color: #fff;
+                border: 1px solid ${active ? 'rgba(91, 141, 239, 0.9)' : 'rgba(255, 255, 255, 0.2)'};
+                background: ${active ? 'rgba(91, 141, 239, 0.35)' : 'transparent'};
+            `;
+                button.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    setCatalystChoice(option.value);
+                });
+                row.appendChild(button);
+            }
+            return row;
         }
 
         /**
@@ -27825,8 +28689,10 @@
          * @param {string} itemHrid - Item HRID being processed
          * @param {boolean} hasProfitData - Whether `metrics` is full market-valued profit data
          *   (required for Profitability) as opposed to the price-independent fallback scenario
+         * @param {{choice: string, data: Object}|null} [whatIf] - Profit data for a what-if catalyst;
+         *   replaces `metrics` for Profitability only
          */
-        createDisplay(container, metrics, actionType, itemHrid, hasProfitData) {
+        createDisplay(container, metrics, actionType, itemHrid, hasProfitData, whatIf = null) {
             // Remove any existing display
             this.removeDisplay();
 
@@ -27839,7 +28705,13 @@
                 config.getSetting('alchemy_profitDisplay') &&
                 config.getSetting('actionPanel_showProfitDetail');
 
-            const profitSection = canShowProfitability ? this.buildProfitabilitySection(metrics) : null;
+            const profitSection = canShowProfitability
+                ? this.buildProfitabilitySection(whatIf?.data ?? metrics, {
+                      actionType,
+                      choice: getCatalystChoice(),
+                      whatIfActive: !!whatIf,
+                  })
+                : null;
             if (profitSection) {
                 container.appendChild(profitSection);
             }
@@ -27857,9 +28729,14 @@
             // Use cached input field if current one is not available
             const effectiveInputField = inputField || this.cachedInputField;
 
-            // Create Action Speed & Time section - price-independent, always attempted from `metrics`
+            // Create Action Speed & Time section - price-independent, gated only on its action-panel setting
             let speedTimeSection = null;
-            if (effectiveInputField && metrics.actionTime && metrics.efficiencyBreakdown) {
+            if (
+                config.getSetting('actionPanel_showSpeedTime') &&
+                effectiveInputField &&
+                metrics.actionTime &&
+                metrics.efficiencyBreakdown
+            ) {
                 speedTimeSection = this.createActionSpeedTimeSection(metrics, effectiveInputField);
                 if (speedTimeSection) {
                     speedTimeSection.id = 'mwi-alchemy-speed-time';
@@ -27869,10 +28746,10 @@
                 }
             }
 
-            // Create Level Progress section - price-independent, always attempted from `metrics`
+            // Create Level Progress section - price-independent, gated only on its action-panel setting
             let levelProgressSection = null;
-            if (actionType && itemHrid) {
-                levelProgressSection = this.createLevelProgressSection(actionType, itemHrid, metrics);
+            if (config.getSetting('actionPanel_showLevelProgress') && actionType && itemHrid) {
+                levelProgressSection = this.createLevelProgressSection(actionType, itemHrid, metrics, effectiveInputField);
                 if (levelProgressSection) {
                     levelProgressSection.id = 'mwi-alchemy-level-progress';
                     levelProgressSection.classList.add('mwi-alchemy-level-progress');
@@ -27889,15 +28766,28 @@
             // of which specific sections rendered, since Profitability alone may be legitimately
             // absent while the non-market sections are present.
             this.displayElement = profitSection || speedTimeSection || levelProgressSection;
+
+            // With every section hidden by settings there is nothing to mount; a hidden marker keeps
+            // checkAndUpdateDisplay from treating the panel as unmounted and rebuilding on every check.
+            if (!this.displayElement) {
+                const marker = document.createElement('div');
+                marker.id = 'mwi-alchemy-display-anchor';
+                marker.style.display = 'none';
+                marker.setAttribute('data-mwi-profit-display', 'true');
+                container.appendChild(marker);
+                this.displayElement = marker;
+            }
         }
 
         /**
          * Build the market-valued Profitability section (revenue/costs/modifiers breakdown).
          * Does not append to the DOM - the caller decides whether/where to mount it.
          * @param {Object} profitData - Full profit data from calculateCoinifyProfit/DecomposeProfit/TransmuteProfit
+         * @param {{actionType: string|null, choice: string, whatIfActive: boolean}|null} [catalystOptions] -
+         *   Catalyst picker state; omitted when there is nothing to choose
          * @returns {HTMLElement|null} Profitability section element, or null if data is incomplete
          */
-        buildProfitabilitySection(profitData) {
+        buildProfitabilitySection(profitData, catalystOptions = null) {
             // Validate required data
             if (
                 !profitData ||
@@ -27921,7 +28811,9 @@
                 i18n_js.t('alchemyProfitDisplay.profitPerHourPerDaySummary', {
                     profit: formatters_js.formatLargeNumber(profit),
                     profitPerDay: formatters_js.formatLargeNumber(profitPerDay),
-                }) + (profitData.hasOutlierPrices ? ' ⚠' : '');
+                }) +
+                (profitData.hasOutlierPrices ? ' ⚠' : '') +
+                (catalystOptions?.whatIfActive ? ` ⚠ ${i18n_js.t('alchemyProfitDisplay.catalystWhatIfSummaryTag')}` : '');
 
             const detailsContent = document.createElement('div');
 
@@ -28508,12 +29400,31 @@
 
             // Create "Detailed Breakdown" collapsible
             const topLevelContent = document.createElement('div');
-            topLevelContent.innerHTML = `
+            if (catalystOptions) {
+                topLevelContent.appendChild(this.buildCatalystPicker(catalystOptions.actionType, catalystOptions.choice));
+                if (catalystOptions.whatIfActive) {
+                    const warning = document.createElement('div');
+                    warning.style.cssText = 'color: #fbbf24; font-size: 0.85em; margin-bottom: 6px;';
+                    const catalystHrid = profitData.catalystCost?.itemHrid;
+                    warning.textContent = catalystHrid
+                        ? i18n_js.t('alchemyProfitDisplay.catalystWhatIfWarning', {
+                              catalyst: getItemName(
+                                  catalystHrid,
+                                  dataManager.getItemDetails(catalystHrid)?.name || catalystHrid
+                              ),
+                          })
+                        : i18n_js.t('alchemyProfitDisplay.catalystWhatIfWarningNone');
+                    topLevelContent.appendChild(warning);
+                }
+            }
+            const summaryLines = document.createElement('div');
+            summaryLines.innerHTML = `
             <div style="margin-bottom: 4px;">${i18n_js.t('alchemyProfitDisplay.actionsSuccessRateLine', {
                 actions: profitData.actionsPerHour.toFixed(2),
                 rate: formatters_js.formatPercentage(profitData.successRate, 2),
             })}</div>
         `;
+            topLevelContent.appendChild(summaryLines);
 
             // Add Net Profit line at top level (always visible when Profitability is expanded)
             const profitColor = profit >= 0 ? '#4ade80' : config.getSetting('color_loss') || '#f87171';
@@ -28862,9 +29773,10 @@
          * @param {string} actionType - Alchemy action type
          * @param {string} itemHrid - Item HRID being processed
          * @param {Object} profitData - Profit data
+         * @param {HTMLInputElement} [repeatInput] - Repeat input to fill when the target level is edited
          * @returns {HTMLElement|null} Level Progress section element
          */
-        createLevelProgressSection(actionType, itemHrid, profitData) {
+        createLevelProgressSection(actionType, itemHrid, profitData, repeatInput) {
             try {
                 const gameData = dataManager.getInitClientData();
                 if (!gameData) return null;
@@ -29095,7 +30007,7 @@
                 const targetLevelResult = content.querySelector('#mwi-alchemy-target-level-result');
                 const baseEfficiency = profitData.efficiency * 100; // efficiency is decimal, convert to %
 
-                const updateTargetLevel = () => {
+                const updateTargetLevel = (fillRepeat = false) => {
                     const targetLevelValue = parseInt(targetLevelInput.value);
                     this._alchemyTargetLevel = targetLevelValue;
                     if (targetLevelValue > currentLevel && targetLevelValue <= 200) {
@@ -29113,14 +30025,19 @@
                             time: formatters_js.timeReadable(result.timeNeeded),
                         });
                         targetLevelResult.style.color = `var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY})`;
+
+                        // Only on user edits: a rebuild restoring a saved target must not overwrite a typed repeat count.
+                        if (fillRepeat && repeatInput) {
+                            reactInput_js.setReactInputValue(repeatInput, result.actionsNeeded, { focus: true });
+                        }
                     } else {
                         targetLevelResult.textContent = i18n_js.t('alchemyProfitDisplay.invalidLevelMessage');
                         targetLevelResult.style.color = 'var(--color-error, #ff4444)';
                     }
                 };
 
-                targetLevelInput.addEventListener('input', updateTargetLevel);
-                targetLevelInput.addEventListener('change', updateTargetLevel);
+                targetLevelInput.addEventListener('input', () => updateTargetLevel(true));
+                targetLevelInput.addEventListener('change', () => updateTargetLevel(true));
 
                 if (initialTargetLevel !== nextLevel) {
                     updateTargetLevel();
@@ -29176,6 +30093,8 @@
                 levelProgressSection.remove();
             }
 
+            document.getElementById('mwi-alchemy-display-anchor')?.remove();
+
             // Don't clear lastFingerprint here - we need to track state across recreations
         }
 
@@ -29183,6 +30102,11 @@
          * Disable the display
          */
         disable() {
+            if (this.catalystWhatIfUnsubscribe) {
+                this.catalystWhatIfUnsubscribe();
+                this.catalystWhatIfUnsubscribe = null;
+            }
+
             if (this.updateTimeout) {
                 clearTimeout(this.updateTimeout);
                 this.updateTimeout = null;
@@ -33644,8 +34568,9 @@
                     // tier, matching toLevel above.
                     current.hasMissingPrice = entry.hasMissingPrice;
                     current.isOutlier = entry.isOutlier;
-                    current.cost = entry.cost;
-                    current.costIsIncomplete = entry.costIsIncomplete;
+                    // cost/costIsIncomplete deliberately stay with the tier's first breakpoint: the
+                    // tier's label, xpScore and goldScore all describe that entry, so the cost of
+                    // reaching it (and the payback/ratios derived from it) must too.
                 }
             }
             if (current) tiers.push(current);
