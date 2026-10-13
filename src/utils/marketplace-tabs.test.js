@@ -278,3 +278,98 @@ describe('marketplace-tabs', () => {
         expect(onTabsGone).toHaveBeenCalledTimes(2);
     });
 });
+
+describe('marketplace-tabs cleanup diagnostics', () => {
+    let warnSpy;
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        vi.useFakeTimers();
+        warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        warnSpy.mockRestore();
+        vi.clearAllTimers();
+        vi.useRealTimers();
+        document.body.innerHTML = '';
+    });
+
+    function deselectNativeTabs(tabs) {
+        for (const tab of Array.from(tabs.children)) {
+            tab.classList.remove('Mui-selected');
+            tab.setAttribute('aria-selected', 'false');
+        }
+    }
+
+    function cleanupReport() {
+        const call = warnSpy.mock.calls.find(([message]) => String(message).includes('Cleanup triggered'));
+        expect(call).toBeDefined();
+        return String(call[0]);
+    }
+
+    test('reports that native tabs never carried a selected marker, with a full structural dump', () => {
+        const { panel, tabs, referenceTab } = makeMarketplacePanel();
+        deselectNativeTabs(tabs);
+        tabs.appendChild(createMaterialTab(makeMaterial(), referenceTab, vi.fn(), 'ACTIONS'));
+
+        const tabpanel = document.createElement('div');
+        tabpanel.setAttribute('role', 'tabpanel');
+        tabpanel.setAttribute('hidden', '');
+        tabpanel.innerHTML = '<div class="MarketplacePanel_myListings__test"></div>';
+        panel.appendChild(tabpanel);
+
+        const cleanup = setupMarketplaceCleanupObserver({ owner: 'ACTIONS', onTabsGone: vi.fn() });
+        vi.advanceTimersByTime(1000);
+
+        const report = cleanupReport();
+        expect(report).toContain('valid since arm: NEVER');
+        expect(report).toContain('native tab markers at arm: "Market Listings" aria-selected=false Mui-selected=false');
+        expect(report).toContain('native tab markers at first invalid detection: "Market Listings"');
+        expect(report).toContain('env: host=');
+        expect(report).toContain('frame=top');
+        expect(report).toContain('marketplace panels in document: 1');
+        expect(report).toContain('tablist[0] visible=true');
+        expect(report).toContain('child[0] <button role="tab" aria-selected="false"');
+        expect(report).toContain('child[2] <button');
+        expect(report).toContain('data-mwi-custom-tab="true"');
+        expect(report).toContain('tabpanel[0] visible=false');
+        expect(report).toContain('MarketplacePanel_myListings__test');
+        expect(report).toContain('custom tabs in document: 1 (ACTIONS=1)');
+        cleanup();
+    });
+
+    test('reports a lost selection with the old and new attribute values', async () => {
+        const { tabs, referenceTab } = makeMarketplacePanel();
+        tabs.appendChild(createMaterialTab(makeMaterial(), referenceTab, vi.fn(), 'ACTIONS'));
+        const cleanup = setupMarketplaceCleanupObserver({ owner: 'ACTIONS', onTabsGone: vi.fn() });
+
+        vi.advanceTimersByTime(500);
+        deselectNativeTabs(tabs);
+        await Promise.resolve();
+
+        const report = cleanupReport();
+        expect(report).toContain('valid since arm: yes');
+        expect(report).toContain('native tab markers at arm: "Market Listings" aria-selected=true Mui-selected=true');
+        expect(report).toContain('native tab markers now: "Market Listings" aria-selected=false Mui-selected=false');
+        expect(report).toMatch(
+            /\+\d+ms attr "aria-selected" on <button role="tab"> \[native\] "Market Listings": "true" -> "false"/
+        );
+        cleanup();
+    });
+
+    test('records a whole-panel remount that the tab-level mutation filter would miss', async () => {
+        const first = makeMarketplacePanel();
+        first.tabs.appendChild(createMaterialTab(makeMaterial(), first.referenceTab, vi.fn(), 'ACTIONS'));
+        const cleanup = setupMarketplaceCleanupObserver({ owner: 'ACTIONS', onTabsGone: vi.fn() });
+
+        first.panel.remove();
+        makeMarketplacePanel();
+        await Promise.resolve();
+
+        const report = cleanupReport();
+        expect(report).toContain('-marketplace-panel-subtree');
+        expect(report).toContain('+marketplace-panel-subtree');
+        cleanup();
+    });
+});

@@ -1859,15 +1859,14 @@ function setupActionsCleanupObserver() {
             const capturedSessionId = activeWorkflowModel?.sessionId ?? null;
             if (capturedSessionId !== null && !marketplaceSession.isActive(capturedSessionId)) return;
             const tabContainer = getVisibleMarketplaceTabContainer();
-            if (
-                tabContainer &&
-                isMarketplaceMarketListingsSelected(tabContainer) &&
-                reinjectActionsMarketplaceTabs(tabContainer)
-            ) {
+            const marketListingsSelected = Boolean(tabContainer) && isMarketplaceMarketListingsSelected(tabContainer);
+            if (tabContainer && marketListingsSelected && reinjectActionsMarketplaceTabs(tabContainer)) {
                 console.warn('[MissingMats] Marketplace tabs reinjected after a transient invalid state');
                 return;
             }
-            console.warn('[MissingMats] Marketplace tabs could not be reinjected - ending session');
+            console.warn(
+                `[MissingMats] Marketplace tabs could not be reinjected - ending session (visible tab container found: ${Boolean(tabContainer)}, Market Listings selected: ${marketListingsSelected}, active workflow model: ${Boolean(activeWorkflowModel)})`
+            );
             if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
         },
     });

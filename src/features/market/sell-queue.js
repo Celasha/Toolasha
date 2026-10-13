@@ -266,7 +266,11 @@ function setupSellQueueCleanupObserver(sessionId) {
         onTabsGone: () => {
             if (!marketplaceSession.isActive(sessionId)) return;
             const container = getVisibleMarketplaceTabContainer();
-            if (container && isMarketplaceMarketListingsSelected(container) && injectTabs(container, sessionId)) return;
+            const marketListingsSelected = Boolean(container) && isMarketplaceMarketListingsSelected(container);
+            if (container && marketListingsSelected && injectTabs(container, sessionId)) return;
+            console.warn(
+                `[SellQueue] Marketplace tabs could not be reinjected - ending session (visible tab container found: ${Boolean(container)}, Market Listings selected: ${marketListingsSelected})`
+            );
             marketplaceSession.end(sessionId);
         },
     });
