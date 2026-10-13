@@ -18,6 +18,7 @@ import {
     calculateMaterialRequirements,
     calculateEnhancementMaterialRequirements,
 } from '../../utils/material-calculator.js';
+import { calculateAlchemyMaterialRequirements } from '../../utils/alchemy-material-calculator.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createAutofillManager, getReactFiberFromElement } from '../../utils/marketplace-autofill.js';
@@ -53,6 +54,10 @@ let enhancementDomObserverUnregister = null;
 let processedPanels = new WeakSet();
 let processedEnhancingPanels = new WeakSet();
 const enhancingPanelWatchers = new Map();
+let alchemyDomObserverUnregister = null;
+let processedAlchemyPanels = new WeakSet();
+const alchemyPanelWatchers = new Map();
+let alchemyDebounceTimeout = null;
 let inventoryUpdateHandler = null;
 let activeWorkflowModel = null;
 let actionsSessionId = null;
@@ -97,18 +102,31 @@ export function initialize() {
         (panel) => processEnhancingPanel(panel)
     );
 
+    // Watch for Alchemy panels appearing
+    alchemyDomObserverUnregister = domObserver.onClass(
+        'MissingMaterialsButton-AlchemyPanel',
+        'SkillActionDetail_alchemyComponent',
+        (panel) => processAlchemyPanel(panel)
+    );
+
     // Refresh the queue-aware button state when the finite action queue changes (add/remove),
     // since the calculation reads dataManager.getCurrentActions() but nothing else invalidates
     // an already-rendered panel.
     if (actionsUpdatedHandler) {
         dataManager.off('actions_updated', actionsUpdatedHandler);
     }
-    actionsUpdatedHandler = () => refreshActionPanels((panel, value) => updateButtonForPanel(panel, value));
+    actionsUpdatedHandler = () => {
+        refreshActionPanels((panel, value) => updateButtonForPanel(panel, value));
+        document
+            .querySelectorAll('[class*="SkillActionDetail_alchemyComponent"]')
+            .forEach((panel) => updateAlchemyButton(panel));
+    };
     dataManager.on('actions_updated', actionsUpdatedHandler);
 
     // Process existing panels
     processActionPanels();
     processExistingEnhancingPanels();
+    processExistingAlchemyPanels();
 }
 
 /**
@@ -133,6 +151,11 @@ export function cleanup() {
         enhancementDomObserverUnregister = null;
     }
 
+    if (alchemyDomObserverUnregister) {
+        alchemyDomObserverUnregister();
+        alchemyDomObserverUnregister = null;
+    }
+
     if (actionsUpdatedHandler) {
         dataManager.off('actions_updated', actionsUpdatedHandler);
         actionsUpdatedHandler = null;
@@ -154,14 +177,25 @@ export function cleanup() {
     }
     enhancingPanelWatchers.clear();
 
+    for (const unwatchPanel of alchemyPanelWatchers.values()) {
+        unwatchPanel();
+    }
+    alchemyPanelWatchers.clear();
+
     // Clear processed panels
     processedPanels = new WeakSet();
     processedEnhancingPanels = new WeakSet();
+    processedAlchemyPanels = new WeakSet();
 
     // Clear enhancement debounce
     if (enhancementDebounceTimeout) {
         clearTimeout(enhancementDebounceTimeout);
         enhancementDebounceTimeout = null;
+    }
+
+    if (alchemyDebounceTimeout) {
+        clearTimeout(alchemyDebounceTimeout);
+        alchemyDebounceTimeout = null;
     }
 
     timerRegistry.clearAll();
@@ -205,6 +239,11 @@ function processActionPanels() {
  * @param {string} value - Input value (number of actions)
  */
 function updateButtonForPanel(panel, value) {
+    // Alchemy panels own their button (see updateAlchemyButton); removing it here would erase it.
+    if (panel.querySelector('[class*="SkillActionDetail_alchemyComponent"]')) {
+        return;
+    }
+
     const numActions = parseInt(value) || 0;
 
     // Recreate only the button. The shared production tools block remains in
@@ -413,6 +452,37 @@ function isEnhancingActionComponent(node) {
 }
 
 function getEnhancingActionComponent(panel) {
+    return findActionDetailComponent(panel, isEnhancingActionComponent);
+}
+
+/**
+ * True when a React class instance is the SkillActionDetail owning an Alchemy action.
+ * @param {Object} node
+ * @returns {boolean}
+ */
+function isAlchemyActionComponent(node) {
+    if (
+        !node ||
+        typeof node.setState !== 'function' ||
+        typeof node.selectAlchemyItemHandler !== 'function' ||
+        typeof node.maxActionCountChanged !== 'function' ||
+        typeof node.unlimitedActionCountClicked !== 'function' ||
+        !node.state ||
+        !Object.prototype.hasOwnProperty.call(node.state, 'primaryItemHash') ||
+        !Object.prototype.hasOwnProperty.call(node.state, 'maxActionCount')
+    ) {
+        return false;
+    }
+
+    const actionHrid = node.props?.actionDetail?.hrid || node.state?.actionDetail?.hrid;
+    return typeof actionHrid === 'string' && actionHrid.startsWith('/actions/alchemy/');
+}
+
+function getAlchemyActionComponent(panel) {
+    return findActionDetailComponent(panel, isAlchemyActionComponent);
+}
+
+function findActionDetailComponent(panel, isMatch) {
     // Different renders attach the useful fiber key to different descendants.
     // Probe concrete controls first, then use a bounded unique root-tree fallback.
     const anchors = panel
@@ -427,7 +497,7 @@ function getEnhancingActionComponent(panel) {
         while (fiber && depth < 160) {
             if (visitedFibers.has(fiber)) break;
             visitedFibers.add(fiber);
-            if (isEnhancingActionComponent(fiber.stateNode)) anchoredMatches.add(fiber.stateNode);
+            if (isMatch(fiber.stateNode)) anchoredMatches.add(fiber.stateNode);
             fiber = fiber.return;
             depth += 1;
         }
@@ -447,7 +517,7 @@ function getEnhancingActionComponent(panel) {
         const fiber = stack.pop();
         if (!fiber) continue;
         visited += 1;
-        if (isEnhancingActionComponent(fiber.stateNode)) matches.add(fiber.stateNode);
+        if (isMatch(fiber.stateNode)) matches.add(fiber.stateNode);
         if (fiber.sibling) stack.push(fiber.sibling);
         if (fiber.child) stack.push(fiber.child);
     }
@@ -962,15 +1032,169 @@ async function handleEnhancementMissingMaterialsClick(
     setupInventoryListener();
 }
 
+const ALCHEMY_PANEL_SELECTOR = '[class*="SkillActionDetail_alchemyComponent"]';
+const alchemyBoundInputs = new WeakSet();
+
+/**
+ * Process existing Alchemy panels on the page
+ */
+function processExistingAlchemyPanels() {
+    document.querySelectorAll(ALCHEMY_PANEL_SELECTOR).forEach((panel) => processAlchemyPanel(panel));
+}
+
+function scheduleAlchemyUpdate(panel) {
+    if (alchemyDebounceTimeout) {
+        clearTimeout(alchemyDebounceTimeout);
+    }
+    alchemyDebounceTimeout = setTimeout(() => {
+        alchemyDebounceTimeout = null;
+        updateAlchemyButton(panel);
+    }, 60);
+}
+
+/**
+ * Watch an Alchemy panel for item/tab/queue changes and keep its button current
+ * @param {HTMLElement} panel - Alchemy component element
+ */
+function processAlchemyPanel(panel) {
+    if (!panel || processedAlchemyPanels.has(panel)) {
+        return;
+    }
+
+    for (const [trackedPanel, unwatchPanel] of alchemyPanelWatchers) {
+        if (trackedPanel.isConnected) continue;
+        unwatchPanel();
+        alchemyPanelWatchers.delete(trackedPanel);
+    }
+
+    processedAlchemyPanels.add(panel);
+
+    const unwatchPanel = createMutationWatcher(
+        panel,
+        (mutations) => {
+            const isOwnButtonMutation = mutations.every((m) => {
+                const targetElement = m.target?.nodeType === Node.ELEMENT_NODE ? m.target : m.target?.parentElement;
+                if (targetElement?.closest?.('#mwi-missing-mats-button')) return true;
+
+                const nodes = [...m.addedNodes, ...m.removedNodes];
+                return (
+                    nodes.length > 0 &&
+                    nodes.every((n) => n?.nodeType !== Node.ELEMENT_NODE || n.id === 'mwi-missing-mats-button')
+                );
+            });
+            if (isOwnButtonMutation) return;
+
+            scheduleAlchemyUpdate(panel);
+        },
+        { childList: true, subtree: true, attributes: true }
+    );
+    alchemyPanelWatchers.set(panel, unwatchPanel);
+
+    // The quick Repeat buttons (1 / infinity) change the count without an input event.
+    panel.addEventListener('click', () => {
+        const clickTimer = setTimeout(() => scheduleAlchemyUpdate(panel), 50);
+        timerRegistry.registerTimeout(clickTimer);
+    });
+
+    const initialTimer = setTimeout(() => updateAlchemyButton(panel), 0);
+    timerRegistry.registerTimeout(initialTimer);
+}
+
+/**
+ * Read the item currently selected in the Alchemy panel (the first Costs entry)
+ * @param {HTMLElement} panel - Alchemy component element
+ * @returns {{itemHrid: string, enhancementLevel: number}|null} Selected item, or null when none
+ */
+function readAlchemySelection(panel) {
+    const container = panel.querySelector(
+        '[class*="SkillActionDetail_itemRequirements"] [class*="Item_itemContainer"]'
+    );
+    const href = container?.querySelector('svg use')?.getAttribute('href');
+    const itemId = href?.split('#')[1];
+    if (!itemId) return null;
+
+    const enhancementText = container.querySelector('[class*="Item_enhancementLevel"]')?.textContent || '';
+    const enhancementMatch = enhancementText.match(/\+(\d+)/);
+    return { itemHrid: `/items/${itemId}`, enhancementLevel: enhancementMatch ? parseInt(enhancementMatch[1], 10) : 0 };
+}
+
+/**
+ * Re-render the Missing Mats button for an Alchemy panel from its selected item and Repeat count.
+ * Enhanced items are skipped: the Marketplace tabs only support unenhanced materials.
+ * @param {HTMLElement} panel - Alchemy component element
+ */
+function updateAlchemyButton(panel) {
+    if (!panel?.isConnected) {
+        return;
+    }
+
+    const input = findActionInput(panel);
+    if (input && !alchemyBoundInputs.has(input)) {
+        alchemyBoundInputs.add(input);
+        input.addEventListener('input', () => scheduleAlchemyUpdate(panel));
+        input.addEventListener('keyup', () => scheduleAlchemyUpdate(panel));
+    }
+
+    const existingButton = panel.querySelector('#mwi-missing-mats-button');
+    const selection = config.getSetting('actions_missingMaterialsButton') ? readAlchemySelection(panel) : null;
+    if (!selection || selection.enhancementLevel > 0) {
+        existingButton?.remove();
+        return;
+    }
+
+    const numActions = parseInt(input?.value, 10) || 0;
+    const accountForQueue = !(config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false);
+
+    let materials = [];
+    let disabled = true;
+    if (numActions > 0) {
+        materials = calculateAlchemyMaterialRequirements(selection.itemHrid, numActions, accountForQueue);
+        disabled = !materials.some((material) => material.isTradeable !== false && Number(material.missing) > 0);
+    }
+
+    const stateKey = [
+        selection.itemHrid,
+        numActions,
+        disabled,
+        ...materials.map((m) => `${m.required}:${m.have}:${m.queued}:${m.missing}`),
+    ].join('|');
+    if (existingButton?.dataset.mwiState === stateKey) {
+        return;
+    }
+    existingButton?.remove();
+
+    const button = createMissingMaterialsButton(materials, null, numActions, disabled, () =>
+        handleAlchemyMissingMaterialsClick(selection.itemHrid, numActions)
+    );
+    button.dataset.mwiState = stateKey;
+    button.style.boxSizing = 'border-box';
+    button.style.width = '100%';
+    button.style.maxWidth = '360px';
+    button.style.alignSelf = 'flex-start';
+
+    const infoColumn = panel.querySelector('[class*="SkillActionDetail_info"]');
+    const anchor =
+        infoColumn?.querySelector('.mwi-alchemy-gold-summary') ||
+        infoColumn?.querySelector('[class*="SkillActionDetail_alchemyCosts"]');
+    if (anchor?.parentElement) {
+        anchor.after(button);
+    } else if (infoColumn) {
+        infoColumn.prepend(button);
+    } else {
+        panel.prepend(button);
+    }
+}
+
 /**
  * Create missing materials marketplace button
  * @param {Array} missingMaterials - Array of missing material objects
  * @param {string} actionHrid - Action HRID for recalculating materials
  * @param {number} numActions - Number of actions for recalculating materials
  * @param {boolean} disabled - Whether the button should be rendered in a disabled state
+ * @param {Function|null} [onClick] - Replaces the default production workflow when provided
  * @returns {HTMLElement} Button element
  */
-function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled = false) {
+function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled = false, onClick = null) {
     const button = document.createElement('button');
     button.id = 'mwi-missing-mats-button';
     button.type = 'button';
@@ -1013,7 +1237,7 @@ function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, 
         // Click handler
         button.addEventListener('click', async () => {
             try {
-                await handleMissingMaterialsClick(actionHrid, numActions);
+                await (onClick ? onClick() : handleMissingMaterialsClick(actionHrid, numActions));
             } catch (error) {
                 console.error('[MissingMats] Production workflow failed:', error);
                 const sessionId = actionsSessionId ?? activeWorkflowModel?.sessionId ?? null;
@@ -1026,12 +1250,13 @@ function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, 
 }
 
 /**
- * Handle missing materials button click
- * @param {Array} missingMaterials - Array of missing material objects
- * @param {string} actionHrid - Action HRID for recalculating materials
- * @param {number} numActions - Number of actions for recalculating materials
+ * Open the Marketplace with a tab per missing material and arm the first one
+ * @param {Object} options
+ * @param {Function} options.computeMaterials - Recomputes materials once the Marketplace is open
+ *   (inventory may have changed since the button rendered)
+ * @param {Object} options.returnContext - Stored on the workflow model for the Return tab
  */
-async function handleMissingMaterialsClick(actionHrid, numActions) {
+async function startMarketplaceWorkflow({ computeMaterials, returnContext }) {
     // Starting any new ACTIONS workflow invalidates an older asynchronous Enhancing Return.
     enhancingReturnGeneration += 1;
 
@@ -1067,20 +1292,14 @@ async function handleMissingMaterialsClick(actionHrid, numActions) {
     }
 
     // Recalculate materials fresh (inventory may have changed since button was rendered)
-    const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
-    const accountForQueue = !ignoreQueue;
-    const freshMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
+    const freshMaterials = computeMaterials();
 
     // Set activeWorkflowModel AFTER startSession
     autofillManager.startSession({ sessionId: capturedSessionId, quantityProvider: null });
     activeWorkflowModel = {
         sessionId: capturedSessionId,
         materials: freshMaterials.map((m) => ({ ...m })),
-        returnContext: {
-            actionHrid,
-            numActions,
-            enhancementContext: null,
-        },
+        returnContext,
     };
 
     // Create custom tabs in the unique visible Marketplace tablist.
@@ -1119,6 +1338,42 @@ async function handleMissingMaterialsClick(actionHrid, numActions) {
 
     // Setup inventory listener for live updates
     setupInventoryListener();
+}
+
+/**
+ * Handle missing materials button click (production panels)
+ * @param {string} actionHrid - Action HRID for recalculating materials
+ * @param {number} numActions - Number of actions for recalculating materials
+ */
+async function handleMissingMaterialsClick(actionHrid, numActions) {
+    await startMarketplaceWorkflow({
+        computeMaterials: () => {
+            // Default (off) accounts for materials already reserved by the queue.
+            const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+            return calculateMaterialRequirements(actionHrid, numActions, !ignoreQueue);
+        },
+        returnContext: { actionHrid, numActions, enhancementContext: null },
+    });
+}
+
+/**
+ * Handle missing materials button click (Alchemy panel)
+ * @param {string} itemHrid - Unenhanced item being processed
+ * @param {number} numActions - Repeat count
+ */
+async function handleAlchemyMissingMaterialsClick(itemHrid, numActions) {
+    await startMarketplaceWorkflow({
+        computeMaterials: () => {
+            const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+            return calculateAlchemyMaterialRequirements(itemHrid, numActions, !ignoreQueue);
+        },
+        returnContext: {
+            actionHrid: null,
+            numActions: 0,
+            enhancementContext: null,
+            alchemyContext: { itemHrid, numActions },
+        },
+    });
 }
 
 /**
@@ -1264,6 +1519,10 @@ function createReturnTab(referenceTab, returnContext) {
             details?.name || returnContext.actionHrid.split('/').pop()
         );
         if (returnContext.numActions > 0) displayName += ` (\u00d7${formatWithSeparator(returnContext.numActions)})`;
+    } else if (returnContext?.alchemyContext) {
+        const ctx = returnContext.alchemyContext;
+        const itemName = getItemName(ctx.itemHrid, dataManager.getItemDetails(ctx.itemHrid)?.name || '...');
+        displayName = `${itemName} (\u00d7${formatWithSeparator(ctx.numActions)})`;
     } else if (returnContext?.enhancementContext) {
         const ctx = returnContext.enhancementContext;
         const itemName = getItemName(ctx.itemHrid, dataManager.getItemDetails(ctx.itemHrid)?.name || '...');
@@ -1347,6 +1606,11 @@ async function handleReturnToAction() {
         // The native override restores both the exact action and its count.
         game.handleGoToAction(returnContext.actionHrid, returnContext.numActions || undefined);
         if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+        return;
+    }
+
+    if (returnContext.alchemyContext) {
+        await restoreAlchemyPanel(returnContext.alchemyContext, returnGeneration, capturedSessionId, game);
         return;
     }
 
@@ -1481,6 +1745,85 @@ async function handleReturnToAction() {
 
     console.error('[MissingMats] Enhancing Return could not restore all captured controls');
     if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+}
+
+/**
+ * Reopen the Alchemy panel on the same item and Repeat count. The game keeps the selected tab
+ * across navigation but drops the item, so reselect it through the native handler and verify the
+ * component state before ending the session.
+ * @param {{itemHrid: string, numActions: number}} ctx
+ * @param {number} returnGeneration
+ * @param {number|null} capturedSessionId
+ * @param {Object} game - Game navigation component
+ */
+async function restoreAlchemyPanel(ctx, returnGeneration, capturedSessionId, game) {
+    const endSession = () => {
+        if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+    };
+    const itemHash = buildInventoryItemHash(ctx.itemHrid, 0);
+    if (!itemHash || typeof game.handleAlchemizeItem !== 'function') {
+        console.error('[MissingMats] Alchemy Return could not navigate back');
+        endSession();
+        return;
+    }
+
+    game.handleAlchemizeItem(itemHash);
+
+    let component = null;
+    for (let attempt = 0; attempt < 120; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+
+        const panels = Array.from(document.querySelectorAll(ALCHEMY_PANEL_SELECTOR)).filter(
+            (panel) => panel.isConnected && isElementActuallyVisible(panel)
+        );
+        if (panels.length !== 1) continue;
+
+        const candidate = getAlchemyActionComponent(panels[0]);
+        if (!candidate) continue;
+
+        // The native override is transient; select again if the first render missed it.
+        if (candidate.state?.primaryItemHash !== itemHash) {
+            try {
+                candidate.selectAlchemyItemHandler(itemHash);
+            } catch (error) {
+                console.error('[MissingMats] Alchemy item restore failed:', error);
+            }
+            continue;
+        }
+
+        component = candidate;
+        break;
+    }
+
+    if (!component) {
+        console.error('[MissingMats] Alchemy Return could not restore the selected item');
+        endSession();
+        return;
+    }
+
+    try {
+        component.maxActionCountChanged({ target: { value: String(ctx.numActions) } });
+
+        for (let attempt = 0; attempt < 80; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 25));
+            if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+            const state = component.state || {};
+            if (
+                state.primaryItemHash === itemHash &&
+                Boolean(state.hasMaxCount) &&
+                Number(state.maxActionCount) === Number(ctx.numActions)
+            ) {
+                endSession();
+                return;
+            }
+        }
+    } catch (error) {
+        console.error('[MissingMats] Alchemy native restore failed:', error);
+    }
+
+    console.error('[MissingMats] Alchemy Return could not restore the Repeat count');
+    endSession();
 }
 
 /**
@@ -1652,6 +1995,11 @@ function updateTabsOnInventoryChange() {
             ctx.protectFromLevel,
             ctx.repeatCount
         );
+    } else if (activeWorkflowModel?.returnContext?.alchemyContext) {
+        // Alchemy mode
+        const ctx = activeWorkflowModel.returnContext.alchemyContext;
+        const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+        updatedMaterials = calculateAlchemyMaterialRequirements(ctx.itemHrid, ctx.numActions, !ignoreQueue);
     } else if (activeWorkflowModel?.returnContext?.actionHrid && activeWorkflowModel.returnContext.numActions > 0) {
         // Production mode
         const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;

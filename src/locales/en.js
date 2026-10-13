@@ -2982,8 +2982,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 help: 'When opening Best Items, sets the max level filter to your current Alchemy skill level. Off by default - alchemy has no hard level requirement (being under-leveled only lowers success rate, which profit/hr already accounts for), so the highest-profit item may genuinely be above your level.',
             },
             actions_missingMaterialsButton: {
-                label: 'Show "Missing Mats Marketplace" button on production panels',
-                help: 'Adds button to production panels that opens marketplace with tabs for missing materials',
+                label: 'Show "Missing Mats Marketplace" button on production and alchemy panels',
+                help: 'Adds button to production and alchemy panels that opens marketplace with tabs for missing materials',
             },
             actions_missingMaterialsButton_ignoreQueue: {
                 label: 'Ignore queued actions when calculating missing materials',

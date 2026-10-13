@@ -562,10 +562,10 @@ export const settingsGroups = {
         settings: {
             actions_missingMaterialsButton: {
                 id: 'actions_missingMaterialsButton',
-                label: 'Show "Missing Mats Marketplace" button on production panels',
+                label: 'Show "Missing Mats Marketplace" button on production and alchemy panels',
                 type: 'checkbox',
                 default: true,
-                help: 'Adds button to production panels that opens marketplace with tabs for missing materials',
+                help: 'Adds button to production and alchemy panels that opens marketplace with tabs for missing materials',
             },
             actions_missingMaterialsButton_ignoreQueue: {
                 id: 'actions_missingMaterialsButton_ignoreQueue',
