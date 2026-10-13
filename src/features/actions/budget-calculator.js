@@ -26,6 +26,7 @@ const PRODUCTION_TYPES = [
 ];
 
 const UI_ID = 'mwi-budget-calculator';
+const COIN_HRID = '/items/coin';
 
 /**
  * Parse a KMB shorthand string to a number.
@@ -105,6 +106,10 @@ function findMaxUnits(actionHrid, budget) {
         const mats = calculateMaterialRequirements(actionHrid, n, false);
         let total = 0;
         for (const mat of mats) {
+            if (mat.itemHrid === COIN_HRID) {
+                total += mat.required;
+                continue;
+            }
             if (!mat.isTradeable || mat.missing <= 0) continue;
             const priceInfo = getItemPriceOutlierInfo(mat.itemHrid, { mode: 'ask' });
             if (!priceInfo.value) continue;
@@ -211,9 +216,11 @@ function showBreakdownModal(budget, result) {
             const ask = priceInfo?.value > 0 ? priceInfo.value : null;
             const askIsOutlier = ask ? priceInfo.isOutlier : false;
             if (askIsOutlier) hasOutlierPrices = true;
-            const lineCost = ask && mat.missing > 0 ? mat.missing * ask : 0;
+            const isCoin = mat.itemHrid === COIN_HRID;
+            const lineCost = isCoin ? mat.required : ask && mat.missing > 0 ? mat.missing * ask : 0;
             totalSpend += lineCost;
-            if (ask) perUnitCost += ask * (mat.required / (result.n || 1));
+            if (isCoin) perUnitCost += mat.required / (result.n || 1);
+            else if (ask) perUnitCost += ask * (mat.required / (result.n || 1));
 
             const toBuyCell = mat.isTradeable
                 ? `<td style="${tdStyle}; color:${mat.missing > 0 ? '#e8a87c' : '#7ec87e'};">${formatWithSeparator(mat.missing)}</td>`
