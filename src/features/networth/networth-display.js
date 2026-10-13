@@ -25,14 +25,15 @@ const FIXED_ASSET_COLOR = '#3b82f6';
 const PANEL_STYLES_ID = 'mwi-networth-panel-styles';
 
 function buildPanelCss() {
+    const gold = config.COLOR_GOLD;
     return `
 .mwi-nw-root { text-align: left; color: #ccc; font-size: 0.875rem; }
 .mwi-nw-iconrow { display: flex; align-items: center; gap: 6px; }
 .mwi-nw-headtoggle { cursor: pointer; font-weight: bold; flex: 1; display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .mwi-nw-headtoggle:hover .mwi-nw-chev { background: rgba(255,255,255,0.2); color: #fff; }
 .mwi-nw-headname { display: inline-flex; align-items: center; gap: 7px; color: #fff; }
-.mwi-nw-coin { width: 20px; height: 20px; border-radius: 6px; background: rgba(251,191,36,0.16); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; flex: none; }
-.mwi-nw-big { color: #fbbf24; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mwi-nw-coin { width: 20px; height: 20px; border-radius: 6px; background: color-mix(in srgb, ${gold} 16%, transparent); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; flex: none; }
+.mwi-nw-big { color: ${gold}; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mwi-nw-chev { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.75); font-size: 10px; line-height: 1; transition: transform 0.15s, background 0.15s, color 0.15s; flex: none; }
 #mwi-networth-chev { width: 16px; height: 16px; font-size: 11px; }
 #mwi-networth-details > .mwi-nw-kids > details.mwi-nw-node > summary .mwi-nw-chev { width: 20px; height: 20px; border-radius: 5px; font-size: 13px; }
@@ -57,7 +58,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 .mwi-nw-kids > details.mwi-nw-node[open] > summary { color: #fff; }
 .mwi-nw-nm { color: inherit; overflow-wrap: anywhere; }
 .mwi-nw-count { color: rgba(255,255,255,0.4); font-size: 10.5px; margin-left: 4px; }
-.mwi-nw-val { color: #fbbf24; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mwi-nw-val { color: ${gold}; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mwi-nw-zero { color: rgba(255,255,255,0.3); font-weight: 400; }
 .mwi-nw-indent { border-left: 1px solid rgba(255,255,255,0.08); margin: 1px 0 1px 14px; padding-left: 9px; }
 .mwi-nw-lv1 { color: #ccc; }
@@ -282,7 +283,7 @@ class NetworthHeaderDisplay {
             svg.setAttribute('width', '12');
             svg.setAttribute('height', '12');
             svg.style.cssText = `
-                color: #fbbf24;
+                color: ${config.COLOR_GOLD};
                 fill: currentColor;
             `;
 
@@ -304,7 +305,7 @@ class NetworthHeaderDisplay {
         labelSpan.textContent = t('networthDisplay.goldLabel');
 
         const valueSpan = document.createElement('span');
-        valueSpan.style.cssText = 'color: #fbbf24; font-weight: 600;';
+        valueSpan.style.cssText = `color: ${config.COLOR_GOLD}; font-weight: 600;`;
         valueSpan.textContent = value;
 
         // Assemble

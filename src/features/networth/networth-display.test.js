@@ -3,7 +3,12 @@
 import { beforeEach, describe, expect, test, vi, afterEach } from 'vitest';
 
 vi.mock('../../core/config.js', () => ({
-    default: { COLOR_WARNING: '#ffa500', COLOR_ACCENT: '#22c55e', getSetting: vi.fn(() => true) },
+    default: {
+        COLOR_WARNING: '#ffa500',
+        COLOR_ACCENT: '#22c55e',
+        COLOR_GOLD: '#ffa500',
+        getSetting: vi.fn(() => true),
+    },
 }));
 
 vi.mock('../../core/i18n.js', () => ({
@@ -28,7 +33,8 @@ vi.mock('../../utils/dungeon-key-cost.js', () => ({ getKeyPriceInfo: vi.fn(() =>
 vi.mock('./networth-exclusion-popup.js', () => ({ default: {} }));
 vi.mock('./networth-exclusions.js', () => ({ removeExclusion: vi.fn() }));
 
-import { networthInventoryDisplay, getSharePercent } from './networth-display.js';
+import config from '../../core/config.js';
+import { networthHeaderDisplay, networthInventoryDisplay, getSharePercent } from './networth-display.js';
 
 describe('NetworthInventoryDisplay outlier warning icons', () => {
     test('renderEquipmentBreakdown emits one row per item with value cell and outlier icon only when flagged', () => {
@@ -233,5 +239,43 @@ describe('update() panel structure', () => {
         data.fixedAssets.guildShrines.totalCost = 0;
         networthInventoryDisplay.update(data);
         expect(networthInventoryDisplay.container.querySelector('.mwi-nw-sharebar')).toBeNull();
+    });
+});
+
+describe('gold color follows the color_gold setting', () => {
+    const originalGold = config.COLOR_GOLD;
+
+    afterEach(() => {
+        config.COLOR_GOLD = originalGold;
+        networthInventoryDisplay.container = null;
+        networthHeaderDisplay.container = null;
+        document.head.querySelectorAll('#mwi-networth-panel-styles').forEach((el) => el.remove());
+        document.body.innerHTML = '';
+    });
+
+    test('panel value and total styles use COLOR_GOLD instead of a hardcoded amber', () => {
+        config.COLOR_GOLD = '#123456';
+        document.body.innerHTML = '<div id="mwi-nw-test-host"></div>';
+        networthInventoryDisplay.container = document.getElementById('mwi-nw-test-host');
+
+        networthInventoryDisplay.update(makeNetworthData());
+        networthInventoryDisplay.refresh();
+
+        const css = document.getElementById('mwi-networth-panel-styles').textContent;
+        expect(css).toMatch(/\.mwi-nw-big \{ color: #123456;/);
+        expect(css).toMatch(/\.mwi-nw-val \{ color: #123456;/);
+        expect(css).not.toContain('fbbf24');
+    });
+
+    test('header gold line uses COLOR_GOLD', () => {
+        config.COLOR_GOLD = '#123456';
+        document.body.innerHTML = '<div id="mwi-nw-header-host"></div>';
+        networthHeaderDisplay.container = document.getElementById('mwi-nw-header-host');
+
+        networthHeaderDisplay.renderGoldDisplay('1M');
+
+        const spans = networthHeaderDisplay.container.querySelectorAll('span');
+        const valueSpan = Array.from(spans).find((el) => el.textContent === '1M');
+        expect(valueSpan.style.color).toBe('rgb(18, 52, 86)');
     });
 });
