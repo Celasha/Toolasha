@@ -32,7 +32,7 @@ function buildPanelCss() {
 .mwi-nw-headtoggle:hover .mwi-nw-chev { background: rgba(255,255,255,0.2); color: #fff; }
 .mwi-nw-headname { display: inline-flex; align-items: center; gap: 7px; color: #fff; }
 .mwi-nw-coin { width: 20px; height: 20px; border-radius: 6px; background: rgba(251,191,36,0.16); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; flex: none; }
-.mwi-nw-big { color: #fbbf24; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mwi-nw-big { color: #fbbf24; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
 .mwi-nw-chev { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.75); font-size: 10px; line-height: 1; transition: transform 0.15s, background 0.15s, color 0.15s; flex: none; }
 #mwi-networth-chev { width: 16px; height: 16px; font-size: 11px; }
 #mwi-networth-details > .mwi-nw-kids > details.mwi-nw-node > summary .mwi-nw-chev { width: 20px; height: 20px; border-radius: 5px; font-size: 13px; }
@@ -373,13 +373,40 @@ class NetworthInventoryDisplay {
     }
 
     /**
+     * Check if an element is actually rendered (occupies layout space).
+     * Elements inside display:none subtrees report zero size and no client rects.
+     * @param {Element} el - Element to check
+     * @returns {boolean} True if element is rendered
+     */
+    isRendered(el) {
+        return !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length > 0));
+    }
+
+    /**
+     * Find the rendered Inventory items element. The game keeps a permanently
+     * hidden Inventory subtree inside CharacterManagement which may appear first
+     * in document order, so hidden instances must be skipped.
+     * @returns {Element|null} Rendered inventory items element
+     */
+    findRenderedInventoryItems() {
+        for (const el of document.querySelectorAll('[class*="Inventory_items"]')) {
+            if (this.isRendered(el)) {
+                return el;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Initialize inventory panel display
      */
     initialize() {
         injectPanelStyles();
 
-        // 1. Check if element already exists (handles late initialization)
-        const existingElem = document.querySelector('[class*="Inventory_items"]');
+        // 1. Check if element already exists (handles late initialization).
+        // Must anchor to the rendered instance - the hidden CharacterManagement
+        // Inventory clone also matches the selector.
+        const existingElem = this.findRenderedInventoryItems();
         if (existingElem) {
             this.renderPanel(existingElem);
         }
@@ -398,8 +425,14 @@ class NetworthInventoryDisplay {
      * @param {Element} inventoryElem - Inventory items element
      */
     renderPanel(inventoryElem) {
-        // Check if already rendered
-        if (this.container && document.body.contains(this.container)) {
+        // Never anchor into a hidden Inventory instance (e.g. the
+        // CharacterManagement clone) - the panel would stay invisible.
+        if (!this.isRendered(inventoryElem)) {
+            return;
+        }
+
+        // Check if already rendered and still visible
+        if (this.container && document.body.contains(this.container) && this.isRendered(this.container)) {
             return;
         }
 
@@ -441,8 +474,22 @@ class NetworthInventoryDisplay {
     update(networthData) {
         this.currentData = networthData;
 
-        if (!this.container || !document.body.contains(this.container)) {
-            return;
+        // Self-heal: if the panel is missing or trapped in a hidden subtree
+        // (game keeps a display:none Inventory clone), re-anchor to the
+        // rendered Inventory instance. renderPanel() calls back into update()
+        // with the container already visible, so this cannot loop.
+        if (!this.container || !document.body.contains(this.container) || !this.isRendered(this.container)) {
+            const anchor = this.findRenderedInventoryItems();
+            if (anchor) {
+                this.renderPanel(anchor);
+                return;
+            }
+            // No rendered anchor available: keep updating the existing
+            // container if it is still attached (also covers layout-less
+            // environments such as DOM tests).
+            if (!this.container || !document.body.contains(this.container)) {
+                return;
+            }
         }
 
         // Preserve <details> open state across re-render (generic: any details with an id)
