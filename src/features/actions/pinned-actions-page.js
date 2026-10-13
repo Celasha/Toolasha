@@ -20,6 +20,7 @@ import { calculateMaterialRequirements } from '../../utils/material-calculator.j
 import assetManifest from '../../utils/asset-manifest.js';
 import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 import { getActionName, getItemName } from '../../utils/game-i18n.js';
+import { resolveActionContext } from '../../utils/action-context.js';
 
 const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 
@@ -895,13 +896,21 @@ class PinnedActionsPage {
      */
     _computeAlchemyStats(alchemyType, itemHrid) {
         try {
+            // Predict with the saved alchemy loadout when "Use saved loadouts" is on (current gear otherwise)
+            const actionContext = resolveActionContext('/action_types/alchemy');
             let profitData;
             if (alchemyType === 'transmute') {
-                profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid);
+                profitData = alchemyProfitCalculator.calculateTransmuteProfit(
+                    itemHrid,
+                    false,
+                    null,
+                    null,
+                    actionContext
+                );
             } else if (alchemyType === 'decompose') {
-                profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, 0);
+                profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, 0, false, null, actionContext);
             } else {
-                profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, 0);
+                profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, 0, false, null, actionContext);
             }
 
             if (!profitData) return null;

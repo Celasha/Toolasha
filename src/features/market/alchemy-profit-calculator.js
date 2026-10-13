@@ -2083,26 +2083,28 @@ class AlchemyProfitCalculator {
      * Calculate all applicable profits for an item
      * @param {string} itemHrid - Item HRID
      * @param {number} enhancementLevel - Enhancement level (default 0)
+     * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Equipment/drinks to predict
+     *   with (e.g. from resolveActionContext). When omitted, the live equipped setup is used.
      * @returns {Object} Object with all applicable profit calculations
      */
-    calculateAllProfits(itemHrid, enhancementLevel = 0) {
+    calculateAllProfits(itemHrid, enhancementLevel = 0, actionContext = null) {
         const results = {};
 
         // Try coinify
-        const coinifyProfit = this.calculateCoinifyProfit(itemHrid, enhancementLevel);
+        const coinifyProfit = this.calculateCoinifyProfit(itemHrid, enhancementLevel, false, null, actionContext);
         if (coinifyProfit) {
             results.coinify = coinifyProfit;
         }
 
         // Try decompose
-        const decomposeProfit = this.calculateDecomposeProfit(itemHrid, enhancementLevel);
+        const decomposeProfit = this.calculateDecomposeProfit(itemHrid, enhancementLevel, false, null, actionContext);
         if (decomposeProfit) {
             results.decompose = decomposeProfit;
         }
 
         // Try transmute (only for base items)
         if (enhancementLevel === 0) {
-            const transmuteProfit = this.calculateTransmuteProfit(itemHrid);
+            const transmuteProfit = this.calculateTransmuteProfit(itemHrid, false, null, null, actionContext);
             if (transmuteProfit) {
                 results.transmute = transmuteProfit;
             }
@@ -2110,7 +2112,7 @@ class AlchemyProfitCalculator {
 
         // Try unrefine (applies at any enhancement level - it preserves the level, unlike
         // transmute which only operates on base/unenhanced items)
-        const unrefineProfit = this.calculateUnrefineProfit(itemHrid, enhancementLevel);
+        const unrefineProfit = this.calculateUnrefineProfit(itemHrid, enhancementLevel, false, null, actionContext);
         if (unrefineProfit) {
             results.unrefine = unrefineProfit;
         }

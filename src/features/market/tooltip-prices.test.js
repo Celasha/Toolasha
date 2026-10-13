@@ -38,8 +38,12 @@ vi.mock('../../utils/profit-helpers.js', () => ({
 }));
 vi.mock('../../utils/dungeon-key-cost.js', () => ({ getKeyPrice: vi.fn(() => 0) }));
 vi.mock('../../utils/material-calculator.js', () => ({ calculateArtisanBonus: vi.fn(() => 0) }));
+vi.mock('../../utils/action-context.js', () => ({ resolveActionContext: vi.fn() }));
 
 import tooltipPrices from './tooltip-prices.js';
+import alchemyProfitCalculator from './alchemy-profit-calculator.js';
+import profitCalculator from './profit-calculator.js';
+import { resolveActionContext } from '../../utils/action-context.js';
 
 function buildTooltipElement() {
     const tooltipElement = document.createElement('div');
@@ -89,5 +93,27 @@ describe('TooltipPrices.injectPriceDisplay outlier warning icons', () => {
 
         const priceDiv = tooltipElement.querySelector('.market-price-injected');
         expect(priceDiv.innerHTML).not.toContain('⚠');
+    });
+});
+
+describe('TooltipPrices.injectMultiActionProfitDisplay loadout prediction', () => {
+    test('passes the resolved alchemy action context to the alchemy profit calculation', async () => {
+        const savedLoadoutContext = { equipment: new Map([['/item_locations/alchemy_tool', {}]]), drinks: [] };
+        resolveActionContext.mockReturnValue(savedLoadoutContext);
+        alchemyProfitCalculator.calculateAllProfits = vi.fn(() => ({
+            coinify: { actionType: 'coinify', profitPerHour: 1000, profitPerAction: 10 },
+        }));
+        profitCalculator.findProductionAction = vi.fn(() => null);
+
+        const tooltipElement = buildTooltipElement();
+        await tooltipPrices.injectMultiActionProfitDisplay(tooltipElement, '/items/pirate_essence', 0);
+
+        expect(resolveActionContext).toHaveBeenCalledWith('/action_types/alchemy');
+        expect(alchemyProfitCalculator.calculateAllProfits).toHaveBeenCalledWith(
+            '/items/pirate_essence',
+            0,
+            savedLoadoutContext
+        );
+        expect(tooltipElement.querySelector('.market-multi-action-injected')).not.toBeNull();
     });
 });

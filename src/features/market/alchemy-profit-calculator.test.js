@@ -556,6 +556,42 @@ describe('actionContext atomicity for Coinify/Decompose/Transmute (TLA-027)', ()
     });
 });
 
+describe('calculateAllProfits actionContext forwarding', () => {
+    test('forwards the supplied actionContext to coinify, decompose, transmute and unrefine', () => {
+        const context = { equipment: new Map(), drinks: [] };
+        const coinify = vi.spyOn(alchemyProfitCalculator, 'calculateCoinifyProfit').mockReturnValue(null);
+        const decompose = vi.spyOn(alchemyProfitCalculator, 'calculateDecomposeProfit').mockReturnValue(null);
+        const transmute = vi.spyOn(alchemyProfitCalculator, 'calculateTransmuteProfit').mockReturnValue(null);
+        const unrefine = vi.spyOn(alchemyProfitCalculator, 'calculateUnrefineProfit').mockReturnValue(null);
+
+        try {
+            alchemyProfitCalculator.calculateAllProfits('/items/test_item', 0, context);
+
+            expect(coinify).toHaveBeenCalledWith('/items/test_item', 0, false, null, context);
+            expect(decompose).toHaveBeenCalledWith('/items/test_item', 0, false, null, context);
+            expect(transmute).toHaveBeenCalledWith('/items/test_item', false, null, null, context);
+            expect(unrefine).toHaveBeenCalledWith('/items/test_item', 0, false, null, context);
+        } finally {
+            vi.restoreAllMocks();
+        }
+    });
+
+    test('without a context the calculators receive null and fall back to live gear', () => {
+        const coinify = vi.spyOn(alchemyProfitCalculator, 'calculateCoinifyProfit').mockReturnValue(null);
+        vi.spyOn(alchemyProfitCalculator, 'calculateDecomposeProfit').mockReturnValue(null);
+        vi.spyOn(alchemyProfitCalculator, 'calculateTransmuteProfit').mockReturnValue(null);
+        vi.spyOn(alchemyProfitCalculator, 'calculateUnrefineProfit').mockReturnValue(null);
+
+        try {
+            alchemyProfitCalculator.calculateAllProfits('/items/test_item', 0);
+
+            expect(coinify).toHaveBeenCalledWith('/items/test_item', 0, false, null, null);
+        } finally {
+            vi.restoreAllMocks();
+        }
+    });
+});
+
 describe('catalystChoice on Coinify and Decompose', () => {
     const DECOMPOSE_ITEM = '/items/test_choice_decompose';
     const COINIFY_ITEM = '/items/test_choice_coinify';

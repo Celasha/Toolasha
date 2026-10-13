@@ -37,6 +37,7 @@ import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import { calculateArtisanBonus } from '../../utils/material-calculator.js';
 import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { getItemName, getActionName } from '../../utils/game-i18n.js';
+import { resolveActionContext } from '../../utils/action-context.js';
 
 // Compiled regex patterns (created once, reused for performance)
 const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
@@ -1253,7 +1254,12 @@ class TooltipPrices {
         const allProfits = [];
 
         // Try alchemy profits (coinify, decompose, transmute)
-        const alchemyProfits = alchemyProfitCalculator.calculateAllProfits(itemHrid, enhancementLevel);
+        // Predict with the saved alchemy loadout when "Use saved loadouts" is on (current gear otherwise)
+        const alchemyProfits = alchemyProfitCalculator.calculateAllProfits(
+            itemHrid,
+            enhancementLevel,
+            resolveActionContext('/action_types/alchemy')
+        );
 
         if (alchemyProfits.coinify) {
             allProfits.push(alchemyProfits.coinify);
