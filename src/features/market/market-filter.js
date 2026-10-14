@@ -134,7 +134,7 @@ class MarketFilter {
         const levels =
             type === 'min'
                 ? [1, 10, 20, 30, 40, 50, 60, 65, 70, 75, 80, 85, 90, 95, 100]
-                : [10, 20, 30, 40, 50, 60, 65, 70, 75, 80, 85, 90, 95, 100, 1000];
+                : [1000, 10, 20, 30, 40, 50, 60, 65, 70, 75, 80, 85, 90, 95, 100];
 
         levels.forEach((level) => {
             const option = document.createElement('option');
