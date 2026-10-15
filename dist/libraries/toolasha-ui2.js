@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.19.0
+ * Version: 3.20.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2043,7 +2043,7 @@
 
     /**
      * Token Shop Shortcuts
-     * Adds a "View <shop>" button to the item action menu of every token that has a shop, like the
+     * Adds a "View <shop>" button to the item action menu of every token (and guild credit) that has a shop, like the
      * game's own "View Cowbell Store" button on the Cowbell item.
      */
 
@@ -2092,6 +2092,14 @@
         '/items/labyrinth_token': DESTINATIONS.labyrinth,
         '/items/task_token': DESTINATIONS.task,
         '/items/guild_token': DESTINATIONS.guild,
+        '/items/blue_guild_credit': DESTINATIONS.guild,
+        '/items/brown_guild_credit': DESTINATIONS.guild,
+        '/items/gold_guild_credit': DESTINATIONS.guild,
+        '/items/green_guild_credit': DESTINATIONS.guild,
+        '/items/purple_guild_credit': DESTINATIONS.guild,
+        '/items/red_guild_credit': DESTINATIONS.guild,
+        '/items/silver_guild_credit': DESTINATIONS.guild,
+        '/items/white_guild_credit': DESTINATIONS.guild,
     };
 
     /**
