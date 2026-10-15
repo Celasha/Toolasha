@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.21.1](https://github.com/Celasha/Toolasha/compare/v3.21.0...v3.21.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* improve labyrinth clear rate readability and drop tildes from times ([58bd79a](https://github.com/Celasha/Toolasha/commit/58bd79a2ecb8a2dfaafc8ed33a356484d16f1921))
+* include house and room in the upgrade costs setting label so search finds it ([7107251](https://github.com/Celasha/Toolasha/commit/71072516094872b5ebc097f4671c53856d2e8ebc))
+* let the settings color hex box accept typed values ([a3e93bf](https://github.com/Celasha/Toolasha/commit/a3e93bff302f4ad8d6c8010b490a41353e990f9b))
+* place token shop buttons at the top of the item menu ([0cf2ea9](https://github.com/Celasha/Toolasha/commit/0cf2ea9e9b779f5a4a2008d58ad9dd96b902ef50))
+* warm the jsDelivr cache on release and show a banner when libraries fail to load ([99abeda](https://github.com/Celasha/Toolasha/commit/99abeda43aa09012a819ed5bbf9485497d64df55))
+
 ## [3.21.0](https://github.com/Celasha/Toolasha/compare/v3.20.1...v3.21.0) (2026-10-15)
 
 ### Features
