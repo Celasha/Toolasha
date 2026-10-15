@@ -2,20 +2,18 @@
 
 ## [3.18.0](https://github.com/Celasha/Toolasha/compare/v3.17.0...v3.18.0) (2026-10-15)
 
-
 ### Features
 
-* support the milkywayidlecn.com China mirror ([63e5e76](https://github.com/Celasha/Toolasha/commit/63e5e7605a5a32e973ab51d8f93814eff3f8b1c7))
-
+- support the milkywayidlecn.com China mirror ([63e5e76](https://github.com/Celasha/Toolasha/commit/63e5e7605a5a32e973ab51d8f93814eff3f8b1c7))
 
 ### Bug Fixes
 
-* apply the black text border setting to the sidebar XP/hr rate ([4f667cd](https://github.com/Celasha/Toolasha/commit/4f667cdd08d58cad643066790ab80cef87c310e2))
-* drop the emoji coin tile from the inventory net worth row ([a3948ed](https://github.com/Celasha/Toolasha/commit/a3948ed5cdce71d5e5342c5d7b1dcfc694f4d838))
-* explain how combat consumable rate and remaining time are derived ([fb07440](https://github.com/Celasha/Toolasha/commit/fb07440fce2dc697bd6020aac3804bccdee93804))
-* let the labyrinth live clear chance run without the room-tile calculator ([0ce01d6](https://github.com/Celasha/Toolasha/commit/0ce01d6c846da5f162885d4bd4a707220f2d9319))
-* list All first in the market filter max level dropdown ([b97e5c2](https://github.com/Celasha/Toolasha/commit/b97e5c282a7b8a3a3522e7b46a2cef1e9af0419e))
-* start labyrinth monster abilities at a fixed half cooldown ([7cfb468](https://github.com/Celasha/Toolasha/commit/7cfb46839ddc2dd9aa6fa6d7507474083644b24c))
+- apply the black text border setting to the sidebar XP/hr rate ([4f667cd](https://github.com/Celasha/Toolasha/commit/4f667cdd08d58cad643066790ab80cef87c310e2))
+- drop the emoji coin tile from the inventory net worth row ([a3948ed](https://github.com/Celasha/Toolasha/commit/a3948ed5cdce71d5e5342c5d7b1dcfc694f4d838))
+- explain how combat consumable rate and remaining time are derived ([fb07440](https://github.com/Celasha/Toolasha/commit/fb07440fce2dc697bd6020aac3804bccdee93804))
+- let the labyrinth live clear chance run without the room-tile calculator ([0ce01d6](https://github.com/Celasha/Toolasha/commit/0ce01d6c846da5f162885d4bd4a707220f2d9319))
+- list All first in the market filter max level dropdown ([b97e5c2](https://github.com/Celasha/Toolasha/commit/b97e5c282a7b8a3a3522e7b46a2cef1e9af0419e))
+- start labyrinth monster abilities at a fixed half cooldown ([7cfb468](https://github.com/Celasha/Toolasha/commit/7cfb46839ddc2dd9aa6fa6d7507474083644b24c))
 
 ## [3.17.0](https://github.com/Celasha/Toolasha/compare/v3.16.0...v3.17.0) (2026-10-13)
 
