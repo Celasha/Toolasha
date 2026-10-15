@@ -454,7 +454,8 @@ export default {
         trackingDaysHours: (p) => `${p.days}天${p.hours}时`,
         trackingDays: (p) => `${p.days}天`,
         noConsumptionYetNote: (p) => `📊 已追踪 ${p.duration} - 尚无消耗（消耗率会随时间下降）`,
-        blendNote: (p) => `📊 已追踪 ${p.duration} - 90% 实际 + 10% 基准混合`,
+        blendNote: (p) =>
+            `📊 消耗率基于 ${p.duration} 的追踪数据（90% 实际 + 10% 基准）。消耗量 = 消耗率 × 战斗时长，剩余 = 库存 ÷ 消耗率。`,
         noConsumablesUsedMessage: '未使用任何消耗品',
         dropsHeading: '掉落',
         expectedValueHeading: '预期价值',

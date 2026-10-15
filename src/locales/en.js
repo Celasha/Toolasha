@@ -1089,7 +1089,8 @@ export default {
         trackingDaysHours: (p) => `${p.days}d ${p.hours}h`,
         trackingDays: (p) => `${p.days}d`,
         noConsumptionYetNote: (p) => `📊 Tracked ${p.duration} - No consumption yet (rate decreases over time)`,
-        blendNote: (p) => `📊 Tracked ${p.duration} - 90% actual + 10% baseline blend`,
+        blendNote: (p) =>
+            `📊 Rate measured over ${p.duration} (90% actual + 10% baseline). Consumed = rate × run duration. Remaining = inventory ÷ rate.`,
         noConsumablesUsedMessage: 'No consumables used',
         dropsHeading: 'Drops',
         expectedValueHeading: 'EXPECTED VALUE',
