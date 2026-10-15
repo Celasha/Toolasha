@@ -300,6 +300,8 @@ export default {
         advisorNoConversionHint: 'Selected item has no conversion for this credit',
         advisorOptimalChoice: '✓ Optimal choice for this credit type',
         advisorNoPriceData: (p) => `Best: ${p.name} — no price data for comparison`,
+        advisorTokenSelected: (p) =>
+            `Guild Tokens can't be sold on the market, so there is nothing to compare. Best market option: ${p.name}`,
         advisorBetterLabel: '↑ better',
         advisorWorseLabel: '↓ worse',
         advisorSellRebuyHeader: (p) => `Sell → rebuy best item (${p.taxPercent}% tax)`,

@@ -14,7 +14,7 @@ vi.mock('../../utils/market-data.js', () => ({
     getItemPriceOutlierInfo: mockGetItemPriceOutlierInfo,
 }));
 
-import { buildCreditRows } from './guild-credit-value.js';
+import { buildCreditRows, pickBestRow, resolveBatches } from './guild-credit-value.js';
 
 describe('normalizeGuildShrineReturnLabel', () => {
     test.each([
@@ -120,5 +120,74 @@ describe('buildCreditRows', () => {
 
         expect(rows.some((r) => r.isToken)).toBe(false);
         expect(rows).toHaveLength(1);
+    });
+});
+
+describe('pickBestRow', () => {
+    const BLUE_CREDIT = '/items/blue_guild_credit';
+    const GUILD_TOKEN = '/items/guild_token';
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    function buildRows(guildTokenFirst) {
+        mockGetItemPrice.mockImplementation((hrid, opts) => {
+            if (hrid === '/items/twilight_essence') return opts.mode === 'ask' ? 187 : 183;
+            if (hrid === '/items/golem_essence') return opts.mode === 'ask' ? 189 : 182;
+            return 0;
+        });
+        const twilight = {
+            name: 'Twilight Essence',
+            guildCreditConversions: [{ creditItemHrid: BLUE_CREDIT, itemCount: 5, creditCount: 1 }],
+        };
+        const golem = {
+            name: 'Golem Essence',
+            guildCreditConversions: [{ creditItemHrid: BLUE_CREDIT, itemCount: 5, creditCount: 1 }],
+        };
+        const token = {
+            name: 'Guild Token',
+            guildCreditConversions: [{ creditItemHrid: BLUE_CREDIT, itemCount: 1, creditCount: 10 }],
+        };
+        const itemDetailMap = guildTokenFirst
+            ? { [GUILD_TOKEN]: token, '/items/twilight_essence': twilight, '/items/golem_essence': golem }
+            : { '/items/twilight_essence': twilight, '/items/golem_essence': golem, [GUILD_TOKEN]: token };
+        return buildCreditRows(itemDetailMap, BLUE_CREDIT);
+    }
+
+    test.each([true, false])(
+        'never picks the Guild Token, which always ties the cheapest real item (token first: %s)',
+        (guildTokenFirst) => {
+            const rows = buildRows(guildTokenFirst);
+            const token = rows.find((r) => r.isToken);
+            const twilight = rows.find((r) => r.hrid === '/items/twilight_essence');
+            expect(token.sellGPC).toBeCloseTo(twilight.sellGPC);
+
+            const best = pickBestRow(rows);
+            expect(best.hrid).toBe('/items/twilight_essence');
+            expect(best.sellPrice).toBeGreaterThan(0);
+        }
+    );
+
+    test('returns null when only the token row exists or nothing has an ask price', () => {
+        expect(pickBestRow([])).toBeNull();
+        expect(pickBestRow([{ isToken: true, sellGPC: 935, sellPrice: null }])).toBeNull();
+        expect(pickBestRow([{ isToken: false, sellGPC: null, buyGPC: 5, sellPrice: null }])).toBeNull();
+    });
+});
+
+describe('resolveBatches', () => {
+    test('converts the You give item count into batches', () => {
+        expect(resolveBatches('10000', 5)).toBe(2000);
+        expect(resolveBatches('10,000', 5)).toBe(2000);
+        expect(resolveBatches(12, 5)).toBe(2);
+    });
+
+    test('falls back to one batch for a missing, empty, zero or sub-batch value', () => {
+        expect(resolveBatches(undefined, 5)).toBe(1);
+        expect(resolveBatches('', 5)).toBe(1);
+        expect(resolveBatches('0', 5)).toBe(1);
+        expect(resolveBatches('3', 5)).toBe(1);
+        expect(resolveBatches('100', 0)).toBe(1);
     });
 });
