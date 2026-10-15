@@ -3924,7 +3924,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Guild Shop: Show shrine upgrade planner',
                 help: 'Adds a shrine upgrade planner to the guild credit exchange panel, showing total credit and token costs to upgrade from your current level to a target level.',
             },
-            houseUpgradeCosts: { label: 'Show upgrade costs with market prices and inventory comparison' },
+            houseUpgradeCosts: { label: 'House: Show room upgrade costs with market prices and inventory comparison' },
             leaderboardXPTracker: {
                 label: 'Track player XP over time from Leaderboard',
                 help: 'Records player XP from leaderboard WebSocket messages for XP/hr calculations on the Leaderboard panel.',

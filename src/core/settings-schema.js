@@ -2492,7 +2492,7 @@ export const settingsGroups = {
         settings: {
             houseUpgradeCosts: {
                 id: 'houseUpgradeCosts',
-                label: 'Show upgrade costs with market prices and inventory comparison',
+                label: 'House: Show room upgrade costs with market prices and inventory comparison',
                 type: 'checkbox',
                 default: true,
             },

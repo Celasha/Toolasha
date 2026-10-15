@@ -1119,7 +1119,7 @@ export default {
                 label: '公会商店：显示神殿升级规划器',
                 help: '在公会信用点兑换面板添加神殿升级规划器，显示从当前等级升级到目标等级所需的信用点和代币总成本。',
             },
-            houseUpgradeCosts: { label: '显示升级成本，并对比市场价格与物品栏' },
+            houseUpgradeCosts: { label: '房屋：显示房间升级成本，并对比市场价格与物品栏' },
             leaderboardXPTracker: {
                 label: '随时间从排行榜追踪玩家经验',
                 help: '从排行榜 WebSocket 消息中记录玩家经验，用于排行榜面板的经验/时计算。',
