@@ -2,11 +2,11 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.18.1
+ * Version: 3.19.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, i18n_js, dom_js, storage, marketplaceSession_js, webSocketHook, marketData_js, formatters_js, timerRegistry_js, expectedValueCalculator, marketAPI, warningIcon_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, actionCalculator_js, efficiency_js, profitHelpers_js, loadoutState, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, buffParser_js) {
+(function (config, dataManager, domObserver, i18n_js, dom_js, storage, marketplaceSession_js, timerRegistry_js, webSocketHook, marketData_js, formatters_js, expectedValueCalculator, marketAPI, warningIcon_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, actionCalculator_js, efficiency_js, profitHelpers_js, loadoutState, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, buffParser_js) {
     'use strict';
 
     /**
@@ -2040,6 +2040,160 @@
 
     const altClickNavigation = new AltClickNavigation();
     altClickNavigation.setupSettingListener();
+
+    /**
+     * Token Shop Shortcuts
+     * Adds a "View <shop>" button to the item action menu of every token that has a shop, like the
+     * game's own "View Cowbell Store" button on the Cowbell item.
+     */
+
+
+    const BUTTON_CLASS = 'mwi-token-shop-button';
+    const TAB_POLL_MS = 50;
+    const TAB_POLL_ATTEMPTS = 40;
+
+    /**
+     * Where each shop lives: the game's top-level nav target, plus the tab inside that page. Tabs are
+     * matched by position within the page's own tab container, not by label, because the labels are
+     * localized.
+     */
+    const DESTINATIONS = {
+        dungeon: {
+            labelKey: 'tokenShopShortcuts.dungeonShop',
+            navTarget: 'shop',
+            tabContainerClass: 'ShopPanel_tabsComponentContainer',
+            tabIndex: 1,
+        },
+        labyrinth: {
+            labelKey: 'tokenShopShortcuts.labyrinthShop',
+            navTarget: 'labyrinth',
+            tabContainerClass: 'LabyrinthPanel_tabsComponentContainer',
+            tabIndex: 3,
+        },
+        task: {
+            labelKey: 'tokenShopShortcuts.taskShop',
+            navTarget: 'tasks',
+            tabContainerClass: 'TasksPanel_tabsComponentContainer',
+            tabIndex: 1,
+        },
+        guild: {
+            labelKey: 'tokenShopShortcuts.guildShop',
+            navTarget: 'guild',
+            tabContainerClass: 'GuildPanel_tabsComponentContainer',
+            tabIndex: 4,
+        },
+    };
+
+    const TOKEN_SHOPS = {
+        '/items/chimerical_token': DESTINATIONS.dungeon,
+        '/items/sinister_token': DESTINATIONS.dungeon,
+        '/items/enchanted_token': DESTINATIONS.dungeon,
+        '/items/pirate_token': DESTINATIONS.dungeon,
+        '/items/labyrinth_token': DESTINATIONS.labyrinth,
+        '/items/task_token': DESTINATIONS.task,
+        '/items/guild_token': DESTINATIONS.guild,
+    };
+
+    /**
+     * @param {string} itemHrid
+     * @returns {{labelKey: string, navTarget: string, tabContainerClass: string, tabIndex: number}|null}
+     */
+    function getShopDestination(itemHrid) {
+        return TOKEN_SHOPS[itemHrid] || null;
+    }
+
+    class TokenShopShortcuts {
+        constructor() {
+            this.unregisterHandlers = [];
+            this.isInitialized = false;
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            this.isInitialized = true;
+
+            const unregister = domObserver.onClass('TokenShopShortcuts', 'Item_actionMenu', (actionMenu) => {
+                this.injectButton(actionMenu);
+            });
+            this.unregisterHandlers.push(unregister);
+        }
+
+        /**
+         * @param {HTMLElement} actionMenu - The Item_actionMenu element
+         */
+        injectButton(actionMenu) {
+            if (actionMenu.querySelector(`.${BUTTON_CLASS}`)) return;
+
+            const nameEl = actionMenu.querySelector('[class*="Item_name"]');
+            if (!nameEl) return;
+
+            // The popup's own icon sprite is locale-independent; the translated name is the fallback.
+            const useEl = actionMenu.querySelector('svg use');
+            const itemHrid =
+                getItemHridFromIconHref(useEl?.getAttribute('href')) || getItemHridFromName(nameEl.textContent.trim());
+            const destination = itemHrid ? getShopDestination(itemHrid) : null;
+            if (!destination) return;
+
+            const button = document.createElement('button');
+            button.textContent = i18n_js.t(destination.labelKey);
+            const existingButton = actionMenu.querySelector('button');
+            if (existingButton) button.className = existingButton.className;
+            button.classList.add(BUTTON_CLASS);
+
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.goToShop(destination);
+            });
+
+            actionMenu.appendChild(button);
+        }
+
+        /**
+         * Navigate to the shop's page, then select its tab once the page's tab bar has mounted.
+         * If the tab never appears the player is still left on the right page.
+         * @param {{navTarget: string, tabContainerClass: string, tabIndex: number}} destination
+         */
+        goToShop(destination) {
+            const game = getGameObject$2();
+            if (!game || typeof game.handleGoToNavTarget !== 'function') {
+                console.error('[TokenShopShortcuts] Game navigation is unavailable');
+                return;
+            }
+            game.handleGoToNavTarget(destination.navTarget);
+
+            let attempts = 0;
+            const interval = setInterval(() => {
+                attempts++;
+                const tabs = document.querySelectorAll(`[class*="${destination.tabContainerClass}"] button[role="tab"]`);
+                const tab = tabs[destination.tabIndex];
+                if (tab) {
+                    clearInterval(interval);
+                    if (!tab.matches('[aria-selected="true"]')) tab.click();
+                } else if (attempts >= TAB_POLL_ATTEMPTS) {
+                    clearInterval(interval);
+                }
+            }, TAB_POLL_MS);
+            this.timerRegistry.registerInterval(interval);
+        }
+
+        cleanup() {
+            this.timerRegistry.clearAll();
+            this.unregisterHandlers.forEach((unregister) => unregister());
+            this.unregisterHandlers = [];
+            document.querySelectorAll(`.${BUTTON_CLASS}`).forEach((el) => el.remove());
+            this.isInitialized = false;
+        }
+    }
+
+    const tokenShopShortcuts = new TokenShopShortcuts();
+
+    var tokenShopShortcuts$1 = {
+        name: 'Token Shop Shortcuts',
+        initialize: () => tokenShopShortcuts.initialize(),
+        cleanup: () => tokenShopShortcuts.cleanup(),
+    };
 
     /**
      * Number Parser Utility
@@ -27448,6 +27602,7 @@ self.onmessage = function (e) {
         hideNavBarGlow,
         tabReorder: tabReorder$1,
         altClickNavigation,
+        tokenShopShortcuts: tokenShopShortcuts$1,
         lootLogStats,
         housePanelObserver,
         transmuteRates,
@@ -27478,4 +27633,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] UI library 2 loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core, Toolasha.Core.webSocketHook, Toolasha.Utils.marketData, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Core.loadoutState, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Utils.buffParser);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core, Toolasha.Utils.timerRegistry, Toolasha.Core.webSocketHook, Toolasha.Utils.marketData, Toolasha.Utils.formatters, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Core.loadoutState, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Utils.buffParser);

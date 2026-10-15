@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.18.1
+ * Version: 3.19.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -781,6 +781,8 @@
             headerAvgClearLabel: 'Avg Clear: ',
             headerRunsLabel: 'Runs: ',
             headerKeysLabel: 'Keys: ',
+            keysRunwayTooltip: (p) =>
+                `Estimated time until your keys run out, based on your last ${p.count} clears of this dungeon with this team. Assumes no new keys.`,
             statAvgClear: 'Avg Clear',
             statLastRun: 'Last Run',
             statFastestRun: 'Fastest Run',
@@ -2985,6 +2987,12 @@
         viewActionButton: {
             buttonLabel: 'View Action',
         },
+        tokenShopShortcuts: {
+            dungeonShop: 'View Dungeon Shop',
+            labyrinthShop: 'View Labyrinth Shop',
+            taskShop: 'View Task Shop',
+            guildShop: 'View Guild Shop',
+        },
         inventorySort: {
             sortLabel: 'Sort:',
             askButtonLabel: 'Ask',
@@ -3517,6 +3525,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 altClickNavigation: {
                     label: 'Alt+click items to navigate to crafting/gathering or dictionary',
                     help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
+                },
+                tokenShopShortcuts: {
+                    label: 'Add shop buttons to token item menus',
+                    help: 'Adds a View Shop button to the item menu of dungeon, Labyrinth, task and guild tokens, like the Cowbell Store button on Cowbells',
                 },
                 collectionNavigation: {
                     label: 'Add navigation buttons to collection items',
@@ -4801,6 +4813,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 altClickNavigation: {
                     label: '按住 Alt 点击物品，跳转制作/采集页面或物品词典',
                     help: '按住 Alt/Option 点击任意物品，可跳转到其制作/采集页面；若该物品不可制作，则跳转到物品词典',
+                },
+                tokenShopShortcuts: {
+                    label: '为代币物品菜单添加商店按钮',
+                    help: '在地下城、迷宫、任务和公会代币的物品菜单中添加“查看商店”按钮，类似牛铃上的牛铃商店按钮',
                 },
                 collectionNavigation: {
                     label: '为收藏物品添加导航按钮',
@@ -6519,6 +6535,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             headerAvgClearLabel: '平均通关：',
             headerRunsLabel: '次数：',
             headerKeysLabel: '钥匙：',
+            keysRunwayTooltip: (p) =>
+                `根据你与当前队伍最近 ${p.count} 次通关该地下城的平均耗时，估算钥匙耗尽所需时间。假设不���获得新钥匙。`,
             statAvgClear: '平均通关',
             statLastRun: '上次通关',
             statFastestRun: '最快通关',
@@ -8406,6 +8424,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         viewActionButton: {
             buttonLabel: '查看动作',
         },
+        tokenShopShortcuts: {
+            dungeonShop: '查看地下城商店',
+            labyrinthShop: '查看迷宫商店',
+            taskShop: '查看任务商店',
+            guildShop: '查看公会商店',
+        },
         craftingPlanTreeRenderer: {
             shoppingListHeader: '采购清单',
             craftingStepsHeader: '制作步骤',
@@ -8861,6 +8885,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'checkbox',
                     default: true,
                     help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
+                },
+                tokenShopShortcuts: {
+                    id: 'tokenShopShortcuts',
+                    label: 'Add shop buttons to token item menus',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a View Shop button to the item menu of dungeon, Labyrinth, task and guild tokens, like the Cowbell Store button on Cowbells',
                 },
                 collectionNavigation: {
                     id: 'collectionNavigation',

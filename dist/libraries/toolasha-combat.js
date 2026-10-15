@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.18.1
+ * Version: 3.19.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6764,6 +6764,42 @@
     }
 
     /**
+     * Dungeon Key Runway
+     *
+     * Estimates how long the player's entry keys will last at their recent clear pace. A key is only
+     * spent when a run is cleared (the chest is the cost), so failed and canceled attempts are not
+     * counted and only successful clears feed the average.
+     */
+
+    /** Number of most recent clears averaged for the estimate. */
+    const KEY_RUNWAY_WINDOW = 20;
+
+    /** Fewest clears needed before an estimate is shown. */
+    const KEY_RUNWAY_MIN_SAMPLES = 3;
+
+    /**
+     * @param {Array<{timestamp: string|number, duration?: number, totalTime?: number}>} clears -
+     *   Successful runs for one dungeon/team (durations in milliseconds), in any order
+     * @param {number} keys - Entry keys currently held
+     * @returns {{seconds: number, sampleSize: number}|null} Estimated seconds until the keys run
+     *   out, or null when there are no keys or too few clears to estimate
+     */
+    function estimateKeyRunway(clears, keys) {
+        if (!(keys > 0)) return null;
+
+        const durations = [...clears]
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, KEY_RUNWAY_WINDOW)
+            .map((run) => run.duration || run.totalTime || 0)
+            .filter((duration) => duration > 0);
+
+        if (durations.length < KEY_RUNWAY_MIN_SAMPLES) return null;
+
+        const averageMs = durations.reduce((sum, duration) => sum + duration, 0) / durations.length;
+        return { seconds: (averageMs / 1000) * keys, sampleSize: durations.length };
+    }
+
+    /**
      * Dungeon Tracker UI Core
      * Main orchestrator for dungeon tracker UI display
      * Coordinates state, chart, history, and interaction modules
@@ -6916,7 +6952,7 @@
                     <span>${i18n_js.t('dungeonTrackerUi.headerLastRunLabel')}<span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>| ${i18n_js.t('dungeonTrackerUi.headerAvgClearLabel')}<span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>| ${i18n_js.t('dungeonTrackerUi.headerRunsLabel')}<span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
-                    <span>| ${i18n_js.t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>| ${i18n_js.t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span><span id="mwi-dt-header-keys-runway" style="color: #aaa;"></span></span>
                 </div>
             </div>
 
@@ -7354,6 +7390,24 @@
             if (headerKeys) {
                 const currentKeys = (run.keyCountsMap && run.keyCountsMap[characterName]) || 0;
                 headerKeys.textContent = currentKeys.toLocaleString();
+
+                // Time until the keys run out at the recent clear pace for this dungeon and team.
+                // Uses its own filter (not the stats filters above) since the key count is for
+                // the current dungeon's key only.
+                const runway = this.container.querySelector('#mwi-dt-header-keys-runway');
+                if (runway) {
+                    const currentTeamKey = dungeonTrackerStorage.getTeamKey(Object.keys(run.keyCountsMap || {}));
+                    const keyClears = allRuns.filter(
+                        (r) =>
+                            r.dungeonName === run.dungeonName &&
+                            r.teamKey === currentTeamKey &&
+                            (!r.result || r.result === 'success') &&
+                            (!r.hibernationDetected || r.validated)
+                    );
+                    const estimate = estimateKeyRunway(keyClears, currentKeys);
+                    runway.textContent = estimate ? ` (~${formatters_js.timeReadableCompact(estimate.seconds)})` : '';
+                    runway.title = estimate ? i18n_js.t('dungeonTrackerUi.keysRunwayTooltip', { count: estimate.sampleSize }) : '';
+                }
             }
 
             // Update run-level stats in content area (2x2 grid)
