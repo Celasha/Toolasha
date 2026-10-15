@@ -982,18 +982,30 @@ class LabyrinthClearRate {
         const labyrinthCombatBuffs = this.getLabyrinthCombatBuffs();
 
         try {
-            const simResult = await this.runSimSerialized(() =>
-                runLabyrinthSimulation({
-                    gameData,
-                    playerDTOs: [dto],
-                    zoneHrid: '/actions/combat/fly',
-                    monsterHrid,
-                    roomLevel,
-                    crates: crateHrids,
-                    hours: this._recommendSimHours || 1,
-                    communityBuffs: { mooPass: false, comExp: 0, comDrop: 0 },
-                    labyrinthCombatBuffs,
-                })
+            const simHours = this._recommendSimHours || 1;
+            // Timed inside the serialized call so queue wait behind other rooms isn't counted.
+            let simElapsedMs = 0;
+            const simResult = await this.runSimSerialized(async () => {
+                const startedAt = performance.now();
+                try {
+                    return await runLabyrinthSimulation({
+                        gameData,
+                        playerDTOs: [dto],
+                        zoneHrid: '/actions/combat/fly',
+                        monsterHrid,
+                        roomLevel,
+                        crates: crateHrids,
+                        hours: simHours,
+                        communityBuffs: { mooPass: false, comExp: 0, comDrop: 0 },
+                        labyrinthCombatBuffs,
+                    });
+                } finally {
+                    simElapsedMs = performance.now() - startedAt;
+                }
+            });
+            console.log(
+                `[LabyrinthClearRate] sim ${monsterHrid} room ${roomLevel}: ${simHours}h, ` +
+                    `${simResult.labyAttemptCount || 1} attempts, ${Math.round(simElapsedMs)}ms`
             );
 
             // A saved loadout can re-resolve while the worker is running (for example +5 -> +10
