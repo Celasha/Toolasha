@@ -36,3 +36,24 @@ describe('release workflow Discord topic step', () => {
         expect(nameLine).not.toContain('#');
     });
 });
+
+describe('release workflow jsDelivr warm-up step', () => {
+    const warmStart = workflow.indexOf('Warm the jsDelivr cache for the pinned libraries');
+    const warmStep = workflow.slice(warmStart, workflow.indexOf('Upload userscripts and publish release'));
+
+    test('runs after the releases-branch commit and before the release is published', () => {
+        expect(warmStart).toBeGreaterThan(workflow.indexOf('Commit built files to releases branch'));
+        expect(warmStart).toBeLessThan(workflow.indexOf('Upload userscripts and publish release'));
+    });
+
+    test('reads the script from the triggering commit and warms the pinned entrypoint', () => {
+        expect(warmStep).toContain('git show "$GITHUB_SHA:scripts/warm-jsdelivr-cache.js"');
+        expect(warmStep).toContain('dist/Toolasha.user.js');
+        expect(warmStep).not.toMatch(/node scripts\//);
+    });
+
+    test('never fails the release and surfaces a failure as a warning', () => {
+        expect(warmStep).toContain('continue-on-error: true');
+        expect(warmStep).toContain('::warning::');
+    });
+});

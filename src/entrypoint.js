@@ -12,6 +12,11 @@
  * - UI2 (dictionary, house, guild, leaderboard, alchemy history, and misc UI features)
  */
 
+import { assertLibrariesLoaded } from './entrypoint-guard.js';
+
+// Stops with a visible banner if the @require libraries didn't load (e.g. slow or blocked CDN).
+assertLibrariesLoaded();
+
 // Access libraries from global namespace
 const Core = window.Toolasha.Core;
 const Utils = window.Toolasha.Utils;

@@ -82,6 +82,16 @@ jobs:
                   # Push releases branch
                   git push origin releases
 
+            - name: Warm the jsDelivr cache for the pinned libraries
+              if: ${{ steps.release.outputs.release_created }}
+              # Best effort: a slow CDN must never fail an already-built release.
+              continue-on-error: true
+              # The workspace is on the `releases` branch here (built files only), so read the script
+              # from the triggering commit. dist/Toolasha.user.js is already pinned to the library SHA.
+              run: |
+                  git show "$GITHUB_SHA:scripts/warm-jsdelivr-cache.js" > "$RUNNER_TEMP/warm-jsdelivr-cache.js"
+                  node "$RUNNER_TEMP/warm-jsdelivr-cache.js" dist/Toolasha.user.js || echo "::warning::Some library files did not warm on jsDelivr - see this step's log"
+
             - name: Upload userscripts and publish release
               if: ${{ steps.release.outputs.release_created }}
               uses: softprops/action-gh-release@v2
