@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.17.0
+ * Version: 3.18.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8521,7 +8521,7 @@ self.onmessage = function (e) {
             const levels =
                 type === 'min'
                     ? [1, 10, 20, 30, 40, 50, 60, 65, 70, 75, 80, 85, 90, 95, 100]
-                    : [10, 20, 30, 40, 50, 60, 65, 70, 75, 80, 85, 90, 95, 100, 1000];
+                    : [1000, 10, 20, 30, 40, 50, 60, 65, 70, 75, 80, 85, 90, 95, 100];
 
             levels.forEach((level) => {
                 const option = document.createElement('option');
@@ -25199,7 +25199,6 @@ self.onmessage = function (e) {
 .mwi-nw-headtoggle { cursor: pointer; font-weight: bold; flex: 1; display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .mwi-nw-headtoggle:hover .mwi-nw-chev { background: rgba(255,255,255,0.2); color: #fff; }
 .mwi-nw-headname { display: inline-flex; align-items: center; gap: 7px; color: #fff; }
-.mwi-nw-coin { width: 20px; height: 20px; border-radius: 6px; background: color-mix(in srgb, ${accent} 16%, transparent); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; flex: none; }
 .mwi-nw-big { color: ${accent}; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mwi-nw-chev { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.75); font-size: 10px; line-height: 1; transition: transform 0.15s, background 0.15s, color 0.15s; flex: none; }
 #mwi-networth-chev { width: 16px; height: 16px; font-size: 11px; }
@@ -25767,7 +25766,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             <div class="mwi-nw-root">
                 <div class="mwi-networth-icon-row mwi-nw-iconrow">
                     <div class="mwi-nw-headtoggle" id="mwi-networth-toggle">
-                        <span class="mwi-nw-headname"><span class="mwi-nw-chev" id="mwi-networth-chev">▸</span><span class="mwi-nw-coin">🪙</span>${i18n_js.t('networthDisplay.netWorthName')}</span>
+                        <span class="mwi-nw-headname"><span class="mwi-nw-chev" id="mwi-networth-chev">▸</span>${i18n_js.t('networthDisplay.netWorthName')}</span>
                         <span class="mwi-nw-big">${totalNetworth}</span>
                     </div>
                     ${
@@ -36646,13 +36645,38 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
     }
 
     /**
+     * Game Origin Utility
+     *
+     * The game is also served from a mainland-China mirror (milkywayidlecn.com) because the main
+     * domain is sometimes blocked there. Fetches of the game's public data files must hit the
+     * domain the page is on, otherwise they go cross-origin to the blocked host and fail.
+     */
+
+    const DEFAULT_ORIGIN = 'https://www.milkywayidle.com';
+    const CN_DOMAIN = 'milkywayidlecn.com';
+
+    /**
+     * Resolve the origin that serves the game's public data files (game_data/*, asset-manifest.json).
+     * @param {{hostname?: string, origin?: string}} [pageLocation] - Location to inspect (defaults to window.location)
+     * @returns {string} Origin without a trailing slash
+     */
+    function getGameOrigin(pageLocation = typeof window !== 'undefined' ? window.location : null) {
+        const hostname = pageLocation?.hostname || '';
+        if ((hostname === CN_DOMAIN || hostname.endsWith(`.${CN_DOMAIN}`)) && pageLocation.origin) {
+            return pageLocation.origin;
+        }
+        return DEFAULT_ORIGIN;
+    }
+
+    /**
      * Asset Manifest Utility
      *
      * Fetches the game's asset-manifest.json to resolve current webpack hashed
      * sprite URLs without hardcoding hashes that break on game updates.
      */
 
-    const MANIFEST_URL = 'https://www.milkywayidle.com/asset-manifest.json';
+
+    const MANIFEST_URL = `${getGameOrigin()}/asset-manifest.json`;
 
     // Sprite keys to extract from the manifest (key → sprite name)
     const SPRITE_KEYS = {

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.17.0
+ * Version: 3.18.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1769,7 +1769,8 @@
             trackingDaysHours: (p) => `${p.days}d ${p.hours}h`,
             trackingDays: (p) => `${p.days}d`,
             noConsumptionYetNote: (p) => `📊 Tracked ${p.duration} - No consumption yet (rate decreases over time)`,
-            blendNote: (p) => `📊 Tracked ${p.duration} - 90% actual + 10% baseline blend`,
+            blendNote: (p) =>
+                `📊 Rate measured over ${p.duration} (90% actual + 10% baseline). Consumed = rate × run duration. Remaining = inventory ÷ rate.`,
             noConsumablesUsedMessage: 'No consumables used',
             dropsHeading: 'Drops',
             expectedValueHeading: 'EXPECTED VALUE',
@@ -6401,7 +6402,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             trackingDaysHours: (p) => `${p.days}天${p.hours}时`,
             trackingDays: (p) => `${p.days}天`,
             noConsumptionYetNote: (p) => `📊 已追踪 ${p.duration} - 尚无消耗（消耗率会随时间下降）`,
-            blendNote: (p) => `📊 已追踪 ${p.duration} - 90% 实际 + 10% 基准混合`,
+            blendNote: (p) =>
+                `📊 消耗率基于 ${p.duration} 的追踪数据（90% 实际 + 10% 基准）。消耗量 = 消耗率 × 战斗时长，剩余 = 库存 ÷ 消耗率。`,
             noConsumablesUsedMessage: '未使用任何消耗品',
             dropsHeading: '掉落',
             expectedValueHeading: '预期价值',
@@ -12098,7 +12100,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
 
             return (
                 socket.url.indexOf('api.milkywayidle.com/ws') !== -1 ||
-                socket.url.indexOf('api-test.milkywayidle.com/ws') !== -1
+                socket.url.indexOf('api-test.milkywayidle.com/ws') !== -1 ||
+                socket.url.indexOf('api.milkywayidlecn.com/ws') !== -1 ||
+                socket.url.indexOf('api-test.milkywayidlecn.com/ws') !== -1
             );
         }
 
@@ -14801,6 +14805,30 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
     const dataManager = new DataManager();
 
     /**
+     * Game Origin Utility
+     *
+     * The game is also served from a mainland-China mirror (milkywayidlecn.com) because the main
+     * domain is sometimes blocked there. Fetches of the game's public data files must hit the
+     * domain the page is on, otherwise they go cross-origin to the blocked host and fail.
+     */
+
+    const DEFAULT_ORIGIN = 'https://www.milkywayidle.com';
+    const CN_DOMAIN = 'milkywayidlecn.com';
+
+    /**
+     * Resolve the origin that serves the game's public data files (game_data/*, asset-manifest.json).
+     * @param {{hostname?: string, origin?: string}} [pageLocation] - Location to inspect (defaults to window.location)
+     * @returns {string} Origin without a trailing slash
+     */
+    function getGameOrigin(pageLocation = typeof window !== 'undefined' ? window.location : null) {
+        const hostname = pageLocation?.hostname || '';
+        if ((hostname === CN_DOMAIN || hostname.endsWith(`.${CN_DOMAIN}`)) && pageLocation.origin) {
+            return pageLocation.origin;
+        }
+        return DEFAULT_ORIGIN;
+    }
+
+    /**
      * Configuration Module
      * Manages all script constants and user settings
      */
@@ -14860,7 +14888,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             this.Z_NOTIFICATION = 99999; // Transient notifications (above everything)
 
             // Market API URL
-            this.MARKET_API_URL = 'https://www.milkywayidle.com/game_data/marketplace.json';
+            this.MARKET_API_URL = `${getGameOrigin()}/game_data/marketplace.json`;
 
             // Settings loaded from settings-schema via settings-storage.js
             this.settingsMap = {};
@@ -17905,7 +17933,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
     class MarketAPI {
         constructor() {
             // API endpoint
-            this.API_URL = 'https://www.milkywayidle.com/game_data/marketplace.json';
+            this.API_URL = `${getGameOrigin()}/game_data/marketplace.json`;
 
             // Cache settings
             this.CACHE_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
@@ -18413,7 +18441,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
      */
     class MarketValuesAPI {
         constructor() {
-            this.API_URL = 'https://www.milkywayidle.com/game_data/market_values.json';
+            this.API_URL = `${getGameOrigin()}/game_data/market_values.json`;
 
             // Cache settings - this is a slow-moving reference value, not live order-book data
             this.CACHE_DURATION = 60 * 60 * 1000; // 1 hour
