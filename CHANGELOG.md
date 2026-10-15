@@ -2,10 +2,9 @@
 
 ## [3.21.0](https://github.com/Celasha/Toolasha/compare/v3.20.1...v3.21.0) (2026-10-15)
 
-
 ### Features
 
-* add Brynless Mode to hide the BO/SO icons in the header order totals ([6108f62](https://github.com/Celasha/Toolasha/commit/6108f62b4a9dd0ca9ce1de5b13a32eb90168781e))
+- add Brynless Mode to hide the BO/SO icons in the header order totals ([6108f62](https://github.com/Celasha/Toolasha/commit/6108f62b4a9dd0ca9ce1de5b13a32eb90168781e))
 
 ## [3.20.1](https://github.com/Celasha/Toolasha/compare/v3.20.0...v3.20.1) (2026-10-15)
 
