@@ -14,6 +14,8 @@ import DungeonTrackerUIInteractions from './dungeon-tracker-ui-interactions.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
+import { estimateKeyRunway } from './dungeon-key-runway.js';
+import { timeReadableCompact } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel } from '../../utils/panel-z-index.js';
 import { getActionName } from '../../utils/game-i18n.js';
@@ -164,7 +166,7 @@ class DungeonTrackerUI {
                     <span>${t('dungeonTrackerUi.headerLastRunLabel')}<span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>| ${t('dungeonTrackerUi.headerAvgClearLabel')}<span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>| ${t('dungeonTrackerUi.headerRunsLabel')}<span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
-                    <span>| ${t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>| ${t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span><span id="mwi-dt-header-keys-runway" style="color: #aaa;"></span></span>
                 </div>
             </div>
 
@@ -602,6 +604,24 @@ class DungeonTrackerUI {
         if (headerKeys) {
             const currentKeys = (run.keyCountsMap && run.keyCountsMap[characterName]) || 0;
             headerKeys.textContent = currentKeys.toLocaleString();
+
+            // Time until the keys run out at the recent clear pace for this dungeon and team.
+            // Uses its own filter (not the stats filters above) since the key count is for
+            // the current dungeon's key only.
+            const runway = this.container.querySelector('#mwi-dt-header-keys-runway');
+            if (runway) {
+                const currentTeamKey = dungeonTrackerStorage.getTeamKey(Object.keys(run.keyCountsMap || {}));
+                const keyClears = allRuns.filter(
+                    (r) =>
+                        r.dungeonName === run.dungeonName &&
+                        r.teamKey === currentTeamKey &&
+                        (!r.result || r.result === 'success') &&
+                        (!r.hibernationDetected || r.validated)
+                );
+                const estimate = estimateKeyRunway(keyClears, currentKeys);
+                runway.textContent = estimate ? ` (~${timeReadableCompact(estimate.seconds)})` : '';
+                runway.title = estimate ? t('dungeonTrackerUi.keysRunwayTooltip', { count: estimate.sampleSize }) : '';
+            }
         }
 
         // Update run-level stats in content area (2x2 grid)

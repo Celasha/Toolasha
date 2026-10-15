@@ -101,6 +101,8 @@ export default {
         headerAvgClearLabel: 'Avg Clear: ',
         headerRunsLabel: 'Runs: ',
         headerKeysLabel: 'Keys: ',
+        keysRunwayTooltip: (p) =>
+            `Estimated time until your keys run out, based on your last ${p.count} clears of this dungeon with this team. Assumes no new keys.`,
         statAvgClear: 'Avg Clear',
         statLastRun: 'Last Run',
         statFastestRun: 'Fastest Run',

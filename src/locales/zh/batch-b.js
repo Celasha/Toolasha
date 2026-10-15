@@ -569,6 +569,8 @@ export default {
         headerAvgClearLabel: '平均通关：',
         headerRunsLabel: '次数：',
         headerKeysLabel: '钥匙：',
+        keysRunwayTooltip: (p) =>
+            `根据你与当前队伍最近 ${p.count} 次通关该地下城的平均耗时，估算钥匙耗尽所需时间。假设不���获得新钥匙。`,
         statAvgClear: '平均通关',
         statLastRun: '上次通关',
         statFastestRun: '最快通关',
