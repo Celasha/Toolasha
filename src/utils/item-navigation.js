@@ -9,7 +9,7 @@ import dataManager from '../core/data-manager.js';
  * Get game object via React fiber tree traversal
  * @returns {Object|null} Game component instance
  */
-function getGameObject() {
+export function getGameObject() {
     const rootEl = document.getElementById('root');
     const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
     if (!rootFiber) return null;

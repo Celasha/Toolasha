@@ -191,6 +191,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
             },
+            tokenShopShortcuts: {
+                id: 'tokenShopShortcuts',
+                label: 'Add shop buttons to token item menus',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a View Shop button to the item menu of dungeon, Labyrinth, task and guild tokens, like the Cowbell Store button on Cowbells',
+            },
             collectionNavigation: {
                 id: 'collectionNavigation',
                 label: 'Add navigation buttons to collection items',

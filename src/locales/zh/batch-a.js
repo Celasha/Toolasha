@@ -100,6 +100,10 @@ export default {
                 label: '按住 Alt 点击物品，跳转制作/采集页面或物品词典',
                 help: '按住 Alt/Option 点击任意物品，可跳转到其制作/采集页面；若该物品不可制作，则跳转到物品词典',
             },
+            tokenShopShortcuts: {
+                label: '为代币物品菜单添加商店按钮',
+                help: '在地下城、迷宫、任务和公会代币的物品菜单中添加“查看商店”按钮，类似牛铃上的牛铃商店按钮',
+            },
             collectionNavigation: {
                 label: '为收藏物品添加导航按钮',
                 help: '点击收藏物品时，添加“查看动作”和“物品词典”按钮',

@@ -2307,6 +2307,12 @@ export default {
     viewActionButton: {
         buttonLabel: 'View Action',
     },
+    tokenShopShortcuts: {
+        dungeonShop: 'View Dungeon Shop',
+        labyrinthShop: 'View Labyrinth Shop',
+        taskShop: 'View Task Shop',
+        guildShop: 'View Guild Shop',
+    },
     inventorySort: {
         sortLabel: 'Sort:',
         askButtonLabel: 'Ask',
@@ -2839,6 +2845,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             altClickNavigation: {
                 label: 'Alt+click items to navigate to crafting/gathering or dictionary',
                 help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
+            },
+            tokenShopShortcuts: {
+                label: 'Add shop buttons to token item menus',
+                help: 'Adds a View Shop button to the item menu of dungeon, Labyrinth, task and guild tokens, like the Cowbell Store button on Cowbells',
             },
             collectionNavigation: {
                 label: 'Add navigation buttons to collection items',

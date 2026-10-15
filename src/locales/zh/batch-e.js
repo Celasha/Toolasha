@@ -501,6 +501,12 @@ export default {
     viewActionButton: {
         buttonLabel: '查看动作',
     },
+    tokenShopShortcuts: {
+        dungeonShop: '查看地下城商店',
+        labyrinthShop: '查看迷宫商店',
+        taskShop: '查看任务商店',
+        guildShop: '查看公会商店',
+    },
     craftingPlanTreeRenderer: {
         shoppingListHeader: '采购清单',
         craftingStepsHeader: '制作步骤',

@@ -20,6 +20,7 @@ import tabReorder from '../features/ui/tab-reorder.js';
 
 // Navigation features
 import altClickNavigation from '../features/navigation/alt-click-navigation.js';
+import tokenShopShortcuts from '../features/navigation/token-shop-shortcuts.js';
 
 // Action features
 import lootLogStats from '../features/actions/loot-log-stats.js';
@@ -80,6 +81,7 @@ toolashaRoot.UI = Object.assign(toolashaRoot.UI || {}, {
     hideNavBarGlow,
     tabReorder,
     altClickNavigation,
+    tokenShopShortcuts,
     lootLogStats,
     housePanelObserver,
     transmuteRates,
