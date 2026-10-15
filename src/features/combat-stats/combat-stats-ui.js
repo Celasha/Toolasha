@@ -65,7 +65,7 @@ export function formatRunway(seconds) {
             : t('combatStatsUi.runwayHours', { hours: h });
     }
     const d = Math.floor(seconds / 86400);
-    // 3+ digit day counts push "~XXXd Yh" onto two lines in the narrow Combat Consumables tiles -
+    // 3+ digit day counts push "XXXd Yh" onto two lines in the narrow Combat Consumables tiles -
     // drop the hours once days alone is already the meaningful precision.
     if (d >= 100) {
         return t('combatStatsUi.runwayDays', { days: d });

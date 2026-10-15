@@ -1251,12 +1251,13 @@ describe('updateBadge — grid overlay text does not overflow the ~46px room til
     test('below 100% clear chance, splits percent and time onto two lines instead of one long line', () => {
         const feature = new LabyrinthClearRate();
         const badge = document.createElement('span');
+        badge.className = 'mwi-labyrinth-grid-clear';
 
         feature.updateBadge(badge, { clearChance: 0.97, expectedSeconds: 83 }, 100);
 
-        expect(badge.textContent).toBe('97%~1:23');
+        expect(badge.textContent).toBe('97%1:23');
         expect(badge.querySelector('br')).not.toBeNull();
-        expect(badge.innerHTML).toBe('97%<br>~1:23');
+        expect(badge.innerHTML).toBe('97%<br>1:23');
     });
 
     test('at or above 100% clear chance, shows only the time on a single line (already fits)', () => {
@@ -1265,19 +1266,20 @@ describe('updateBadge — grid overlay text does not overflow the ~46px room til
 
         feature.updateBadge(badge, { clearChance: 1, expectedSeconds: 15 }, 100);
 
-        expect(badge.textContent).toBe('~15s');
+        expect(badge.textContent).toBe('15s');
         expect(badge.querySelector('br')).toBeNull();
     });
 
     test('re-rendering an existing badge (async sim result replacing a placeholder) replaces prior content instead of appending', () => {
         const feature = new LabyrinthClearRate();
         const badge = document.createElement('span');
+        badge.className = 'mwi-labyrinth-grid-clear';
         badge.textContent = '...';
 
         feature.updateBadge(badge, { clearChance: 0.62, expectedSeconds: 145 }, 100);
 
-        expect(badge.textContent).toBe('62%~2:25');
-        expect(badge.childNodes.length).toBe(3); // "62%", <br>, "~2:25" -- no leftover "..." node
+        expect(badge.textContent).toBe('62%2:25');
+        expect(badge.childNodes.length).toBe(3); // "62%", <br>, "2:25" -- no leftover "..." node
     });
 
     test('an error result still shows a plain message without a two-line split', () => {
@@ -1288,6 +1290,50 @@ describe('updateBadge — grid overlay text does not overflow the ~46px room til
 
         expect(badge.textContent).toBe('Loadout unavailable');
         expect(badge.querySelector('br')).toBeNull();
+    });
+});
+
+describe('Automation-tab badge and tile colors', () => {
+    afterEach(() => {
+        config.getSetting.mockImplementation(() => true);
+    });
+
+    test('an inline Automation-tab badge stays on one line even when updated asynchronously', () => {
+        const feature = new LabyrinthClearRate();
+        const badge = document.createElement('span');
+        badge.className = 'mwi-labyrinth-clear';
+
+        feature.updateBadge(badge, { clearChance: 0.62, expectedSeconds: 145 }, 100);
+
+        expect(badge.querySelector('br')).toBeNull();
+        expect(badge.textContent).toBe('62% 2:25');
+    });
+
+    test('tile colors are vivid by default and dark when "dim tile colors" is on', () => {
+        const feature = new LabyrinthClearRate();
+
+        config.getSetting.mockImplementation((key) => key !== 'labyrinthDimTileColors');
+        expect(feature.getGridBadgeColor(0.99)).toBe('#1fbf60');
+        expect(feature.getGridBadgeColor(0.1)).toBe('#d84b4b');
+
+        config.getSetting.mockImplementation(() => true);
+        expect(feature.getGridBadgeColor(0.99)).toBe('#116935');
+        expect(feature.getGridBadgeColor(0.1)).toBe('#772929');
+    });
+
+    test('Automation-tab clear rates can be turned off without removing the room tile badges', () => {
+        const feature = new LabyrinthClearRate();
+        const spy = vi.spyOn(feature, 'extractRoomHrid').mockReturnValue('/skills/milking');
+        document.body.innerHTML =
+            '<div class="LabyrinthPanel_skipThreshold__x"><span>≥ 5</span></div>' +
+            '<div class="LabyrinthPanel_roomCell__y"></div>';
+
+        config.getSetting.mockImplementation((key) => key !== 'labyrinthClearRateAutomation');
+        feature.injectOverlays();
+
+        expect(spy).not.toHaveBeenCalled();
+        expect(document.querySelector('.mwi-labyrinth-clear')).toBeNull();
+        document.body.innerHTML = '';
     });
 });
 

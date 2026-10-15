@@ -841,6 +841,14 @@ export default {
                 label: '迷宫：每步建议的模拟小时数',
                 help: '建议计算中二分查找每一步所使用的默认战斗模拟小时数',
             },
+            labyrinthClearRateAutomation: {
+                label: '迷宫：在自动化标签页显示通关率',
+                help: '在自动化标签页的每个房间旁显示通关概率和预计通关时间。关闭可让该页面更简洁；房间格子上的徽章不受影响',
+            },
+            labyrinthDimTileColors: {
+                label: '迷宫：调暗房间格子颜色',
+                help: '房间格子上的通关率徽章使用更深、更柔和的颜色，而不是默认的明亮颜色',
+            },
             labyrinthLiveProgress: {
                 label: '迷宫：显示实时通关概率',
                 help: '在进行中的迷宫生产/强化房间内显示实时通关概率',

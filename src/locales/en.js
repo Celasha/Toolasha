@@ -1037,11 +1037,11 @@ export default {
         runwayNoUsage: 'No usage observed',
         runwayOutNow: 'Out now',
         runwayOverOneYear: '>1y',
-        runwayMinutes: (p) => `~${p.minutes}m`,
-        runwayHoursMinutes: (p) => `~${p.hours}h ${p.minutes}m`,
-        runwayHours: (p) => `~${p.hours}h`,
-        runwayDays: (p) => `~${p.days}d`,
-        runwayDaysHours: (p) => `~${p.days}d ${p.hours}h`,
+        runwayMinutes: (p) => `${p.minutes}m`,
+        runwayHoursMinutes: (p) => `${p.hours}h ${p.minutes}m`,
+        runwayHours: (p) => `${p.hours}h`,
+        runwayDays: (p) => `${p.days}d`,
+        runwayDaysHours: (p) => `${p.days}d ${p.hours}h`,
         durationFallback: '0s',
         durationLabel: 'Duration:',
         encountersPerHourLabel: 'Encounters/Hour:',
@@ -1360,7 +1360,7 @@ export default {
         tooltipCombatMonsterRoom: 'Monster: {{monster}} | Room Level: {{roomLevel}}',
         tooltipCombatLoadout: 'Loadout: "{{loadout}}"',
         tooltipFallback: 'Clear: {{pct}}% | Expected: {{time}} | Room level: {{roomLevel}}',
-        timeApproxSeconds: '~{{seconds}}s',
+        timeApproxSeconds: '{{seconds}}s',
     },
     combatScore: {
         hiddenEquipmentTooltip: 'Equipment is hidden in this profile, so it is not included in the Score.',
@@ -3632,6 +3632,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             labyrinthRecommendSimHours: {
                 label: 'Labyrinth: Recommend sim hours per step',
                 help: 'Default hours of combat simulation per binary search step in recommendations',
+            },
+            labyrinthClearRateAutomation: {
+                label: 'Labyrinth: Show clear rates in the Automation tab',
+                help: 'Shows the clear chance and expected clear time next to each room in the Automation tab. Turn off to keep that tab uncluttered; the room tile badges are not affected',
+            },
+            labyrinthDimTileColors: {
+                label: 'Labyrinth: Dim room tile colors',
+                help: 'Uses the darker, more muted colors on the clear rate badges over the room tiles instead of the brighter default colors',
             },
             labyrinthLiveProgress: {
                 label: 'Labyrinth: Show live clear chance',

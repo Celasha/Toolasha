@@ -29,15 +29,15 @@ describe('formatRunway', () => {
     });
 
     test('formats sub-hour runway in minutes', () => {
-        expect(formatRunway(90)).toBe('~2m');
+        expect(formatRunway(90)).toBe('2m');
     });
 
     test('formats sub-day runway in hours and minutes', () => {
-        expect(formatRunway(3 * 3600 + 30 * 60)).toBe('~3h 30m');
+        expect(formatRunway(3 * 3600 + 30 * 60)).toBe('3h 30m');
     });
 
     test('formats multi-day runway in days and hours', () => {
-        expect(formatRunway(17 * 86400 + 5 * 3600)).toBe('~17d 5h');
+        expect(formatRunway(17 * 86400 + 5 * 3600)).toBe('17d 5h');
     });
 
     test('caps extremely long runway at >1y instead of an unreadable exact day count', () => {
@@ -45,19 +45,19 @@ describe('formatRunway', () => {
     });
 
     test('does not cap a runway just under one year', () => {
-        expect(formatRunway(364 * 86400)).toBe('~364d');
+        expect(formatRunway(364 * 86400)).toBe('364d');
     });
 
     test('drops the hours component at 100+ days to avoid wrapping in narrow tiles', () => {
-        expect(formatRunway(142 * 86400 + 10 * 3600)).toBe('~142d');
-        expect(formatRunway(99 * 86400 + 10 * 3600)).toBe('~99d 10h');
-        expect(formatRunway(100 * 86400)).toBe('~100d');
+        expect(formatRunway(142 * 86400 + 10 * 3600)).toBe('142d');
+        expect(formatRunway(99 * 86400 + 10 * 3600)).toBe('99d 10h');
+        expect(formatRunway(100 * 86400)).toBe('100d');
     });
 });
 
 describe('formatRunwayExact', () => {
     test('is uncapped for extremely long runway, for use as a tooltip', () => {
-        expect(formatRunwayExact(1612 * 86400 + 22 * 3600)).toBe('~1612d 22h');
+        expect(formatRunwayExact(1612 * 86400 + 22 * 3600)).toBe('1612d 22h');
     });
 
     test('matches formatRunway for ordinary short runway', () => {

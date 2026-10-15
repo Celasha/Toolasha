@@ -1866,6 +1866,20 @@ export const settingsGroups = {
                 default: true,
                 help: 'Shows expected clear time and success rate on labyrinth skilling room tiles',
             },
+            labyrinthClearRateAutomation: {
+                id: 'labyrinthClearRateAutomation',
+                label: 'Labyrinth: Show clear rates in the Automation tab',
+                type: 'checkbox',
+                default: true,
+                help: 'Shows the clear chance and expected clear time next to each room in the Automation tab. Turn off to keep that tab uncluttered; the room tile badges are not affected',
+            },
+            labyrinthDimTileColors: {
+                id: 'labyrinthDimTileColors',
+                label: 'Labyrinth: Dim room tile colors',
+                type: 'checkbox',
+                default: false,
+                help: 'Uses the darker, more muted colors on the clear rate badges over the room tiles instead of the brighter default colors',
+            },
             labyrinthMissingSuppliesButton: {
                 id: 'labyrinthMissingSuppliesButton',
                 label: 'Labyrinth: Show "Buy Missing Supplies" button',
