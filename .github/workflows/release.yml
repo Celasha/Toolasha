@@ -93,3 +93,13 @@ jobs:
                   draft: false
               env:
                   GITHUB_TOKEN: ${{ secrets.PAT }}
+
+            - name: Update Discord #general topic with the new version
+              if: ${{ steps.release.outputs.release_created }}
+              # A Discord outage or a permissions problem must never fail an already-published release.
+              continue-on-error: true
+              run: node scripts/update-discord-topic.js
+              env:
+                  VERSION: ${{ steps.release.outputs.version }}
+                  DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+                  DISCORD_GENERAL_CHANNEL_ID: ${{ secrets.DISCORD_GENERAL_CHANNEL_ID }}
