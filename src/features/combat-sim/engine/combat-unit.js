@@ -603,10 +603,10 @@ class CombatUnit {
                     if (haste > 0) {
                         cooldownDuration = (cooldownDuration * 100) / (100 + haste);
                     }
-                    ability.lastUsed =
-                        currentTime -
-                        Math.floor(cooldownDuration * 0.5) +
-                        Math.floor(Math.random() * cooldownDuration * 0.5);
+                    // Labyrinth monsters (roomLevel > 0) always start at exactly half their cooldown;
+                    // zone monsters start at a random point between half and full.
+                    const randomOffset = this.roomLevel > 0 ? 0 : Math.floor(Math.random() * cooldownDuration * 0.5);
+                    ability.lastUsed = currentTime - Math.floor(cooldownDuration * 0.5) + randomOffset;
                 }
             });
     }

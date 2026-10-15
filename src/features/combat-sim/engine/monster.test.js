@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import Monster from './monster.js';
+import CombatUtilities from './combat-utilities.js';
 import { setGameData } from './game-data.js';
 
 function makeGameMonster(overrides = {}) {
@@ -98,5 +99,116 @@ describe('Monster attackInterval - resets from game data every call, not just wh
         // The pre-fix bug divided the already-shrunk value again on every call instead of
         // resetting to the true base first, so attackInterval ratcheted down with each call.
         expect(monster.combatDetails.combatStats.attackInterval).toBeCloseTo(afterFirstCall);
+    });
+});
+
+describe('Monster initial ability cooldown - fixed half in the Labyrinth, random in zones', () => {
+    const COOLDOWN = 20_000_000_000;
+    const START = 5_000_000_000;
+
+    function buildMonsterWithAbility(roomLevel) {
+        setGameData({
+            abilityDetailMap: {
+                '/abilities/test_ability': {
+                    manaCost: 0,
+                    cooldownDuration: COOLDOWN,
+                    castDuration: 0,
+                    isSpecialAbility: false,
+                    abilityEffects: [],
+                    defaultCombatTriggers: [],
+                },
+            },
+            combatMonsterDetailMap: {
+                '/monsters/test_monster': {
+                    ...makeGameMonster(),
+                    abilities: [{ abilityHrid: '/abilities/test_ability', level: 1, minDifficultyTier: 0 }],
+                },
+            },
+        });
+        const monster = new Monster('/monsters/test_monster', 0, roomLevel);
+        monster.updateCombatDetails();
+        return monster;
+    }
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    test('Labyrinth monster is ready exactly half a cooldown after the encounter starts, whatever the RNG', () => {
+        for (const roll of [0, 0.5, 0.999]) {
+            vi.spyOn(Math, 'random').mockReturnValue(roll);
+            const monster = buildMonsterWithAbility(100);
+            monster.resetCooldowns(START);
+            const ability = monster.abilities[0];
+            expect(ability.lastUsed + ability.cooldownDuration - START).toBe(COOLDOWN / 2);
+            vi.restoreAllMocks();
+        }
+    });
+
+    test('zone monster keeps the random half-to-full initial cooldown', () => {
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        const early = buildMonsterWithAbility(0);
+        early.resetCooldowns(START);
+        expect(early.abilities[0].lastUsed + COOLDOWN - START).toBe(COOLDOWN / 2);
+
+        vi.spyOn(Math, 'random').mockReturnValue(0.999);
+        const late = buildMonsterWithAbility(0);
+        late.resetCooldowns(START);
+        expect(late.abilities[0].lastUsed + COOLDOWN - START).toBeGreaterThan(COOLDOWN * 0.99);
+    });
+});
+
+describe('Monster auto-attack penalty (autoAttackDamage) is applied to monster auto-attacks', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    function buildMonster(combatStats) {
+        setGameData({
+            combatMonsterDetailMap: {
+                '/monsters/test_monster': makeGameMonster({ combatStats }),
+            },
+        });
+        const monster = new Monster('/monsters/test_monster', 0, 0);
+        monster.updateCombatDetails();
+        return monster;
+    }
+
+    function makeTarget() {
+        return {
+            isPlayer: true,
+            hrid: 'player1',
+            taskEligibleMonsterHrids: [],
+            isWeakened: false,
+            combatDetails: {
+                currentHitpoints: 1_000_000,
+                totalArmor: 0,
+                smashEvasionRating: 0,
+                stabEvasionRating: 0,
+                defensiveMaxDamage: 0,
+                combatStats: { damageTaken: 0, physicalThorns: 0, retaliation: 0 },
+            },
+        };
+    }
+
+    function autoAttackDamage(monster) {
+        // Guarantee a hit and a fixed roll so only the penalty can change the result.
+        monster.combatDetails.smashAccuracyRating = 1_000_000;
+        monster.combatDetails.smashMaxDamage = 100;
+        monster.combatDetails.combatStats.criticalRate = 0;
+        vi.spyOn(CombatUtilities, 'randomInt').mockReturnValue(100);
+        return CombatUtilities.processAttack(monster, makeTarget()).damageDone;
+    }
+
+    test('keeps the -0.5 stat through updateCombatDetails and halves auto-attack damage', () => {
+        const penalised = buildMonster({ autoAttackDamage: -0.5 });
+        expect(penalised.combatDetails.combatStats.autoAttackDamage).toBe(-0.5);
+        const penalisedDamage = autoAttackDamage(penalised);
+
+        const unpenalised = buildMonster({});
+        expect(unpenalised.combatDetails.combatStats.autoAttackDamage).toBe(0);
+        const unpenalisedDamage = autoAttackDamage(unpenalised);
+
+        expect(penalisedDamage).toBe(unpenalisedDamage / 2);
     });
 });
