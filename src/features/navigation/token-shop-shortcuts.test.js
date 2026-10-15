@@ -102,6 +102,14 @@ describe('TokenShopShortcuts button', () => {
         expect(coinMenu.querySelector('.mwi-token-shop-button')).toBeNull();
     });
 
+    test('places the shop button above the native buttons, right under the item name', () => {
+        const menu = buildMenu('guild_token');
+        feature.injectButton(menu);
+        const button = menu.querySelector('.mwi-token-shop-button');
+        expect(menu.querySelector('button')).toBe(button);
+        expect(menu.querySelector('[class*="Item_name"]').nextElementSibling).toBe(button);
+    });
+
     test('clicking navigates to the page and then selects the shop tab once it mounts', () => {
         const menu = buildMenu('guild_token');
         feature.injectButton(menu);

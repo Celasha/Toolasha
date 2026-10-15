@@ -117,7 +117,12 @@ class TokenShopShortcuts {
             this.goToShop(destination);
         });
 
-        actionMenu.appendChild(button);
+        // Sit above the native buttons, like the game's own Cowbell shop button
+        if (existingButton) {
+            actionMenu.insertBefore(button, existingButton);
+        } else {
+            actionMenu.appendChild(button);
+        }
     }
 
     /**
