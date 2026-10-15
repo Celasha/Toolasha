@@ -2,15 +2,13 @@
 
 ## [3.20.0](https://github.com/Celasha/Toolasha/compare/v3.19.0...v3.20.0) (2026-10-15)
 
-
 ### Features
 
-* add the View Guild Shop button to guild credit item menus ([57ff6a6](https://github.com/Celasha/Toolasha/commit/57ff6a6c77fb3d38e7a935930f6fff4779c5ce4d))
-
+- add the View Guild Shop button to guild credit item menus ([57ff6a6](https://github.com/Celasha/Toolasha/commit/57ff6a6c77fb3d38e7a935930f6fff4779c5ce4d))
 
 ### Miscellaneous Chores
 
-* log labyrinth room sim attempts and wall-clock time ([d529cb0](https://github.com/Celasha/Toolasha/commit/d529cb02284ec0e1535485a4cf3e6a5b68494dad))
+- log labyrinth room sim attempts and wall-clock time ([d529cb0](https://github.com/Celasha/Toolasha/commit/d529cb02284ec0e1535485a4cf3e6a5b68494dad))
 
 ## [3.19.0](https://github.com/Celasha/Toolasha/compare/v3.18.1...v3.19.0) (2026-10-15)
 
