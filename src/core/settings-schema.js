@@ -1382,6 +1382,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays buy orders (BO), sell orders (SO), and unclaimed coins (💰) in the header area below gold',
             },
+            market_brynlessMode: {
+                id: 'market_brynlessMode',
+                label: 'Brynless Mode: Hide the BO/SO icons in the header order totals',
+                type: 'checkbox',
+                default: false,
+                help: 'Removes the cart and tag icons next to BO and SO in the header, leaving their text labels and numbers. The unclaimed-coins icon stays. Applies the next time the header order totals refresh, or after a reload.',
+            },
             market_showHistoryViewer: {
                 id: 'market_showHistoryViewer',
                 label: 'Market: Show history viewer button in settings',

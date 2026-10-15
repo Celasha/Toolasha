@@ -225,15 +225,25 @@ class MarketOrderTotals {
         const tileStyle =
             'display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 8px; font-size: 11px; flex: none;';
 
+        // Brynless Mode drops the BO/SO icon tiles but keeps their text labels. The unclaimed tile
+        // stays: it is the only thing identifying that number.
+        const showOrderIcons = !config.getSetting('market_brynlessMode');
+        const buyIcon = showOrderIcons
+            ? `<span style="${tileStyle} background: rgba(124, 184, 255, 0.16);">🛒</span>`
+            : '';
+        const sellIcon = showOrderIcons
+            ? `<span style="${tileStyle} background: rgba(74, 222, 128, 0.16);">🏷</span>`
+            : '';
+
         // Update display
         this.displayElement.innerHTML = `
             <div style="${itemStyle}" title="${t('marketOrderTotals.buyOrdersTooltip')}">
-                <span style="${tileStyle} background: rgba(124, 184, 255, 0.16);">🛒</span>
+                ${buyIcon}
                 <span style="color: #888; font-weight: 500;">${t('marketOrderTotals.buyOrdersLabel')}</span>
                 <span style="color: #7cb8ff; font-weight: 600;">${boValue}</span>
             </div>
             <div style="${itemStyle}" title="${t('marketOrderTotals.sellOrdersTooltip')}">
-                <span style="${tileStyle} background: rgba(74, 222, 128, 0.16);">🏷</span>
+                ${sellIcon}
                 <span style="color: #888; font-weight: 500;">${t('marketOrderTotals.sellOrdersLabel')}</span>
                 <span style="color: #4ade80; font-weight: 600;">${soValue}</span>
             </div>
@@ -315,3 +325,4 @@ class MarketOrderTotals {
 const marketOrderTotals = new MarketOrderTotals();
 
 export default marketOrderTotals;
+export { MarketOrderTotals };
