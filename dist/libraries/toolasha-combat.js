@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.21.0
+ * Version: 3.21.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8466,7 +8466,7 @@
             this.styleEl.textContent = `
             [class*="LabyrinthPanel_automationContent"] { max-width: 36rem !important; }
             [class*="LabyrinthPanel_skipThreshold"] { display: flex; align-items: center; }
-            .mwi-labyrinth-best { order: 99; }
+            .mwi-labyrinth-best { order: 99; min-width: 9em; text-align: right; }
         `;
             document.head.appendChild(this.styleEl);
 
@@ -10797,10 +10797,19 @@
     align-items: center;
 }
 .${BADGE_CLASS} {
-    order: 1;
+    order: 98;
+    min-width: 6.5em;
+    text-align: right;
 }
 .${RECOMMEND_CLASS} {
-    order: 2;
+    order: 100;
+    min-width: 5.5em;
+    text-align: right;
+}
+[class*="LabyrinthPanel_skipThreshold"] > span:first-child {
+    display: inline-block;
+    min-width: 3.5em;
+    text-align: right;
 }
 `;
 
@@ -12587,7 +12596,8 @@
             document.querySelectorAll(`.${GRID_BADGE_CLASS}`).forEach((el) => el.remove());
             this.simQueue = [];
 
-            for (const cell of skipCells) {
+            const automationCells = config.getSetting('labyrinthClearRateAutomation') ? skipCells : [];
+            for (const cell of automationCells) {
                 const roomHrid = this.extractRoomHrid(cell);
                 if (!roomHrid) continue;
 
@@ -12749,8 +12759,10 @@
             badge.replaceChildren();
             if (pct >= 100) {
                 badge.append(timeText);
-            } else {
+            } else if (isGridBadge) {
                 badge.append(`${pct}%`, document.createElement('br'), timeText);
+            } else {
+                badge.append(i18n_js.t('labyrinthClearRate.badgePercentTime', { pct, time: timeText }));
             }
             badge.title = this.formatTooltip(result, roomLevel);
         }
@@ -12877,14 +12889,15 @@
         // Filled-pill background for the room grid overlay - a graduated 5-step traffic-light scale
         // reads faster at a glance on a ~46px tile than tinting small text against a flat dark
         // background (the 3-step getBadgeColor() scheme used for the inline Automation-tab rows).
-        // Darkened ~45% from the "vivid" versions of these hues so white text clears WCAG's 4.5:1
-        // contrast minimum (measured ~6.2-9.8:1 here vs. ~2.2-3.2:1 against the undarkened colors).
+        // The default palette is vivid; the "dim tile colors" setting selects the darker palette
+        // (darkened ~45% so white text clears WCAG's 4.5:1 contrast minimum).
         getGridBadgeColor(clearChance) {
-            if (clearChance >= 0.95) return '#116935';
-            if (clearChance >= 0.8) return '#416517';
-            if (clearChance >= 0.6) return '#745f0e';
-            if (clearChance >= 0.4) return '#744311';
-            return '#772929';
+            const dim = config.getSetting('labyrinthDimTileColors');
+            if (clearChance >= 0.95) return dim ? '#116935' : '#1fbf60';
+            if (clearChance >= 0.8) return dim ? '#416517' : '#77b82a';
+            if (clearChance >= 0.6) return dim ? '#745f0e' : '#d2ac19';
+            if (clearChance >= 0.4) return dim ? '#744311' : '#d27a1f';
+            return dim ? '#772929' : '#d84b4b';
         }
 
         /**
@@ -13029,7 +13042,7 @@
             if (s < 60) return i18n_js.t('labyrinthClearRate.timeApproxSeconds', { seconds: s });
             const m = Math.floor(s / 60);
             const rem = s % 60;
-            return `~${m}:${rem.toString().padStart(2, '0')}`;
+            return `${m}:${rem.toString().padStart(2, '0')}`;
         }
     }
 
@@ -31648,7 +31661,7 @@
                 : i18n_js.t('combatStatsUi.runwayHours', { hours: h });
         }
         const d = Math.floor(seconds / 86400);
-        // 3+ digit day counts push "~XXXd Yh" onto two lines in the narrow Combat Consumables tiles -
+        // 3+ digit day counts push "XXXd Yh" onto two lines in the narrow Combat Consumables tiles -
         // drop the hours once days alone is already the meaningful precision.
         if (d >= 100) {
             return i18n_js.t('combatStatsUi.runwayDays', { days: d });

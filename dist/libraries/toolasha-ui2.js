@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.21.0
+ * Version: 3.21.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2155,7 +2155,12 @@
                 this.goToShop(destination);
             });
 
-            actionMenu.appendChild(button);
+            // Sit above the native buttons, like the game's own Cowbell shop button
+            if (existingButton) {
+                actionMenu.insertBefore(button, existingButton);
+            } else {
+                actionMenu.appendChild(button);
+            }
         }
 
         /**

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.21.0
+ * Version: 3.21.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1717,11 +1717,11 @@
             runwayNoUsage: 'No usage observed',
             runwayOutNow: 'Out now',
             runwayOverOneYear: '>1y',
-            runwayMinutes: (p) => `~${p.minutes}m`,
-            runwayHoursMinutes: (p) => `~${p.hours}h ${p.minutes}m`,
-            runwayHours: (p) => `~${p.hours}h`,
-            runwayDays: (p) => `~${p.days}d`,
-            runwayDaysHours: (p) => `~${p.days}d ${p.hours}h`,
+            runwayMinutes: (p) => `${p.minutes}m`,
+            runwayHoursMinutes: (p) => `${p.hours}h ${p.minutes}m`,
+            runwayHours: (p) => `${p.hours}h`,
+            runwayDays: (p) => `${p.days}d`,
+            runwayDaysHours: (p) => `${p.days}d ${p.hours}h`,
             durationFallback: '0s',
             durationLabel: 'Duration:',
             encountersPerHourLabel: 'Encounters/Hour:',
@@ -2040,7 +2040,7 @@
             tooltipCombatMonsterRoom: 'Monster: {{monster}} | Room Level: {{roomLevel}}',
             tooltipCombatLoadout: 'Loadout: "{{loadout}}"',
             tooltipFallback: 'Clear: {{pct}}% | Expected: {{time}} | Room level: {{roomLevel}}',
-            timeApproxSeconds: '~{{seconds}}s',
+            timeApproxSeconds: '{{seconds}}s',
         },
         combatScore: {
             hiddenEquipmentTooltip: 'Equipment is hidden in this profile, so it is not included in the Score.',
@@ -4313,6 +4313,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Labyrinth: Recommend sim hours per step',
                     help: 'Default hours of combat simulation per binary search step in recommendations',
                 },
+                labyrinthClearRateAutomation: {
+                    label: 'Labyrinth: Show clear rates in the Automation tab',
+                    help: 'Shows the clear chance and expected clear time next to each room in the Automation tab. Turn off to keep that tab uncluttered; the room tile badges are not affected',
+                },
+                labyrinthDimTileColors: {
+                    label: 'Labyrinth: Dim room tile colors',
+                    help: 'Uses the darker, more muted colors on the clear rate badges over the room tiles instead of the brighter default colors',
+                },
                 labyrinthLiveProgress: {
                     label: 'Labyrinth: Show live clear chance',
                     help: 'Shows live clear chance during active labyrinth skilling/enhancing rooms',
@@ -4604,7 +4612,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Guild Shop: Show shrine upgrade planner',
                     help: 'Adds a shrine upgrade planner to the guild credit exchange panel, showing total credit and token costs to upgrade from your current level to a target level.',
                 },
-                houseUpgradeCosts: { label: 'Show upgrade costs with market prices and inventory comparison' },
+                houseUpgradeCosts: { label: 'House: Show room upgrade costs with market prices and inventory comparison' },
                 leaderboardXPTracker: {
                     label: 'Track player XP over time from Leaderboard',
                     help: 'Records player XP from leaderboard WebSocket messages for XP/hr calculations on the Leaderboard panel.',
@@ -5559,6 +5567,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '迷宫：每步建议的模拟小时数',
                     help: '建议计算中二分查找每一步所使用的默认战斗模拟小时数',
                 },
+                labyrinthClearRateAutomation: {
+                    label: '迷宫：在自动化标签页显示通关率',
+                    help: '在自动化标签页的每个房间旁显示通关概率和预计通关时间。关闭可让该页面更简洁；房间格子上的徽章不受影响',
+                },
+                labyrinthDimTileColors: {
+                    label: '迷宫：调暗房间格子颜色',
+                    help: '房间格子上的通关率徽章使用更深、更柔和的颜色，而不是默认的明亮颜色',
+                },
                 labyrinthLiveProgress: {
                     label: '迷宫：显示实时通关概率',
                     help: '在进行中的迷宫生产/强化房间内显示实时通关概率',
@@ -5837,7 +5853,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '公会商店：显示神殿升级规划器',
                     help: '在公会信用点兑换面板添加神殿升级规划器，显示从当前等级升级到目标等级所需的信用点和代币总成本。',
                 },
-                houseUpgradeCosts: { label: '显示升级成本，并对比市场价格与物品栏' },
+                houseUpgradeCosts: { label: '房屋：显示房间升级成本，并对比市场价格与物品栏' },
                 leaderboardXPTracker: {
                     label: '随时间从排行榜追踪玩家经验',
                     help: '从排行榜 WebSocket 消息中记录玩家经验，用于排行榜面板的经验/时计算。',
@@ -6372,11 +6388,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             runwayNoUsage: '暂无消耗记录',
             runwayOutNow: '已耗尽',
             runwayOverOneYear: '>1年',
-            runwayMinutes: (p) => `~${p.minutes}分`,
-            runwayHoursMinutes: (p) => `~${p.hours}时${p.minutes}分`,
-            runwayHours: (p) => `~${p.hours}时`,
-            runwayDays: (p) => `~${p.days}天`,
-            runwayDaysHours: (p) => `~${p.days}天${p.hours}时`,
+            runwayMinutes: (p) => `${p.minutes}分`,
+            runwayHoursMinutes: (p) => `${p.hours}时${p.minutes}分`,
+            runwayHours: (p) => `${p.hours}时`,
+            runwayDays: (p) => `${p.days}天`,
+            runwayDaysHours: (p) => `${p.days}天${p.hours}时`,
             durationFallback: '0秒',
             durationLabel: '持续时间：',
             encountersPerHourLabel: '遭遇/时：',
@@ -6640,7 +6656,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             tooltipCombatMonsterRoom: '怪物：{{monster}} | 房间等级：{{roomLevel}}',
             tooltipCombatLoadout: '配装："{{loadout}}"',
             tooltipFallback: '通关率：{{pct}}% | 预期用时：{{time}} | 房间等级：{{roomLevel}}',
-            timeApproxSeconds: '~{{seconds}}秒',
+            timeApproxSeconds: '{{seconds}}秒',
         },
         labyrinthBestLevel: {
             bestLevelBadge: (p) => `最佳层数：${p.level}`,
@@ -10569,6 +10585,20 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     default: true,
                     help: 'Shows expected clear time and success rate on labyrinth skilling room tiles',
                 },
+                labyrinthClearRateAutomation: {
+                    id: 'labyrinthClearRateAutomation',
+                    label: 'Labyrinth: Show clear rates in the Automation tab',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows the clear chance and expected clear time next to each room in the Automation tab. Turn off to keep that tab uncluttered; the room tile badges are not affected',
+                },
+                labyrinthDimTileColors: {
+                    id: 'labyrinthDimTileColors',
+                    label: 'Labyrinth: Dim room tile colors',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Uses the darker, more muted colors on the clear rate badges over the room tiles instead of the brighter default colors',
+                },
                 labyrinthMissingSuppliesButton: {
                     id: 'labyrinthMissingSuppliesButton',
                     label: 'Labyrinth: Show "Buy Missing Supplies" button',
@@ -11195,7 +11225,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             settings: {
                 houseUpgradeCosts: {
                     id: 'houseUpgradeCosts',
-                    label: 'Show upgrade costs with market prices and inventory comparison',
+                    label: 'House: Show room upgrade costs with market prices and inventory comparison',
                     type: 'checkbox',
                     default: true,
                 },
