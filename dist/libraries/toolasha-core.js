@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.20.1
+ * Version: 3.21.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4051,6 +4051,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Market: Show order totals in header',
                     help: 'Displays buy orders (BO), sell orders (SO), and unclaimed coins (💰) in the header area below gold',
                 },
+                market_brynlessMode: {
+                    label: 'Brynless Mode: Hide the BO/SO icons in the header order totals',
+                    help: 'Removes the cart and tag icons next to BO and SO in the header, leaving their text labels and numbers. The unclaimed-coins icon stays. Applies the next time the header order totals refresh, or after a reload.',
+                },
                 market_showHistoryViewer: {
                     label: 'Market: Show history viewer button in settings',
                     help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
@@ -5309,6 +5313,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 market_showOrderTotals: {
                     label: '市场：在页眉显示订单总计',
                     help: '在金币下方的页眉区域显示买单（BO）、卖单（SO）和未领取金币（💰）',
+                },
+                market_brynlessMode: {
+                    label: 'Brynless 模式：隐藏页眉订单总计中的买单/卖单图标',
+                    help: '移除页眉中买单（BO）和卖单（SO）旁的购物车与标签图标，仅保留文字标签和数值。未领取金币图标保留。在页眉订单总计下次刷新或重新加载后生效。',
                 },
                 market_showHistoryViewer: {
                     label: '市场：在设置中显示历史查看器按钮',
@@ -10076,6 +10084,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'checkbox',
                     default: true,
                     help: 'Displays buy orders (BO), sell orders (SO), and unclaimed coins (💰) in the header area below gold',
+                },
+                market_brynlessMode: {
+                    id: 'market_brynlessMode',
+                    label: 'Brynless Mode: Hide the BO/SO icons in the header order totals',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Removes the cart and tag icons next to BO and SO in the header, leaving their text labels and numbers. The unclaimed-coins icon stays. Applies the next time the header order totals refresh, or after a reload.',
                 },
                 market_showHistoryViewer: {
                     id: 'market_showHistoryViewer',
