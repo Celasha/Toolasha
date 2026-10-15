@@ -8,6 +8,7 @@
  * Flags: --dry-run  print the topic without calling Discord
  */
 
+import { realpathSync } from 'fs';
 import { pathToFileURL } from 'url';
 
 const DISCORD_API = 'https://discord.com/api/v10';
@@ -67,7 +68,8 @@ async function main() {
     console.log(`Set the #general topic to: ${topic}`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// realpath: import.meta.url is already symlink-resolved, argv[1] is not (e.g. macOS /var -> /private/var).
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
     main().catch((error) => {
         console.error(`[update-discord-topic] ${error.message}`);
         process.exit(1);

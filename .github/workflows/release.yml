@@ -94,11 +94,15 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.PAT }}
 
-            - name: Update Discord #general topic with the new version
+            - name: Update the Discord general channel topic with the new version
               if: ${{ steps.release.outputs.release_created }}
               # A Discord outage or a permissions problem must never fail an already-published release.
               continue-on-error: true
-              run: node scripts/update-discord-topic.js
+              # The step above leaves the workspace on the `releases` branch (only built files), so
+              # read the script from the triggering commit instead of the working tree.
+              run: |
+                  git show "$GITHUB_SHA:scripts/update-discord-topic.js" > "$RUNNER_TEMP/update-discord-topic.js"
+                  node "$RUNNER_TEMP/update-discord-topic.js" || echo "::warning::Discord #general topic update failed - see this step's log"
               env:
                   VERSION: ${{ steps.release.outputs.version }}
                   DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}

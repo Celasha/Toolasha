@@ -1,3 +1,8 @@
+import { execFileSync } from 'child_process';
+import { copyFileSync, mkdtempSync, symlinkSync } from 'fs';
+import { tmpdir } from 'os';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, test, vi } from 'vitest';
 import { buildTopic, setChannelTopic } from './update-discord-topic.js';
 
@@ -48,5 +53,20 @@ describe('setChannelTopic', () => {
         });
         await expect(promise).rejects.toThrow(text);
         await expect(promise).rejects.not.toThrow('secret');
+    });
+});
+
+describe('running the script directly', () => {
+    test('runs even when invoked through a symlinked path', () => {
+        const realDir = mkdtempSync(join(tmpdir(), 'topic-real-'));
+        copyFileSync(join(dirname(fileURLToPath(import.meta.url)), 'update-discord-topic.js'), join(realDir, 'run.js'));
+        const linkDir = join(mkdtempSync(join(tmpdir(), 'topic-link-')), 'linked');
+        symlinkSync(realDir, linkDir);
+
+        const output = execFileSync('node', [join(linkDir, 'run.js'), '--dry-run'], {
+            env: { ...process.env, VERSION: '3.20.0', GITHUB_REPOSITORY: 'Celasha/Toolasha' },
+            encoding: 'utf8',
+        });
+        expect(output).toContain('[dry run] would set the topic to: Toolasha v3.20.0');
     });
 });
