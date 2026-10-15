@@ -47,6 +47,14 @@ describe('getShopDestination', () => {
         ['/items/labyrinth_token', 'labyrinth', 3],
         ['/items/task_token', 'tasks', 1],
         ['/items/guild_token', 'guild', 4],
+        ['/items/blue_guild_credit', 'guild', 4],
+        ['/items/brown_guild_credit', 'guild', 4],
+        ['/items/gold_guild_credit', 'guild', 4],
+        ['/items/green_guild_credit', 'guild', 4],
+        ['/items/purple_guild_credit', 'guild', 4],
+        ['/items/red_guild_credit', 'guild', 4],
+        ['/items/silver_guild_credit', 'guild', 4],
+        ['/items/white_guild_credit', 'guild', 4],
     ])('%s opens %s tab index %i', (hrid, navTarget, tabIndex) => {
         const destination = getShopDestination(hrid);
         expect(destination.navTarget).toBe(navTarget);
