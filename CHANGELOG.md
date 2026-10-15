@@ -2,10 +2,9 @@
 
 ## [3.18.1](https://github.com/Celasha/Toolasha/compare/v3.18.0...v3.18.1) (2026-10-15)
 
-
 ### Bug Fixes
 
-* make the guild credit exchange advisor compare against a real market item ([81322f1](https://github.com/Celasha/Toolasha/commit/81322f1c4da2d4172a972cea8a6522bfc22c91e4))
+- make the guild credit exchange advisor compare against a real market item ([81322f1](https://github.com/Celasha/Toolasha/commit/81322f1c4da2d4172a972cea8a6522bfc22c91e4))
 
 ## [3.18.0](https://github.com/Celasha/Toolasha/compare/v3.17.0...v3.18.0) (2026-10-15)
 
