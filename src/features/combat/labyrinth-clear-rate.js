@@ -125,7 +125,16 @@ class LabyrinthClearRate {
         this._simChain = Promise.resolve();
     }
 
+    /**
+     * The room-tile badges/recommendations and the live clear chance are independent features
+     * with independent settings, so each half starts on its own toggle.
+     */
     initialize() {
+        this.initializeClearRate();
+        this.initializeLiveProgress();
+    }
+
+    initializeClearRate() {
         if (!config.getSetting('labyrinthClearRate')) {
             return;
         }
@@ -168,9 +177,6 @@ class LabyrinthClearRate {
         };
         loadoutState.onUpdate(this.loadoutsHandler);
 
-        this.liveProgressHandler = (data) => this.onLiveProgress(data);
-        webSocketHook.on('labyrinth_room_progress', this.liveProgressHandler);
-
         const unregister = domObserver.onClass(
             'LabyrinthClearRate',
             ['LabyrinthPanel_skipThreshold', 'LabyrinthPanel_roomCell'],
@@ -181,6 +187,19 @@ class LabyrinthClearRate {
         setTimeout(() => this.injectOverlays(), 500);
 
         this.isInitialized = true;
+    }
+
+    initializeLiveProgress() {
+        if (!config.getSetting('labyrinthLiveProgress')) {
+            return;
+        }
+
+        if (this.liveProgressHandler) {
+            return;
+        }
+
+        this.liveProgressHandler = (data) => this.onLiveProgress(data);
+        webSocketHook.on('labyrinth_room_progress', this.liveProgressHandler);
     }
 
     disable() {

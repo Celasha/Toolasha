@@ -502,6 +502,7 @@ function registerFeatures() {
             category: 'Combat',
             module: Combat.labyrinthClearRate,
             async: false,
+            customCheck: () => config.getSetting('labyrinthClearRate') || config.getSetting('labyrinthLiveProgress'),
         },
         {
             key: 'labyrinthMissingSupplies',

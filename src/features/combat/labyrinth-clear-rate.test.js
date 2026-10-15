@@ -14,7 +14,7 @@
 
 /* @vitest-environment jsdom */
 
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../core/config.js', () => ({
     default: {
@@ -61,6 +61,9 @@ vi.mock('../../core/loadout-state.js', () => ({
 const { LabyrinthClearRate } = await import('./labyrinth-clear-rate.js');
 const dataManager = (await import('../../core/data-manager.js')).default;
 const loadoutState = (await import('../../core/loadout-state.js')).default;
+const webSocketHook = (await import('../../core/websocket.js')).default;
+const config = (await import('../../core/config.js')).default;
+const domObserver = (await import('../../core/dom-observer.js')).default;
 const combatAdapter = await import('../combat-sim/combat-sim-adapter.js');
 const simRunner = await import('../combat-sim/combat-sim-runner.js');
 
@@ -1285,5 +1288,78 @@ describe('updateBadge — grid overlay text does not overflow the ~46px room til
 
         expect(badge.textContent).toBe('Loadout unavailable');
         expect(badge.querySelector('br')).toBeNull();
+    });
+});
+
+describe('independent toggles: room-tile calculator vs live clear chance', () => {
+    function setToggles({ clearRate, live }) {
+        config.getSetting.mockImplementation((key) => {
+            if (key === 'labyrinthClearRate') return clearRate;
+            if (key === 'labyrinthLiveProgress') return live;
+            return true;
+        });
+    }
+
+    function registeredEvents() {
+        return webSocketHook.on.mock.calls.map(([event]) => event);
+    }
+
+    beforeEach(() => {
+        webSocketHook.on.mockClear();
+        webSocketHook.off.mockClear();
+        domObserver.onClass.mockClear();
+        loadoutState.onUpdate.mockClear();
+    });
+
+    afterEach(() => {
+        config.getSetting.mockImplementation(() => true);
+    });
+
+    test('live chance alone registers only the live handler - no observers or loadout subscription', () => {
+        setToggles({ clearRate: false, live: true });
+        const feature = new LabyrinthClearRate();
+        feature.initialize();
+
+        expect(registeredEvents()).toEqual(['labyrinth_room_progress']);
+        expect(domObserver.onClass).not.toHaveBeenCalled();
+        expect(loadoutState.onUpdate).not.toHaveBeenCalled();
+        feature.disable();
+    });
+
+    test('calculator alone keeps the room-tile handlers but not the live one', () => {
+        setToggles({ clearRate: true, live: false });
+        const feature = new LabyrinthClearRate();
+        feature.initialize();
+
+        expect(registeredEvents()).toEqual(expect.arrayContaining(['labyrinth_updated', 'setting_updated']));
+        expect(registeredEvents()).not.toContain('labyrinth_room_progress');
+        expect(domObserver.onClass).toHaveBeenCalled();
+        feature.disable();
+    });
+
+    test('both on registers everything; both off registers nothing', () => {
+        setToggles({ clearRate: true, live: true });
+        const both = new LabyrinthClearRate();
+        both.initialize();
+        expect(registeredEvents()).toContain('labyrinth_room_progress');
+        expect(registeredEvents()).toContain('labyrinth_updated');
+        both.disable();
+
+        webSocketHook.on.mockClear();
+        setToggles({ clearRate: false, live: false });
+        new LabyrinthClearRate().initialize();
+        expect(webSocketHook.on).not.toHaveBeenCalled();
+    });
+
+    test('initializing twice registers each half once, and disable removes the live handler', () => {
+        setToggles({ clearRate: false, live: true });
+        const feature = new LabyrinthClearRate();
+        feature.initialize();
+        feature.initialize();
+        expect(webSocketHook.on).toHaveBeenCalledTimes(1);
+
+        const handler = feature.liveProgressHandler;
+        feature.disable();
+        expect(webSocketHook.off).toHaveBeenCalledWith('labyrinth_room_progress', handler);
     });
 });
