@@ -212,3 +212,28 @@ describe('Monster auto-attack penalty (autoAttackDamage) is applied to monster a
         expect(penalisedDamage).toBe(unpenalisedDamage / 2);
     });
 });
+
+describe('Monster per-style damage penalty (stabDamage) is applied to its attacks', () => {
+    function buildStabMonster(combatStats) {
+        setGameData({
+            combatMonsterDetailMap: {
+                '/monsters/test_monster': makeGameMonster({
+                    combatStats: { combatStyleHrids: ['/combat_styles/stab'], ...combatStats },
+                }),
+            },
+        });
+        const monster = new Monster('/monsters/test_monster', 0, 0);
+        monster.updateCombatDetails();
+        return monster;
+    }
+
+    test('stabDamage -0.2 keeps the stat and lowers stab max damage by exactly 20%', () => {
+        const penalised = buildStabMonster({ stabDamage: -0.2 });
+        const unpenalised = buildStabMonster({});
+
+        expect(penalised.combatDetails.combatStats.stabDamage).toBe(-0.2);
+        expect(unpenalised.combatDetails.combatStats.stabDamage).toBe(0);
+        expect(unpenalised.combatDetails.stabMaxDamage).toBeGreaterThan(0);
+        expect(penalised.combatDetails.stabMaxDamage).toBeCloseTo(unpenalised.combatDetails.stabMaxDamage * 0.8);
+    });
+});
