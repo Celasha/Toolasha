@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.20.1](https://github.com/Celasha/Toolasha/compare/v3.20.0...v3.20.1) (2026-10-15)
+
+
+### Tests
+
+* cover the Labyrinth monster stabDamage penalty ([f226ff2](https://github.com/Celasha/Toolasha/commit/f226ff292a6995065998cf69078fef61d1089cf8))
+
+
+### Continuous Integration
+
+* fix the Discord topic step losing its script after the releases-branch switch ([5efa953](https://github.com/Celasha/Toolasha/commit/5efa95377d1c1fd67c912aea8ee2fa2389b63cbf))
+
 ## [3.20.0](https://github.com/Celasha/Toolasha/compare/v3.19.0...v3.20.0) (2026-10-15)
 
 ### Features
