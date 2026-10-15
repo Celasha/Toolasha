@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.18.0
+ * Version: 3.18.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -980,6 +980,8 @@
             advisorNoConversionHint: 'Selected item has no conversion for this credit',
             advisorOptimalChoice: '✓ Optimal choice for this credit type',
             advisorNoPriceData: (p) => `Best: ${p.name} — no price data for comparison`,
+            advisorTokenSelected: (p) =>
+                `Guild Tokens can't be sold on the market, so there is nothing to compare. Best market option: ${p.name}`,
             advisorBetterLabel: '↑ better',
             advisorWorseLabel: '↓ worse',
             advisorSellRebuyHeader: (p) => `Sell → rebuy best item (${p.taxPercent}% tax)`,
@@ -7717,6 +7719,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             advisorNoConversionHint: '所选物品无法兑换此类信用点',
             advisorOptimalChoice: '✓ 此类信用点的最优选择',
             advisorNoPriceData: (p) => `最优：${p.name}——暂无价格数据可供比较`,
+            advisorTokenSelected: (p) => `公会代币无法在市场出售，因此无法比较。市场最优选择：${p.name}`,
             advisorBetterLabel: '↑ 更优',
             advisorWorseLabel: '↓ 更差',
             advisorSellRebuyHeader: (p) => `出售后回购最优物品（税率 ${p.taxPercent}%）`,

@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.18.0
+ * Version: 3.18.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20284,6 +20284,33 @@ self.onmessage = function (e) {
         return rows;
     }
 
+    /**
+     * Cheapest row to buy credits with, among rows the player can actually buy with gold.
+     * The synthetic Guild Token row is excluded: its cost per credit is defined as the cheapest
+     * tradeable route, so it always ties that item exactly and, with a stable sort, would win the
+     * tie while having no market price to compare against.
+     * @param {Array} rows - rows from buildCreditRows
+     * @returns {Object|null} Best row, or null when no row has a market ask price
+     */
+    function pickBestRow(rows) {
+        const candidates = rows.filter((r) => !r.isToken && r.sellGPC !== null);
+        if (candidates.length === 0) return null;
+        return candidates.reduce((best, row) => (row.sellGPC < best.sellGPC ? row : best));
+    }
+
+    /**
+     * Number of exchange batches implied by the "You give" quantity (an item count, not a batch
+     * count). Falls back to a single batch when the value is missing or smaller than one batch.
+     * @param {string|number|undefined} giveValue - Raw "You give" input value
+     * @param {number} itemCount - Items required per batch for the selected item
+     * @returns {number} Batch count (>= 1)
+     */
+    function resolveBatches(giveValue, itemCount) {
+        const units = parseInt(String(giveValue ?? '').replace(/,/g, ''), 10);
+        if (!Number.isFinite(units) || !(itemCount > 0)) return 1;
+        return Math.max(1, Math.floor(units / itemCount));
+    }
+
     function createGuildReturnTab(referenceTab, returnLabel, sessionId) {
         const returnTab = referenceTab.cloneNode(true);
         returnTab.setAttribute('data-mwi-custom-tab', 'true');
@@ -20638,10 +20665,13 @@ self.onmessage = function (e) {
                     const observer = new MutationObserver(() => {
                         this._renderExchangeAdvisor(modalEl, creditHrid, rows);
                         this._renderExchangeAllButton(modalEl, creditHrid);
+                        this._bindAdvisorToQuantity(modalEl, creditHrid, rows);
                     });
                     observer.observe(itemSelector, { subtree: true, childList: true, attributes: true });
                 }
             }
+
+            this._bindAdvisorToQuantity(modalEl, creditHrid, rows);
 
             // "ALL" quick-fill button — the two quantity inputs only exist once an item is
             // selected, so this also needs the initial call here (covers a pre-selected item).
@@ -20651,6 +20681,18 @@ self.onmessage = function (e) {
             if (config.getSetting('guildShrineUpgradePlanner', true)) {
                 this._renderShrinePlanner(modalEl);
             }
+        }
+
+        /**
+         * The advisor's result depends on the "You give" quantity, so re-render when it changes.
+         * The input only exists once an item is selected and can be replaced by the game, so this
+         * runs from the selection observer and binds each input element once.
+         */
+        _bindAdvisorToQuantity(modalEl, creditHrid, rows) {
+            const giveInput = modalEl.querySelectorAll('input[class*="Input_input"]')[0];
+            if (!giveInput || giveInput.dataset.mwiAdvisorBound) return;
+            giveInput.dataset.mwiAdvisorBound = '1';
+            giveInput.addEventListener('input', () => this._renderExchangeAdvisor(modalEl, creditHrid, rows));
         }
 
         _renderShrinePlanner(modalEl) {
@@ -20870,19 +20912,12 @@ self.onmessage = function (e) {
             // Resolve the selected item HRID from the icon's sprite href (locale-independent)
             const selectedItemHrid = this._getSelectedItemHrid(modalEl);
 
-            // Read batch quantity
-            const quantityInput = modalEl.querySelector('input[type="number"]');
-            const batches = Math.max(1, parseInt(quantityInput?.value || '1', 10) || 1);
-
             // Find best and selected rows (rows are pre-built from _render)
             const validRows = rows.filter((r) => r.sellGPC !== null || r.buyGPC !== null);
             if (validRows.length === 0) return;
 
-            const bestRow = [...validRows].sort((a, b) => {
-                const aVal = a.sellGPC ?? Infinity;
-                const bVal = b.sellGPC ?? Infinity;
-                return aVal - bVal;
-            })[0];
+            const bestRow = pickBestRow(validRows);
+            if (!bestRow) return;
 
             const advisor = document.createElement('div');
             advisor.className = 'mwi-exchange-advisor';
@@ -20907,6 +20942,14 @@ self.onmessage = function (e) {
                 return;
             }
 
+            if (selectedRow.isToken) {
+                // Guild Tokens aren't sold on the market, so there is no sell-and-rebuy to compare.
+                const bestName = `<b style="color:#e0e0e0;">${getItemName(bestRow.hrid, bestRow.name)}</b>`;
+                advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${i18n_js.t('guildCreditValue.advisorTokenSelected', { name: bestName })}</div>`;
+                modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
+                return;
+            }
+
             if (selectedRow === bestRow) {
                 advisor.style.borderColor = 'rgba(74,222,128,0.4)';
                 advisor.innerHTML = `<div style="color:#4ade80; font-weight:600; text-align:center;">${i18n_js.t('guildCreditValue.advisorOptimalChoice')}</div>`;
@@ -20916,6 +20959,10 @@ self.onmessage = function (e) {
 
             // Calculate sell → rebuy scenario
             const SELLER_TAX = profitConstants_js.MARKET_TAX;
+            // "You give" is the real quantity input (a text input; the number inputs belong to the
+            // Shrine Upgrade Planner) and holds an item count, so convert it to batches.
+            const giveInput = modalEl.querySelectorAll('input[class*="Input_input"]')[0];
+            const batches = resolveBatches(giveInput?.value, selectedRow.itemCount);
             const sellPrice = selectedRow.buyPrice; // bid price = what market will buy at
             const directCredits = batches * selectedRow.creditCount;
 
