@@ -2,16 +2,14 @@
 
 ## [3.19.0](https://github.com/Celasha/Toolasha/compare/v3.18.1...v3.19.0) (2026-10-15)
 
-
 ### Features
 
-* add View Shop buttons to the item menus of dungeon, labyrinth, task and guild tokens ([8cd7c49](https://github.com/Celasha/Toolasha/commit/8cd7c4902ca7b0e1eb803e185d7ea1747692fcde))
-* show how long dungeon entry keys will last in the dungeon tracker ([e82a2a2](https://github.com/Celasha/Toolasha/commit/e82a2a2aaa44b13b0836cf1793d2ad6604c1cc65))
-
+- add View Shop buttons to the item menus of dungeon, labyrinth, task and guild tokens ([8cd7c49](https://github.com/Celasha/Toolasha/commit/8cd7c4902ca7b0e1eb803e185d7ea1747692fcde))
+- show how long dungeon entry keys will last in the dungeon tracker ([e82a2a2](https://github.com/Celasha/Toolasha/commit/e82a2a2aaa44b13b0836cf1793d2ad6604c1cc65))
 
 ### Continuous Integration
 
-* set the Discord #general topic to the new version after each release ([82d758e](https://github.com/Celasha/Toolasha/commit/82d758e9576c128f08ca0588be44bf4fb644272a))
+- set the Discord #general topic to the new version after each release ([82d758e](https://github.com/Celasha/Toolasha/commit/82d758e9576c128f08ca0588be44bf4fb644272a))
 
 ## [3.18.1](https://github.com/Celasha/Toolasha/compare/v3.18.0...v3.18.1) (2026-10-15)
 
