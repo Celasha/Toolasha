@@ -5,7 +5,9 @@
  * sprite URLs without hardcoding hashes that break on game updates.
  */
 
-const MANIFEST_URL = 'https://www.milkywayidle.com/asset-manifest.json';
+import { getGameOrigin } from './game-origin.js';
+
+const MANIFEST_URL = `${getGameOrigin()}/asset-manifest.json`;
 
 // Sprite keys to extract from the manifest (key → sprite name)
 const SPRITE_KEYS = {

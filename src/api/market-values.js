@@ -11,13 +11,14 @@
 import storage from '../core/storage.js';
 import config from '../core/config.js';
 import { createTimerRegistry } from '../utils/timer-registry.js';
+import { getGameOrigin } from '../utils/game-origin.js';
 
 /**
  * MarketValuesAPI class handles fetching and caching the game's reference market values
  */
 class MarketValuesAPI {
     constructor() {
-        this.API_URL = 'https://www.milkywayidle.com/game_data/market_values.json';
+        this.API_URL = `${getGameOrigin()}/game_data/market_values.json`;
 
         // Cache settings - this is a slow-moving reference value, not live order-book data
         this.CACHE_DURATION = 60 * 60 * 1000; // 1 hour

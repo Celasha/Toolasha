@@ -104,7 +104,9 @@ class WebSocketHook {
 
         return (
             socket.url.indexOf('api.milkywayidle.com/ws') !== -1 ||
-            socket.url.indexOf('api-test.milkywayidle.com/ws') !== -1
+            socket.url.indexOf('api-test.milkywayidle.com/ws') !== -1 ||
+            socket.url.indexOf('api.milkywayidlecn.com/ws') !== -1 ||
+            socket.url.indexOf('api-test.milkywayidlecn.com/ws') !== -1
         );
     }
 

@@ -389,3 +389,30 @@ describe('WebSocket hook — live buff-state messages must not be dropped by pre
         }
     );
 });
+
+describe('WebSocket hook — game socket detection', () => {
+    let webSocketHook;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        const mod = await import('./websocket.js');
+        webSocketHook = mod.default;
+    });
+
+    test.each([
+        'wss://api.milkywayidle.com/ws?hash=x',
+        'wss://api-test.milkywayidle.com/ws?hash=x',
+        'wss://api.milkywayidlecn.com/ws?hash=x',
+        'wss://api-test.milkywayidlecn.com/ws?hash=x',
+    ])('accepts game socket %s', (url) => {
+        expect(webSocketHook.isGameSocket({ url })).toBe(true);
+    });
+
+    test.each([
+        'wss://example.com/ws',
+        'wss://api.milkywayidlecn.com/other',
+        'wss://chat.example.com/api.milkywayidle',
+    ])('rejects non-game socket %s', (url) => {
+        expect(webSocketHook.isGameSocket({ url })).toBe(false);
+    });
+});
