@@ -35,6 +35,26 @@ import {
 
 const COLLAPSED_GROUPS_KEY = 'toolasha_collapsedGroups';
 
+/**
+ * Normalize typed hex color text to lowercase #rrggbb.
+ * Accepts an optional leading '#' and 3- or 6-digit forms.
+ * @param {string} text - Raw user input
+ * @returns {string|null} Normalized color, or null if invalid
+ */
+export function normalizeHexColor(text) {
+    const hex = String(text ?? '')
+        .trim()
+        .replace(/^#/, '')
+        .toLowerCase();
+    if (/^[0-9a-f]{3}$/.test(hex)) {
+        return `#${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`;
+    }
+    if (/^[0-9a-f]{6}$/.test(hex)) {
+        return `#${hex}`;
+    }
+    return null;
+}
+
 class SettingsUI {
     constructor() {
         this.config = config;
@@ -715,8 +735,9 @@ class SettingsUI {
                             id="${settingId}_text"
                             class="toolasha-color-text-input"
                             value="${value}"
-                            style="width: 80px; padding: 4px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 3px;"
-                            readonly>
+                            maxlength="7"
+                            spellcheck="false"
+                            style="width: 80px; padding: 4px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 3px;">
                     </div>
                 `;
             }
@@ -1088,8 +1109,21 @@ class SettingsUI {
      * @param {Event} event - Change event
      */
     async handleSettingChange(event) {
-        const input = event.target;
+        let input = event.target;
         if (!input.id) return;
+
+        // Typed hex box: validate, then route through the color picker so the normal color path saves it
+        if (input.classList.contains('toolasha-color-text-input')) {
+            const picker = document.getElementById(input.id.replace(/_text$/, ''));
+            if (!picker) return;
+            const normalized = normalizeHexColor(input.value);
+            if (!normalized) {
+                input.value = picker.value;
+                return;
+            }
+            picker.value = normalized;
+            input = picker;
+        }
 
         let settingId = input.id;
 
