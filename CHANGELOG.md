@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.21.2](https://github.com/Celasha/Toolasha/compare/v3.21.1...v3.21.2) (2026-10-16)
+
+### Bug Fixes
+
+- add a toggle to split Labyrinth runs in the Loot & XP Log analytics ([37581a0](https://github.com/Celasha/Toolasha/commit/37581a0876e5656f20135bd1bd7b030aaaa64ee3))
+- explain how shop-valued items are priced in the Opened Loot modal ([f0a338c](https://github.com/Celasha/Toolasha/commit/f0a338c9bd796105687630f282108d6576281439))
+- match milkywayidle.com without www in the production script header ([4dc8951](https://github.com/Celasha/Toolasha/commit/4dc8951420c897723b1cc106fb1b2f3296f4c671))
+
 ## [3.21.1](https://github.com/Celasha/Toolasha/compare/v3.21.0...v3.21.1) (2026-10-15)
 
 ### Bug Fixes
