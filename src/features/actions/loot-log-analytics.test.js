@@ -224,3 +224,55 @@ describe('aggregatePivotRows', () => {
         expect(row.xpGains).toEqual({});
     });
 });
+
+describe('aggregatePivotRows splitLabyrinthRuns', () => {
+    const labyrinth = (startTime, count, drops) => ({
+        actionHrid: '/actions/labyrinth/explore',
+        actionCount: count,
+        startTime,
+        endTime: startTime,
+        totalActiveMillis: 1000,
+        drops,
+        xpGains: {},
+    });
+    const dungeon = (startTime) => ({
+        actionHrid: '/actions/combat/dungeon_a',
+        difficultyTier: 1,
+        actionCount: 1,
+        startTime,
+        endTime: startTime,
+        totalActiveMillis: 1000,
+        drops: {},
+        xpGains: {},
+    });
+    const entries = [
+        labyrinth('2026-08-01T00:00:00Z', 10, { '/items/a::0': 1 }),
+        labyrinth('2026-08-02T00:00:00Z', 20, { '/items/a::0': 2 }),
+        dungeon('2026-08-01T00:00:00Z'),
+        dungeon('2026-08-02T00:00:00Z'),
+    ];
+
+    test('is off by default: all Labyrinth sessions sum into one row', () => {
+        const rows = aggregatePivotRows(entries);
+        const lab = rows.filter((r) => r.actionHrid === '/actions/labyrinth/explore');
+        expect(lab).toHaveLength(1);
+        expect(lab[0].entryCount).toBe(2);
+        expect(lab[0].runStartTime).toBeNull();
+    });
+
+    test('when on, each Labyrinth session is its own row; dungeons still aggregate', () => {
+        const rows = aggregatePivotRows(entries, { splitLabyrinthRuns: true });
+        const lab = rows.filter((r) => r.actionHrid === '/actions/labyrinth/explore');
+        expect(lab).toHaveLength(2);
+        expect(lab.map((r) => r.runStartTime).sort()).toEqual(['2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z']);
+        expect(lab.map((r) => r.actionCount).sort()).toEqual([10, 20]);
+        const dun = rows.filter((r) => r.actionHrid === '/actions/combat/dungeon_a');
+        expect(dun).toHaveLength(1);
+        expect(dun[0].entryCount).toBe(2);
+    });
+
+    test('totals are identical in both modes', () => {
+        const sum = (rows) => rows.reduce((n, r) => n + r.actionCount + (r.drops['/items/a::0'] || 0), 0);
+        expect(sum(aggregatePivotRows(entries, { splitLabyrinthRuns: true }))).toBe(sum(aggregatePivotRows(entries)));
+    });
+});

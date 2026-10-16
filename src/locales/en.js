@@ -1268,6 +1268,8 @@ export default {
         unknownActionFallback: 'Unknown',
         analyticsButtonTooltip: 'Loot & XP Log Analytics (pivot table)',
         tierSuffixParen: (p) => ` (Tier ${p.tier})`,
+        runSuffix: (p) => ` · ${p.time}`,
+        splitLabyrinthRuns: 'Labyrinth: split by run',
         analyticsPanelTitle: '📊 Loot & XP Log Analytics',
         subtitleWithHistory: (p) =>
             `${p.actionCount} action${p.actionCount === 1 ? '' : 's'} across ${p.sessions} stored sessions`,

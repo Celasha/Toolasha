@@ -454,6 +454,35 @@ describe('LootLogStats Analytics (pivot table) button and panel', () => {
         instance.closeAnalyticsPanel();
     });
 
+    test('the Labyrinth split toggle switches between one total row and one row per run', async () => {
+        const lab = (startTime) => ({
+            actionHrid: '/actions/labyrinth/explore',
+            actionCount: 10,
+            startTime,
+            endTime: startTime,
+            totalActiveMillis: 1000,
+            drops: {},
+            xpGains: {},
+        });
+        instance.splitLabyrinthRuns = false;
+        instance.currentLootLogData = [lab('2026-08-01T00:00:00Z'), lab('2026-08-02T00:00:00Z')];
+
+        await instance.openAnalyticsPanel();
+        const rowCount = () =>
+            document.querySelectorAll('.mwi-loot-log-analytics-overlay tbody > tr[style*="cursor"]').length;
+        expect(rowCount()).toBe(1);
+
+        const checkbox = document.querySelector('.mwi-loot-log-split-labyrinth');
+        checkbox.checked = true;
+        checkbox.dispatchEvent(new Event('change'));
+        expect(rowCount()).toBe(2);
+        expect(document.querySelectorAll('.mwi-loot-log-analytics-overlay').length).toBe(1);
+        expect(document.querySelector('.mwi-loot-log-split-labyrinth').checked).toBe(true);
+
+        instance.splitLabyrinthRuns = false;
+        instance.closeAnalyticsPanel();
+    });
+
     test('cleanup removes any injected button and closes an open panel', async () => {
         const panel = buildPanelHeader();
         document.body.appendChild(panel);

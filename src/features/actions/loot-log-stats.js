@@ -52,6 +52,9 @@ class LootLogStats {
         this.analyticsEscapeHandler = null;
         this.analyticsSort = { key: 'totalTimeMs', desc: true };
         this.analyticsFilter = '';
+        this.splitLabyrinthRuns = false;
+        this.analyticsEntries = [];
+        this.analyticsHistoricalCount = 0;
     }
 
     /**
@@ -1038,11 +1041,33 @@ class LootLogStats {
         this.closeAnalyticsPanel();
 
         const historicalEntries = this.historyEnabled ? await lootLogHistory._load() : [];
-        const entries = mergeCurrentAndHistoricalEntries(this.currentLootLogData || [], historicalEntries);
-        const rows = aggregatePivotRows(entries);
+        this.analyticsEntries = mergeCurrentAndHistoricalEntries(this.currentLootLogData || [], historicalEntries);
+        this.analyticsHistoricalCount = historicalEntries.length;
+        this.showAnalyticsOverlay();
+    }
+
+    /**
+     * Aggregate the stored analytics entries (honouring the Labyrinth split toggle) and
+     * (re)build the overlay, replacing any overlay already shown.
+     */
+    showAnalyticsOverlay() {
+        if (this.analyticsOverlay) {
+            this.analyticsOverlay.remove();
+            this.analyticsOverlay = null;
+        }
+        if (this.analyticsEscapeHandler) {
+            document.removeEventListener('keydown', this.analyticsEscapeHandler);
+            this.analyticsEscapeHandler = null;
+        }
+
+        const rows = aggregatePivotRows(this.analyticsEntries || [], { splitLabyrinthRuns: this.splitLabyrinthRuns });
         const enriched = rows.map((row) => this.enrichAnalyticsRow(row));
 
-        this.analyticsOverlay = this.buildAnalyticsOverlay(enriched, historicalEntries.length, this.historyEnabled);
+        this.analyticsOverlay = this.buildAnalyticsOverlay(
+            enriched,
+            this.analyticsHistoricalCount || 0,
+            this.historyEnabled
+        );
         document.body.appendChild(this.analyticsOverlay);
     }
 
@@ -1069,6 +1094,9 @@ class LootLogStats {
         const name = this.getActionName(row.actionHrid);
         const category = this.getActionCategory(row.actionHrid);
         const tierLabel = row.difficultyTier ? t('lootLogStats.tierSuffixParen', { tier: row.difficultyTier }) : '';
+        const runLabel = row.runStartTime
+            ? t('lootLogStats.runSuffix', { time: formatDateTime(new Date(row.runStartTime)) })
+            : '';
         const { askTotal, bidTotal, hasOutlierPrice } = this.calculateTotalValue(row.drops);
         const hours = row.totalTimeMs / 3_600_000;
         const goldPerHourAsk = hours > 0 ? askTotal / hours : 0;
@@ -1085,7 +1113,7 @@ class LootLogStats {
 
         return {
             row,
-            displayName: t('lootLogStats.categoryDashName', { category, name, suffix: tierLabel }),
+            displayName: t('lootLogStats.categoryDashName', { category, name, suffix: tierLabel + runLabel }),
             askTotal,
             bidTotal,
             hasOutlierPrice,
@@ -1162,7 +1190,27 @@ class LootLogStats {
             color: #fff; font-size: 0.9em;
         `;
         search.value = this.analyticsFilter;
-        panel.appendChild(search);
+
+        const splitLabel = document.createElement('label');
+        splitLabel.style.cssText =
+            'display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.8); ' +
+            'font-size: 0.85em; white-space: nowrap; cursor: pointer;';
+        const splitCheckbox = document.createElement('input');
+        splitCheckbox.type = 'checkbox';
+        splitCheckbox.className = 'mwi-loot-log-split-labyrinth';
+        splitCheckbox.checked = this.splitLabyrinthRuns;
+        splitCheckbox.addEventListener('change', () => {
+            this.splitLabyrinthRuns = splitCheckbox.checked;
+            this.showAnalyticsOverlay();
+        });
+        splitLabel.append(splitCheckbox, document.createTextNode(t('lootLogStats.splitLabyrinthRuns')));
+
+        const controls = document.createElement('div');
+        controls.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 8px;';
+        search.style.flex = '1';
+        search.style.marginBottom = '0';
+        controls.append(search, splitLabel);
+        panel.appendChild(controls);
 
         const tableWrapper = document.createElement('div');
         tableWrapper.style.cssText = 'overflow-y: auto; flex: 1;';
@@ -1304,13 +1352,15 @@ class LootLogStats {
         nameSpan.style.color = '#fff';
         actionWrap.appendChild(nameSpan);
         actionCell.appendChild(actionWrap);
-        const sessionsSub = document.createElement('div');
-        sessionsSub.textContent = t('lootLogStats.sessionsCountLabel', {
-            count: numberFormatter(row.entryCount),
-            rawCount: row.entryCount,
-        });
-        sessionsSub.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em; margin-top: 2px;';
-        actionCell.appendChild(sessionsSub);
+        if (!row.runStartTime) {
+            const sessionsSub = document.createElement('div');
+            sessionsSub.textContent = t('lootLogStats.sessionsCountLabel', {
+                count: numberFormatter(row.entryCount),
+                rawCount: row.entryCount,
+            });
+            sessionsSub.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em; margin-top: 2px;';
+            actionCell.appendChild(sessionsSub);
+        }
         tr.appendChild(actionCell);
 
         tr.appendChild(this.buildAnalyticsCell(numberFormatter(row.actionCount)));

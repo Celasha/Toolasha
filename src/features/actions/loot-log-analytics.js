@@ -82,35 +82,56 @@ function mergeCurrentAndHistoricalEntries(currentEntries, historicalEntries) {
     return Array.from(seen.values());
 }
 
+const LABYRINTH_ACTION_PREFIX = '/actions/labyrinth/';
+
+/**
+ * Whether a loot log entry belongs to a Labyrinth action.
+ * @param {Object} entry
+ * @returns {boolean}
+ */
+function isLabyrinthEntry(entry) {
+    return typeof entry?.actionHrid === 'string' && entry.actionHrid.startsWith(LABYRINTH_ACTION_PREFIX);
+}
+
 /**
  * Grouping key for the pivot table: same action, kept separate per difficulty tier so e.g.
- * different dungeon tiers never get merged into one row.
+ * different dungeon tiers never get merged into one row. With `splitLabyrinthRuns`, Labyrinth
+ * entries are also kept apart by startTime, so each loot log session becomes its own row.
  * @param {Object} entry
+ * @param {Object} [options]
+ * @param {boolean} [options.splitLabyrinthRuns]
  * @returns {string}
  */
-function buildActionGroupKey(entry) {
-    return `${entry.actionHrid}::${entry.difficultyTier ?? ''}`;
+function buildActionGroupKey(entry, options = {}) {
+    const base = `${entry.actionHrid}::${entry.difficultyTier ?? ''}`;
+    if (options.splitLabyrinthRuns && isLabyrinthEntry(entry)) {
+        return `${base}::${entry.startTime ?? ''}`;
+    }
+    return base;
 }
 
 /**
  * Group loot log entries by action (+ difficulty tier) and sum time/actions/drops/XP.
  * Enhancement actions are excluded, matching the rest of the Loot Log Stats feature.
  * @param {Array} entries
+ * @param {Object} [options]
+ * @param {boolean} [options.splitLabyrinthRuns] - one row per Labyrinth session instead of one total
  * @returns {Array<Object>} one row per distinct action/tier combination
  */
-function aggregatePivotRows(entries) {
+function aggregatePivotRows(entries, options = {}) {
     const rows = new Map();
 
     for (const entry of entries || []) {
         if (!entry?.actionHrid) continue;
         if (entry.actionHrid === '/actions/enhancing/enhance') continue;
 
-        const key = buildActionGroupKey(entry);
+        const key = buildActionGroupKey(entry, options);
         let row = rows.get(key);
         if (!row) {
             row = {
                 actionHrid: entry.actionHrid,
                 difficultyTier: entry.difficultyTier ?? null,
+                runStartTime: options.splitLabyrinthRuns && isLabyrinthEntry(entry) ? (entry.startTime ?? null) : null,
                 entryCount: 0,
                 actionCount: 0,
                 totalTimeMs: 0,
@@ -158,6 +179,7 @@ export {
     buildEntryIdentityKey,
     isMoreCompleteEntry,
     mergeCurrentAndHistoricalEntries,
+    isLabyrinthEntry,
     buildActionGroupKey,
     aggregatePivotRows,
 };

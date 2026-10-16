@@ -83,6 +83,8 @@ export default {
         unknownActionFallback: '未知',
         analyticsButtonTooltip: '掉落与经验日志分析（透视表）',
         tierSuffixParen: (p) => `（层级 ${p.tier}）`,
+        runSuffix: (p) => ` · ${p.time}`,
+        splitLabyrinthRuns: '迷宫：按每次运行拆分',
         analyticsPanelTitle: '📊 掉落与经验日志分析',
         subtitleWithHistory: (p) => `${p.actionCount} 个动作，来自 ${p.sessions} 个已存储会话`,
         subtitleSessionOnly: (p) => `${p.actionCount} 个动作，仅来自当前会话——启用“掉落日志历史”即可查看完整历史数据`,
