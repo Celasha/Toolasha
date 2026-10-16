@@ -160,7 +160,15 @@ describe('resolveSellSideValue', () => {
 
         expect(
             expectedValueCalculator.resolveSellSideValue('/items/seal_of_efficiency', 0, { allowIndirect: true })
-        ).toEqual({ value: 30000, source: 'shopRedemption', needsTax: false, isOutlier: false });
+        ).toEqual({
+            value: 30000,
+            source: 'shopRedemption',
+            needsTax: false,
+            isOutlier: false,
+            currencyHrid: '/items/labyrinth_token',
+            tokenCost: 30,
+            outputCount: 1,
+        });
     });
 
     test('allowIndirect propagates the outlier flag from the redemption chain', () => {
@@ -175,7 +183,15 @@ describe('resolveSellSideValue', () => {
 
         expect(
             expectedValueCalculator.resolveSellSideValue('/items/seal_of_efficiency', 0, { allowIndirect: true })
-        ).toEqual({ value: 30000, source: 'shopRedemption', needsTax: false, isOutlier: true });
+        ).toEqual({
+            value: 30000,
+            source: 'shopRedemption',
+            needsTax: false,
+            isOutlier: true,
+            currencyHrid: '/items/labyrinth_token',
+            tokenCost: 30,
+            outputCount: 1,
+        });
     });
 
     test('allowIndirect still returns null when the redemption chain cannot price the currency', () => {

@@ -31,7 +31,26 @@ function valueGainedItemStack(itemHrid, enhancementLevel, count) {
     // real game data omits entirely for untradeable items.
     const perUnit = resolved.needsTax ? calculatePriceAfterTax(resolved.value, MARKET_TAX) : resolved.value;
 
-    return { value: perUnit * (count || 0), resolved: true };
+    return { value: perUnit * (count || 0), resolved: true, valueSource: describeValueSource(resolved) };
+}
+
+const DERIVED_SOURCES = new Set(['shopRedemption', 'specialCurrency', 'dungeonToken']);
+
+/**
+ * Describe how a non-market price was derived, so the UI can explain it. Returns null for
+ * ordinary market/custom/coin values, which need no explanation.
+ * @param {{source: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}} resolved
+ * @returns {{source: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}|null}
+ */
+function describeValueSource(resolved) {
+    if (!DERIVED_SOURCES.has(resolved.source)) return null;
+    const info = { source: resolved.source };
+    if (resolved.source === 'shopRedemption') {
+        info.currencyHrid = resolved.currencyHrid;
+        info.tokenCost = resolved.tokenCost;
+        info.outputCount = resolved.outputCount;
+    }
+    return info;
 }
 
 /**
@@ -50,7 +69,7 @@ export function calculateActualValue(gainedItems) {
 
     for (const item of gainedItems || []) {
         if (!item?.itemHrid) continue;
-        const { value, resolved } = valueGainedItemStack(item.itemHrid, item.enhancementLevel, item.count);
+        const { value, resolved, valueSource } = valueGainedItemStack(item.itemHrid, item.enhancementLevel, item.count);
         total += value;
         if (!resolved) complete = false;
         breakdown.push({
@@ -59,6 +78,7 @@ export function calculateActualValue(gainedItems) {
             count: item.count || 0,
             value,
             resolved,
+            ...(valueSource ? { valueSource } : {}),
         });
     }
 

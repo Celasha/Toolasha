@@ -10,7 +10,8 @@ import domObserver from '../../../core/dom-observer.js';
 import config from '../../../core/config.js';
 import { t } from '../../../core/i18n.js';
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
-import { coinFormatter, formatKMB3Digits } from '../../../utils/formatters.js';
+import { coinFormatter, formatKMB3Digits, formatWithSeparator } from '../../../utils/formatters.js';
+import { getItemName } from '../../../utils/game-i18n.js';
 
 const MODAL_CONTENT_CLASS = 'Inventory_modalContent';
 const LINE_CLASS = 'toolasha-openable-analytics-line';
@@ -29,6 +30,30 @@ function formatTinyItemValue(value) {
     const rounded = Math.round(value);
     if (rounded === 0) return '≈0';
     return `≈${formatKMB3Digits(rounded)}`;
+}
+
+/**
+ * Tooltip explaining a derived (non-market) per-item value, e.g. an untradable cape priced from
+ * the shop tokens it costs. Returns '' for ordinary market values.
+ * @param {{value: number, count: number, valueSource?: Object}} item - Breakdown entry
+ * @returns {string}
+ */
+function buildValueSourceTooltip(item) {
+    const info = item.valueSource;
+    if (!info || !(item.count > 0)) return '';
+    const unit = item.value / item.count;
+
+    if (info.source === 'shopRedemption' && info.tokenCost > 0) {
+        const perToken = (unit * (info.outputCount || 1)) / info.tokenCost;
+        return t('openableAnalytics.valueSourceShop', {
+            cost: formatWithSeparator(info.tokenCost),
+            currency: getItemName(info.currencyHrid, info.currencyHrid),
+            perToken: formatWithSeparator(Math.round(perToken)),
+            unit: formatKMB3Digits(Math.round(unit)),
+        });
+    }
+
+    return t('openableAnalytics.valueSourceCurrency', { perToken: formatWithSeparator(Math.round(unit)) });
 }
 
 /** Luck value with an explicit `+` on positive amounts; negative values already carry their own `-`. Zero is neutral (no sign). */
@@ -260,6 +285,11 @@ class OpenableAnalyticsModalInjector {
             label.className = ITEM_VALUE_LABEL_CLASS;
             label.style.cssText = 'font-size:10px; text-align:center; opacity:0.85;';
             label.textContent = formatTinyItemValue(item.value);
+            const sourceTooltip = buildValueSourceTooltip(item);
+            if (sourceTooltip) {
+                label.title = sourceTooltip;
+                label.style.cursor = 'help';
+            }
             itemEl.appendChild(label);
         });
     }
@@ -299,6 +329,7 @@ export {
     buildFooterContent,
     formatValue,
     formatTinyItemValue,
+    buildValueSourceTooltip,
     formatLuckValue,
     formatLuckPercent,
     luckColor,

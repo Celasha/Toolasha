@@ -90,6 +90,9 @@ export default {
         noItemDataForOpeningMessage: '此次开启暂无物品数据。',
         noItemDataRecordedMessage: '尚未记录任何物品数据。',
         noPriceYetNote: '（暂无价格）',
+        valueSourceShop:
+            '市场上不出售，按商店兑换价值估算：{{cost}} 个{{currency}}，每个约 {{perToken}} = 每件 {{unit}}（不计市场税）。',
+        valueSourceCurrency: '按其最佳商店兑换价值估算：每个代币 {{perToken}}（不计市场税）。',
         openedLabel: '已开启',
         partialBadgeLabel: '（部分）',
         profitLabel: '利润',

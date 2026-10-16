@@ -53,6 +53,34 @@ describe('calculateActualValue', () => {
         ]);
     });
 
+    test('records how a shop-derived price was built, and nothing for ordinary market prices', () => {
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((itemHrid) =>
+            itemHrid === '/items/cloak'
+                ? {
+                      value: 77000,
+                      source: 'shopRedemption',
+                      needsTax: false,
+                      currencyHrid: '/items/enchanted_token',
+                      tokenCost: 27000,
+                      outputCount: 1,
+                  }
+                : { value: 50, source: 'market', needsTax: false }
+        );
+
+        const { breakdown } = calculateActualValue([
+            { itemHrid: '/items/cloak', enhancementLevel: 0, count: 1 },
+            { itemHrid: '/items/pearl', enhancementLevel: 0, count: 1 },
+        ]);
+
+        expect(breakdown[0].valueSource).toEqual({
+            source: 'shopRedemption',
+            currencyHrid: '/items/enchanted_token',
+            tokenCost: 27000,
+            outputCount: 1,
+        });
+        expect(breakdown[1]).not.toHaveProperty('valueSource');
+    });
+
     test('marks an unpriced item as unresolved with a value of 0 in the breakdown, not a fake price', () => {
         expectedValueCalculator.resolveSellSideValue.mockReturnValue(null);
 

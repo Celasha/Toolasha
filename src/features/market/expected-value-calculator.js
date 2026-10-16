@@ -322,6 +322,9 @@ class ExpectedValueCalculator {
                     source: 'shopRedemption',
                     needsTax: false,
                     isOutlier: indirect.isOutlier || false,
+                    currencyHrid: indirect.currencyHrid,
+                    tokenCost: indirect.tokenCost,
+                    outputCount: indirect.outputCount,
                 };
             }
             // Mirror case: the dropped item is itself a shop currency (e.g. labyrinth tokens from

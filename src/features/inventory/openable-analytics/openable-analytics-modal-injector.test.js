@@ -56,6 +56,8 @@ const OPENABLE_ANALYTICS_FIXTURE = {
     luckUnavailableTooltip: "Some required values are missing, so Luck can't be calculated. {{luckTooltip}}",
     viewAnalyticsLink: 'View Analytics',
     lifetimeScopeLabel: 'Lifetime',
+    valueSourceShop: 'Shop: {{cost}} {{currency}} at {{perToken}} each = {{unit}} per item',
+    valueSourceCurrency: 'Per token: {{perToken}}',
 };
 
 vi.mock('../../../core/i18n.js', () => ({
@@ -418,6 +420,42 @@ describe('per-item value labels (section 7)', () => {
 
         expect(() => itemCallbacks().forEach((cb) => cb(strayItem))).not.toThrow();
         expect(strayItem.querySelector(`.${ITEM_VALUE_LABEL_CLASS}`)).toBeNull();
+    });
+});
+
+describe('derived value tooltips', () => {
+    test('an item valued through the shop explains the token cost and per-token value', () => {
+        mocks.latestRecord = monetaryRecord({
+            actualValueBreakdown: [
+                {
+                    itemHrid: '/items/enchanted_cloak',
+                    enhancementLevel: 0,
+                    count: 3,
+                    value: 232_500_000,
+                    resolved: true,
+                    valueSource: {
+                        source: 'shopRedemption',
+                        currencyHrid: '/items/enchanted_token',
+                        tokenCost: 27000,
+                        outputCount: 1,
+                    },
+                },
+            ],
+        });
+        const modal = buildModal(1);
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        const label = itemContainersOf(modal)[0].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`);
+        expect(label.title).toContain('27,000');
+        expect(label.title).toContain('2,870 each');
+        expect(label.title).toContain('77.5M per item');
+    });
+
+    test('a plain market-priced item gets no tooltip', () => {
+        const modal = buildModal(3);
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(itemContainersOf(modal)[1].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).title).toBe('');
     });
 });
 

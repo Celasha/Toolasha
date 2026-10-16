@@ -254,6 +254,9 @@ export default {
         noItemDataForOpeningMessage: 'No item data available for this opening.',
         noItemDataRecordedMessage: 'No item data recorded yet.',
         noPriceYetNote: '(no price yet)',
+        valueSourceShop:
+            'Not sold on the market. Valued through the shop: {{cost}} {{currency}} at {{perToken}} each = {{unit}} per item (no market tax).',
+        valueSourceCurrency: 'Valued at its best shop redemption: {{perToken}} per token (no market tax).',
         openedLabel: 'Opened',
         partialBadgeLabel: '(partial)',
         profitLabel: 'Profit',
