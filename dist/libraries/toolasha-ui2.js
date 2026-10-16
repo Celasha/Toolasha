@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.21.1
+ * Version: 3.21.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2386,35 +2386,56 @@
         return Array.from(seen.values());
     }
 
+    const LABYRINTH_ACTION_PREFIX = '/actions/labyrinth/';
+
+    /**
+     * Whether a loot log entry belongs to a Labyrinth action.
+     * @param {Object} entry
+     * @returns {boolean}
+     */
+    function isLabyrinthEntry(entry) {
+        return typeof entry?.actionHrid === 'string' && entry.actionHrid.startsWith(LABYRINTH_ACTION_PREFIX);
+    }
+
     /**
      * Grouping key for the pivot table: same action, kept separate per difficulty tier so e.g.
-     * different dungeon tiers never get merged into one row.
+     * different dungeon tiers never get merged into one row. With `splitLabyrinthRuns`, Labyrinth
+     * entries are also kept apart by startTime, so each loot log session becomes its own row.
      * @param {Object} entry
+     * @param {Object} [options]
+     * @param {boolean} [options.splitLabyrinthRuns]
      * @returns {string}
      */
-    function buildActionGroupKey(entry) {
-        return `${entry.actionHrid}::${entry.difficultyTier ?? ''}`;
+    function buildActionGroupKey(entry, options = {}) {
+        const base = `${entry.actionHrid}::${entry.difficultyTier ?? ''}`;
+        if (options.splitLabyrinthRuns && isLabyrinthEntry(entry)) {
+            return `${base}::${entry.startTime ?? ''}`;
+        }
+        return base;
     }
 
     /**
      * Group loot log entries by action (+ difficulty tier) and sum time/actions/drops/XP.
      * Enhancement actions are excluded, matching the rest of the Loot Log Stats feature.
      * @param {Array} entries
+     * @param {Object} [options]
+     * @param {boolean} [options.splitLabyrinthRuns] - one row per Labyrinth session instead of one total
      * @returns {Array<Object>} one row per distinct action/tier combination
      */
-    function aggregatePivotRows(entries) {
+    function aggregatePivotRows(entries, options = {}) {
         const rows = new Map();
 
         for (const entry of entries || []) {
             if (!entry?.actionHrid) continue;
             if (entry.actionHrid === '/actions/enhancing/enhance') continue;
 
-            const key = buildActionGroupKey(entry);
+            const key = buildActionGroupKey(entry, options);
             let row = rows.get(key);
             if (!row) {
                 row = {
                     actionHrid: entry.actionHrid,
                     difficultyTier: entry.difficultyTier ?? null,
+                    runStartTime: options.splitLabyrinthRuns && isLabyrinthEntry(entry) ? (entry.startTime ?? null) : null,
                     entryCount: 0,
                     actionCount: 0,
                     totalTimeMs: 0,
@@ -2602,6 +2623,9 @@
             this.analyticsEscapeHandler = null;
             this.analyticsSort = { key: 'totalTimeMs', desc: true };
             this.analyticsFilter = '';
+            this.splitLabyrinthRuns = false;
+            this.analyticsEntries = [];
+            this.analyticsHistoricalCount = 0;
         }
 
         /**
@@ -3588,11 +3612,33 @@
             this.closeAnalyticsPanel();
 
             const historicalEntries = this.historyEnabled ? await lootLogHistory._load() : [];
-            const entries = mergeCurrentAndHistoricalEntries(this.currentLootLogData || [], historicalEntries);
-            const rows = aggregatePivotRows(entries);
+            this.analyticsEntries = mergeCurrentAndHistoricalEntries(this.currentLootLogData || [], historicalEntries);
+            this.analyticsHistoricalCount = historicalEntries.length;
+            this.showAnalyticsOverlay();
+        }
+
+        /**
+         * Aggregate the stored analytics entries (honouring the Labyrinth split toggle) and
+         * (re)build the overlay, replacing any overlay already shown.
+         */
+        showAnalyticsOverlay() {
+            if (this.analyticsOverlay) {
+                this.analyticsOverlay.remove();
+                this.analyticsOverlay = null;
+            }
+            if (this.analyticsEscapeHandler) {
+                document.removeEventListener('keydown', this.analyticsEscapeHandler);
+                this.analyticsEscapeHandler = null;
+            }
+
+            const rows = aggregatePivotRows(this.analyticsEntries || [], { splitLabyrinthRuns: this.splitLabyrinthRuns });
             const enriched = rows.map((row) => this.enrichAnalyticsRow(row));
 
-            this.analyticsOverlay = this.buildAnalyticsOverlay(enriched, historicalEntries.length, this.historyEnabled);
+            this.analyticsOverlay = this.buildAnalyticsOverlay(
+                enriched,
+                this.analyticsHistoricalCount || 0,
+                this.historyEnabled
+            );
             document.body.appendChild(this.analyticsOverlay);
         }
 
@@ -3619,6 +3665,9 @@
             const name = this.getActionName(row.actionHrid);
             const category = this.getActionCategory(row.actionHrid);
             const tierLabel = row.difficultyTier ? i18n_js.t('lootLogStats.tierSuffixParen', { tier: row.difficultyTier }) : '';
+            const runLabel = row.runStartTime
+                ? i18n_js.t('lootLogStats.runSuffix', { time: formatters_js.formatDateTime(new Date(row.runStartTime)) })
+                : '';
             const { askTotal, bidTotal, hasOutlierPrice } = this.calculateTotalValue(row.drops);
             const hours = row.totalTimeMs / 3_600_000;
             const goldPerHourAsk = hours > 0 ? askTotal / hours : 0;
@@ -3635,7 +3684,7 @@
 
             return {
                 row,
-                displayName: i18n_js.t('lootLogStats.categoryDashName', { category, name, suffix: tierLabel }),
+                displayName: i18n_js.t('lootLogStats.categoryDashName', { category, name, suffix: tierLabel + runLabel }),
                 askTotal,
                 bidTotal,
                 hasOutlierPrice,
@@ -3712,7 +3761,27 @@
             color: #fff; font-size: 0.9em;
         `;
             search.value = this.analyticsFilter;
-            panel.appendChild(search);
+
+            const splitLabel = document.createElement('label');
+            splitLabel.style.cssText =
+                'display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.8); ' +
+                'font-size: 0.85em; white-space: nowrap; cursor: pointer;';
+            const splitCheckbox = document.createElement('input');
+            splitCheckbox.type = 'checkbox';
+            splitCheckbox.className = 'mwi-loot-log-split-labyrinth';
+            splitCheckbox.checked = this.splitLabyrinthRuns;
+            splitCheckbox.addEventListener('change', () => {
+                this.splitLabyrinthRuns = splitCheckbox.checked;
+                this.showAnalyticsOverlay();
+            });
+            splitLabel.append(splitCheckbox, document.createTextNode(i18n_js.t('lootLogStats.splitLabyrinthRuns')));
+
+            const controls = document.createElement('div');
+            controls.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 8px;';
+            search.style.flex = '1';
+            search.style.marginBottom = '0';
+            controls.append(search, splitLabel);
+            panel.appendChild(controls);
 
             const tableWrapper = document.createElement('div');
             tableWrapper.style.cssText = 'overflow-y: auto; flex: 1;';
@@ -3854,13 +3923,15 @@
             nameSpan.style.color = '#fff';
             actionWrap.appendChild(nameSpan);
             actionCell.appendChild(actionWrap);
-            const sessionsSub = document.createElement('div');
-            sessionsSub.textContent = i18n_js.t('lootLogStats.sessionsCountLabel', {
-                count: formatters_js.numberFormatter(row.entryCount),
-                rawCount: row.entryCount,
-            });
-            sessionsSub.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em; margin-top: 2px;';
-            actionCell.appendChild(sessionsSub);
+            if (!row.runStartTime) {
+                const sessionsSub = document.createElement('div');
+                sessionsSub.textContent = i18n_js.t('lootLogStats.sessionsCountLabel', {
+                    count: formatters_js.numberFormatter(row.entryCount),
+                    rawCount: row.entryCount,
+                });
+                sessionsSub.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em; margin-top: 2px;';
+                actionCell.appendChild(sessionsSub);
+            }
             tr.appendChild(actionCell);
 
             tr.appendChild(this.buildAnalyticsCell(formatters_js.numberFormatter(row.actionCount)));

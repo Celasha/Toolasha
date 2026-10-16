@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.21.1
+ * Version: 3.21.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -934,6 +934,9 @@
             noItemDataForOpeningMessage: 'No item data available for this opening.',
             noItemDataRecordedMessage: 'No item data recorded yet.',
             noPriceYetNote: '(no price yet)',
+            valueSourceShop:
+                'Not sold on the market. Valued through the shop: {{cost}} {{currency}} at {{perToken}} each = {{unit}} per item (no market tax).',
+            valueSourceCurrency: 'Valued at its best shop redemption: {{perToken}} per token (no market tax).',
             openedLabel: 'Opened',
             partialBadgeLabel: '(partial)',
             profitLabel: 'Profit',
@@ -1945,6 +1948,8 @@
             unknownActionFallback: 'Unknown',
             analyticsButtonTooltip: 'Loot & XP Log Analytics (pivot table)',
             tierSuffixParen: (p) => ` (Tier ${p.tier})`,
+            runSuffix: (p) => ` · ${p.time}`,
+            splitLabyrinthRuns: 'Labyrinth: split by run',
             analyticsPanelTitle: '📊 Loot & XP Log Analytics',
             subtitleWithHistory: (p) =>
                 `${p.actionCount} action${p.actionCount === 1 ? '' : 's'} across ${p.sessions} stored sessions`,
@@ -6761,6 +6766,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             noItemDataForOpeningMessage: '此次开启暂无物品数据。',
             noItemDataRecordedMessage: '尚未记录任何物品数据。',
             noPriceYetNote: '（暂无价格）',
+            valueSourceShop:
+                '市场上不出售，按商店兑换价值估算：{{cost}} 个{{currency}}，每个约 {{perToken}} = 每件 {{unit}}（不计市场税）。',
+            valueSourceCurrency: '按其最佳商店兑换价值估算：每个代币 {{perToken}}（不计市场税）。',
             openedLabel: '已开启',
             partialBadgeLabel: '（部分）',
             profitLabel: '利润',
@@ -8030,6 +8038,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             unknownActionFallback: '未知',
             analyticsButtonTooltip: '掉落与经验日志分析（透视表）',
             tierSuffixParen: (p) => `（层级 ${p.tier}）`,
+            runSuffix: (p) => ` · ${p.time}`,
+            splitLabyrinthRuns: '迷宫：按每次运行拆分',
             analyticsPanelTitle: '📊 掉落与经验日志分析',
             subtitleWithHistory: (p) => `${p.actionCount} 个动作，来自 ${p.sessions} 个已存储会话`,
             subtitleSessionOnly: (p) => `${p.actionCount} 个动作，仅来自当前会话——启用“掉落日志历史”即可查看完整历史数据`,

@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.21.1
+ * Version: 3.21.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7098,6 +7098,9 @@ self.onmessage = function (e) {
                         source: 'shopRedemption',
                         needsTax: false,
                         isOutlier: indirect.isOutlier || false,
+                        currencyHrid: indirect.currencyHrid,
+                        tokenCost: indirect.tokenCost,
+                        outputCount: indirect.outputCount,
                     };
                 }
                 // Mirror case: the dropped item is itself a shop currency (e.g. labyrinth tokens from

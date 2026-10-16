@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.21.1
+ * Version: 3.21.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3703,6 +3703,9 @@ self.onmessage = function (e) {
                         source: 'shopRedemption',
                         needsTax: false,
                         isOutlier: indirect.isOutlier || false,
+                        currencyHrid: indirect.currencyHrid,
+                        tokenCost: indirect.tokenCost,
+                        outputCount: indirect.outputCount,
                     };
                 }
                 // Mirror case: the dropped item is itself a shop currency (e.g. labyrinth tokens from
@@ -33433,7 +33436,26 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         // real game data omits entirely for untradeable items.
         const perUnit = resolved.needsTax ? profitHelpers_js.calculatePriceAfterTax(resolved.value, profitConstants_js.MARKET_TAX) : resolved.value;
 
-        return { value: perUnit * (count || 0), resolved: true };
+        return { value: perUnit * (count || 0), resolved: true, valueSource: describeValueSource(resolved) };
+    }
+
+    const DERIVED_SOURCES = new Set(['shopRedemption', 'specialCurrency', 'dungeonToken']);
+
+    /**
+     * Describe how a non-market price was derived, so the UI can explain it. Returns null for
+     * ordinary market/custom/coin values, which need no explanation.
+     * @param {{source: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}} resolved
+     * @returns {{source: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}|null}
+     */
+    function describeValueSource(resolved) {
+        if (!DERIVED_SOURCES.has(resolved.source)) return null;
+        const info = { source: resolved.source };
+        if (resolved.source === 'shopRedemption') {
+            info.currencyHrid = resolved.currencyHrid;
+            info.tokenCost = resolved.tokenCost;
+            info.outputCount = resolved.outputCount;
+        }
+        return info;
     }
 
     /**
@@ -33452,7 +33474,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 
         for (const item of gainedItems || []) {
             if (!item?.itemHrid) continue;
-            const { value, resolved } = valueGainedItemStack(item.itemHrid, item.enhancementLevel, item.count);
+            const { value, resolved, valueSource } = valueGainedItemStack(item.itemHrid, item.enhancementLevel, item.count);
             total += value;
             if (!resolved) complete = false;
             breakdown.push({
@@ -33461,6 +33483,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                 count: item.count || 0,
                 value,
                 resolved,
+                ...(valueSource ? { valueSource } : {}),
             });
         }
 
@@ -34705,6 +34728,30 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         return `≈${formatters_js.formatKMB3Digits(rounded)}`;
     }
 
+    /**
+     * Tooltip explaining a derived (non-market) per-item value, e.g. an untradable cape priced from
+     * the shop tokens it costs. Returns '' for ordinary market values.
+     * @param {{value: number, count: number, valueSource?: Object}} item - Breakdown entry
+     * @returns {string}
+     */
+    function buildValueSourceTooltip(item) {
+        const info = item.valueSource;
+        if (!info || !(item.count > 0)) return '';
+        const unit = item.value / item.count;
+
+        if (info.source === 'shopRedemption' && info.tokenCost > 0) {
+            const perToken = (unit * (info.outputCount || 1)) / info.tokenCost;
+            return i18n_js.t('openableAnalytics.valueSourceShop', {
+                cost: formatters_js.formatWithSeparator(info.tokenCost),
+                currency: getItemName(info.currencyHrid, info.currencyHrid),
+                perToken: formatters_js.formatWithSeparator(Math.round(perToken)),
+                unit: formatters_js.formatKMB3Digits(Math.round(unit)),
+            });
+        }
+
+        return i18n_js.t('openableAnalytics.valueSourceCurrency', { perToken: formatters_js.formatWithSeparator(Math.round(unit)) });
+    }
+
     /** Luck value with an explicit `+` on positive amounts; negative values already carry their own `-`. Zero is neutral (no sign). */
     function formatLuckValue(value) {
         if (value === null || value === undefined) return '—';
@@ -34934,6 +34981,11 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                 label.className = ITEM_VALUE_LABEL_CLASS;
                 label.style.cssText = 'font-size:10px; text-align:center; opacity:0.85;';
                 label.textContent = formatTinyItemValue(item.value);
+                const sourceTooltip = buildValueSourceTooltip(item);
+                if (sourceTooltip) {
+                    label.title = sourceTooltip;
+                    label.style.cursor = 'help';
+                }
                 itemEl.appendChild(label);
             });
         }
