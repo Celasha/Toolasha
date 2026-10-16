@@ -363,8 +363,8 @@ export default {
                 help: '显示可产出此物品的采集类动作（采集、伐木、挤奶）',
             },
             itemTooltip_gatheringRareDrops: {
-                label: '显示采集稀有掉落',
-                help: '显示采集区域中的稀有发现掉落（例如 Asteroid Belt 掉落的 Thread of Expertise）',
+                label: '在物品提示中显示采集稀有掉落',
+                help: '悬停物品时，同时列出该物品作为稀有掉落（低于 1%）的采集区域，以每日数量显示。例如悬停 Thread of Expertise 会列出 Asteroid Belt。需要启用“显示采集来源与利润”。',
             },
             itemTooltip_abilityStatus: {
                 label: '显示技能书状态',

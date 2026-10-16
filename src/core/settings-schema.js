@@ -796,10 +796,10 @@ export const settingsGroups = {
             },
             itemTooltip_gatheringRareDrops: {
                 id: 'itemTooltip_gatheringRareDrops',
-                label: 'Show rare drops from gathering',
+                label: 'Show rare gathering drops in item tooltips',
                 type: 'checkbox',
                 default: true,
-                help: 'Shows rare find drops from gathering zones (e.g., Thread of Expertise from Asteroid Belt)',
+                help: "When you hover an item, also list the gathering zones where it is a rare drop (under 1%), shown as items per day. For example, hovering Thread of Expertise lists Asteroid Belt. Requires 'Show gathering sources and profit'.",
             },
             itemTooltip_abilityStatus: {
                 id: 'itemTooltip_abilityStatus',

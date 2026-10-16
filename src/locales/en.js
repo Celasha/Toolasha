@@ -3125,8 +3125,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 help: 'Shows gathering actions that produce this item (foraging, woodcutting, milking)',
             },
             itemTooltip_gatheringRareDrops: {
-                label: 'Show rare drops from gathering',
-                help: 'Shows rare find drops from gathering zones (e.g., Thread of Expertise from Asteroid Belt)',
+                label: 'Show rare gathering drops in item tooltips',
+                help: "When you hover an item, also list the gathering zones where it is a rare drop (under 1%), shown as items per day. For example, hovering Thread of Expertise lists Asteroid Belt. Requires 'Show gathering sources and profit'.",
             },
             itemTooltip_abilityStatus: {
                 label: 'Show ability book status',
