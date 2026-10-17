@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.21.4
+ * Version: 3.22.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -33409,6 +33409,22 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
     };
 
     /**
+     * Openable Analytics pricing options
+     * Single source for whether untradeable drops (capes, seals, shop tokens) are valued through
+     * the shop-redemption chain, so Actual, Expected, variance and the side panel share one basis.
+     */
+
+
+    /**
+     * Whether drops with no market price should be valued via shop redemption.
+     * Only an explicit `false` disables it, so a missing/unreadable setting keeps the default (on).
+     * @returns {boolean}
+     */
+    function allowIndirectPricing() {
+        return config.getSetting('openableAnalytics_valueUntradeables') !== false;
+    }
+
+    /**
      * Openable Analytics Calculator
      * Pure valuation math for one opening: Actual Value, Expected Value, and Luck (Actual - Expected).
      * Consumes Toolasha's existing Expected Value calculator and sell-side pricing stack rather than
@@ -33426,7 +33442,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
      */
     function valueGainedItemStack(itemHrid, enhancementLevel, count) {
         const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel || 0, {
-            allowIndirect: true,
+            allowIndirect: allowIndirectPricing(),
         });
         if (!resolved) {
             return { value: 0, resolved: false };
@@ -33514,7 +33530,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         // Indirect shop-redemption pricing so seal-type items price on both the Actual and Expected
         // sides (Luck stays computable); the variance sampler passes the same flag so E[income] and
         // its stdDev share one value basis.
-        const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, { allowIndirect: true });
+        const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, { allowIndirect: allowIndirectPricing() });
         if (!ev || !(ev.expectedValue >= 0)) {
             return { value: null, available: false, complete: false };
         }
@@ -36667,7 +36683,9 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         const countVariance = n > 1 ? (n * n - 1) / 12 : 0;
         const avgCount = (minCount + maxCount) / 2;
 
-        const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid, 0, { allowIndirect: true });
+        const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid, 0, {
+            allowIndirect: allowIndirectPricing(),
+        });
         if (!resolved) return 0;
 
         // Tax strictly follows the resolver's needsTax contract - never item tradability, which
@@ -37036,7 +37054,11 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         // Same valuation basis as the Expected income total (calculateExpectedValueForOpening):
         // without `allowIndirect` shop-redemption-priced drops (seals, labyrinth tokens) would show
         // "(no price yet)" here while the total above them was computed from exactly those prices.
-        const drops = mergeDropsByItem(expectedValueCalculator.getDropBreakdown(containerHrid, { allowIndirect: true }));
+        const drops = mergeDropsByItem(
+            expectedValueCalculator.getDropBreakdown(containerHrid, {
+                allowIndirect: allowIndirectPricing(),
+            })
+        );
         if (!drops.length) {
             return `<div>${i18n_js.t('openableAnalytics.noDropDataMessage')}</div>`;
         }

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.21.4
+ * Version: 3.22.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2024,7 +2024,7 @@
             applySkipSaving: 'Apply Skip (saving...)',
             applySkipButton: 'Apply Skip ({{count}})',
             targetWinPercentLabel: 'Target Win %',
-            simHoursLabel: 'Sim Hours',
+            simAttemptsLabel: 'Sim Attempts',
             liveClearEnhancing: ' [{{pct}}% | +{{current}}/+{{target}} | {{left}} left]',
             liveClearSkilling: ' [{{pct}}% | {{left}} left]',
             liveClearChanceLine: 'Clear chance: {{pct}}%',
@@ -4205,6 +4205,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Openable Analytics: Show Current/History side panel',
                     help: 'Pins a panel to the left of the Opened Loot window with Opened, Income, Profit, Luck, Expected income, and vs. expected for the current opening and its lifetime history',
                 },
+                openableAnalytics_valueUntradeables: {
+                    label: 'Openable Analytics: Value untradeable drops via shop prices',
+                    help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with',
+                },
                 inventoryTabs: {
                     label: 'Custom Inventory Tabs: Enable',
                     help: 'Adds a Toolasha tab to the character panel where you can organize inventory items into personal tabs.',
@@ -4314,9 +4318,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Labyrinth: Recommend target clear rate (%)',
                     help: 'Default target clear rate for labyrinth skip threshold recommendations',
                 },
-                labyrinthRecommendSimHours: {
-                    label: 'Labyrinth: Sim hours for tile clear chance and Recommend',
-                    help: 'Hours of combat simulation per room, used for the tile clear-chance badges and for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target. Also editable on the Automation tab.',
+                labyrinthSimAttempts: {
+                    label: 'Labyrinth: Sim attempts for tile clear chance and Recommend',
+                    help: 'Maximum number of simulated attempts per room, used for the tile clear-chance badges and for Recommend. Attempts run in parallel and a room stops early once its clear chance is known to within about 3 points, so clear-cut rooms finish quickly. More attempts means a more stable clear chance on borderline rooms but slower results. Recommend first tries 100 attempts and only runs more on rooms close to the target. Also editable on the Automation tab.',
                 },
                 labyrinthClearRateAutomation: {
                     label: 'Labyrinth: Show clear rates in the Automation tab',
@@ -5467,6 +5471,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '开箱分析：显示当前/历史侧边面板',
                     help: '在“已开启战利品”窗口左侧固定一个面板，显示本次开启及历史记录的已开启数量、收入、利润、幸运值、预期收入和与预期的对比',
                 },
+                openableAnalytics_valueUntradeables: {
+                    label: '开箱分析：按商店价格估算不可交易掉落物',
+                    help: '不可交易的掉落物（披风、印章、代币）没有市场价格，因此按其商店兑换成本估值。关闭后，它们将不计入实际价值、预期价值和幸运值（显示为“暂无价格”）。过往开启记录保留其记录时的价值',
+                },
                 inventoryTabs: {
                     label: '自定义物品栏标签：启用',
                     help: '在角色面板中添加 Toolasha 标签页，你可以在其中把物品栏物品整理到个人标签中。',
@@ -5568,9 +5576,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '迷宫：建议目标通关率（%）',
                     help: '迷宫跳过阈值建议所使用的默认目标通关率',
                 },
-                labyrinthRecommendSimHours: {
-                    label: '迷宫：格子通关率与建议使用的模拟小时数',
-                    help: '每个房间的战斗模拟小时数，用于格子上的通关率徽标和“建议”。小时数越多，通关率越精确，但结果越慢。“建议”会先尝试 1 小时，仅对接近目标的房间运行更长时间。也可在自动化标签页中修改。',
+                labyrinthSimAttempts: {
+                    label: '迷宫：格子通关率与建议使用的模拟次数',
+                    help: '每个房间的最大战斗模拟次数，用于格子上的通关率徽标和“建议”。模拟会并行运行，当通关率精确到约 3 个百分点以内时该房间会提前结束，因此结果明确的房间很快完成。次数越多，临界房间的通关率越稳定，但结果越慢。“建议”会先尝试 100 次，仅对接近目标的房间运行更多次。也可在自动化标签页中修改。',
                 },
                 labyrinthClearRateAutomation: {
                     label: '迷宫：在自动化标签页显示通关率',
@@ -6640,7 +6648,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             applySkipSaving: '应用跳过（保存中...）',
             applySkipButton: '应用跳过（{{count}}）',
             targetWinPercentLabel: '目标胜率 %',
-            simHoursLabel: '模拟小时数',
+            simAttemptsLabel: '模拟次数',
             liveClearEnhancing: ' [{{pct}}% | +{{current}}/+{{target}} | 剩余 {{left}}]',
             liveClearSkilling: ' [{{pct}}% | 剩余 {{left}}]',
             liveClearChanceLine: '通关率：{{pct}}%',
@@ -10383,6 +10391,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     default: true,
                     help: 'Pins a panel to the left of the Opened Loot window with Opened, Income, Profit, Luck, Expected income, and vs. expected for the current opening and its lifetime history',
                 },
+                openableAnalytics_valueUntradeables: {
+                    id: 'openableAnalytics_valueUntradeables',
+                    label: 'Openable Analytics: Value untradeable drops via shop prices',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with',
+                },
             },
         },
 
@@ -10626,15 +10641,15 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     step: 1,
                     help: 'Default target clear rate for labyrinth skip threshold recommendations',
                 },
-                labyrinthRecommendSimHours: {
-                    id: 'labyrinthRecommendSimHours',
-                    label: 'Labyrinth: Sim hours for tile clear chance and Recommend',
+                labyrinthSimAttempts: {
+                    id: 'labyrinthSimAttempts',
+                    label: 'Labyrinth: Sim attempts for tile clear chance and Recommend',
                     type: 'number',
-                    default: 5,
-                    min: 1,
-                    max: 100,
+                    default: 1000,
+                    min: 50,
+                    max: 5000,
                     step: 1,
-                    help: 'Hours of combat simulation per room, used for the tile clear-chance badges and for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target. Also editable on the Automation tab.',
+                    help: 'Maximum number of simulated attempts per room, used for the tile clear-chance badges and for Recommend. Attempts run in parallel and a room stops early once its clear chance is known to within about 3 points, so clear-cut rooms finish quickly. More attempts means a more stable clear chance on borderline rooms but slower results. Recommend first tries 100 attempts and only runs more on rooms close to the target. Also editable on the Automation tab.',
                 },
                 labyrinthLiveProgress: {
                     id: 'labyrinthLiveProgress',
