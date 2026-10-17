@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.21.3
+ * Version: 3.21.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10752,6 +10752,7 @@
     // Recommend first probes each room at this length and only reruns at the full length when the
     // quick result is not already clearly above or below the target.
     const QUICK_PROBE_SIM_HOURS = 1;
+    const MAX_SIM_HOURS = 100;
     const WILSON_Z_95 = 1.96;
     // Failsafe only - the normal release is the setting_updated confirmation that follows the user's
     // own click on the row's real Save button (TLA-061/TLA-062). Generous because, unlike an
@@ -11698,7 +11699,7 @@
          */
         getConfiguredSimHours() {
             const hours = Math.floor(Number(config.getSetting('labyrinthRecommendSimHours')));
-            return hours > 0 && hours <= 100 ? hours : DEFAULT_SIM_HOURS$1;
+            return hours > 0 && hours <= MAX_SIM_HOURS ? hours : DEFAULT_SIM_HOURS$1;
         }
 
         buildCombatCacheKey(monsterHrid, roomLevel, simHours = this.getConfiguredSimHours()) {
@@ -11757,29 +11758,18 @@
             const labyrinthCombatBuffs = this.getLabyrinthCombatBuffs();
 
             try {
-                // Timed inside the serialized call so queue wait behind other rooms isn't counted.
-                let simElapsedMs = 0;
-                const simResult = await this.runSimSerialized(async () => {
-                    const startedAt = performance.now();
-                    try {
-                        return await runLabyrinthSimulation({
-                            gameData,
-                            playerDTOs: [dto],
-                            zoneHrid: '/actions/combat/fly',
-                            monsterHrid,
-                            roomLevel,
-                            crates: crateHrids,
-                            hours: simHours,
-                            communityBuffs: { mooPass: false, comExp: 0, comDrop: 0 },
-                            labyrinthCombatBuffs,
-                        });
-                    } finally {
-                        simElapsedMs = performance.now() - startedAt;
-                    }
-                });
-                console.log(
-                    `[LabyrinthClearRate] sim ${monsterHrid} room ${roomLevel}: ${simHours}h, ` +
-                        `${simResult.labyAttemptCount || 1} attempts, ${Math.round(simElapsedMs)}ms`
+                const simResult = await this.runSimSerialized(() =>
+                    runLabyrinthSimulation({
+                        gameData,
+                        playerDTOs: [dto],
+                        zoneHrid: '/actions/combat/fly',
+                        monsterHrid,
+                        roomLevel,
+                        crates: crateHrids,
+                        hours: simHours,
+                        communityBuffs: { mooPass: false, comExp: 0, comDrop: 0 },
+                        labyrinthCombatBuffs,
+                    })
                 );
 
                 // A saved loadout can re-resolve while the worker is running (for example +5 -> +10
@@ -11944,7 +11934,7 @@
 
             const hoursInput = document.getElementById('mwi-recommend-sim-hours');
             const hoursVal = hoursInput ? parseInt(hoursInput.value, 10) : null;
-            const simHours = hoursVal > 0 && hoursVal <= 100 ? hoursVal : this.getConfiguredSimHours();
+            const simHours = hoursVal > 0 && hoursVal <= MAX_SIM_HOURS ? hoursVal : this.getConfiguredSimHours();
             const cells = document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]');
             const rooms = [];
 
@@ -12369,6 +12359,15 @@
             hoursInput.style.cssText = inputStyle;
             hoursInput.addEventListener('input', () => {
                 hoursInput.dataset.userEdited = '1';
+            });
+            // This box is a shortcut to the same setting the tile badges use, so a committed edit is
+            // saved there (clamped to the setting's range) and the box keeps following the setting.
+            hoursInput.addEventListener('change', () => {
+                const parsed = Math.floor(Number(hoursInput.value));
+                const hours = Math.min(MAX_SIM_HOURS, Math.max(1, Number.isFinite(parsed) ? parsed : 1));
+                hoursInput.value = String(hours);
+                delete hoursInput.dataset.userEdited;
+                config.setSettingValue('labyrinthRecommendSimHours', hours);
             });
 
             const button = document.createElement('button');

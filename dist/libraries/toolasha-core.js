@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.21.3
+ * Version: 3.21.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4316,7 +4316,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 labyrinthRecommendSimHours: {
                     label: 'Labyrinth: Sim hours for tile clear chance and Recommend',
-                    help: 'Hours of combat simulation per room, used for the tile clear-chance badges and as the default for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target.',
+                    help: 'Hours of combat simulation per room, used for the tile clear-chance badges and for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target. Also editable on the Automation tab.',
                 },
                 labyrinthClearRateAutomation: {
                     label: 'Labyrinth: Show clear rates in the Automation tab',
@@ -5570,7 +5570,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 labyrinthRecommendSimHours: {
                     label: '迷宫：格子通关率与建议使用的模拟小时数',
-                    help: '每个房间的战斗模拟小时数，用于格子上的通关率徽标，也是“建议”的默认值。小时数越多，通关率越精确，但结果越慢。“建议”会先尝试 1 小时，仅对接近目标的房间运行更长时间。',
+                    help: '每个房间的战斗模拟小时数，用于格子上的通关率徽标和“建议”。小时数越多，通关率越精确，但结果越慢。“建议”会先尝试 1 小时，仅对接近目标的房间运行更长时间。也可在自动化标签页中修改。',
                 },
                 labyrinthClearRateAutomation: {
                     label: '迷宫：在自动化标签页显示通关率',
@@ -10634,7 +10634,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     min: 1,
                     max: 100,
                     step: 1,
-                    help: 'Hours of combat simulation per room, used for the tile clear-chance badges and as the default for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target.',
+                    help: 'Hours of combat simulation per room, used for the tile clear-chance badges and for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target. Also editable on the Automation tab.',
                 },
                 labyrinthLiveProgress: {
                     id: 'labyrinthLiveProgress',
