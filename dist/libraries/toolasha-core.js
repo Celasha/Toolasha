@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.21.2
+ * Version: 3.21.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3805,8 +3805,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: 'Shows gathering actions that produce this item (foraging, woodcutting, milking)',
                 },
                 itemTooltip_gatheringRareDrops: {
-                    label: 'Show rare drops from gathering',
-                    help: 'Shows rare find drops from gathering zones (e.g., Thread of Expertise from Asteroid Belt)',
+                    label: 'Show rare gathering drops in item tooltips',
+                    help: "When you hover an item, also list the gathering zones where it is a rare drop (under 1%), shown as items per day. For example, hovering Thread of Expertise lists Asteroid Belt. Requires 'Show gathering sources and profit'.",
                 },
                 itemTooltip_abilityStatus: {
                     label: 'Show ability book status',
@@ -4315,8 +4315,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: 'Default target clear rate for labyrinth skip threshold recommendations',
                 },
                 labyrinthRecommendSimHours: {
-                    label: 'Labyrinth: Recommend sim hours per step',
-                    help: 'Default hours of combat simulation per binary search step in recommendations',
+                    label: 'Labyrinth: Sim hours for tile clear chance and Recommend',
+                    help: 'Hours of combat simulation per room, used for the tile clear-chance badges and as the default for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target.',
                 },
                 labyrinthClearRateAutomation: {
                     label: 'Labyrinth: Show clear rates in the Automation tab',
@@ -5094,8 +5094,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '显示可产出此物品的采集类动作（采集、伐木、挤奶）',
                 },
                 itemTooltip_gatheringRareDrops: {
-                    label: '显示采集稀有掉落',
-                    help: '显示采集区域中的稀有发现掉落（例如 Asteroid Belt 掉落的 Thread of Expertise）',
+                    label: '在物品提示中显示采集稀有掉落',
+                    help: '悬停物品时，同时列出该物品作为稀有掉落（低于 1%）的采集区域，以每日数量显示。例如悬停 Thread of Expertise 会列出 Asteroid Belt。需要启用“显示采集来源与利润”。',
                 },
                 itemTooltip_abilityStatus: {
                     label: '显示技能书状态',
@@ -5569,8 +5569,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '迷宫跳过阈值建议所使用的默认目标通关率',
                 },
                 labyrinthRecommendSimHours: {
-                    label: '迷宫：每步建议的模拟小时数',
-                    help: '建议计算中二分查找每一步所使用的默认战斗模拟小时数',
+                    label: '迷宫：格子通关率与建议使用的模拟小时数',
+                    help: '每个房间的战斗模拟小时数，用于格子上的通关率徽标，也是“建议”的默认值。小时数越多，通关率越精确，但结果越慢。“建议”会先尝试 1 小时，仅对接近目标的房间运行更长时间。',
                 },
                 labyrinthClearRateAutomation: {
                     label: '迷宫：在自动化标签页显示通关率',
@@ -9525,10 +9525,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 itemTooltip_gatheringRareDrops: {
                     id: 'itemTooltip_gatheringRareDrops',
-                    label: 'Show rare drops from gathering',
+                    label: 'Show rare gathering drops in item tooltips',
                     type: 'checkbox',
                     default: true,
-                    help: 'Shows rare find drops from gathering zones (e.g., Thread of Expertise from Asteroid Belt)',
+                    help: "When you hover an item, also list the gathering zones where it is a rare drop (under 1%), shown as items per day. For example, hovering Thread of Expertise lists Asteroid Belt. Requires 'Show gathering sources and profit'.",
                 },
                 itemTooltip_abilityStatus: {
                     id: 'itemTooltip_abilityStatus',
@@ -10628,13 +10628,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 labyrinthRecommendSimHours: {
                     id: 'labyrinthRecommendSimHours',
-                    label: 'Labyrinth: Recommend sim hours per step',
+                    label: 'Labyrinth: Sim hours for tile clear chance and Recommend',
                     type: 'number',
-                    default: 1,
+                    default: 5,
                     min: 1,
                     max: 100,
                     step: 1,
-                    help: 'Default hours of combat simulation per binary search step in recommendations',
+                    help: 'Hours of combat simulation per room, used for the tile clear-chance badges and as the default for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target.',
                 },
                 labyrinthLiveProgress: {
                     id: 'labyrinthLiveProgress',
