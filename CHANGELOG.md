@@ -2,15 +2,13 @@
 
 ## [3.21.4](https://github.com/Celasha/Toolasha/compare/v3.21.3...v3.21.4) (2026-10-17)
 
-
 ### Bug Fixes
 
-* clamp number settings to their range and sync the labyrinth sim hours box ([8a78387](https://github.com/Celasha/Toolasha/commit/8a78387cdcd201a27144ae53308b3d6b7faefad4))
-
+- clamp number settings to their range and sync the labyrinth sim hours box ([8a78387](https://github.com/Celasha/Toolasha/commit/8a78387cdcd201a27144ae53308b3d6b7faefad4))
 
 ### Miscellaneous Chores
 
-* remove labyrinth sim timing console log ([329b156](https://github.com/Celasha/Toolasha/commit/329b156e5d7835a84f88854c481d53155c4a825a))
+- remove labyrinth sim timing console log ([329b156](https://github.com/Celasha/Toolasha/commit/329b156e5d7835a84f88854c481d53155c4a825a))
 
 ## [3.21.3](https://github.com/Celasha/Toolasha/compare/v3.21.2...v3.21.3) (2026-10-17)
 
