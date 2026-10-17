@@ -46,9 +46,14 @@ vi.mock('../combat-sim/combat-sim-adapter.js', () => ({
     applyLoadoutSnapshotToDTO: vi.fn(),
 }));
 
-vi.mock('../combat-sim/combat-sim-runner.js', () => ({
-    runLabyrinthSimulation: vi.fn(),
-}));
+vi.mock('../combat-sim/combat-sim-runner.js', async () => {
+    const actual = await vi.importActual('../combat-sim/combat-sim-runner.js');
+    return {
+        runLabyrinthAttempts: vi.fn(),
+        mergeLabyrinthResults: actual.mergeLabyrinthResults,
+        getAttemptWorkerCount: vi.fn(() => 4),
+    };
+});
 
 vi.mock('../../core/loadout-state.js', () => ({
     default: {
@@ -59,7 +64,7 @@ vi.mock('../../core/loadout-state.js', () => ({
     },
 }));
 
-const { LabyrinthClearRate, isClearRateDecisive } = await import('./labyrinth-clear-rate.js');
+const { LabyrinthClearRate, isClearRateDecisive, isClearRatePrecise } = await import('./labyrinth-clear-rate.js');
 const dataManager = (await import('../../core/data-manager.js')).default;
 const loadoutState = (await import('../../core/loadout-state.js')).default;
 const webSocketHook = (await import('../../core/websocket.js')).default;
@@ -178,7 +183,7 @@ beforeEach(() => {
     combatAdapter.buildPlayerDTO.mockReset();
     combatAdapter.buildGameDataPayload.mockReset();
     combatAdapter.applyLoadoutSnapshotToDTO.mockReset();
-    simRunner.runLabyrinthSimulation.mockReset();
+    simRunner.runLabyrinthAttempts.mockReset();
 });
 
 describe('loadout-state cache invalidation', () => {
@@ -221,18 +226,18 @@ describe('loadout-state cache invalidation', () => {
         const oldSimulation = new Promise((resolve) => {
             resolveOldSimulation = resolve;
         });
-        simRunner.runLabyrinthSimulation.mockReturnValueOnce(oldSimulation).mockResolvedValueOnce({
+        simRunner.runLabyrinthAttempts.mockReturnValueOnce(oldSimulation).mockResolvedValueOnce({
             labyAttemptCount: 2,
             encounters: 2,
             simulatedTime: 20e9,
         });
 
-        const resultPromise = feature.computeCombatClear('/monsters/test', 100);
+        const resultPromise = feature.computeCombatClear('/monsters/test', 100, true, 2);
         // computeCombatClear() now routes through runSimSerialized(), which defers the actual
         // call by one microtask (its own sim queue starts empty/settled, so this is immediate,
         // not a real wait) so it can queue behind any still-running simulation from this feature.
         await Promise.resolve();
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+        expect(simRunner.runLabyrinthAttempts).toHaveBeenCalledTimes(1);
 
         // Model a Core effective-loadout update while the old (+5) worker is still running.
         // The cache was already empty, so this specifically verifies the in-flight race rather
@@ -248,13 +253,13 @@ describe('loadout-state cache invalidation', () => {
 
         const result = await resultPromise;
 
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(2);
+        expect(simRunner.runLabyrinthAttempts).toHaveBeenCalledTimes(2);
         expect(result).toMatchObject({ clearChance: 1, winRate: 1, loadoutName: 'Highest Loadout' });
         expect(feature.combatCache.get('combat-key')).toMatchObject({ clearChance: 1, winRate: 1 });
     });
 
     test('two concurrent computeCombatClear calls (mirroring runRecommendations vs processSimQueue) queue instead of cancelling each other', async () => {
-        // Regression for a reported bug: raising Sim Hours made worker runs long enough that
+        // Regression for a reported bug: raising the sim length made worker runs long enough that
         // runRecommendations()'s sequential binary search and processSimQueue()'s DOM-triggered
         // badge fills (two independent async loops both hitting computeCombatClear()) would
         // overlap. combat-sim-runner.js cancels any in-flight run whenever a new one starts, so
@@ -275,27 +280,27 @@ describe('loadout-state cache invalidation', () => {
         const firstSim = new Promise((resolve) => {
             resolveFirst = resolve;
         });
-        simRunner.runLabyrinthSimulation.mockReturnValueOnce(firstSim).mockResolvedValueOnce({
+        simRunner.runLabyrinthAttempts.mockReturnValueOnce(firstSim).mockResolvedValueOnce({
             labyAttemptCount: 1,
             encounters: 1,
             simulatedTime: 10e9,
         });
 
-        const firstCallPromise = feature.computeCombatClear('/monsters/a', 50);
+        const firstCallPromise = feature.computeCombatClear('/monsters/a', 50, true, 1);
         await Promise.resolve();
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+        expect(simRunner.runLabyrinthAttempts).toHaveBeenCalledTimes(1);
 
         // A DOM mutation fires injectOverlays() -> processSimQueue() -> computeCombatClear() for
         // a different room while the first call's worker is still running.
-        const secondCallPromise = feature.computeCombatClear('/monsters/b', 60);
+        const secondCallPromise = feature.computeCombatClear('/monsters/b', 60, true, 1);
         await Promise.resolve();
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+        expect(simRunner.runLabyrinthAttempts).toHaveBeenCalledTimes(1);
 
         resolveFirst({ labyAttemptCount: 1, encounters: 1, simulatedTime: 10e9 });
         const firstResult = await firstCallPromise;
         const secondResult = await secondCallPromise;
 
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(2);
+        expect(simRunner.runLabyrinthAttempts).toHaveBeenCalledTimes(2);
         expect(firstResult.clearChance).toBe(1);
         expect(secondResult.clearChance).toBe(1);
     });
@@ -1214,7 +1219,7 @@ describe('labyrinth room tooltips show expected XP for every room type we can co
 
         // 2 room attempts total, only one of which actually killed the monster (the other timed
         // out/lost and contributed no XP) - real sim-tracked XP split across combat skills.
-        simRunner.runLabyrinthSimulation.mockResolvedValueOnce({
+        simRunner.runLabyrinthAttempts.mockResolvedValueOnce({
             labyAttemptCount: 2,
             encounters: 1,
             simulatedTime: 20e9,
@@ -1223,7 +1228,7 @@ describe('labyrinth room tooltips show expected XP for every room type we can co
             },
         });
 
-        const result = await feature.computeCombatClear('/monsters/test', 100);
+        const result = await feature.computeCombatClear('/monsters/test', 100, true, 2);
 
         // Total XP (30+90+30=150) averaged over 2 attempts, not just the 1 that succeeded.
         expect(result.xpPerRoom).toBe(75);
@@ -1411,7 +1416,7 @@ describe('independent toggles: room-tile calculator vs live clear chance', () =>
     });
 });
 
-describe('sim length for tile badges and Recommend', () => {
+describe('sim attempts for tile badges and Recommend', () => {
     function buildFeature() {
         const feature = new LabyrinthClearRate();
         feature.isInitialized = true;
@@ -1429,8 +1434,19 @@ describe('sim length for tile badges and Recommend', () => {
         return { labyAttemptCount: attempts, encounters: wins, simulatedTime: attempts * 60e9, experienceGained: {} };
     }
 
-    function setSimHoursSetting(value) {
-        config.getSetting.mockImplementation((key) => (key === 'labyrinthRecommendSimHours' ? value : true));
+    // Every round returns exactly the attempts it was asked for, at a fixed win rate.
+    function simAtWinRate(winRate) {
+        simRunner.runLabyrinthAttempts.mockImplementation(async ({ attempts }) =>
+            simResult(Math.round(attempts * winRate), attempts)
+        );
+    }
+
+    function attemptsPerCall() {
+        return simRunner.runLabyrinthAttempts.mock.calls.map((call) => call[0].attempts);
+    }
+
+    function setAttemptsSetting(value) {
+        config.getSetting.mockImplementation((key) => (key === 'labyrinthSimAttempts' ? value : true));
     }
 
     afterEach(() => {
@@ -1447,101 +1463,134 @@ describe('sim length for tile badges and Recommend', () => {
         expect(isClearRateDecisive(null, 0.7)).toBe(false);
     });
 
-    test('tile sims use the configured sim hours from the start, and fall back to 5 when it is invalid', async () => {
-        setSimHoursSetting(8);
-        const feature = buildFeature();
-        simRunner.runLabyrinthSimulation.mockResolvedValue(simResult(10, 20));
-
-        await feature.computeCombatClear('/monsters/test', 100);
-        expect(simRunner.runLabyrinthSimulation.mock.calls[0][0].hours).toBe(8);
-
-        setSimHoursSetting(0);
-        expect(feature.getConfiguredSimHours()).toBe(5);
-        setSimHoursSetting(undefined);
-        expect(feature.getConfiguredSimHours()).toBe(5);
+    test('isClearRatePrecise needs a narrow interval, which takes far more attempts near 50%', () => {
+        expect(isClearRatePrecise({ wins: 160, attempts: 160 })).toBe(true);
+        expect(isClearRatePrecise({ wins: 80, attempts: 160 })).toBe(false);
+        expect(isClearRatePrecise({ wins: 540, attempts: 1080 })).toBe(true);
+        expect(isClearRatePrecise({ wins: 0, attempts: 0 })).toBe(false);
+        expect(isClearRatePrecise(null)).toBe(false);
     });
 
-    test('results are cached per sim length, so a different length is simulated again', async () => {
-        setSimHoursSetting(5);
+    test('the configured attempt count is used, and falls back to 1000 when it is invalid', () => {
         const feature = buildFeature();
-        simRunner.runLabyrinthSimulation.mockResolvedValue(simResult(10, 20));
 
-        await feature.computeCombatClear('/monsters/test', 100);
-        await feature.computeCombatClear('/monsters/test', 100);
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
-
-        await feature.computeCombatClear('/monsters/test', 100, true, 1);
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(2);
-        expect(simRunner.runLabyrinthSimulation.mock.calls[1][0].hours).toBe(1);
+        setAttemptsSetting(800);
+        expect(feature.getConfiguredSimAttempts()).toBe(800);
+        setAttemptsSetting(0);
+        expect(feature.getConfiguredSimAttempts()).toBe(1000);
+        setAttemptsSetting(9999);
+        expect(feature.getConfiguredSimAttempts()).toBe(1000);
+        setAttemptsSetting(undefined);
+        expect(feature.getConfiguredSimAttempts()).toBe(1000);
     });
 
-    test('a Recommend probe stops after the 1h sim when the result is clearly past the target', async () => {
+    test('a clear-cut room stops after the first round', async () => {
+        setAttemptsSetting(1000);
         const feature = buildFeature();
-        simRunner.runLabyrinthSimulation.mockResolvedValue(simResult(30, 30));
+        simAtWinRate(1);
 
-        const result = await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 25);
+        const result = await feature.computeCombatClear('/monsters/test', 100);
 
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
-        expect(simRunner.runLabyrinthSimulation.mock.calls[0][0].hours).toBe(1);
+        // 4 workers x 40 attempts, spread over those workers
+        expect(attemptsPerCall()).toEqual([160]);
+        expect(simRunner.runLabyrinthAttempts.mock.calls[0][0].workers).toBe(4);
+        expect(result.attempts).toBe(160);
         expect(result.clearChance).toBe(1);
     });
 
-    test('a Recommend probe reruns at the full length when the 1h result is too close to call', async () => {
+    test('a borderline room keeps going in rounds until the attempt cap', async () => {
+        setAttemptsSetting(1000);
         const feature = buildFeature();
-        simRunner.runLabyrinthSimulation
-            .mockResolvedValueOnce(simResult(21, 30))
-            .mockResolvedValueOnce(simResult(525, 750));
+        simAtWinRate(0.5);
 
-        const result = await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 25);
+        const result = await feature.computeCombatClear('/monsters/test', 100);
 
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(2);
-        expect(simRunner.runLabyrinthSimulation.mock.calls[0][0].hours).toBe(1);
-        expect(simRunner.runLabyrinthSimulation.mock.calls[1][0].hours).toBe(25);
-        expect(result.attempts).toBe(750);
+        expect(attemptsPerCall()).toEqual([160, 160, 160, 160, 160, 160, 40]);
+        expect(result.attempts).toBe(1000);
+        expect(result.wins).toBe(500);
+        // Elapsed time adds up across rounds: 60s per attempt, half won
+        expect(result.avgFightSeconds).toBe(60);
+        expect(result.expectedSeconds).toBe(120);
     });
 
-    test('a Recommend probe at 1 hour runs a single sim', async () => {
+    test('results are cached per attempt count, so a different count is simulated again', async () => {
+        setAttemptsSetting(160);
         const feature = buildFeature();
-        simRunner.runLabyrinthSimulation.mockResolvedValue(simResult(21, 30));
+        simAtWinRate(1);
 
-        await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 1);
+        await feature.computeCombatClear('/monsters/test', 100);
+        await feature.computeCombatClear('/monsters/test', 100);
+        expect(simRunner.runLabyrinthAttempts).toHaveBeenCalledTimes(1);
 
-        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+        await feature.computeCombatClear('/monsters/test', 100, true, 100);
+        expect(simRunner.runLabyrinthAttempts).toHaveBeenCalledTimes(2);
+        expect(simRunner.runLabyrinthAttempts.mock.calls[1][0].attempts).toBe(100);
     });
 
-    test('editing the Automation tab Sim Hours box saves the setting the tile badges use', () => {
+    test('a Recommend probe stops after the 100-attempt sim when the result is clearly past the target', async () => {
+        const feature = buildFeature();
+        simAtWinRate(1);
+
+        const result = await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 1000);
+
+        expect(attemptsPerCall()).toEqual([100]);
+        expect(result.clearChance).toBe(1);
+    });
+
+    test('a Recommend probe reruns at the full count when the quick result is too close to call', async () => {
+        const feature = buildFeature();
+        simAtWinRate(0.7);
+
+        const result = await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 1000);
+
+        expect(attemptsPerCall()[0]).toBe(100);
+        expect(attemptsPerCall().length).toBeGreaterThan(1);
+        // Stops early once the 70% room is known to within 3 points (6 rounds of 160)
+        expect(result.attempts).toBe(960);
+    });
+
+    test('a Recommend probe at or below the quick count runs a single sim', async () => {
+        const feature = buildFeature();
+        simAtWinRate(0.7);
+
+        await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 100);
+
+        expect(attemptsPerCall()).toEqual([100]);
+    });
+
+    test('editing the Automation tab Sim Attempts box saves the setting the tile badges use', () => {
         const feature = buildFeature();
         buildAutomationTable([
             { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
         ]);
         feature.injectRecommendControls();
-        const hoursInput = document.getElementById('mwi-recommend-sim-hours');
+        const attemptsInput = document.getElementById('mwi-recommend-sim-attempts');
 
-        hoursInput.value = '12';
-        hoursInput.dispatchEvent(new Event('input'));
-        hoursInput.dispatchEvent(new Event('change'));
+        attemptsInput.value = '1200';
+        attemptsInput.dispatchEvent(new Event('input'));
+        attemptsInput.dispatchEvent(new Event('change'));
 
-        expect(config.setSettingValue).toHaveBeenCalledWith('labyrinthRecommendSimHours', 12);
-        expect(hoursInput.value).toBe('12');
-        expect(hoursInput.dataset.userEdited).toBeUndefined();
+        expect(config.setSettingValue).toHaveBeenCalledWith('labyrinthSimAttempts', 1200);
+        expect(attemptsInput.value).toBe('1200');
+        expect(attemptsInput.dataset.userEdited).toBeUndefined();
     });
 
-    test('the Sim Hours box clamps typed values to 1-100 before saving', () => {
+    test('the Sim Attempts box clamps typed values to 50-5000 before saving', () => {
         const feature = buildFeature();
         buildAutomationTable([
             { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
         ]);
         feature.injectRecommendControls();
-        const hoursInput = document.getElementById('mwi-recommend-sim-hours');
+        const attemptsInput = document.getElementById('mwi-recommend-sim-attempts');
 
-        hoursInput.value = '2000';
-        hoursInput.dispatchEvent(new Event('change'));
-        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendSimHours', 100);
-        expect(hoursInput.value).toBe('100');
+        attemptsInput.value = '90000';
+        attemptsInput.dispatchEvent(new Event('change'));
+        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthSimAttempts', 5000);
+        expect(attemptsInput.value).toBe('5000');
 
-        hoursInput.value = '';
-        hoursInput.dispatchEvent(new Event('change'));
-        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendSimHours', 1);
-        expect(hoursInput.value).toBe('1');
+        attemptsInput.value = '';
+        attemptsInput.dispatchEvent(new Event('change'));
+        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthSimAttempts', 50);
+        expect(attemptsInput.value).toBe('50');
     });
 });

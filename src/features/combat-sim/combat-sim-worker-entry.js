@@ -37,7 +37,12 @@ onmessage = function (event) {
         // Create Labyrinth if specified
         let labyrinth = null;
         if (labyrinthData) {
-            labyrinth = new Labyrinth(labyrinthData.monsterHrid, labyrinthData.roomLevel, labyrinthData.crates || []);
+            labyrinth = new Labyrinth(
+                labyrinthData.monsterHrid,
+                labyrinthData.roomLevel,
+                labyrinthData.crates || [],
+                labyrinthData.maxAttempts || null
+            );
         }
 
         // Create Players

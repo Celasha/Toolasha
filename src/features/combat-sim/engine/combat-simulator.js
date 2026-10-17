@@ -184,6 +184,7 @@ class CombatSimulator {
         this.reset();
 
         let ticks = 0;
+        let attemptCapReached = false;
 
         const combatStartEvent = new CombatStartEvent(0);
         this.eventQueue.addEvent(combatStartEvent);
@@ -198,6 +199,13 @@ class CombatSimulator {
             }
             this.eventQueue.getNextEvent();
             this.processEvent(nextEvent);
+
+            // Attempt-count labyrinth run: every requested attempt has finished, so stop here
+            // rather than at the (safety-ceiling) time horizon.
+            if (this.labyrinth && this.labyrinth.hasReachedAttemptCap()) {
+                attemptCapReached = true;
+                break;
+            }
 
             ticks++;
             if (ticks === 50000) {
@@ -234,7 +242,10 @@ class CombatSimulator {
         // Labyrinth result tracking
         if (this.labyrinth) {
             this.simResult.isLabyrinth = true;
-            this.simResult.labyAttemptCount = this.labyrinth.attemptCount;
+            // An attempt-count run reports only finished attempts; a time-horizon run keeps its
+            // historical count, which includes the attempt cut off by the horizon.
+            this.simResult.labyAttemptCount =
+                this.labyrinth.maxAttempts !== null ? this.labyrinth.completedAttempts : this.labyrinth.attemptCount;
             this.simResult.labyrinthMonsterHrid = this.labyrinth.monsterHrid;
             this.simResult.roomLevel = this.labyrinth.roomLevel;
         }
@@ -242,6 +253,11 @@ class CombatSimulator {
         // Exact requested horizon (TLA-039 HZN-03), not the last processed event's time - rate/DPS
         // consumers normalize against the full window that was actually requested.
         this.simResult.simulatedTime = simulationTimeLimit;
+        if (attemptCapReached) {
+            // Stopped on the attempt count, so the window that was actually simulated ends at the
+            // last attempt's outcome, not at the safety-ceiling horizon.
+            this.simResult.simulatedTime = this.simulationTime;
+        }
 
         for (let i = 0; i < this.players.length; i++) {
             this.simResult.setDropRateMultipliers(this.players[i]);
@@ -640,6 +656,7 @@ class CombatSimulator {
         // Labyrinth timeout check
         if (this.labyrinth && this.enemies && this.labyrinth.checkTimeout(this.simulationTime)) {
             // Timeout = loss. Clear everything and immediately restart.
+            this.labyrinth.recordOutcome();
             this.enemies = null;
             this.eventQueue.clear();
             const combatStartEvent = new CombatStartEvent(this.simulationTime);
@@ -669,6 +686,7 @@ class CombatSimulator {
 
             if (this.labyrinth) {
                 // Labyrinth win: immediate restart (no respawn delay)
+                this.labyrinth.recordOutcome();
                 this.enemies = null;
                 this.simResult.addEncounterEnd();
                 this.eventQueue.clear();
@@ -734,6 +752,7 @@ class CombatSimulator {
         if (!this.players.some((player) => player.combatDetails.currentHitpoints > 0)) {
             if (this.labyrinth) {
                 // Labyrinth death = loss. Immediate restart.
+                this.labyrinth.recordOutcome();
                 this.enemies = null;
                 this.eventQueue.clear();
                 const combatStartEvent = new CombatStartEvent(this.simulationTime);

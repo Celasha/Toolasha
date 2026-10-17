@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import CombatSimulator from './combat-simulator.js';
 import CombatUnit from './combat-unit.js';
 import CombatStartEvent from './events/combat-start-event.js';
+import Labyrinth from './labyrinth.js';
 
 function makeSimulator() {
     return new CombatSimulator([], { hrid: '/actions/combat/test_zone', difficultyTier: 0 }, null, null);
@@ -545,5 +546,76 @@ describe('CombatSimulator.startNewEncounter - dungeon run-start capture and post
 
         expect(simulator.dungeonRunStartTime).toBe(30_000_000_000); // new attempt's start time captured
         expect(player.combatDetails.currentHitpoints).toBe(1); // not restored - this was a wipe, not a clear
+    });
+});
+
+describe('CombatSimulator labyrinth attempt-count runs', () => {
+    const zone = {
+        hrid: '/actions/combat/test_zone',
+        difficultyTier: 0,
+        isDungeon: false,
+        monsterSpawnInfo: {},
+    };
+
+    function makeLabyrinth(maxAttempts) {
+        return new Labyrinth('/monsters/test', 100, [], maxAttempts);
+    }
+
+    test('a timed-out attempt is recorded as a finished attempt', () => {
+        const labyrinth = makeLabyrinth(10);
+        const simulator = new CombatSimulator([], zone, null, labyrinth);
+        simulator.enemies = [{}];
+        simulator.simulationTime = 121e9;
+        labyrinth.encounterStartTime = 0;
+
+        expect(simulator.checkEncounterEnd()).toBe(true);
+        expect(labyrinth.completedAttempts).toBe(1);
+    });
+
+    test('the attempt cap is reached only by finished attempts, not by started ones', () => {
+        const labyrinth = makeLabyrinth(2);
+        labyrinth.attemptCount = 5;
+        expect(labyrinth.hasReachedAttemptCap()).toBe(false);
+
+        labyrinth.recordOutcome();
+        expect(labyrinth.hasReachedAttemptCap()).toBe(false);
+        labyrinth.recordOutcome();
+        expect(labyrinth.hasReachedAttemptCap()).toBe(true);
+    });
+
+    test('a run without an attempt count never reports the cap as reached', () => {
+        const labyrinth = makeLabyrinth(null);
+        labyrinth.recordOutcome();
+        expect(labyrinth.hasReachedAttemptCap()).toBe(false);
+    });
+
+    test('simulate stops as soon as the requested attempts have finished and reports only those', () => {
+        const labyrinth = makeLabyrinth(3);
+        const simulator = new CombatSimulator([], zone, null, labyrinth);
+        simulator.processEvent = () => {
+            labyrinth.attemptCount++;
+            labyrinth.recordOutcome();
+            simulator.simulationTime += 50e9;
+            simulator.eventQueue.addEvent(new CombatStartEvent(simulator.simulationTime + 1));
+        };
+
+        const result = simulator.simulate(1e15);
+
+        expect(labyrinth.completedAttempts).toBe(3);
+        expect(result.labyAttemptCount).toBe(3);
+        expect(result.simulatedTime).toBe(150e9);
+    });
+
+    test('a time-horizon run keeps counting the attempt that was cut off', () => {
+        const labyrinth = makeLabyrinth(null);
+        labyrinth.attemptCount = 4;
+        labyrinth.completedAttempts = 3;
+        const simulator = new CombatSimulator([], zone, null, labyrinth);
+        simulator.processEvent = () => {};
+
+        const result = simulator.simulate(10e9);
+
+        expect(result.labyAttemptCount).toBe(4);
+        expect(result.simulatedTime).toBe(10e9);
     });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildExtraBuffs, buildExtraBuffsByPlayer } from './combat-sim-runner.js';
+import { buildExtraBuffs, buildExtraBuffsByPlayer, splitAttempts, mergeLabyrinthResults } from './combat-sim-runner.js';
 
 describe('buildExtraBuffs (CSIM-AUD-019/021) - no longer carries guild/Shrine buffs', () => {
     test('hasMooPass=true contributes the MooPass wisdom buff', () => {
@@ -62,5 +62,48 @@ describe('buildExtraBuffsByPlayer - per-player ownership (CSIM-AUD-019/020)', ()
 
         expect(byPlayer.player1.some((b) => b.uniqueHrid === '/buff_uniques/experience_community_buff')).toBe(true);
         expect(byPlayer.player2.some((b) => b.uniqueHrid === '/buff_uniques/experience_community_buff')).toBe(true);
+    });
+});
+
+describe('labyrinth attempt batching', () => {
+    test('splitAttempts spreads attempts evenly and never gives a worker zero', () => {
+        expect(splitAttempts(100, 4)).toEqual([25, 25, 25, 25]);
+        expect(splitAttempts(10, 4)).toEqual([3, 3, 2, 2]);
+        expect(splitAttempts(3, 6)).toEqual([1, 1, 1]);
+        expect(splitAttempts(5, 1)).toEqual([5]);
+        expect(splitAttempts(1, 0)).toEqual([1]);
+    });
+
+    test('mergeLabyrinthResults adds wins, attempts, elapsed time, and XP', () => {
+        const merged = mergeLabyrinthResults([
+            {
+                encounters: 3,
+                labyAttemptCount: 10,
+                simulatedTime: 600e9,
+                experienceGained: { p1: { attack: 10, melee: 5 } },
+            },
+            {
+                encounters: 4,
+                labyAttemptCount: 12,
+                simulatedTime: 700e9,
+                experienceGained: { p1: { attack: 20 }, p2: { melee: 1 } },
+            },
+        ]);
+
+        expect(merged).toEqual({
+            encounters: 7,
+            labyAttemptCount: 22,
+            simulatedTime: 1300e9,
+            experienceGained: { p1: { attack: 30, melee: 5 }, p2: { melee: 1 } },
+        });
+    });
+
+    test('mergeLabyrinthResults tolerates missing fields', () => {
+        expect(mergeLabyrinthResults([{}])).toEqual({
+            encounters: 0,
+            labyAttemptCount: 0,
+            simulatedTime: 0,
+            experienceGained: {},
+        });
     });
 });

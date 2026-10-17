@@ -166,7 +166,7 @@ class LabSimUI {
             <label style="color:#888; font-size:12px;">${t('labSim.levelLabel')}</label>
             <input id="mwi-labsim-level" type="number" min="20" max="300" value="100" style="${inputStyle}">
             <label style="color:#888; font-size:12px;">${t('labSim.hoursLabel')}</label>
-            <input id="mwi-labsim-hours" type="number" min="1" max="10000" value="${config.getSettingValue('labyrinthRecommendSimHours', 10)}" style="${inputStyle}">
+            <input id="mwi-labsim-hours" type="number" min="1" max="10000" value="10" style="${inputStyle}">
         `;
 
         const crateRow = document.createElement('div');

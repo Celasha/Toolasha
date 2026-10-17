@@ -87,9 +87,9 @@ describe('number setting range clamping', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         settingsUI.currentSettings = {};
-        const inputHTML = settingsUI.generateSettingInput('labyrinthRecommendSimHours', def);
+        const inputHTML = settingsUI.generateSettingInput('labyrinthSimAttempts', def);
         document.body.innerHTML = `<div class="toolasha-setting" data-type="number">${inputHTML}</div>`;
-        input = document.getElementById('labyrinthRecommendSimHours');
+        input = document.getElementById('labyrinthSimAttempts');
         settingsUI.config = config;
     });
 
@@ -106,25 +106,25 @@ describe('number setting range clamping', () => {
         input.value = '2000';
         await settingsUI.handleSettingChange({ target: input });
 
-        expect(settingsStorage.setSetting).toHaveBeenCalledWith('labyrinthRecommendSimHours', 100);
+        expect(settingsStorage.setSetting).toHaveBeenCalledWith('labyrinthSimAttempts', 100);
         expect(input.value).toBe('100');
     });
 
     test('a typed value below min (or empty) is saved as min', async () => {
         input.value = '0';
         await settingsUI.handleSettingChange({ target: input });
-        expect(settingsStorage.setSetting).toHaveBeenLastCalledWith('labyrinthRecommendSimHours', 1);
+        expect(settingsStorage.setSetting).toHaveBeenLastCalledWith('labyrinthSimAttempts', 1);
         expect(input.value).toBe('1');
 
         input.value = '';
         await settingsUI.handleSettingChange({ target: input });
-        expect(settingsStorage.setSetting).toHaveBeenLastCalledWith('labyrinthRecommendSimHours', 1);
+        expect(settingsStorage.setSetting).toHaveBeenLastCalledWith('labyrinthSimAttempts', 1);
     });
 
     test('an in-range value is saved unchanged', async () => {
         input.value = '25';
         await settingsUI.handleSettingChange({ target: input });
-        expect(settingsStorage.setSetting).toHaveBeenCalledWith('labyrinthRecommendSimHours', 25);
+        expect(settingsStorage.setSetting).toHaveBeenCalledWith('labyrinthSimAttempts', 25);
         expect(input.value).toBe('25');
     });
 });

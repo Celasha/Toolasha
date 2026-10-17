@@ -645,7 +645,7 @@ export default {
         applySkipSaving: '应用跳过（保存中...）',
         applySkipButton: '应用跳过（{{count}}）',
         targetWinPercentLabel: '目标胜率 %',
-        simHoursLabel: '模拟小时数',
+        simAttemptsLabel: '模拟次数',
         liveClearEnhancing: ' [{{pct}}% | +{{current}}/+{{target}} | 剩余 {{left}}]',
         liveClearSkilling: ' [{{pct}}% | 剩余 {{left}}]',
         liveClearChanceLine: '通关率：{{pct}}%',

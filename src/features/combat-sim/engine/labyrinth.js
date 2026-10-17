@@ -9,12 +9,21 @@ const LABYRINTH_TIMEOUT = 120 * 1e9; // 120 seconds in nanoseconds
  * Timeout (120s) or player death = loss; enemy killed = win.
  */
 class Labyrinth {
-    constructor(monsterHrid, roomLevel, crateHrids = []) {
+    /**
+     * @param {string} monsterHrid
+     * @param {number} roomLevel
+     * @param {string[]} [crateHrids]
+     * @param {number|null} [maxAttempts] - When set, the simulation stops once this many attempts
+     *   have finished (won, timed out, or died) instead of running to a time horizon.
+     */
+    constructor(monsterHrid, roomLevel, crateHrids = [], maxAttempts = null) {
         this.monsterHrid = monsterHrid;
         this.hrid = monsterHrid;
         this.roomLevel = roomLevel;
         this.buffs = [];
         this.attemptCount = 0;
+        this.maxAttempts = maxAttempts > 0 ? maxAttempts : null;
+        this.completedAttempts = 0;
         this.encounterStartTime = 0;
 
         // Resolve crate buffs from game data
@@ -38,6 +47,22 @@ class Labyrinth {
     getMonster() {
         this.attemptCount++;
         return [new Monster(this.monsterHrid, 0, this.roomLevel)];
+    }
+
+    /**
+     * Record that an attempt finished with a definite outcome (win, timeout, or death). An
+     * attempt still in progress when a time horizon ends is never counted here.
+     */
+    recordOutcome() {
+        this.completedAttempts++;
+    }
+
+    /**
+     * Whether an attempt-count run has finished all of its attempts.
+     * @returns {boolean}
+     */
+    hasReachedAttemptCap() {
+        return this.maxAttempts !== null && this.completedAttempts >= this.maxAttempts;
     }
 
     /**

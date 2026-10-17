@@ -271,6 +271,98 @@ export async function runLabyrinthSimulation(params, onProgress) {
     return result;
 }
 
+// Each labyrinth attempt ends within 120s of simulated time (win, death, or timeout), so this is
+// a ceiling the attempt count always reaches first - it only guards against a runaway loop.
+const LABYRINTH_ATTEMPT_CEILING_NS = 125 * 1e9;
+const MAX_ATTEMPT_WORKERS = 6;
+
+/**
+ * Number of workers to spread labyrinth attempts over. Leaves one core for the game itself.
+ * @returns {number}
+ */
+export function getAttemptWorkerCount() {
+    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 0;
+    return Math.max(1, Math.min((cores || 2) - 1, MAX_ATTEMPT_WORKERS));
+}
+
+/**
+ * Split an attempt count as evenly as possible across workers, never giving one zero attempts.
+ * @param {number} attempts
+ * @param {number} workers
+ * @returns {number[]} Per-worker attempt counts, summing to `attempts`
+ */
+export function splitAttempts(attempts, workers) {
+    const count = Math.max(1, Math.min(Math.floor(workers), Math.floor(attempts)));
+    const base = Math.floor(attempts / count);
+    const remainder = attempts - base * count;
+    return Array.from({ length: count }, (_, i) => base + (i < remainder ? 1 : 0));
+}
+
+/**
+ * Combine the results of independent labyrinth attempt batches into one. Attempts are fully
+ * independent (the engine resets the player before each), so wins, attempts, elapsed simulated
+ * time, and XP simply add.
+ * @param {Array<Object>} results - Worker SimResults from attempt-count runs
+ * @returns {{encounters: number, labyAttemptCount: number, simulatedTime: number, experienceGained: Object}}
+ */
+export function mergeLabyrinthResults(results) {
+    const merged = { encounters: 0, labyAttemptCount: 0, simulatedTime: 0, experienceGained: {} };
+    for (const result of results) {
+        merged.encounters += result.encounters || 0;
+        merged.labyAttemptCount += result.labyAttemptCount || 0;
+        merged.simulatedTime += result.simulatedTime || 0;
+        for (const [hrid, skills] of Object.entries(result.experienceGained || {})) {
+            const target = (merged.experienceGained[hrid] = merged.experienceGained[hrid] || {});
+            for (const [skill, xp] of Object.entries(skills)) {
+                target[skill] = (target[skill] || 0) + xp;
+            }
+        }
+    }
+    return merged;
+}
+
+/**
+ * Run a fixed number of independent labyrinth attempts, spread across several workers.
+ * `simulatedTime` in the result is the total simulated time across all workers (so dividing it by
+ * the attempt count gives the average attempt length), not wall-clock time.
+ * @param {Object} params - Same fields as runLabyrinthSimulation, with `attempts` instead of `hours`
+ * @param {number} params.attempts - Number of attempts to run in total
+ * @param {number} [params.workers] - Worker count (defaults to getAttemptWorkerCount())
+ * @returns {Promise<Object>} Merged result (see mergeLabyrinthResults)
+ */
+export async function runLabyrinthAttempts(params) {
+    const { gameData, playerDTOs, zoneHrid, monsterHrid, roomLevel, crates, attempts, communityBuffs } = params;
+
+    const extraBuffsByPlayer = buildExtraBuffsByPlayer(playerDTOs, communityBuffs);
+    if (params.labyrinthCombatBuffs?.length) {
+        for (const dto of playerDTOs) {
+            extraBuffsByPlayer[dto.hrid] = [...extraBuffsByPlayer[dto.hrid], ...params.labyrinthCombatBuffs];
+        }
+    }
+
+    // Cancel any previous run
+    cancelSimulation();
+
+    const shares = splitAttempts(attempts, params.workers || getAttemptWorkerCount());
+    const results = await Promise.all(
+        shares.map((share) =>
+            runWorkerChunk({
+                type: 'start_simulation',
+                taskId: ++taskIdCounter,
+                gameData,
+                playerDTOs,
+                zoneHrid,
+                difficultyTier: 0,
+                simulationTimeLimit: (share + 1) * LABYRINTH_ATTEMPT_CEILING_NS,
+                extraBuffsByPlayer,
+                labyrinth: { monsterHrid, roomLevel, crates: crates || [], maxAttempts: share },
+            })
+        )
+    );
+
+    return mergeLabyrinthResults(results);
+}
+
 /**
  * Terminate all active simulation workers and reject pending promises.
  */

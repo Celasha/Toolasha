@@ -1904,15 +1904,15 @@ export const settingsGroups = {
                 step: 1,
                 help: 'Default target clear rate for labyrinth skip threshold recommendations',
             },
-            labyrinthRecommendSimHours: {
-                id: 'labyrinthRecommendSimHours',
-                label: 'Labyrinth: Sim hours for tile clear chance and Recommend',
+            labyrinthSimAttempts: {
+                id: 'labyrinthSimAttempts',
+                label: 'Labyrinth: Sim attempts for tile clear chance and Recommend',
                 type: 'number',
-                default: 5,
-                min: 1,
-                max: 100,
+                default: 1000,
+                min: 50,
+                max: 5000,
                 step: 1,
-                help: 'Hours of combat simulation per room, used for the tile clear-chance badges and for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target. Also editable on the Automation tab.',
+                help: 'Maximum number of simulated attempts per room, used for the tile clear-chance badges and for Recommend. Attempts run in parallel and a room stops early once its clear chance is known to within about 3 points, so clear-cut rooms finish quickly. More attempts means a more stable clear chance on borderline rooms but slower results. Recommend first tries 100 attempts and only runs more on rooms close to the target. Also editable on the Automation tab.',
             },
             labyrinthLiveProgress: {
                 id: 'labyrinthLiveProgress',
