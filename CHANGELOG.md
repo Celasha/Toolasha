@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.22.0](https://github.com/Celasha/Toolasha/compare/v3.21.4...v3.22.0) (2026-10-17)
+
+### Features
+
+- add setting to leave untradeable drops out of openable analytics valuation ([c47bcf9](https://github.com/Celasha/Toolasha/commit/c47bcf9f2e31128b69a640c640cc430070505be1))
+
+### Bug Fixes
+
+- run labyrinth clear-rate sims by attempt count across several workers ([7a80c86](https://github.com/Celasha/Toolasha/commit/7a80c863c32947a666207018474b20a7e41f6cd4))
+
+### Documentation
+
+- require approval and a proposed message before feat commits ([05e1c8b](https://github.com/Celasha/Toolasha/commit/05e1c8b65e594a41c6a8638efbb5c7fbaeecbd87))
+
 ## [3.21.4](https://github.com/Celasha/Toolasha/compare/v3.21.3...v3.21.4) (2026-10-17)
 
 ### Bug Fixes
