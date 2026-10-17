@@ -7,6 +7,7 @@ This file contains general workflow and behavioral guidelines for AI assistants 
 ### Git & Version Control
 
 - **Always rebase, never merge**: When pulling changes, always use `git pull --rebase`
+- **Hard stop before any `feat:` commit**: `feat:` commits are gated on the user's explicit approval. Before committing a `feat:`, stop and present the proposed commit message, then wait for an explicit go-ahead. A general "yes" to the implementation, or an earlier approval to commit and push, does not cover a `feat:`. Never commit or push one unprompted. Default to `fix:` where it honestly fits, and ask if the type is unclear.
 
 ### Code Changes
 
