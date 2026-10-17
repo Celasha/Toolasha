@@ -30,6 +30,13 @@ const AUTOMATION_ROW_STYLE_ID = 'mwi-labyrinth-automation-row-style';
 const APPLY_SKIP_BUTTON_ID = 'mwi-apply-skip-btn';
 const LIVE_PROGRESS_CLASS = 'mwi-labyrinth-live-progress';
 const LIVE_PROGRESS_STALE_MS = 5000;
+// Default combat-sim length (hours) for tile badges and Recommend; ~30 attempts per hour on a
+// room the player can't clear, so 5h is roughly 150 attempts.
+const DEFAULT_SIM_HOURS = 5;
+// Recommend first probes each room at this length and only reruns at the full length when the
+// quick result is not already clearly above or below the target.
+const QUICK_PROBE_SIM_HOURS = 1;
+const WILSON_Z_95 = 1.96;
 // Failsafe only - the normal release is the setting_updated confirmation that follows the user's
 // own click on the row's real Save button (TLA-061/TLA-062). Generous because, unlike an
 // automated click, this now waits on a human noticing and clicking - a short deadline tuned for
@@ -97,6 +104,35 @@ const AUTOMATION_ROW_CSS = `
 }
 `;
 
+/**
+ * 95% Wilson score interval for a win rate.
+ * @param {number} wins
+ * @param {number} attempts
+ * @returns {{low: number, high: number}}
+ */
+function wilsonInterval(wins, attempts) {
+    if (!(attempts > 0)) return { low: 0, high: 1 };
+    const p = wins / attempts;
+    const z2 = WILSON_Z_95 * WILSON_Z_95;
+    const denom = 1 + z2 / attempts;
+    const centre = (p + z2 / (2 * attempts)) / denom;
+    const margin = (WILSON_Z_95 * Math.sqrt((p * (1 - p)) / attempts + z2 / (4 * attempts * attempts))) / denom;
+    return { low: Math.max(0, centre - margin), high: Math.min(1, centre + margin) };
+}
+
+/**
+ * Whether a combat sim result is already clearly above or below the target clear rate, so
+ * running it longer cannot change which side of the target it lands on.
+ * @param {{wins?: number, attempts?: number}} result
+ * @param {number} targetRate - 0..1
+ * @returns {boolean}
+ */
+function isClearRateDecisive(result, targetRate) {
+    if (!result || !(result.attempts > 0)) return false;
+    const { low, high } = wilsonInterval(result.wins || 0, result.attempts);
+    return low >= targetRate || high < targetRate;
+}
+
 class LabyrinthClearRate {
     constructor() {
         this.isInitialized = false;
@@ -109,7 +145,6 @@ class LabyrinthClearRate {
         this.loadoutRevision = 0;
         this.recommendations = new Map();
         this.recommendRunning = false;
-        this._recommendSimHours = 1;
         this._recommendTargetPct = 70;
         // Non-null exactly while one Apply Skip save is awaiting its authoritative setting_updated
         // confirmation - doubles as the one-save-in-flight reentrancy guard (TLA-048).
@@ -940,10 +975,20 @@ class LabyrinthClearRate {
     /**
      * Build cache key for a combat sim result
      */
-    buildCombatCacheKey(monsterHrid, roomLevel) {
+    /**
+     * Sim length (hours) from the Labyrinth sim hours setting, used by tile badges and as the
+     * Recommend default.
+     * @returns {number}
+     */
+    getConfiguredSimHours() {
+        const hours = Math.floor(Number(config.getSetting('labyrinthRecommendSimHours')));
+        return hours > 0 && hours <= 100 ? hours : DEFAULT_SIM_HOURS;
+    }
+
+    buildCombatCacheKey(monsterHrid, roomLevel, simHours = this.getConfiguredSimHours()) {
         const loadoutId = this.getLabyrinthLoadoutId(monsterHrid);
         const crateHrids = this.getCrateHrids();
-        return `${monsterHrid}:${roomLevel}:${loadoutId}:${crateHrids.join(',')}`;
+        return `${monsterHrid}:${roomLevel}:${loadoutId}:${crateHrids.join(',')}:${simHours}h`;
     }
 
     getCachedCombatResult(monsterHrid, roomLevel) {
@@ -971,8 +1016,13 @@ class LabyrinthClearRate {
     /**
      * Run combat sim for a monster room and return clear stats
      */
-    async computeCombatClear(monsterHrid, roomLevel, retryOnLoadoutChange = true) {
-        const cacheKey = this.buildCombatCacheKey(monsterHrid, roomLevel);
+    async computeCombatClear(
+        monsterHrid,
+        roomLevel,
+        retryOnLoadoutChange = true,
+        simHours = this.getConfiguredSimHours()
+    ) {
+        const cacheKey = this.buildCombatCacheKey(monsterHrid, roomLevel, simHours);
         if (this.combatCache.has(cacheKey)) return this.combatCache.get(cacheKey);
 
         const loadoutRevision = this.loadoutRevision;
@@ -991,7 +1041,6 @@ class LabyrinthClearRate {
         const labyrinthCombatBuffs = this.getLabyrinthCombatBuffs();
 
         try {
-            const simHours = this._recommendSimHours || 1;
             // Timed inside the serialized call so queue wait behind other rooms isn't counted.
             let simElapsedMs = 0;
             const simResult = await this.runSimSerialized(async () => {
@@ -1023,7 +1072,7 @@ class LabyrinthClearRate {
             // once against the new effective state; after a second concurrent change, fail closed.
             if (loadoutRevision !== this.loadoutRevision) {
                 if (retryOnLoadoutChange && this.isInitialized) {
-                    return this.computeCombatClear(monsterHrid, roomLevel, false);
+                    return this.computeCombatClear(monsterHrid, roomLevel, false, simHours);
                 }
                 return {
                     clearChance: 0,
@@ -1056,6 +1105,8 @@ class LabyrinthClearRate {
 
             const result = {
                 clearChance: winRate,
+                wins: simResult.encounters || 0,
+                attempts,
                 expectedSeconds: winRate > 0 ? avgTime / winRate : Infinity,
                 type: 'combat',
                 winRate,
@@ -1123,7 +1174,7 @@ class LabyrinthClearRate {
     /**
      * Async binary search for combat room recommended threshold
      */
-    async findRecommendedThresholdCombat(monsterHrid, targetRate) {
+    async findRecommendedThresholdCombat(monsterHrid, targetRate, simHours = this.getConfiguredSimHours()) {
         const effectiveCombatLevel = this.getPlayerEffectiveCombatLevel();
         let low = -300;
         let high = 300;
@@ -1136,7 +1187,7 @@ class LabyrinthClearRate {
                 low = mid + 1;
                 continue;
             }
-            const result = await this.computeCombatClear(monsterHrid, roomLevel);
+            const result = await this.computeRecommendProbe(monsterHrid, roomLevel, targetRate, simHours);
             if (result.clearChance >= targetRate) {
                 bestThreshold = mid;
                 low = mid + 1;
@@ -1145,6 +1196,18 @@ class LabyrinthClearRate {
             }
         }
         return bestThreshold;
+    }
+
+    /**
+     * One Recommend probe. Easy and hopeless rooms are answered by a short sim; only rooms whose
+     * quick result is too close to the target to call are rerun at the full sim length.
+     */
+    async computeRecommendProbe(monsterHrid, roomLevel, targetRate, simHours) {
+        if (simHours > QUICK_PROBE_SIM_HOURS) {
+            const quick = await this.computeCombatClear(monsterHrid, roomLevel, true, QUICK_PROBE_SIM_HOURS);
+            if (quick.error || isClearRateDecisive(quick, targetRate)) return quick;
+        }
+        return this.computeCombatClear(monsterHrid, roomLevel, true, simHours);
     }
 
     /**
@@ -1165,8 +1228,7 @@ class LabyrinthClearRate {
 
         const hoursInput = document.getElementById('mwi-recommend-sim-hours');
         const hoursVal = hoursInput ? parseInt(hoursInput.value, 10) : null;
-        this._recommendSimHours =
-            hoursVal > 0 && hoursVal <= 100 ? hoursVal : config.getSetting('labyrinthRecommendSimHours') || 1;
+        const simHours = hoursVal > 0 && hoursVal <= 100 ? hoursVal : this.getConfiguredSimHours();
         const cells = document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]');
         const rooms = [];
 
@@ -1198,7 +1260,7 @@ class LabyrinthClearRate {
                         current: completed + 1,
                         total: totalRooms,
                     });
-                const threshold = await this.findRecommendedThresholdCombat(roomHrid, targetRate);
+                const threshold = await this.findRecommendedThresholdCombat(roomHrid, targetRate, simHours);
                 // The loadout-state handler already cleared any prior recommendations. Do not
                 // publish a partial fresh/stale mix after an effective loadout change mid-run;
                 // the user can rerun Recommend against one coherent current state.
@@ -1524,7 +1586,7 @@ class LabyrinthClearRate {
      */
     injectRecommendControls() {
         const defaultRate = config.getSettingValue('labyrinthRecommendTargetRate', 70);
-        const defaultHours = config.getSettingValue('labyrinthRecommendSimHours', 1);
+        const defaultHours = config.getSettingValue('labyrinthRecommendSimHours', DEFAULT_SIM_HOURS);
 
         const table = document.querySelector('[class*="LabyrinthPanel_automationTable"]');
 
@@ -2332,4 +2394,4 @@ class LabyrinthClearRate {
 
 const labyrinthClearRate = new LabyrinthClearRate();
 export default labyrinthClearRate;
-export { LabyrinthClearRate };
+export { LabyrinthClearRate, wilsonInterval, isClearRateDecisive };

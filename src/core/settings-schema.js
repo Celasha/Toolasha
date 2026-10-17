@@ -1899,13 +1899,13 @@ export const settingsGroups = {
             },
             labyrinthRecommendSimHours: {
                 id: 'labyrinthRecommendSimHours',
-                label: 'Labyrinth: Recommend sim hours per step',
+                label: 'Labyrinth: Sim hours for tile clear chance and Recommend',
                 type: 'number',
-                default: 1,
+                default: 5,
                 min: 1,
                 max: 100,
                 step: 1,
-                help: 'Default hours of combat simulation per binary search step in recommendations',
+                help: 'Hours of combat simulation per room, used for the tile clear-chance badges and as the default for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target.',
             },
             labyrinthLiveProgress: {
                 id: 'labyrinthLiveProgress',

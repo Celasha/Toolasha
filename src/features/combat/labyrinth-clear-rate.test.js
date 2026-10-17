@@ -58,7 +58,7 @@ vi.mock('../../core/loadout-state.js', () => ({
     },
 }));
 
-const { LabyrinthClearRate } = await import('./labyrinth-clear-rate.js');
+const { LabyrinthClearRate, isClearRateDecisive } = await import('./labyrinth-clear-rate.js');
 const dataManager = (await import('../../core/data-manager.js')).default;
 const loadoutState = (await import('../../core/loadout-state.js')).default;
 const webSocketHook = (await import('../../core/websocket.js')).default;
@@ -1407,5 +1407,104 @@ describe('independent toggles: room-tile calculator vs live clear chance', () =>
         const handler = feature.liveProgressHandler;
         feature.disable();
         expect(webSocketHook.off).toHaveBeenCalledWith('labyrinth_room_progress', handler);
+    });
+});
+
+describe('sim length for tile badges and Recommend', () => {
+    function buildFeature() {
+        const feature = new LabyrinthClearRate();
+        feature.isInitialized = true;
+        feature.getLabyrinthLoadoutId = vi.fn(() => 123);
+        feature.buildLabyrinthPlayerDTO = vi.fn(() => ({ hrid: 'player1' }));
+        feature.getCrateHrids = vi.fn(() => []);
+        feature.getLabyrinthCombatBuffs = vi.fn(() => []);
+        combatAdapter.buildGameDataPayload.mockReturnValue({});
+        dataManager.getInitClientData.mockReturnValue({ combatMonsterDetailMap: {} });
+        loadoutState.getUsableSnapshotById.mockReturnValue({ name: 'Loadout' });
+        return feature;
+    }
+
+    function simResult(wins, attempts) {
+        return { labyAttemptCount: attempts, encounters: wins, simulatedTime: attempts * 60e9, experienceGained: {} };
+    }
+
+    function setSimHoursSetting(value) {
+        config.getSetting.mockImplementation((key) => (key === 'labyrinthRecommendSimHours' ? value : true));
+    }
+
+    afterEach(() => {
+        config.getSetting.mockImplementation(() => true);
+    });
+
+    test('isClearRateDecisive is true when the interval is clear of the target and false when it straddles it', () => {
+        expect(isClearRateDecisive({ wins: 0, attempts: 30 }, 0.7)).toBe(true);
+        expect(isClearRateDecisive({ wins: 30, attempts: 30 }, 0.7)).toBe(true);
+        expect(isClearRateDecisive({ wins: 3000, attempts: 3000 }, 0.7)).toBe(true);
+        expect(isClearRateDecisive({ wins: 21, attempts: 30 }, 0.7)).toBe(false);
+        expect(isClearRateDecisive({ wins: 0, attempts: 30 }, 0.05)).toBe(false);
+        expect(isClearRateDecisive({ wins: 0, attempts: 0 }, 0.7)).toBe(false);
+        expect(isClearRateDecisive(null, 0.7)).toBe(false);
+    });
+
+    test('tile sims use the configured sim hours from the start, and fall back to 5 when it is invalid', async () => {
+        setSimHoursSetting(8);
+        const feature = buildFeature();
+        simRunner.runLabyrinthSimulation.mockResolvedValue(simResult(10, 20));
+
+        await feature.computeCombatClear('/monsters/test', 100);
+        expect(simRunner.runLabyrinthSimulation.mock.calls[0][0].hours).toBe(8);
+
+        setSimHoursSetting(0);
+        expect(feature.getConfiguredSimHours()).toBe(5);
+        setSimHoursSetting(undefined);
+        expect(feature.getConfiguredSimHours()).toBe(5);
+    });
+
+    test('results are cached per sim length, so a different length is simulated again', async () => {
+        setSimHoursSetting(5);
+        const feature = buildFeature();
+        simRunner.runLabyrinthSimulation.mockResolvedValue(simResult(10, 20));
+
+        await feature.computeCombatClear('/monsters/test', 100);
+        await feature.computeCombatClear('/monsters/test', 100);
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+
+        await feature.computeCombatClear('/monsters/test', 100, true, 1);
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(2);
+        expect(simRunner.runLabyrinthSimulation.mock.calls[1][0].hours).toBe(1);
+    });
+
+    test('a Recommend probe stops after the 1h sim when the result is clearly past the target', async () => {
+        const feature = buildFeature();
+        simRunner.runLabyrinthSimulation.mockResolvedValue(simResult(30, 30));
+
+        const result = await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 25);
+
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+        expect(simRunner.runLabyrinthSimulation.mock.calls[0][0].hours).toBe(1);
+        expect(result.clearChance).toBe(1);
+    });
+
+    test('a Recommend probe reruns at the full length when the 1h result is too close to call', async () => {
+        const feature = buildFeature();
+        simRunner.runLabyrinthSimulation
+            .mockResolvedValueOnce(simResult(21, 30))
+            .mockResolvedValueOnce(simResult(525, 750));
+
+        const result = await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 25);
+
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(2);
+        expect(simRunner.runLabyrinthSimulation.mock.calls[0][0].hours).toBe(1);
+        expect(simRunner.runLabyrinthSimulation.mock.calls[1][0].hours).toBe(25);
+        expect(result.attempts).toBe(750);
+    });
+
+    test('a Recommend probe at 1 hour runs a single sim', async () => {
+        const feature = buildFeature();
+        simRunner.runLabyrinthSimulation.mockResolvedValue(simResult(21, 30));
+
+        await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 1);
+
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
     });
 });
