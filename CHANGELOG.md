@@ -2,11 +2,10 @@
 
 ## [3.21.3](https://github.com/Celasha/Toolasha/compare/v3.21.2...v3.21.3) (2026-10-17)
 
-
 ### Bug Fixes
 
-* clarify that the rare gathering drops setting applies to item tooltips ([520d51a](https://github.com/Celasha/Toolasha/commit/520d51a422c49ae62cb90596efc96b08442a4633))
-* use a longer default labyrinth sim and skip full-length sims on clear-cut rooms ([715020f](https://github.com/Celasha/Toolasha/commit/715020f82f67a11bfb6ae6964e5cfab36c02c4eb))
+- clarify that the rare gathering drops setting applies to item tooltips ([520d51a](https://github.com/Celasha/Toolasha/commit/520d51a422c49ae62cb90596efc96b08442a4633))
+- use a longer default labyrinth sim and skip full-length sims on clear-cut rooms ([715020f](https://github.com/Celasha/Toolasha/commit/715020f82f67a11bfb6ae6964e5cfab36c02c4eb))
 
 ## [3.21.2](https://github.com/Celasha/Toolasha/compare/v3.21.1...v3.21.2) (2026-10-16)
 
