@@ -8,6 +8,7 @@
 import dataManager from '../../../core/data-manager.js';
 import config from '../../../core/config.js';
 import expectedValueCalculator from '../../market/expected-value-calculator.js';
+import { allowIndirectPricing } from './openable-analytics-pricing.js';
 import { calculatePriceAfterTax } from '../../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../../utils/profit-constants.js';
 
@@ -21,7 +22,7 @@ import { MARKET_TAX } from '../../../utils/profit-constants.js';
  */
 function valueGainedItemStack(itemHrid, enhancementLevel, count) {
     const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel || 0, {
-        allowIndirect: true,
+        allowIndirect: allowIndirectPricing(),
     });
     if (!resolved) {
         return { value: 0, resolved: false };
@@ -109,7 +110,7 @@ export function calculateExpectedValueForOpening(containerHrid, containerCount) 
     // Indirect shop-redemption pricing so seal-type items price on both the Actual and Expected
     // sides (Luck stays computable); the variance sampler passes the same flag so E[income] and
     // its stdDev share one value basis.
-    const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, { allowIndirect: true });
+    const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, { allowIndirect: allowIndirectPricing() });
     if (!ev || !(ev.expectedValue >= 0)) {
         return { value: null, available: false, complete: false };
     }

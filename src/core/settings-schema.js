@@ -1654,6 +1654,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Pins a panel to the left of the Opened Loot window with Opened, Income, Profit, Luck, Expected income, and vs. expected for the current opening and its lifetime history',
             },
+            openableAnalytics_valueUntradeables: {
+                id: 'openableAnalytics_valueUntradeables',
+                label: 'Openable Analytics: Value untradeable drops via shop prices',
+                type: 'checkbox',
+                default: true,
+                help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with',
+            },
         },
     },
 

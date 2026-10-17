@@ -14,6 +14,7 @@ import openableAnalyticsDataCollector from './openable-analytics-data-collector.
 import { isMonetaryRewardModal, MODAL_CONTENT_CLASS } from './openable-analytics-modal-injector.js';
 import { calculateOpeningCost, calculateEntryKeyCost } from './openable-analytics-cost.js';
 import { calculateIncomeStdDev } from './openable-analytics-variance.js';
+import { allowIndirectPricing } from './openable-analytics-pricing.js';
 import expectedValueCalculator from '../../market/expected-value-calculator.js';
 import assetManifest from '../../../utils/asset-manifest.js';
 import { createMutationWatcher } from '../../../utils/dom-observer-helpers.js';
@@ -239,7 +240,11 @@ function buildExpectedBreakdownContent(containerHrid, amount, spriteUrl) {
     // Same valuation basis as the Expected income total (calculateExpectedValueForOpening):
     // without `allowIndirect` shop-redemption-priced drops (seals, labyrinth tokens) would show
     // "(no price yet)" here while the total above them was computed from exactly those prices.
-    const drops = mergeDropsByItem(expectedValueCalculator.getDropBreakdown(containerHrid, { allowIndirect: true }));
+    const drops = mergeDropsByItem(
+        expectedValueCalculator.getDropBreakdown(containerHrid, {
+            allowIndirect: allowIndirectPricing(),
+        })
+    );
     if (!drops.length) {
         return `<div>${t('openableAnalytics.noDropDataMessage')}</div>`;
     }

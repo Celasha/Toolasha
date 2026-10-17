@@ -9,7 +9,10 @@ vi.mock('../../../core/data-manager.js', () => ({
     },
 }));
 vi.mock('../../../core/config.js', () => ({
-    default: { getSettingValue: vi.fn((key, defaultValue) => defaultValue) },
+    default: {
+        getSettingValue: vi.fn((key, defaultValue) => defaultValue),
+        getSetting: vi.fn(() => true),
+    },
 }));
 vi.mock('../../market/expected-value-calculator.js', () => ({
     default: {
@@ -19,6 +22,7 @@ vi.mock('../../market/expected-value-calculator.js', () => ({
 }));
 
 const { default: dataManager } = await import('../../../core/data-manager.js');
+const { default: config } = await import('../../../core/config.js');
 const { default: expectedValueCalculator } = await import('../../market/expected-value-calculator.js');
 const {
     calculateActualValue,
@@ -533,6 +537,29 @@ describe('opt-in indirect pricing (allowIndirect)', () => {
         expect(expectedValueCalculator.calculateExpectedValue).toHaveBeenCalledWith('/items/chest', {
             allowIndirect: true,
         });
+    });
+
+    test('turning off the untradeable-valuation setting passes allowIndirect: false everywhere', () => {
+        config.getSetting.mockReturnValue(false);
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue(null);
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 100, drops: [] });
+
+        buildOpeningRecord({
+            containerHrid: '/items/chest',
+            containerCount: 1,
+            gainedItems: [{ itemHrid: '/items/cape', enhancementLevel: 0, count: 1 }],
+            grantedBuffs: [],
+            timestamp: 0,
+            characterId: 'char-a',
+        });
+
+        expect(expectedValueCalculator.resolveSellSideValue).toHaveBeenCalledWith('/items/cape', 0, {
+            allowIndirect: false,
+        });
+        expect(expectedValueCalculator.calculateExpectedValue).toHaveBeenCalledWith('/items/chest', {
+            allowIndirect: false,
+        });
+        config.getSetting.mockReturnValue(true);
     });
 
     test('a shop-redeemable gain (seal) keeps Actual complete and produces a real Luck value', () => {

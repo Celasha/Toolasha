@@ -38,7 +38,10 @@ vi.mock('../../../core/data-manager.js', () => ({
 }));
 
 vi.mock('../../../core/config.js', () => ({
-    default: { getSettingValue: vi.fn((key, defaultValue) => defaultValue) },
+    default: {
+        getSettingValue: vi.fn((key, defaultValue) => defaultValue),
+        getSetting: vi.fn(() => true),
+    },
 }));
 
 vi.mock('../../../utils/market-data.js', () => ({
