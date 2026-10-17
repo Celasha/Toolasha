@@ -3636,7 +3636,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             labyrinthRecommendSimHours: {
                 label: 'Labyrinth: Sim hours for tile clear chance and Recommend',
-                help: 'Hours of combat simulation per room, used for the tile clear-chance badges and as the default for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target.',
+                help: 'Hours of combat simulation per room, used for the tile clear-chance badges and for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target. Also editable on the Automation tab.',
             },
             labyrinthClearRateAutomation: {
                 label: 'Labyrinth: Show clear rates in the Automation tab',

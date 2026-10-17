@@ -21,7 +21,7 @@ vi.mock('../../core/config.js', () => ({
 
 import settingsStorage from '../../core/settings-storage.js';
 import config from '../../core/config.js';
-import settingsUI, { normalizeHexColor } from './settings-ui.js';
+import settingsUI, { normalizeHexColor, clampToInputRange } from './settings-ui.js';
 
 describe('normalizeHexColor', () => {
     test('accepts 6-digit hex with or without #', () => {
@@ -77,5 +77,54 @@ describe('SettingsUI typed hex color', () => {
         expect(text.value).toBe('#112233');
         expect(picker.value).toBe('#112233');
         expect(settingsStorage.setSetting).not.toHaveBeenCalled();
+    });
+});
+
+describe('number setting range clamping', () => {
+    const def = { type: 'number', default: 5, min: 1, max: 100, step: 1 };
+    let input;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        settingsUI.currentSettings = {};
+        const inputHTML = settingsUI.generateSettingInput('labyrinthRecommendSimHours', def);
+        document.body.innerHTML = `<div class="toolasha-setting" data-type="number">${inputHTML}</div>`;
+        input = document.getElementById('labyrinthRecommendSimHours');
+        settingsUI.config = config;
+    });
+
+    test('clampToInputRange applies whichever bounds are present', () => {
+        expect(clampToInputRange(2000, '1', '100')).toBe(100);
+        expect(clampToInputRange(-5, '1', '100')).toBe(1);
+        expect(clampToInputRange(50, '1', '100')).toBe(50);
+        expect(clampToInputRange(2000, '', '')).toBe(2000);
+        expect(clampToInputRange(0, '1', '')).toBe(1);
+        expect(clampToInputRange(2000, '', '100')).toBe(100);
+    });
+
+    test('a typed value above max is saved as max and the box is corrected', async () => {
+        input.value = '2000';
+        await settingsUI.handleSettingChange({ target: input });
+
+        expect(settingsStorage.setSetting).toHaveBeenCalledWith('labyrinthRecommendSimHours', 100);
+        expect(input.value).toBe('100');
+    });
+
+    test('a typed value below min (or empty) is saved as min', async () => {
+        input.value = '0';
+        await settingsUI.handleSettingChange({ target: input });
+        expect(settingsStorage.setSetting).toHaveBeenLastCalledWith('labyrinthRecommendSimHours', 1);
+        expect(input.value).toBe('1');
+
+        input.value = '';
+        await settingsUI.handleSettingChange({ target: input });
+        expect(settingsStorage.setSetting).toHaveBeenLastCalledWith('labyrinthRecommendSimHours', 1);
+    });
+
+    test('an in-range value is saved unchanged', async () => {
+        input.value = '25';
+        await settingsUI.handleSettingChange({ target: input });
+        expect(settingsStorage.setSetting).toHaveBeenCalledWith('labyrinthRecommendSimHours', 25);
+        expect(input.value).toBe('25');
     });
 });

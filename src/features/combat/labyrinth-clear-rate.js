@@ -36,6 +36,7 @@ const DEFAULT_SIM_HOURS = 5;
 // Recommend first probes each room at this length and only reruns at the full length when the
 // quick result is not already clearly above or below the target.
 const QUICK_PROBE_SIM_HOURS = 1;
+const MAX_SIM_HOURS = 100;
 const WILSON_Z_95 = 1.96;
 // Failsafe only - the normal release is the setting_updated confirmation that follows the user's
 // own click on the row's real Save button (TLA-061/TLA-062). Generous because, unlike an
@@ -982,7 +983,7 @@ class LabyrinthClearRate {
      */
     getConfiguredSimHours() {
         const hours = Math.floor(Number(config.getSetting('labyrinthRecommendSimHours')));
-        return hours > 0 && hours <= 100 ? hours : DEFAULT_SIM_HOURS;
+        return hours > 0 && hours <= MAX_SIM_HOURS ? hours : DEFAULT_SIM_HOURS;
     }
 
     buildCombatCacheKey(monsterHrid, roomLevel, simHours = this.getConfiguredSimHours()) {
@@ -1217,7 +1218,7 @@ class LabyrinthClearRate {
 
         const hoursInput = document.getElementById('mwi-recommend-sim-hours');
         const hoursVal = hoursInput ? parseInt(hoursInput.value, 10) : null;
-        const simHours = hoursVal > 0 && hoursVal <= 100 ? hoursVal : this.getConfiguredSimHours();
+        const simHours = hoursVal > 0 && hoursVal <= MAX_SIM_HOURS ? hoursVal : this.getConfiguredSimHours();
         const cells = document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]');
         const rooms = [];
 
@@ -1642,6 +1643,15 @@ class LabyrinthClearRate {
         hoursInput.style.cssText = inputStyle;
         hoursInput.addEventListener('input', () => {
             hoursInput.dataset.userEdited = '1';
+        });
+        // This box is a shortcut to the same setting the tile badges use, so a committed edit is
+        // saved there (clamped to the setting's range) and the box keeps following the setting.
+        hoursInput.addEventListener('change', () => {
+            const parsed = Math.floor(Number(hoursInput.value));
+            const hours = Math.min(MAX_SIM_HOURS, Math.max(1, Number.isFinite(parsed) ? parsed : 1));
+            hoursInput.value = String(hours);
+            delete hoursInput.dataset.userEdited;
+            config.setSettingValue('labyrinthRecommendSimHours', hours);
         });
 
         const button = document.createElement('button');

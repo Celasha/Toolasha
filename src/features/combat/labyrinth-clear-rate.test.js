@@ -20,6 +20,7 @@ vi.mock('../../core/config.js', () => ({
     default: {
         getSetting: vi.fn(() => true),
         getSettingValue: vi.fn((_key, defaultValue) => defaultValue),
+        setSettingValue: vi.fn(),
     },
 }));
 
@@ -1506,5 +1507,41 @@ describe('sim length for tile badges and Recommend', () => {
         await feature.computeRecommendProbe('/monsters/test', 100, 0.7, 1);
 
         expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+    });
+
+    test('editing the Automation tab Sim Hours box saves the setting the tile badges use', () => {
+        const feature = buildFeature();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.injectRecommendControls();
+        const hoursInput = document.getElementById('mwi-recommend-sim-hours');
+
+        hoursInput.value = '12';
+        hoursInput.dispatchEvent(new Event('input'));
+        hoursInput.dispatchEvent(new Event('change'));
+
+        expect(config.setSettingValue).toHaveBeenCalledWith('labyrinthRecommendSimHours', 12);
+        expect(hoursInput.value).toBe('12');
+        expect(hoursInput.dataset.userEdited).toBeUndefined();
+    });
+
+    test('the Sim Hours box clamps typed values to 1-100 before saving', () => {
+        const feature = buildFeature();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.injectRecommendControls();
+        const hoursInput = document.getElementById('mwi-recommend-sim-hours');
+
+        hoursInput.value = '2000';
+        hoursInput.dispatchEvent(new Event('change'));
+        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendSimHours', 100);
+        expect(hoursInput.value).toBe('100');
+
+        hoursInput.value = '';
+        hoursInput.dispatchEvent(new Event('change'));
+        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendSimHours', 1);
+        expect(hoursInput.value).toBe('1');
     });
 });

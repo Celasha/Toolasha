@@ -1905,7 +1905,7 @@ export const settingsGroups = {
                 min: 1,
                 max: 100,
                 step: 1,
-                help: 'Hours of combat simulation per room, used for the tile clear-chance badges and as the default for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target.',
+                help: 'Hours of combat simulation per room, used for the tile clear-chance badges and for Recommend. More hours means a more precise clear chance but slower results. Recommend first tries 1 hour and only runs longer on rooms close to the target. Also editable on the Automation tab.',
             },
             labyrinthLiveProgress: {
                 id: 'labyrinthLiveProgress',

@@ -55,6 +55,22 @@ export function normalizeHexColor(text) {
     return null;
 }
 
+/**
+ * Clamp a number setting to the min/max declared on its input (empty/absent bounds are ignored).
+ * @param {number} value
+ * @param {string|number|null|undefined} min - The input's min attribute
+ * @param {string|number|null|undefined} max - The input's max attribute
+ * @returns {number}
+ */
+export function clampToInputRange(value, min, max) {
+    const lower = min === '' || min == null ? NaN : Number(min);
+    const upper = max === '' || max == null ? NaN : Number(max);
+    let result = value;
+    if (!Number.isNaN(lower) && result < lower) result = lower;
+    if (!Number.isNaN(upper) && result > upper) result = upper;
+    return result;
+}
+
 class SettingsUI {
     constructor() {
         this.config = config;
@@ -1176,6 +1192,12 @@ class SettingsUI {
             value = input.checked;
         } else if (type === 'number' || type === 'slider') {
             value = parseFloat(input.value) || 0;
+            if (type === 'number') {
+                // Typed values bypass the input's min/max attributes, so enforce them here and
+                // show the user the value that was actually saved.
+                value = clampToInputRange(value, input.min, input.max);
+                input.value = String(value);
+            }
             // Update the slider value display if it's a slider
             if (type === 'slider') {
                 const valueDisplay = document.getElementById(`${settingId}_value`);
