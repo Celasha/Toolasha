@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.22.0
+ * Version: 3.22.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20333,7 +20333,8 @@ self.onmessage = function (e) {
      * @param {string[]} [excludeHrids=[]] - Source item hrids to skip (e.g. Guild Token itself, which
      *   carries its own guildCreditConversions and would otherwise create a circular credit value —
      *   TLA-041).
-     * @returns {{ sell: Object, buy: Object, sellOutlier: Object, buyOutlier: Object }} Map of
+     * @returns {{ sell: Object, buy: Object, sellOutlier: Object, buyOutlier: Object, sellSource: Object,
+     *   buySource: Object }} Map of
      *   creditItemHrid -> cheapest gold cost per credit, plus parallel maps of whether that winning
      *   source item's price was substituted by the market-data outlier guard.
      */
@@ -20342,6 +20343,8 @@ self.onmessage = function (e) {
         const buy = {};
         const sellOutlier = {};
         const buyOutlier = {};
+        const sellSource = {};
+        const buySource = {};
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
             if (excludeHrids.includes(hrid)) continue;
             for (const conv of item.guildCreditConversions || []) {
@@ -20355,6 +20358,12 @@ self.onmessage = function (e) {
                     if (!sell[creditHrid] || gpc < sell[creditHrid]) {
                         sell[creditHrid] = gpc;
                         sellOutlier[creditHrid] = sellInfo.isOutlier;
+                        sellSource[creditHrid] = {
+                            itemHrid: hrid,
+                            itemCount: conv.itemCount,
+                            creditCount: conv.creditCount,
+                            price: sellPrice,
+                        };
                     }
                 }
                 if (buyPrice > 0) {
@@ -20362,11 +20371,17 @@ self.onmessage = function (e) {
                     if (!buy[creditHrid] || gpc < buy[creditHrid]) {
                         buy[creditHrid] = gpc;
                         buyOutlier[creditHrid] = buyInfo.isOutlier;
+                        buySource[creditHrid] = {
+                            itemHrid: hrid,
+                            itemCount: conv.itemCount,
+                            creditCount: conv.creditCount,
+                            price: buyPrice,
+                        };
                     }
                 }
             }
         }
-        return { sell, buy, sellOutlier, buyOutlier };
+        return { sell, buy, sellOutlier, buyOutlier, sellSource, buySource };
     }
 
     /**

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.22.0
+ * Version: 3.22.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3155,6 +3155,8 @@
         },
         dungeonTokenTooltips: {
             costColumnHeader: 'Cost',
+            guildCreditValueDetail: (p) =>
+                `= cheapest conversion: ${p.itemCount} × ${p.itemName} (${p.itemPrice} each) → ${p.creditCount} credit${p.creditCount === 1 ? '' : 's'}`,
             cowbellValueDetail: (p) => `= Bag of 10 Cowbells (${p.bagPrice}) ÷ 10`,
             goldPerTokenLabel: 'Gold/Token',
             guildCreditValueLabel: 'Guild Credit Value:',
@@ -4176,6 +4178,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 networth_includeCowbells: {
                     label: 'Include cowbells in net worth',
                     help: 'Cowbells are not tradeable, but they have a value based on Bag of 10 Cowbells market price',
+                },
+                networth_includeGuildCredits: {
+                    label: 'Value guild credits (net worth, inventory totals, tooltips)',
+                    help: 'Guild Credits cannot be sold, so each is valued at the cheapest tradeable item that converts into it. Disable to leave them out of net worth and inventory totals and hide the tooltip value.',
                 },
                 networth_includeTaskTokens: {
                     label: 'Include task tokens in net worth',
@@ -5442,6 +5448,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 networth_includeCowbells: {
                     label: '净资产中包含牛铃',
                     help: '牛铃不可交易，但其价值基于“10个牛铃袋”的市场价格计算',
+                },
+                networth_includeGuildCredits: {
+                    label: '计算公会信用点价值（净资产、库存总额、提示）',
+                    help: '公会信用点无法出售，因此按可兑换成它的最便宜的可交易物品估值。关闭后，净资产和库存总额将不含信用点，并隐藏提示中的价值。',
                 },
                 networth_includeTaskTokens: {
                     label: '净资产中包含任务代币',
@@ -8540,6 +8550,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         },
         dungeonTokenTooltips: {
             costColumnHeader: '成本',
+            guildCreditValueDetail: (p) =>
+                `= 最便宜的兑换方式：${p.itemCount} × ${p.itemName}（每个 ${p.itemPrice}）→ ${p.creditCount} 信用点`,
             cowbellValueDetail: (p) => `= 10 个装牛铃袋（${p.bagPrice}）÷ 10`,
             goldPerTokenLabel: '金币/代币',
             guildCreditValueLabel: '公会信用点价值：',
@@ -10348,6 +10360,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'checkbox',
                     default: true,
                     help: 'Value task tokens based on expected value from Task Shop chests. Disable to exclude them from net worth.',
+                },
+                networth_includeGuildCredits: {
+                    id: 'networth_includeGuildCredits',
+                    label: 'Value guild credits (net worth, inventory totals, tooltips)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Guild Credits cannot be sold, so each is valued at the cheapest tradeable item that converts into it. Disable to leave them out of net worth and inventory totals and hide the tooltip value.',
                 },
                 networth_abilityBooksAsInventory: {
                     id: 'networth_abilityBooksAsInventory',

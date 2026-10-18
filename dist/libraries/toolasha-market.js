@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.22.0
+ * Version: 3.22.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21202,13 +21202,26 @@ self.onmessage = function (e) {
 
     const GUILD_TOKEN_HRID = '/items/guild_token';
 
+    /** The eight coloured Guild Credit currencies (Guild Token is a separate currency). */
+    const GUILD_CREDIT_HRIDS = new Set([
+        '/items/brown_guild_credit',
+        '/items/white_guild_credit',
+        '/items/red_guild_credit',
+        '/items/silver_guild_credit',
+        '/items/gold_guild_credit',
+        '/items/green_guild_credit',
+        '/items/blue_guild_credit',
+        '/items/purple_guild_credit',
+    ]);
+
     /**
      * Build cheapest-gold-per-credit maps for both sell and buy sides.
      * @param {Object} itemDetailMap
      * @param {string[]} [excludeHrids=[]] - Source item hrids to skip (e.g. Guild Token itself, which
      *   carries its own guildCreditConversions and would otherwise create a circular credit value —
      *   TLA-041).
-     * @returns {{ sell: Object, buy: Object, sellOutlier: Object, buyOutlier: Object }} Map of
+     * @returns {{ sell: Object, buy: Object, sellOutlier: Object, buyOutlier: Object, sellSource: Object,
+     *   buySource: Object }} Map of
      *   creditItemHrid -> cheapest gold cost per credit, plus parallel maps of whether that winning
      *   source item's price was substituted by the market-data outlier guard.
      */
@@ -21217,6 +21230,8 @@ self.onmessage = function (e) {
         const buy = {};
         const sellOutlier = {};
         const buyOutlier = {};
+        const sellSource = {};
+        const buySource = {};
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
             if (excludeHrids.includes(hrid)) continue;
             for (const conv of item.guildCreditConversions || []) {
@@ -21230,6 +21245,12 @@ self.onmessage = function (e) {
                     if (!sell[creditHrid] || gpc < sell[creditHrid]) {
                         sell[creditHrid] = gpc;
                         sellOutlier[creditHrid] = sellInfo.isOutlier;
+                        sellSource[creditHrid] = {
+                            itemHrid: hrid,
+                            itemCount: conv.itemCount,
+                            creditCount: conv.creditCount,
+                            price: sellPrice,
+                        };
                     }
                 }
                 if (buyPrice > 0) {
@@ -21237,11 +21258,17 @@ self.onmessage = function (e) {
                     if (!buy[creditHrid] || gpc < buy[creditHrid]) {
                         buy[creditHrid] = gpc;
                         buyOutlier[creditHrid] = buyInfo.isOutlier;
+                        buySource[creditHrid] = {
+                            itemHrid: hrid,
+                            itemCount: conv.itemCount,
+                            creditCount: conv.creditCount,
+                            price: buyPrice,
+                        };
                     }
                 }
             }
         }
-        return { sell, buy, sellOutlier, buyOutlier };
+        return { sell, buy, sellOutlier, buyOutlier, sellSource, buySource };
     }
 
     /**
@@ -21270,6 +21297,25 @@ self.onmessage = function (e) {
             });
         }
         return rows.sort((a, b) => b.goldPerToken - a.goldPerToken);
+    }
+
+    /**
+     * Value of one held Guild Credit: the cheapest gold cost of acquiring it through any tradeable
+     * item that converts into it (same formula the exchange modal and shrine costs use).
+     * Returns null - never a fake zero - when the hrid is not a Guild Credit or no source item is priced.
+     * @param {string} creditHrid
+     * @param {Object} itemDetailMap
+     * @param {'sell'|'buy'} [side='sell'] - ask-based ('sell') or bid-based ('buy') source prices
+     * @returns {{value: number, isOutlier: boolean, source: {itemHrid: string, itemCount: number, creditCount: number, price: number}}|null}
+     */
+    function getGuildCreditValue(creditHrid, itemDetailMap, side = 'sell') {
+        if (!GUILD_CREDIT_HRIDS.has(creditHrid) || !itemDetailMap) return null;
+        const table = buildCheapestPerCredit(itemDetailMap, [GUILD_TOKEN_HRID]);
+        const values = side === 'buy' ? table.buy : table.sell;
+        const outliers = side === 'buy' ? table.buyOutlier : table.sellOutlier;
+        const sources = side === 'buy' ? table.buySource : table.sellSource;
+        const value = values[creditHrid];
+        return value > 0 ? { value, isOutlier: outliers[creditHrid] || false, source: sources[creditHrid] } : null;
     }
 
     /**
@@ -21480,6 +21526,16 @@ self.onmessage = function (e) {
             }
             // Fallback: vendor value
             return 100000;
+        }
+
+        // Guild Credits: cheapest tradeable item that converts into the credit (opt-out setting)
+        if (GUILD_CREDIT_HRIDS.has(itemHrid)) {
+            if (config.getSetting('networth_includeGuildCredits') === false) {
+                return null;
+            }
+            const side = (config.getSettingValue('networth_pricingMode') || 'ask') === 'bid' ? 'buy' : 'sell';
+            const credit = getGuildCreditValue(itemHrid, dataManager.getInitClientData()?.itemDetailMap, side);
+            return credit ? credit.value : null;
         }
 
         // Task Tokens: Expected value from Task Shop chests
@@ -27400,6 +27456,22 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                     continue;
                 }
 
+                // Guild Credits: no market listing, valued at the cheapest tradeable item that converts
+                // into them (ask-based for the ask total, bid-based for the bid total). Opt-out setting
+                // shared with Net Worth.
+                if (GUILD_CREDIT_HRIDS.has(itemHrid) && config.getSetting('networth_includeGuildCredits') !== false) {
+                    const askCredit = getGuildCreditValue(itemHrid, gameData.itemDetailMap, 'sell');
+                    const bidCredit = getGuildCreditValue(itemHrid, gameData.itemDetailMap, 'buy');
+                    const askPerCredit = askCredit?.value || 0;
+                    const bidPerCredit = bidCredit?.value || 0;
+                    itemElem.dataset.askPrice = askPerCredit;
+                    itemElem.dataset.bidPrice = bidPerCredit;
+                    itemElem.dataset.askValue = askPerCredit * itemCount;
+                    itemElem.dataset.bidValue = bidPerCredit * itemCount;
+                    itemElem.dataset.priceOutlier = askCredit?.isOutlier || bidCredit?.isOutlier ? '1' : '0';
+                    continue;
+                }
+
                 // Get item details (reused throughout)
                 const itemDetails = gameData.itemDetailMap[itemHrid];
 
@@ -28655,6 +28727,9 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                 this._handleSeal(tooltipElement, isCollectionTooltip);
             } else if (itemHrid === COWBELL) {
                 this._handleCowbell(tooltipElement, isCollectionTooltip);
+            } else if (GUILD_CREDIT_HRIDS.has(itemHrid)) {
+                if (config.getSetting('networth_includeGuildCredits') === false) return;
+                this._handleGuildCredit(tooltipElement, itemHrid, isCollectionTooltip);
             } else if (itemHrid === GUILD_TOKEN_HRID) {
                 if (!config.getSetting('guildTokenValueComparison', true)) return;
                 this._handleGuildToken(tooltipElement, isCollectionTooltip);
@@ -28752,6 +28827,30 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                 shopItems,
                 i18n_js.t('dungeonTokenTooltips.guildCreditValueLabel'),
                 i18n_js.t('dungeonTokenTooltips.goldPerTokenLabel'),
+                isCollectionTooltip
+            );
+            dom.fixTooltipOverflow(tooltipElement);
+        }
+
+        /**
+         * Handle Guild Credit tooltip - value of one credit is the cheapest tradeable item that
+         * converts into it (sell side, matching the Guild Token tooltip).
+         */
+        _handleGuildCredit(tooltipElement, creditHrid, isCollectionTooltip) {
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+            const credit = getGuildCreditValue(creditHrid, itemDetailMap, 'sell');
+            if (!credit?.source) return;
+
+            const { source } = credit;
+            this._injectSimpleValue(
+                tooltipElement,
+                i18n_js.t('dungeonTokenTooltips.valueGoldTemplate', { value: formatters_js.formatKMB(Math.floor(credit.value)) }),
+                i18n_js.t('dungeonTokenTooltips.guildCreditValueDetail', {
+                    itemCount: source.itemCount,
+                    itemName: getItemName(source.itemHrid, itemDetailMap[source.itemHrid]?.name || source.itemHrid),
+                    itemPrice: formatters_js.formatKMB(source.price),
+                    creditCount: source.creditCount,
+                }) + warningIcon_js.buildOutlierPriceWarningIcon(credit.isOutlier),
                 isCollectionTooltip
             );
             dom.fixTooltipOverflow(tooltipElement);
