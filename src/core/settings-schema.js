@@ -1612,6 +1612,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Value task tokens based on expected value from Task Shop chests. Disable to exclude them from net worth.',
             },
+            networth_includeGuildCredits: {
+                id: 'networth_includeGuildCredits',
+                label: 'Value guild credits (net worth, inventory totals, tooltips)',
+                type: 'checkbox',
+                default: true,
+                help: 'Guild Credits cannot be sold, so each is valued at the cheapest tradeable item that converts into it. Disable to leave them out of net worth and inventory totals and hide the tooltip value.',
+            },
             networth_abilityBooksAsInventory: {
                 id: 'networth_abilityBooksAsInventory',
                 label: 'Count ability books as inventory (Current Assets)',

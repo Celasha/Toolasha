@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -236,5 +237,36 @@ describe('outlier flag propagation on shop item rows', () => {
         const lodestone = shopItems.find((item) => item.name === 'Pathbreaker Lodestone');
         expect(essence.isOutlier).toBe(true);
         expect(lodestone.isOutlier).toBe(false);
+    });
+});
+
+describe('_handleGuildCredit', () => {
+    beforeEach(() => {
+        resetMocks();
+        mocks.gameData.itemDetailMap['/items/coal'] = {
+            name: 'Coal',
+            guildCreditConversions: [{ creditItemHrid: '/items/brown_guild_credit', itemCount: 10, creditCount: 1 }],
+        };
+        mocks.askPrices['/items/coal'] = { ask: 100, bid: 40 };
+    });
+
+    function makeTooltip() {
+        const tooltip = document.createElement('div');
+        tooltip.innerHTML = '<div class="ItemTooltipText_itemTooltipText__zFq3A"></div>';
+        return tooltip;
+    }
+
+    test('injects the cheapest-conversion value and names the winning source item', () => {
+        const tooltip = makeTooltip();
+        dungeonTokenTooltips._handleGuildCredit(tooltip, '/items/brown_guild_credit', false);
+        expect(tooltip.textContent).toContain('Value: 1.0K gold');
+        expect(tooltip.textContent).toContain('10 × Coal');
+    });
+
+    test('injects nothing when no source item is priced', () => {
+        mocks.askPrices['/items/coal'] = { ask: 0, bid: 0 };
+        const tooltip = makeTooltip();
+        dungeonTokenTooltips._handleGuildCredit(tooltip, '/items/brown_guild_credit', false);
+        expect(tooltip.querySelector('.dungeon-token-shop-injected')).toBeNull();
     });
 });

@@ -4,6 +4,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 const mockCheckOutlier = vi.hoisted(() => vi.fn());
 const mockGetPricesBatch = vi.hoisted(() => vi.fn(() => new Map()));
 const mockCalculateDungeonTokenValue = vi.hoisted(() => vi.fn());
+const mockGetGuildCreditValue = vi.hoisted(() => vi.fn());
 
 vi.mock('../../core/dom-observer.js', () => ({ default: { onClass: vi.fn(() => () => {}) } }));
 vi.mock('../../core/config.js', () => ({
@@ -30,6 +31,11 @@ vi.mock('../../utils/token-valuation.js', () => ({
         '/items/enchanted_token',
         '/items/pirate_token',
     ]),
+}));
+
+vi.mock('../../utils/guild-credit-conversion.js', () => ({
+    GUILD_CREDIT_HRIDS: new Set(['/items/brown_guild_credit']),
+    getGuildCreditValue: mockGetGuildCreditValue,
 }));
 
 const { default: inventoryBadgeManager } = await import('./inventory-badge-manager.js');
@@ -195,5 +201,48 @@ describe('InventoryBadgeManager.calculateItemPrices - dungeon tokens', () => {
         expect(mockCalculateDungeonTokenValue).not.toHaveBeenCalled();
         expect(itemElem.dataset.askValue).toBe('0');
         expect(itemElem.dataset.bidValue).toBe('0');
+    });
+});
+
+describe('InventoryBadgeManager.calculateItemPrices - guild credits', () => {
+    function buildCreditElem() {
+        const itemElem = buildItemContainer({ ariaLabel: 'Brown Guild Credit', href: '#brown_guild_credit' });
+        const countElem = document.createElement('div');
+        countElem.className = 'Item_count';
+        countElem.textContent = '42';
+        itemElem.appendChild(countElem);
+        return itemElem;
+    }
+
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        const { default: dataManager } = await import('../../core/data-manager.js');
+        dataManager.getInitClientData.mockReturnValue({ itemDetailMap: {} });
+        const { parseItemCount } = await import('../../utils/number-parser.js');
+        parseItemCount.mockReturnValue(42);
+        const { default: config } = await import('../../core/config.js');
+        config.getSetting.mockReturnValue(undefined);
+        mockGetGuildCreditValue.mockImplementation((hrid, map, side) =>
+            side === 'buy' ? { value: 400, isOutlier: false } : { value: 1000, isOutlier: false }
+        );
+    });
+
+    test('values a credit stack ask-based for the ask total and bid-based for the bid total', async () => {
+        const itemElem = buildCreditElem();
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(itemElem.dataset.askValue).toBe(String(1000 * 42));
+        expect(itemElem.dataset.bidValue).toBe(String(400 * 42));
+        expect(itemElem.dataset.priceOutlier).toBe('0');
+    });
+
+    test('leaves credits at 0 when the shared setting is off', async () => {
+        const { default: config } = await import('../../core/config.js');
+        config.getSetting.mockImplementation((key) => (key === 'networth_includeGuildCredits' ? false : undefined));
+        const itemElem = buildCreditElem();
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(mockGetGuildCreditValue).not.toHaveBeenCalled();
+        expect(itemElem.dataset.askValue).not.toBe(String(1000 * 42));
     });
 });

@@ -17,6 +17,7 @@ import {
     buildCheapestPerCredit,
     buildGuildTokenValueByCredit,
     calculateGuildTokenOpportunityValue,
+    getGuildCreditValue,
 } from './guild-credit-conversion.js';
 
 const CREDIT = '/items/brown_guild_credit';
@@ -205,5 +206,50 @@ describe('calculateGuildTokenOpportunityValue', () => {
 
     test('returns 0 when no conversion is resolvable', () => {
         expect(calculateGuildTokenOpportunityValue({ [GUILD_TOKEN]: {} }, {})).toBe(0);
+    });
+});
+
+describe('getGuildCreditValue', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockGetItemPriceOutlierInfo.mockImplementation((hrid, opts) => ({
+            value: mockGetItemPrice(hrid, opts),
+            isOutlier: false,
+        }));
+        mockGetItemPrice.mockImplementation((hrid, opts) => {
+            if (hrid === ITEM_A) return opts.mode === 'ask' ? 100 : 40;
+            if (hrid === ITEM_B) return opts.mode === 'ask' ? 90 : 60;
+            return 0;
+        });
+    });
+
+    const itemDetailMap = {
+        [ITEM_A]: { guildCreditConversions: [{ creditItemHrid: CREDIT, itemCount: 10, creditCount: 1 }] }, // 1000 ask
+        [ITEM_B]: { guildCreditConversions: [{ creditItemHrid: CREDIT, itemCount: 20, creditCount: 1 }] }, // 1800 ask
+    };
+
+    test('values a credit at the cheapest source item and reports which item won', () => {
+        const result = getGuildCreditValue(CREDIT, itemDetailMap, 'sell');
+        expect(result.value).toBe(1000);
+        expect(result.source).toEqual({ itemHrid: ITEM_A, itemCount: 10, creditCount: 1, price: 100 });
+    });
+
+    test('buy side uses bid prices', () => {
+        expect(getGuildCreditValue(CREDIT, itemDetailMap, 'buy').value).toBe(400);
+    });
+
+    test('returns null for a non-credit hrid, a missing map, or no priced source', () => {
+        expect(getGuildCreditValue('/items/coin', itemDetailMap)).toBeNull();
+        expect(getGuildCreditValue(CREDIT, null)).toBeNull();
+        mockGetItemPrice.mockImplementation(() => 0);
+        expect(getGuildCreditValue(CREDIT, itemDetailMap)).toBeNull();
+    });
+
+    test('ignores the Guild Token as a source (circular valuation)', () => {
+        mockGetItemPrice.mockImplementation((hrid) => (hrid === GUILD_TOKEN ? 1 : 0));
+        const map = {
+            [GUILD_TOKEN]: { guildCreditConversions: [{ creditItemHrid: CREDIT, itemCount: 1, creditCount: 1 }] },
+        };
+        expect(getGuildCreditValue(CREDIT, map)).toBeNull();
     });
 });

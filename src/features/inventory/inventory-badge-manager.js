@@ -20,6 +20,7 @@ import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculato
 import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { calculateDungeonTokenValue, DUNGEON_TOKEN_HRIDS } from '../../utils/token-valuation.js';
+import { GUILD_CREDIT_HRIDS, getGuildCreditValue } from '../../utils/guild-credit-conversion.js';
 
 /**
  * InventoryBadgeManager class manages all inventory item badges from multiple features
@@ -345,6 +346,22 @@ class InventoryBadgeManager {
                 itemElem.dataset.askValue = perToken * itemCount;
                 itemElem.dataset.bidValue = perToken * itemCount;
                 itemElem.dataset.priceOutlier = perToken > 0 && tokenValue.isOutlier ? '1' : '0';
+                continue;
+            }
+
+            // Guild Credits: no market listing, valued at the cheapest tradeable item that converts
+            // into them (ask-based for the ask total, bid-based for the bid total). Opt-out setting
+            // shared with Net Worth.
+            if (GUILD_CREDIT_HRIDS.has(itemHrid) && config.getSetting('networth_includeGuildCredits') !== false) {
+                const askCredit = getGuildCreditValue(itemHrid, gameData.itemDetailMap, 'sell');
+                const bidCredit = getGuildCreditValue(itemHrid, gameData.itemDetailMap, 'buy');
+                const askPerCredit = askCredit?.value || 0;
+                const bidPerCredit = bidCredit?.value || 0;
+                itemElem.dataset.askPrice = askPerCredit;
+                itemElem.dataset.bidPrice = bidPerCredit;
+                itemElem.dataset.askValue = askPerCredit * itemCount;
+                itemElem.dataset.bidValue = bidPerCredit * itemCount;
+                itemElem.dataset.priceOutlier = askCredit?.isOutlier || bidCredit?.isOutlier ? '1' : '0';
                 continue;
             }
 

@@ -2475,6 +2475,8 @@ export default {
     },
     dungeonTokenTooltips: {
         costColumnHeader: 'Cost',
+        guildCreditValueDetail: (p) =>
+            `= cheapest conversion: ${p.itemCount} × ${p.itemName} (${p.itemPrice} each) → ${p.creditCount} credit${p.creditCount === 1 ? '' : 's'}`,
         cowbellValueDetail: (p) => `= Bag of 10 Cowbells (${p.bagPrice}) ÷ 10`,
         goldPerTokenLabel: 'Gold/Token',
         guildCreditValueLabel: 'Guild Credit Value:',
@@ -3496,6 +3498,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             networth_includeCowbells: {
                 label: 'Include cowbells in net worth',
                 help: 'Cowbells are not tradeable, but they have a value based on Bag of 10 Cowbells market price',
+            },
+            networth_includeGuildCredits: {
+                label: 'Value guild credits (net worth, inventory totals, tooltips)',
+                help: 'Guild Credits cannot be sold, so each is valued at the cheapest tradeable item that converts into it. Disable to leave them out of net worth and inventory totals and hide the tooltip value.',
             },
             networth_includeTaskTokens: {
                 label: 'Include task tokens in net worth',

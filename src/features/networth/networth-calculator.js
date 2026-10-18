@@ -30,7 +30,11 @@ import { getShopCoinCost } from '../../utils/game-lookups.js';
 import { isExcluded, getExclusions } from './networth-exclusions.js';
 import loadoutState from '../../core/loadout-state.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
-import { buildCheapestPerCredit } from '../../utils/guild-credit-conversion.js';
+import {
+    buildCheapestPerCredit,
+    getGuildCreditValue,
+    GUILD_CREDIT_HRIDS,
+} from '../../utils/guild-credit-conversion.js';
 import { getItemName, getAbilityName, getHouseRoomName, getItemCategoryName } from '../../utils/game-i18n.js';
 
 /**
@@ -230,6 +234,16 @@ function calculateCurrencyValue(itemHrid) {
         }
         // Fallback: vendor value
         return 100000;
+    }
+
+    // Guild Credits: cheapest tradeable item that converts into the credit (opt-out setting)
+    if (GUILD_CREDIT_HRIDS.has(itemHrid)) {
+        if (config.getSetting('networth_includeGuildCredits') === false) {
+            return null;
+        }
+        const side = (config.getSettingValue('networth_pricingMode') || 'ask') === 'bid' ? 'buy' : 'sell';
+        const credit = getGuildCreditValue(itemHrid, dataManager.getInitClientData()?.itemDetailMap, side);
+        return credit ? credit.value : null;
     }
 
     // Task Tokens: Expected value from Task Shop chests

@@ -619,3 +619,42 @@ describe('calculateItemValue - reference market value fallback (getMarketPrice)'
         expect(value).toBe(555);
     });
 });
+
+describe('calculateItemValue - guild credits', () => {
+    const CREDIT = '/items/brown_guild_credit';
+    let includeSetting;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        includeSetting = undefined;
+        mockGetSetting.mockImplementation((key) => (key === 'networth_includeGuildCredits' ? includeSetting : false));
+        mockGetSettingValue.mockReturnValue('ask');
+        mockGetInitClientData.mockReturnValue({
+            itemDetailMap: {
+                '/items/coal': { guildCreditConversions: [{ creditItemHrid: CREDIT, itemCount: 10, creditCount: 1 }] },
+            },
+        });
+        mockGetItemPrice.mockImplementation((hrid, opts) =>
+            hrid === '/items/coal' ? (opts?.mode === 'bid' ? 40 : 100) : 0
+        );
+    });
+
+    test('values held credits at the cheapest conversion (ask mode)', async () => {
+        expect(await calculateItemValue({ itemHrid: CREDIT, count: 5 })).toBe(5 * 1000);
+    });
+
+    test('bid pricing mode uses the bid-based conversion cost', async () => {
+        mockGetSettingValue.mockReturnValue('bid');
+        expect(await calculateItemValue({ itemHrid: CREDIT, count: 5 })).toBe(5 * 400);
+    });
+
+    test('turning the setting off leaves credits out of net worth', async () => {
+        includeSetting = false;
+        expect(await calculateItemValue({ itemHrid: CREDIT, count: 5 })).toBe(0);
+    });
+
+    test('a credit with no priced source item is worth 0, not a fake value', async () => {
+        mockGetItemPrice.mockReturnValue(0);
+        expect(await calculateItemValue({ itemHrid: CREDIT, count: 5 })).toBe(0);
+    });
+});

@@ -577,6 +577,8 @@ export default {
     },
     dungeonTokenTooltips: {
         costColumnHeader: '成本',
+        guildCreditValueDetail: (p) =>
+            `= 最便宜的兑换方式：${p.itemCount} × ${p.itemName}（每个 ${p.itemPrice}）→ ${p.creditCount} 信用点`,
         cowbellValueDetail: (p) => `= 10 个装牛铃袋（${p.bagPrice}）÷ 10`,
         goldPerTokenLabel: '金币/代币',
         guildCreditValueLabel: '公会信用点价值：',

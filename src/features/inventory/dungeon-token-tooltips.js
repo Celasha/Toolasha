@@ -16,6 +16,8 @@ import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import {
     buildCheapestPerCredit,
     buildGuildTokenValueByCredit,
+    getGuildCreditValue,
+    GUILD_CREDIT_HRIDS,
     GUILD_TOKEN_HRID,
 } from '../../utils/guild-credit-conversion.js';
 import { DUNGEON_TOKEN_HRIDS } from '../../utils/token-valuation.js';
@@ -136,6 +138,9 @@ class DungeonTokenTooltips {
             this._handleSeal(tooltipElement, isCollectionTooltip);
         } else if (itemHrid === COWBELL) {
             this._handleCowbell(tooltipElement, isCollectionTooltip);
+        } else if (GUILD_CREDIT_HRIDS.has(itemHrid)) {
+            if (config.getSetting('networth_includeGuildCredits') === false) return;
+            this._handleGuildCredit(tooltipElement, itemHrid, isCollectionTooltip);
         } else if (itemHrid === GUILD_TOKEN_HRID) {
             if (!config.getSetting('guildTokenValueComparison', true)) return;
             this._handleGuildToken(tooltipElement, isCollectionTooltip);
@@ -233,6 +238,30 @@ class DungeonTokenTooltips {
             shopItems,
             t('dungeonTokenTooltips.guildCreditValueLabel'),
             t('dungeonTokenTooltips.goldPerTokenLabel'),
+            isCollectionTooltip
+        );
+        dom.fixTooltipOverflow(tooltipElement);
+    }
+
+    /**
+     * Handle Guild Credit tooltip - value of one credit is the cheapest tradeable item that
+     * converts into it (sell side, matching the Guild Token tooltip).
+     */
+    _handleGuildCredit(tooltipElement, creditHrid, isCollectionTooltip) {
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+        const credit = getGuildCreditValue(creditHrid, itemDetailMap, 'sell');
+        if (!credit?.source) return;
+
+        const { source } = credit;
+        this._injectSimpleValue(
+            tooltipElement,
+            t('dungeonTokenTooltips.valueGoldTemplate', { value: formatKMB(Math.floor(credit.value)) }),
+            t('dungeonTokenTooltips.guildCreditValueDetail', {
+                itemCount: source.itemCount,
+                itemName: getItemName(source.itemHrid, itemDetailMap[source.itemHrid]?.name || source.itemHrid),
+                itemPrice: formatKMB(source.price),
+                creditCount: source.creditCount,
+            }) + buildOutlierPriceWarningIcon(credit.isOutlier),
             isCollectionTooltip
         );
         dom.fixTooltipOverflow(tooltipElement);
