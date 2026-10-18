@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.22.1](https://github.com/Celasha/Toolasha/compare/v3.22.0...v3.22.1) (2026-10-18)
+
+### Bug Fixes
+
+- value held guild credits in net worth, inventory totals and tooltips ([e718545](https://github.com/Celasha/Toolasha/commit/e718545ddd9ab0e81ae6b712f64b92f78bd61288))
+
 ## [3.22.0](https://github.com/Celasha/Toolasha/compare/v3.21.4...v3.22.0) (2026-10-17)
 
 ### Features
