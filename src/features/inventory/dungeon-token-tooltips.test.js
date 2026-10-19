@@ -5,6 +5,16 @@ const mocks = vi.hoisted(() => ({
     gameData: null,
     askPrices: {}, // itemHrid -> {ask, bid}
     ev: {}, // itemHrid -> expectedValue
+    pricingMode: 'hybrid', // profitCalc_pricingMode ('hybrid' -> ask side, 'conservative' -> bid side)
+}));
+
+vi.mock('../../core/config.js', () => ({
+    default: {
+        getSettingValue: vi.fn((key, fallback) => (key === 'profitCalc_pricingMode' ? mocks.pricingMode : fallback)),
+        getSetting: vi.fn(() => undefined),
+        isFeatureEnabled: vi.fn(() => true),
+        COLOR_TOOLTIP_INFO: '#2563eb',
+    },
 }));
 
 vi.mock('../../core/data-manager.js', () => ({
@@ -43,6 +53,7 @@ import { getCurrencyOpportunityValue } from '../profile/score/special-currency-v
 function resetMocks() {
     mocks.askPrices = {};
     mocks.ev = {};
+    mocks.pricingMode = 'hybrid';
     mocks.gameData = {
         itemDetailMap: {
             '/items/task_crystal': { name: 'Task Crystal', isOpenable: false },
@@ -268,5 +279,70 @@ describe('_handleGuildCredit', () => {
         const tooltip = makeTooltip();
         dungeonTokenTooltips._handleGuildCredit(tooltip, '/items/brown_guild_credit', false);
         expect(tooltip.querySelector('.dungeon-token-shop-injected')).toBeNull();
+    });
+});
+
+describe('token tooltips follow the profit pricing mode price side', () => {
+    beforeEach(() => {
+        resetMocks();
+        mocks.pricingMode = 'conservative'; // Buy: Ask / Sell: Bid -> bid side
+    });
+
+    test('dungeon token rows use the bid price and its outlier flag', () => {
+        mocks.askPrices['/items/griffin_leather'] = { ask: 660, bid: 600, askOutlier: false, bidOutlier: true };
+        mocks.askPrices['/items/manticore_sting'] = { ask: 3300, bid: 3000 };
+
+        const shopItems = dungeonTokenTooltips._getDungeonShopItems('/items/chimerical_token');
+
+        expect(shopItems[0]).toMatchObject({ name: 'Manticore Sting', askPrice: 3000, goldPerToken: 3 });
+        expect(shopItems.find((i) => i.name === 'Griffin Leather').isOutlier).toBe(true);
+    });
+
+    test('a dungeon token row with no bid is dropped, as the net worth valuation does', () => {
+        mocks.askPrices['/items/griffin_leather'] = { ask: 660, bid: 0 };
+        expect(dungeonTokenTooltips._getDungeonShopItems('/items/chimerical_token')).toEqual([]);
+    });
+
+    test('task shop market price uses bid; EV still wins when higher', () => {
+        mocks.askPrices['/items/task_crystal'] = { ask: 5500, bid: 5000 };
+        mocks.ev['/items/large_artisans_crate'] = 6000;
+
+        const shopItems = dungeonTokenTooltips._getTaskShopItems();
+
+        const crystal = shopItems.find((i) => i.name === 'Task Crystal');
+        expect(crystal).toMatchObject({ askPrice: 5000, valueSource: 'bid' });
+        expect(shopItems.find((i) => i.name === "Large Artisan's Crate").valueSource).toBe('EV');
+    });
+
+    test('labyrinth rows use bid prices times output count', () => {
+        mocks.askPrices['/items/labyrinth_essence'] = { ask: 3, bid: 2 };
+
+        const shopItems = dungeonTokenTooltips._getLabyrinthShopItems();
+
+        expect(shopItems[0]).toMatchObject({ name: 'Labyrinth Essence', askPrice: 20, goldPerToken: 20 });
+    });
+
+    test('Guild Token rows use the bid-based credit value', () => {
+        mocks.gameData.itemDetailMap['/items/guild_token'] = {
+            name: 'Guild Token',
+            guildCreditConversions: [{ creditItemHrid: '/items/brown_guild_credit', itemCount: 1, creditCount: 10 }],
+        };
+        mocks.gameData.itemDetailMap['/items/coal'] = {
+            name: 'Coal',
+            guildCreditConversions: [{ creditItemHrid: '/items/brown_guild_credit', itemCount: 10, creditCount: 1 }],
+        };
+        mocks.gameData.itemDetailMap['/items/brown_guild_credit'] = { name: 'Brown Guild Credit' };
+        mocks.askPrices['/items/coal'] = { ask: 100, bid: 40 };
+
+        const rows = dungeonTokenTooltips._getGuildTokenShopItems();
+
+        expect(rows[0].goldPerToken).toBe(4000); // 400 gold/credit (bid) x 10 credits per token
+    });
+
+    test('an ask-side mode (hybrid) still uses ask', () => {
+        mocks.pricingMode = 'hybrid';
+        mocks.askPrices['/items/griffin_leather'] = { ask: 660, bid: 600 };
+
+        expect(dungeonTokenTooltips._getDungeonShopItems('/items/chimerical_token')[0].askPrice).toBe(660);
     });
 });

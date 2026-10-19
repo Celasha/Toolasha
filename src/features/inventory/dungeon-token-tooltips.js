@@ -20,7 +20,7 @@ import {
     GUILD_CREDIT_HRIDS,
     GUILD_TOKEN_HRID,
 } from '../../utils/guild-credit-conversion.js';
-import { DUNGEON_TOKEN_HRIDS } from '../../utils/token-valuation.js';
+import { DUNGEON_TOKEN_HRIDS, resolvePricingSide } from '../../utils/token-valuation.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 
 const TASK_TOKEN = '/items/task_token';
@@ -47,6 +47,29 @@ const SEAL_HRIDS = new Set([
 ]);
 
 const SEAL_TOKEN_COST = 30;
+
+/**
+ * Market price side the user's profit pricing mode selects (bid for Conservative / Patient Buy,
+ * ask otherwise) - the same side Net Worth and the inventory badges use for token values, so a
+ * tooltip never disagrees with them. No respect-mode key: those two always follow the mode.
+ * @returns {'bid'|'ask'}
+ */
+function getPricingSide() {
+    return resolvePricingSide('profitCalc_pricingMode', null);
+}
+
+/**
+ * Read an item's market price on the given side, with its outlier flag.
+ * @param {string} itemHrid
+ * @param {'bid'|'ask'} side
+ * @returns {{price: number, isOutlier: boolean}|null} null when that side has no usable price
+ */
+function getSidePrice(itemHrid, side) {
+    const prices = getItemPrices(itemHrid, 0);
+    const price = side === 'bid' ? prices?.bid : prices?.ask;
+    if (!(price > 0)) return null;
+    return { price, isOutlier: (side === 'bid' ? prices.bidOutlier : prices.askOutlier) || false };
+}
 
 /**
  * DungeonTokenTooltips class handles injecting shop item lists into currency token tooltips
@@ -245,11 +268,11 @@ class DungeonTokenTooltips {
 
     /**
      * Handle Guild Credit tooltip - value of one credit is the cheapest tradeable item that
-     * converts into it (sell side, matching the Guild Token tooltip).
+     * converts into it, on the price side the profit pricing mode selects (matching the Guild Token tooltip).
      */
     _handleGuildCredit(tooltipElement, creditHrid, isCollectionTooltip) {
         const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
-        const credit = getGuildCreditValue(creditHrid, itemDetailMap, 'sell');
+        const credit = getGuildCreditValue(creditHrid, itemDetailMap, getPricingSide() === 'bid' ? 'buy' : 'sell');
         if (!credit?.source) return;
 
         const { source } = credit;
@@ -331,23 +354,22 @@ class DungeonTokenTooltips {
         const gameData = dataManager.getInitClientData();
         if (!gameData?.shopItemDetailMap || !gameData?.itemDetailMap) return [];
 
+        const side = getPricingSide();
         return Object.values(gameData.shopItemDetailMap)
             .filter((shopItem) => shopItem.costs && shopItem.costs[0]?.itemHrid === tokenHrid)
             .map((shopItem) => {
                 const itemDetails = gameData.itemDetailMap[shopItem.itemHrid];
                 const tokenCost = shopItem.costs[0].count;
 
-                const prices = getItemPrices(shopItem.itemHrid, 0);
-                const askPrice = prices?.ask || null;
-
-                if (!askPrice || askPrice <= 0) return null;
+                const priced = getSidePrice(shopItem.itemHrid, side);
+                if (!priced) return null;
 
                 return {
                     name: getItemName(shopItem.itemHrid, itemDetails?.name || t('enhancementUi.unknownItemFallback')),
                     cost: tokenCost,
-                    askPrice,
-                    goldPerToken: askPrice / tokenCost,
-                    isOutlier: prices.askOutlier,
+                    askPrice: priced.price,
+                    goldPerToken: priced.price / tokenCost,
+                    isOutlier: priced.isOutlier,
                 };
             })
             .filter(Boolean)
@@ -363,6 +385,7 @@ class DungeonTokenTooltips {
         const gameData = dataManager.getInitClientData();
         if (!gameData?.taskShopItemDetailMap || !gameData?.itemDetailMap) return [];
 
+        const side = getPricingSide();
         return Object.values(gameData.taskShopItemDetailMap)
             .map((shopItem) => {
                 const itemDetails = gameData.itemDetailMap[shopItem.itemHrid];
@@ -374,11 +397,11 @@ class DungeonTokenTooltips {
                 let isOutlier = false;
 
                 // Try market price first (tradeable items like Task Crystal)
-                const prices = getItemPrices(shopItem.itemHrid, 0);
-                if (prices?.ask > 0) {
-                    itemValue = prices.ask;
-                    valueSource = 'ask';
-                    isOutlier = prices.askOutlier;
+                const priced = getSidePrice(shopItem.itemHrid, side);
+                if (priced) {
+                    itemValue = priced.price;
+                    valueSource = side;
+                    isOutlier = priced.isOutlier;
                 }
 
                 // For openable items, use expected value if higher
@@ -418,6 +441,7 @@ class DungeonTokenTooltips {
         const gameData = dataManager.getInitClientData();
         if (!gameData?.labyrinthShopItemDetailMap || !gameData?.itemDetailMap) return [];
 
+        const side = getPricingSide();
         return Object.values(gameData.labyrinthShopItemDetailMap)
             .map((shopItem) => {
                 const itemDetails = gameData.itemDetailMap[shopItem.itemHrid];
@@ -425,20 +449,18 @@ class DungeonTokenTooltips {
                 const outputCount = shopItem.outputCount || 1;
                 if (tokenCost <= 0) return null;
 
-                const prices = getItemPrices(shopItem.itemHrid, 0);
-                const askPrice = prices?.ask || null;
+                const priced = getSidePrice(shopItem.itemHrid, side);
+                if (!priced) return null;
 
-                if (!askPrice || askPrice <= 0) return null;
-
-                // Total value = ask price × output count
-                const totalValue = askPrice * outputCount;
+                // Total value = price × output count
+                const totalValue = priced.price * outputCount;
 
                 return {
                     name: getItemName(shopItem.itemHrid, itemDetails?.name || t('enhancementUi.unknownItemFallback')),
                     cost: tokenCost,
                     askPrice: totalValue,
                     goldPerToken: totalValue / tokenCost,
-                    isOutlier: prices.askOutlier,
+                    isOutlier: priced.isOutlier,
                     outputCount,
                 };
             })
@@ -456,7 +478,10 @@ class DungeonTokenTooltips {
         const gameData = dataManager.getInitClientData();
         if (!gameData?.itemDetailMap) return [];
 
-        const { sell, sellOutlier } = buildCheapestPerCredit(gameData.itemDetailMap);
+        const table = buildCheapestPerCredit(gameData.itemDetailMap);
+        const useBid = getPricingSide() === 'bid';
+        const sell = useBid ? table.buy : table.sell;
+        const sellOutlier = useBid ? table.buyOutlier : table.sellOutlier;
         const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell, sellOutlier);
 
         return creditRows.map((row) => ({
