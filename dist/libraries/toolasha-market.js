@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.22.1
+ * Version: 3.22.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -28638,6 +28638,42 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
     const SEAL_TOKEN_COST = 30;
 
     /**
+     * Market price side the user's profit pricing mode selects (bid for Conservative / Patient Buy,
+     * ask otherwise) - the same side Net Worth and the inventory badges use for token values, so a
+     * tooltip never disagrees with them. No respect-mode key: those two always follow the mode.
+     * @returns {'bid'|'ask'}
+     */
+    function getPricingSide() {
+        return tokenValuation_js.resolvePricingSide('profitCalc_pricingMode', null);
+    }
+
+    /**
+     * Read an item's market price on the given side, with its outlier flag.
+     * @param {string} itemHrid
+     * @param {'bid'|'ask'} side
+     * @returns {{price: number, isOutlier: boolean}|null} null when that side has no usable price
+     */
+    function getSidePrice(itemHrid, side) {
+        const prices = marketData_js.getItemPrices(itemHrid, 0);
+        const price = side === 'bid' ? prices?.bid : prices?.ask;
+        if (!(price > 0)) return null;
+        return { price, isOutlier: (side === 'bid' ? prices.bidOutlier : prices.askOutlier) || false };
+    }
+
+    /**
+     * Shop-table Value cell: keeps the thousands digits market prices are quoted in (8,360K rather
+     * than 8.4M), switching to millions only from 1B up (5,140M).
+     * @param {number} value - Gold value
+     * @returns {string}
+     */
+    function formatShopValue(value) {
+        const abs = Math.abs(value);
+        if (abs >= 1e9) return `${formatters_js.formatWithSeparator(Math.round(value / 1e6))}M`;
+        if (abs >= 1e3) return `${formatters_js.formatWithSeparator(Math.round(value / 1e3))}K`;
+        return formatters_js.formatWithSeparator(Math.round(value));
+    }
+
+    /**
      * DungeonTokenTooltips class handles injecting shop item lists into currency token tooltips
      */
     class DungeonTokenTooltips {
@@ -28834,11 +28870,11 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 
         /**
          * Handle Guild Credit tooltip - value of one credit is the cheapest tradeable item that
-         * converts into it (sell side, matching the Guild Token tooltip).
+         * converts into it, on the price side the profit pricing mode selects (matching the Guild Token tooltip).
          */
         _handleGuildCredit(tooltipElement, creditHrid, isCollectionTooltip) {
             const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
-            const credit = getGuildCreditValue(creditHrid, itemDetailMap, 'sell');
+            const credit = getGuildCreditValue(creditHrid, itemDetailMap, getPricingSide() === 'bid' ? 'buy' : 'sell');
             if (!credit?.source) return;
 
             const { source } = credit;
@@ -28920,23 +28956,22 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             const gameData = dataManager.getInitClientData();
             if (!gameData?.shopItemDetailMap || !gameData?.itemDetailMap) return [];
 
+            const side = getPricingSide();
             return Object.values(gameData.shopItemDetailMap)
                 .filter((shopItem) => shopItem.costs && shopItem.costs[0]?.itemHrid === tokenHrid)
                 .map((shopItem) => {
                     const itemDetails = gameData.itemDetailMap[shopItem.itemHrid];
                     const tokenCost = shopItem.costs[0].count;
 
-                    const prices = marketData_js.getItemPrices(shopItem.itemHrid, 0);
-                    const askPrice = prices?.ask || null;
-
-                    if (!askPrice || askPrice <= 0) return null;
+                    const priced = getSidePrice(shopItem.itemHrid, side);
+                    if (!priced) return null;
 
                     return {
                         name: getItemName(shopItem.itemHrid, itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback')),
                         cost: tokenCost,
-                        askPrice,
-                        goldPerToken: askPrice / tokenCost,
-                        isOutlier: prices.askOutlier,
+                        askPrice: priced.price,
+                        goldPerToken: priced.price / tokenCost,
+                        isOutlier: priced.isOutlier,
                     };
                 })
                 .filter(Boolean)
@@ -28952,6 +28987,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             const gameData = dataManager.getInitClientData();
             if (!gameData?.taskShopItemDetailMap || !gameData?.itemDetailMap) return [];
 
+            const side = getPricingSide();
             return Object.values(gameData.taskShopItemDetailMap)
                 .map((shopItem) => {
                     const itemDetails = gameData.itemDetailMap[shopItem.itemHrid];
@@ -28963,11 +28999,11 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                     let isOutlier = false;
 
                     // Try market price first (tradeable items like Task Crystal)
-                    const prices = marketData_js.getItemPrices(shopItem.itemHrid, 0);
-                    if (prices?.ask > 0) {
-                        itemValue = prices.ask;
-                        valueSource = 'ask';
-                        isOutlier = prices.askOutlier;
+                    const priced = getSidePrice(shopItem.itemHrid, side);
+                    if (priced) {
+                        itemValue = priced.price;
+                        valueSource = side;
+                        isOutlier = priced.isOutlier;
                     }
 
                     // For openable items, use expected value if higher
@@ -29007,6 +29043,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             const gameData = dataManager.getInitClientData();
             if (!gameData?.labyrinthShopItemDetailMap || !gameData?.itemDetailMap) return [];
 
+            const side = getPricingSide();
             return Object.values(gameData.labyrinthShopItemDetailMap)
                 .map((shopItem) => {
                     const itemDetails = gameData.itemDetailMap[shopItem.itemHrid];
@@ -29014,20 +29051,18 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                     const outputCount = shopItem.outputCount || 1;
                     if (tokenCost <= 0) return null;
 
-                    const prices = marketData_js.getItemPrices(shopItem.itemHrid, 0);
-                    const askPrice = prices?.ask || null;
+                    const priced = getSidePrice(shopItem.itemHrid, side);
+                    if (!priced) return null;
 
-                    if (!askPrice || askPrice <= 0) return null;
-
-                    // Total value = ask price × output count
-                    const totalValue = askPrice * outputCount;
+                    // Total value = price × output count
+                    const totalValue = priced.price * outputCount;
 
                     return {
                         name: getItemName(shopItem.itemHrid, itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback')),
                         cost: tokenCost,
                         askPrice: totalValue,
                         goldPerToken: totalValue / tokenCost,
-                        isOutlier: prices.askOutlier,
+                        isOutlier: priced.isOutlier,
                         outputCount,
                     };
                 })
@@ -29045,7 +29080,10 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             const gameData = dataManager.getInitClientData();
             if (!gameData?.itemDetailMap) return [];
 
-            const { sell, sellOutlier } = buildCheapestPerCredit(gameData.itemDetailMap);
+            const table = buildCheapestPerCredit(gameData.itemDetailMap);
+            const useBid = getPricingSide() === 'bid';
+            const sell = useBid ? table.buy : table.sell;
+            const sellOutlier = useBid ? table.buyOutlier : table.sellOutlier;
             const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell, sellOutlier);
 
             return creditRows.map((row) => ({
@@ -29098,8 +29136,8 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                 // Show EV tag for expected-value priced items
                 const valueDisplay =
                     item.valueSource === 'EV'
-                        ? `${formatters_js.formatKMB(item.askPrice)} <span style="color:#888; font-size:10px;">EV</span>`
-                        : formatters_js.formatKMB(item.askPrice) + warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier);
+                        ? `${formatShopValue(item.askPrice)} <span style="color:#888; font-size:10px;">EV</span>`
+                        : formatShopValue(item.askPrice) + warningIcon_js.buildOutlierPriceWarningIcon(item.isOutlier);
 
                 html += `<tr style="${rowStyle}">`;
                 html += `<td style="padding: 2px 4px;">${nameDisplay}</td>`;
