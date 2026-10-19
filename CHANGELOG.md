@@ -2,11 +2,10 @@
 
 ## [3.22.2](https://github.com/Celasha/Toolasha/compare/v3.22.1...v3.22.2) (2026-10-19)
 
-
 ### Bug Fixes
 
-* make token tooltips follow the pricing mode price side ([1f8eb53](https://github.com/Celasha/Toolasha/commit/1f8eb533b75b9ea5a6d424c34305ad5302eb59b4))
-* show full thousands in the token shop tooltip Value column ([f32b435](https://github.com/Celasha/Toolasha/commit/f32b435f60d184a985cbbffc062d09cc1a2b7dd4))
+- make token tooltips follow the pricing mode price side ([1f8eb53](https://github.com/Celasha/Toolasha/commit/1f8eb533b75b9ea5a6d424c34305ad5302eb59b4))
+- show full thousands in the token shop tooltip Value column ([f32b435](https://github.com/Celasha/Toolasha/commit/f32b435f60d184a985cbbffc062d09cc1a2b7dd4))
 
 ## [3.22.1](https://github.com/Celasha/Toolasha/compare/v3.22.0...v3.22.1) (2026-10-18)
 
