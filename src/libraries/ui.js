@@ -47,6 +47,7 @@ import settingsUI from '../features/settings/settings-ui.js';
 
 // Dev tools
 import pformancePanel from '../features/dev/pformance-panel.js';
+import battleVerifier from '../features/dev/battle-verifier.js';
 
 // Character Select — always-on bootstrap dependency (started unconditionally before any
 // feature/character logic in entrypoint.js), kept in the primary bundle rather than the
@@ -93,6 +94,7 @@ toolashaRoot.UI = {
     xpTracker,
     settingsUI,
     pformancePanel,
+    battleVerifier,
     characterSelectRenderer,
     startAccountPreferencesSync,
 };

@@ -571,6 +571,15 @@ function registerFeatures() {
         },
         { key: 'externalLinks', name: 'External Links', category: 'UI', module: UI.externalLinks, async: false },
         {
+            key: 'battleVerifier',
+            name: 'Battle Verifier',
+            category: 'UI',
+            module: UI.battleVerifier,
+            async: true,
+            // 开发调试工具：始终启用（Issue #779 数据采集）
+            customCheck: () => true,
+        },
+        {
             key: 'hideLabyrinthBadge',
             name: 'Hide Labyrinth Badge',
             category: 'UI',

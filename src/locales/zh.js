@@ -11,6 +11,7 @@ import batchB from './zh/batch-b.js';
 import batchC from './zh/batch-c.js';
 import batchD from './zh/batch-d.js';
 import batchE from './zh/batch-e.js';
+import batchF from './zh/batch-f.js';
 
 export default {
     ...batchA,
@@ -18,4 +19,5 @@ export default {
     ...batchC,
     ...batchD,
     ...batchE,
+    ...batchF,
 };
