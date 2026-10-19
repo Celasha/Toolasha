@@ -9,7 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import dom from '../../utils/dom.js';
-import { formatKMB } from '../../utils/formatters.js';
+import { formatKMB, formatWithSeparator } from '../../utils/formatters.js';
 import { getItemName } from '../../utils/game-i18n.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
@@ -69,6 +69,19 @@ function getSidePrice(itemHrid, side) {
     const price = side === 'bid' ? prices?.bid : prices?.ask;
     if (!(price > 0)) return null;
     return { price, isOutlier: (side === 'bid' ? prices.bidOutlier : prices.askOutlier) || false };
+}
+
+/**
+ * Shop-table Value cell: keeps the thousands digits market prices are quoted in (8,360K rather
+ * than 8.4M), switching to millions only from 1B up (5,140M).
+ * @param {number} value - Gold value
+ * @returns {string}
+ */
+function formatShopValue(value) {
+    const abs = Math.abs(value);
+    if (abs >= 1e9) return `${formatWithSeparator(Math.round(value / 1e6))}M`;
+    if (abs >= 1e3) return `${formatWithSeparator(Math.round(value / 1e3))}K`;
+    return formatWithSeparator(Math.round(value));
 }
 
 /**
@@ -534,8 +547,8 @@ class DungeonTokenTooltips {
             // Show EV tag for expected-value priced items
             const valueDisplay =
                 item.valueSource === 'EV'
-                    ? `${formatKMB(item.askPrice)} <span style="color:#888; font-size:10px;">EV</span>`
-                    : formatKMB(item.askPrice) + buildOutlierPriceWarningIcon(item.isOutlier);
+                    ? `${formatShopValue(item.askPrice)} <span style="color:#888; font-size:10px;">EV</span>`
+                    : formatShopValue(item.askPrice) + buildOutlierPriceWarningIcon(item.isOutlier);
 
             html += `<tr style="${rowStyle}">`;
             html += `<td style="padding: 2px 4px;">${nameDisplay}</td>`;

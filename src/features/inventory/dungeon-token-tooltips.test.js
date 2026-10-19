@@ -346,3 +346,32 @@ describe('token tooltips follow the profit pricing mode price side', () => {
         expect(dungeonTokenTooltips._getDungeonShopItems('/items/chimerical_token')[0].askPrice).toBe(660);
     });
 });
+
+describe('shop table Value column', () => {
+    function renderValues(askPrices) {
+        const tooltip = document.createElement('div');
+        tooltip.innerHTML = '<div class="ItemTooltipText_itemTooltipText__zFq3A"></div>';
+        const shopItems = askPrices.map((askPrice, i) => ({
+            name: `Item ${i}`,
+            cost: 1,
+            askPrice,
+            goldPerToken: askPrice,
+            isOutlier: false,
+        }));
+        dungeonTokenTooltips._injectShopTable(tooltip, shopItems, 'Title', 'Gold/Token');
+        return [...tooltip.querySelectorAll('tr')].slice(1).map((tr) => tr.children[2].textContent);
+    }
+
+    test('keeps thousands digits below 1B and switches to millions from 1B', () => {
+        expect(renderValues([850, 8_360_000, 999_000_000, 5_140_000_000])).toEqual([
+            '850',
+            '8,360K',
+            '999,000K',
+            '5,140M',
+        ]);
+    });
+
+    test('rounds non-round values to the nearest unit of the chosen suffix', () => {
+        expect(renderValues([8_362_450, 12.6])).toEqual(['8,362K', '13']);
+    });
+});
