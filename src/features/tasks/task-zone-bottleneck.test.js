@@ -175,3 +175,42 @@ describe('computeZoneBottleneck percentile reporting', () => {
         expect(result.hoursNeeded).toBe(Infinity);
     });
 });
+
+describe('computeZoneBottleneck same-monster tasks', () => {
+    test('sums remaining kills across tasks on the same monster', () => {
+        const zoneTasks = [
+            { hrid: '/monsters/slime', name: 'Slime', remaining: 50, killsPerHour: 100, hoursNeeded: 0.5 },
+            { hrid: '/monsters/slime', name: 'Slime', remaining: 70, killsPerHour: 100, hoursNeeded: 0.7 },
+        ];
+
+        const result = computeZoneBottleneck(zoneTasks, { encounters: 200 }, 1);
+
+        expect(result.hoursNeeded).toBeCloseTo(1.2);
+        expect(result.fightsNeeded).toBe(240);
+        expect(result.bottleneckHrid).toBe('/monsters/slime');
+    });
+
+    test('merged same-monster tasks can outrank a slower single-task monster', () => {
+        const zoneTasks = [
+            { hrid: '/monsters/slime', name: 'Slime', remaining: 60, killsPerHour: 100, hoursNeeded: 0.6 },
+            { hrid: '/monsters/slime', name: 'Slime', remaining: 60, killsPerHour: 100, hoursNeeded: 0.6 },
+            { hrid: '/monsters/ooze', name: 'Ooze', remaining: 100, killsPerHour: 100, hoursNeeded: 1 },
+        ];
+
+        const result = computeZoneBottleneck(zoneTasks, { encounters: 200 }, 1);
+
+        expect(result.bottleneckHrid).toBe('/monsters/slime');
+        expect(result.hoursNeeded).toBeCloseTo(1.2);
+    });
+
+    test('does not mutate the input tasks', () => {
+        const zoneTasks = [
+            { hrid: '/monsters/slime', name: 'Slime', remaining: 50, killsPerHour: 100, hoursNeeded: 0.5 },
+            { hrid: '/monsters/slime', name: 'Slime', remaining: 70, killsPerHour: 100, hoursNeeded: 0.7 },
+        ];
+
+        computeZoneBottleneck(zoneTasks, { encounters: 200 }, 1);
+
+        expect(zoneTasks[0].remaining).toBe(50);
+    });
+});

@@ -54,6 +54,26 @@ export function fightsForQuantile(remaining, q, probability) {
 }
 
 /**
+ * The game credits each kill to a single task, so several tasks on the same monster share one
+ * kill stream: their remaining kills add up rather than progressing in parallel.
+ * @param {Array<{hrid: string, name: string, remaining: number, killsPerHour: number, hoursNeeded: number}>} zoneTasks
+ * @returns {Array<{hrid: string, name: string, remaining: number, killsPerHour: number, hoursNeeded: number}>}
+ */
+function mergeTasksByMonster(zoneTasks) {
+    const byMonster = new Map();
+    for (const task of zoneTasks) {
+        const existing = byMonster.get(task.hrid);
+        if (!existing) {
+            byMonster.set(task.hrid, { ...task });
+            continue;
+        }
+        existing.remaining += task.remaining;
+        existing.hoursNeeded = existing.killsPerHour > 0 ? existing.remaining / existing.killsPerHour : Infinity;
+    }
+    return [...byMonster.values()];
+}
+
+/**
  * @param {Array<{hrid: string, name: string, remaining: number, killsPerHour: number, hoursNeeded: number}>} zoneTasks
  *   Active combat quests mapped to this zone.
  * @param {Object} simResult - SimResult for this zone (must have an `encounters` count: total
@@ -70,7 +90,7 @@ export function fightsForQuantile(remaining, q, probability) {
 export function computeZoneBottleneck(zoneTasks, simResult, simHours, percentile = null) {
     if (!zoneTasks.length) return null;
 
-    const bottleneck = zoneTasks.reduce((a, b) => (a.hoursNeeded > b.hoursNeeded ? a : b));
+    const bottleneck = mergeTasksByMonster(zoneTasks).reduce((a, b) => (a.hoursNeeded > b.hoursNeeded ? a : b));
     // encounters (not deaths) is the true fight count: deaths excludes wipes with zero kills and
     // includes the player's own death entries, which would otherwise inflate this total.
     const totalFightsPerHour = (simResult.encounters || 0) / simHours;
