@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.22.3](https://github.com/Celasha/Toolasha/compare/v3.22.2...v3.22.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* size the Max button from game data in Community Buff dialogs ([de5af8d](https://github.com/Celasha/Toolasha/commit/de5af8d8c2bd4d27baa6875094e78c60fb2ba0e2))
+* value untradeable drops in chest and crate tooltips through shop prices ([ce7384c](https://github.com/Celasha/Toolasha/commit/ce7384c96fbc629e1854bd734a228e82701b4305))
+
+
+### Miscellaneous Chores
+
+* add temporary consumable tracking diagnostics for [#803](https://github.com/Celasha/Toolasha/issues/803) ([681c6f0](https://github.com/Celasha/Toolasha/commit/681c6f0140bbfe9cdba9a46fe0792e81b2309e9b))
+
 ## [3.22.2](https://github.com/Celasha/Toolasha/compare/v3.22.1...v3.22.2) (2026-10-19)
 
 ### Bug Fixes
