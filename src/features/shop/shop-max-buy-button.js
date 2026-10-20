@@ -9,7 +9,12 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { addStyles, removeStyles } from '../../utils/dom.js';
-import { resolveCostLines, computeMaxAffordable } from '../../utils/shop-max-buy.js';
+import {
+    resolveCostLines,
+    computeMaxAffordable,
+    resolveCommunityBuffCostLines,
+    normalizeCostLinesToUnit,
+} from '../../utils/shop-max-buy.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 
 const BUTTON_CLASS = 'toolasha-shop-max-buy-button';
@@ -131,11 +136,31 @@ class ShopMaxBuyButton {
      * @param {{costStyle: 'text'|'icon', modalContentClass: string}} panelConfig
      */
     async handleMaxClick(container, input, panelConfig) {
-        const costLines = resolveCostLines(container, panelConfig.costStyle);
+        const costLines = this.resolveUnitCostLines(container, input, panelConfig);
         const candidate = computeMaxAffordable(costLines);
         if (candidate === null) return;
 
         await this.fillAndVerify(container, input, candidate, panelConfig.modalContentClass);
+    }
+
+    /**
+     * Per-unit cost lines for the dialog. Community Buff dialogs open at 10 minutes, so their
+     * "You Pay" row is a total, not a unit price: take the per-minute cost from game data, and
+     * only if that can't be resolved divide the displayed total by the typed quantity.
+     * @param {Element} container
+     * @param {HTMLInputElement} input
+     * @param {{key: string, costStyle: 'text'|'icon'}} panelConfig
+     * @returns {Array<{itemHrid: string, perUnitAmount: number}>}
+     */
+    resolveUnitCostLines(container, input, panelConfig) {
+        if (panelConfig.key !== 'cowbellStore') {
+            return resolveCostLines(container, panelConfig.costStyle);
+        }
+
+        const fromGameData = resolveCommunityBuffCostLines(container);
+        if (fromGameData) return fromGameData;
+
+        return normalizeCostLinesToUnit(resolveCostLines(container, panelConfig.costStyle), parseInt(input.value, 10));
     }
 
     /**

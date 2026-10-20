@@ -12,6 +12,8 @@ import dataManager from '../core/data-manager.js';
 import { getItemHridFromName } from './game-lookups.js';
 
 const INVENTORY_LOCATION = '/item_locations/inventory';
+const COWBELL_HRID = '/items/cowbell';
+const BUFF_TYPE_PREFIX = '/buff_types/';
 const AMOUNT_RE = /\d[\d.,\s]*\d|\d/;
 
 /**
@@ -119,4 +121,46 @@ export function computeMaxAffordable(costLines) {
     }
 
     return max >= 1 ? max : null;
+}
+
+/**
+ * Resolve the Cowbell Store's Community Buff dialog to its per-minute cowbell cost from game data.
+ * The dialog's "You Pay" row shows the cost of whatever quantity is typed in (it opens at 10
+ * minutes), so it can't be read as a unit price. The buff is identified by the dialog's icon
+ * (`buffs_sprite.svg#<name>`), which matches each buff's `buff.typeHrid` minus `/buff_types/`.
+ * @param {Element} inputContainer - the CowbellStorePanel_inputContainer element
+ * @returns {Array<{itemHrid: string, perUnitAmount: number}>|null} null when this isn't a
+ *   Community Buff dialog or the buff/cost can't be resolved
+ */
+export function resolveCommunityBuffCostLines(inputContainer) {
+    const modal = inputContainer?.parentElement;
+    const use = modal?.querySelector('[class*="CommunityBuff_communityBuff"] svg use');
+    const href = use?.getAttribute('href') || use?.getAttribute('xlink:href');
+    const iconName = href?.split('#')[1];
+    if (!iconName) return null;
+
+    const detailMap = dataManager.getInitClientData()?.communityBuffTypeDetailMap;
+    if (!detailMap) return null;
+
+    const buffType = Object.values(detailMap).find(
+        (detail) => detail?.buff?.typeHrid === `${BUFF_TYPE_PREFIX}${iconName}`
+    );
+    const cost = buffType?.cowbellCost;
+    if (!(cost > 0)) return null;
+
+    return [{ itemHrid: COWBELL_HRID, perUnitAmount: cost }];
+}
+
+/**
+ * Convert cost lines read from a dialog that shows the total for the typed quantity into
+ * per-unit lines. Returns the lines unchanged when the quantity isn't a positive integer that
+ * divides every amount exactly (nothing reliable to normalise by).
+ * @param {Array<{itemHrid: string, perUnitAmount: number}>} costLines
+ * @param {number} quantity - the quantity currently typed into the dialog
+ * @returns {Array<{itemHrid: string, perUnitAmount: number}>}
+ */
+export function normalizeCostLinesToUnit(costLines, quantity) {
+    if (!Number.isInteger(quantity) || quantity <= 1) return costLines;
+    if (costLines.some((line) => line.perUnitAmount % quantity !== 0)) return costLines;
+    return costLines.map((line) => ({ ...line, perUnitAmount: line.perUnitAmount / quantity }));
 }

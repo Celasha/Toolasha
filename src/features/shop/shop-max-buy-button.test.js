@@ -13,6 +13,8 @@ const observerRegistrations = [];
 const {
     mockResolveCostLines,
     mockComputeMaxAffordable,
+    mockResolveCommunityBuffCostLines,
+    mockNormalizeCostLinesToUnit,
     mockSetReactInputValue,
     mockT,
     mockAddStyles,
@@ -20,6 +22,8 @@ const {
 } = vi.hoisted(() => ({
     mockResolveCostLines: vi.fn(),
     mockComputeMaxAffordable: vi.fn(),
+    mockResolveCommunityBuffCostLines: vi.fn(),
+    mockNormalizeCostLinesToUnit: vi.fn(),
     mockSetReactInputValue: vi.fn(),
     mockT: vi.fn((key) => key),
     mockAddStyles: vi.fn(),
@@ -52,6 +56,8 @@ vi.mock('../../utils/dom.js', () => ({
 vi.mock('../../utils/shop-max-buy.js', () => ({
     resolveCostLines: mockResolveCostLines,
     computeMaxAffordable: mockComputeMaxAffordable,
+    resolveCommunityBuffCostLines: mockResolveCommunityBuffCostLines,
+    normalizeCostLinesToUnit: mockNormalizeCostLinesToUnit,
 }));
 
 vi.mock('../../utils/react-input.js', () => ({
@@ -285,5 +291,55 @@ describe('ShopMaxBuyButton', () => {
 
         expect(mockSetReactInputValue).toHaveBeenCalledTimes(1);
         expect(mockSetReactInputValue).toHaveBeenCalledWith(expect.anything(), 4, { focus: false });
+    });
+});
+
+describe('ShopMaxBuyButton.resolveUnitCostLines', () => {
+    const input = { value: '10' };
+    const container = {};
+
+    beforeEach(() => {
+        mockResolveCostLines.mockReset();
+        mockResolveCommunityBuffCostLines.mockReset();
+        mockNormalizeCostLinesToUnit.mockReset();
+    });
+
+    test('Cowbell Store uses the per-minute cost from game data when it resolves', () => {
+        const lines = [{ itemHrid: '/items/cowbell', perUnitAmount: 10 }];
+        mockResolveCommunityBuffCostLines.mockReturnValue(lines);
+
+        const result = shopMaxBuyButton.resolveUnitCostLines(container, input, {
+            key: 'cowbellStore',
+            costStyle: 'icon',
+        });
+
+        expect(result).toBe(lines);
+        expect(mockResolveCostLines).not.toHaveBeenCalled();
+    });
+
+    test('Cowbell Store falls back to dividing the displayed total by the typed quantity', () => {
+        const pageLines = [{ itemHrid: '/items/cowbell', perUnitAmount: 100 }];
+        const unitLines = [{ itemHrid: '/items/cowbell', perUnitAmount: 10 }];
+        mockResolveCommunityBuffCostLines.mockReturnValue(null);
+        mockResolveCostLines.mockReturnValue(pageLines);
+        mockNormalizeCostLinesToUnit.mockReturnValue(unitLines);
+
+        const result = shopMaxBuyButton.resolveUnitCostLines(container, input, {
+            key: 'cowbellStore',
+            costStyle: 'icon',
+        });
+
+        expect(mockNormalizeCostLinesToUnit).toHaveBeenCalledWith(pageLines, 10);
+        expect(result).toBe(unitLines);
+    });
+
+    test('other panels still read the cost row directly', () => {
+        const lines = [{ itemHrid: '/items/task_token', perUnitAmount: 50 }];
+        mockResolveCostLines.mockReturnValue(lines);
+
+        const result = shopMaxBuyButton.resolveUnitCostLines(container, input, { key: 'tasks', costStyle: 'icon' });
+
+        expect(result).toBe(lines);
+        expect(mockResolveCommunityBuffCostLines).not.toHaveBeenCalled();
     });
 });

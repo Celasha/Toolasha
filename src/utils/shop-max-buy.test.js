@@ -7,14 +7,16 @@
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-const { mockGetInventory, mockGetItemHridFromName } = vi.hoisted(() => ({
+const { mockGetInventory, mockGetInitClientData, mockGetItemHridFromName } = vi.hoisted(() => ({
     mockGetInventory: vi.fn(),
+    mockGetInitClientData: vi.fn(),
     mockGetItemHridFromName: vi.fn(),
 }));
 
 vi.mock('../core/data-manager.js', () => ({
     default: {
         getInventory: mockGetInventory,
+        getInitClientData: mockGetInitClientData,
     },
 }));
 
@@ -22,7 +24,12 @@ vi.mock('./game-lookups.js', () => ({
     getItemHridFromName: mockGetItemHridFromName,
 }));
 
-import { resolveCostLines, computeMaxAffordable } from './shop-max-buy.js';
+import {
+    resolveCostLines,
+    computeMaxAffordable,
+    resolveCommunityBuffCostLines,
+    normalizeCostLinesToUnit,
+} from './shop-max-buy.js';
 
 function inventoryItem(itemHrid, count, enhancementLevel = 0) {
     return { itemHrid, count, enhancementLevel, itemLocationHrid: '/item_locations/inventory' };
@@ -210,5 +217,68 @@ describe('computeMaxAffordable', () => {
         const max = computeMaxAffordable([{ itemHrid: '/items/task_token', perUnitAmount: 1 }]);
 
         expect(max).toBeNull();
+    });
+});
+
+describe('resolveCommunityBuffCostLines', () => {
+    const detailMap = {
+        '/community_buff_types/experience': { buff: { typeHrid: '/buff_types/wisdom' }, cowbellCost: 20 },
+        '/community_buff_types/gathering_quantity': { buff: { typeHrid: '/buff_types/gathering' }, cowbellCost: 10 },
+    };
+
+    // Mirrors the real dialog: icon block, then the input container, then the "You Pay" row.
+    function buildBuffDialog(iconName) {
+        document.body.innerHTML = `
+            <div class="CowbellStorePanel_modalContent__1JNWg">
+                <div>
+                    <div class="CommunityBuff_communityBuff__1BILG CommunityBuff_large__3rZbm">
+                        <svg aria-label="buff"><use href="/static/media/buffs_sprite.cd54d85e.svg#${iconName}"></use></svg>
+                    </div>
+                </div>
+                <div class="CowbellStorePanel_inputContainer__3iH6M"><input type="number" value="10"></div>
+                <div>You Pay: 100 <svg><use href="/static/media/items_sprite.f58c9476.svg#cowbell"></use></svg></div>
+            </div>
+        `;
+        return document.querySelector('[class*="inputContainer"]');
+    }
+
+    beforeEach(() => {
+        mockGetInitClientData.mockReturnValue({ communityBuffTypeDetailMap: detailMap });
+    });
+
+    test('resolves the per-minute cowbell cost from game data by the dialog icon', () => {
+        expect(resolveCommunityBuffCostLines(buildBuffDialog('gathering'))).toEqual([
+            { itemHrid: '/items/cowbell', perUnitAmount: 10 },
+        ]);
+        expect(resolveCommunityBuffCostLines(buildBuffDialog('wisdom'))).toEqual([
+            { itemHrid: '/items/cowbell', perUnitAmount: 20 },
+        ]);
+    });
+
+    test('returns null for an unknown icon, missing game data, or a non-buff dialog', () => {
+        expect(resolveCommunityBuffCostLines(buildBuffDialog('mystery'))).toBeNull();
+
+        mockGetInitClientData.mockReturnValue({});
+        expect(resolveCommunityBuffCostLines(buildBuffDialog('gathering'))).toBeNull();
+
+        mockGetInitClientData.mockReturnValue({ communityBuffTypeDetailMap: detailMap });
+        document.body.innerHTML =
+            '<div><div class="CowbellStorePanel_inputContainer__3iH6M"><input type="number"></div></div>';
+        expect(resolveCommunityBuffCostLines(document.querySelector('[class*="inputContainer"]'))).toBeNull();
+    });
+});
+
+describe('normalizeCostLinesToUnit', () => {
+    test('divides a displayed total by the typed quantity', () => {
+        expect(normalizeCostLinesToUnit([{ itemHrid: '/items/cowbell', perUnitAmount: 100 }], 10)).toEqual([
+            { itemHrid: '/items/cowbell', perUnitAmount: 10 },
+        ]);
+    });
+
+    test('leaves lines alone when the quantity is 1, invalid, or does not divide evenly', () => {
+        const lines = [{ itemHrid: '/items/cowbell', perUnitAmount: 105 }];
+        expect(normalizeCostLinesToUnit(lines, 1)).toBe(lines);
+        expect(normalizeCostLinesToUnit(lines, NaN)).toBe(lines);
+        expect(normalizeCostLinesToUnit(lines, 10)).toBe(lines);
     });
 });
