@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.22.2
+ * Version: 3.22.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6048,6 +6048,22 @@ self.onmessage = function (e) {
     const alchemyProfitCalculator = new AlchemyProfitCalculator();
 
     /**
+     * Openable Analytics pricing options
+     * Single source for whether untradeable drops (capes, seals, shop tokens) are valued through
+     * the shop-redemption chain, so Actual, Expected, variance and the side panel share one basis.
+     */
+
+
+    /**
+     * Whether drops with no market price should be valued via shop redemption.
+     * Only an explicit `false` disables it, so a missing/unreadable setting keeps the default (on).
+     * @returns {boolean}
+     */
+    function allowIndirectPricing() {
+        return config.getSetting('openableAnalytics_valueUntradeables') !== false;
+    }
+
+    /**
      * Gathering Profit Calculator
      *
      * Calculates comprehensive profit/hour for gathering actions (Foraging, Woodcutting, Milking) including:
@@ -6849,7 +6865,11 @@ self.onmessage = function (e) {
 
             // Check if this is an openable container first (they have no market price)
             if (itemDetails.isOpenable && config.getSetting('itemTooltip_expectedValue')) {
-                const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
+                // Same shop-redemption fallback net worth and Openable Analytics use, so seals and
+                // tokens the market doesn't price still count toward the tooltip's total.
+                const evData = expectedValueCalculator.calculateExpectedValue(itemHrid, {
+                    allowIndirect: allowIndirectPricing(),
+                });
                 if (evData) {
                     // Compute chest key deduction for dungeon chests
                     let keyPrice = 0;
@@ -33544,22 +33564,6 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         initialize: () => customTabsFeature.initialize(),
         disable: () => customTabsFeature.disable(),
     };
-
-    /**
-     * Openable Analytics pricing options
-     * Single source for whether untradeable drops (capes, seals, shop tokens) are valued through
-     * the shop-redemption chain, so Actual, Expected, variance and the side panel share one basis.
-     */
-
-
-    /**
-     * Whether drops with no market price should be valued via shop redemption.
-     * Only an explicit `false` disables it, so a missing/unreadable setting keeps the default (on).
-     * @returns {boolean}
-     */
-    function allowIndirectPricing() {
-        return config.getSetting('openableAnalytics_valueUntradeables') !== false;
-    }
 
     /**
      * Openable Analytics Calculator

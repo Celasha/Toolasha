@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.22.2
+ * Version: 3.22.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -826,6 +826,8 @@
 
 
     const INVENTORY_LOCATION = '/item_locations/inventory';
+    const COWBELL_HRID = '/items/cowbell';
+    const BUFF_TYPE_PREFIX = '/buff_types/';
     const AMOUNT_RE = /\d[\d.,\s]*\d|\d/;
 
     /**
@@ -933,6 +935,48 @@
         }
 
         return max >= 1 ? max : null;
+    }
+
+    /**
+     * Resolve the Cowbell Store's Community Buff dialog to its per-minute cowbell cost from game data.
+     * The dialog's "You Pay" row shows the cost of whatever quantity is typed in (it opens at 10
+     * minutes), so it can't be read as a unit price. The buff is identified by the dialog's icon
+     * (`buffs_sprite.svg#<name>`), which matches each buff's `buff.typeHrid` minus `/buff_types/`.
+     * @param {Element} inputContainer - the CowbellStorePanel_inputContainer element
+     * @returns {Array<{itemHrid: string, perUnitAmount: number}>|null} null when this isn't a
+     *   Community Buff dialog or the buff/cost can't be resolved
+     */
+    function resolveCommunityBuffCostLines(inputContainer) {
+        const modal = inputContainer?.parentElement;
+        const use = modal?.querySelector('[class*="CommunityBuff_communityBuff"] svg use');
+        const href = use?.getAttribute('href') || use?.getAttribute('xlink:href');
+        const iconName = href?.split('#')[1];
+        if (!iconName) return null;
+
+        const detailMap = dataManager.getInitClientData()?.communityBuffTypeDetailMap;
+        if (!detailMap) return null;
+
+        const buffType = Object.values(detailMap).find(
+            (detail) => detail?.buff?.typeHrid === `${BUFF_TYPE_PREFIX}${iconName}`
+        );
+        const cost = buffType?.cowbellCost;
+        if (!(cost > 0)) return null;
+
+        return [{ itemHrid: COWBELL_HRID, perUnitAmount: cost }];
+    }
+
+    /**
+     * Convert cost lines read from a dialog that shows the total for the typed quantity into
+     * per-unit lines. Returns the lines unchanged when the quantity isn't a positive integer that
+     * divides every amount exactly (nothing reliable to normalise by).
+     * @param {Array<{itemHrid: string, perUnitAmount: number}>} costLines
+     * @param {number} quantity - the quantity currently typed into the dialog
+     * @returns {Array<{itemHrid: string, perUnitAmount: number}>}
+     */
+    function normalizeCostLinesToUnit(costLines, quantity) {
+        if (!Number.isInteger(quantity) || quantity <= 1) return costLines;
+        if (costLines.some((line) => line.perUnitAmount % quantity !== 0)) return costLines;
+        return costLines.map((line) => ({ ...line, perUnitAmount: line.perUnitAmount / quantity }));
     }
 
     /**
@@ -1062,11 +1106,31 @@
          * @param {{costStyle: 'text'|'icon', modalContentClass: string}} panelConfig
          */
         async handleMaxClick(container, input, panelConfig) {
-            const costLines = resolveCostLines(container, panelConfig.costStyle);
+            const costLines = this.resolveUnitCostLines(container, input, panelConfig);
             const candidate = computeMaxAffordable(costLines);
             if (candidate === null) return;
 
             await this.fillAndVerify(container, input, candidate, panelConfig.modalContentClass);
+        }
+
+        /**
+         * Per-unit cost lines for the dialog. Community Buff dialogs open at 10 minutes, so their
+         * "You Pay" row is a total, not a unit price: take the per-minute cost from game data, and
+         * only if that can't be resolved divide the displayed total by the typed quantity.
+         * @param {Element} container
+         * @param {HTMLInputElement} input
+         * @param {{key: string, costStyle: 'text'|'icon'}} panelConfig
+         * @returns {Array<{itemHrid: string, perUnitAmount: number}>}
+         */
+        resolveUnitCostLines(container, input, panelConfig) {
+            if (panelConfig.key !== 'cowbellStore') {
+                return resolveCostLines(container, panelConfig.costStyle);
+            }
+
+            const fromGameData = resolveCommunityBuffCostLines(container);
+            if (fromGameData) return fromGameData;
+
+            return normalizeCostLinesToUnit(resolveCostLines(container, panelConfig.costStyle), parseInt(input.value, 10));
         }
 
         /**

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.22.2
+ * Version: 3.22.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4212,8 +4212,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: 'Pins a panel to the left of the Opened Loot window with Opened, Income, Profit, Luck, Expected income, and vs. expected for the current opening and its lifetime history',
                 },
                 openableAnalytics_valueUntradeables: {
-                    label: 'Openable Analytics: Value untradeable drops via shop prices',
-                    help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with',
+                    label: 'Value untradeable drops via shop prices (item tooltips and Openable Analytics)',
+                    help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with. Also applies to the Expected Value shown in chest and crate item tooltips',
                 },
                 inventoryTabs: {
                     label: 'Custom Inventory Tabs: Enable',
@@ -5482,8 +5482,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '在“已开启战利品”窗口左侧固定一个面板，显示本次开启及历史记录的已开启数量、收入、利润、幸运值、预期收入和与预期的对比',
                 },
                 openableAnalytics_valueUntradeables: {
-                    label: '开箱分析：按商店价格估算不可交易掉落物',
-                    help: '不可交易的掉落物（披风、印章、代币）没有市场价格，因此按其商店兑换成本估值。关闭后，它们将不计入实际价值、预期价值和幸运值（显示为“暂无价格”）。过往开启记录保留其记录时的价值',
+                    label: '按商店价格估算不可交易掉落物（物品提示和开箱分析）',
+                    help: '不可交易的掉落物（披风、印章、代币）没有市场价格，因此按其商店兑换成本估值。关闭后，它们将不计入实际价值、预期价值和幸运值（显示为“暂无价格”）。过往开启记录保留其记录时的价值。同样适用于箱子物品提示中显示的预期价值',
                 },
                 inventoryTabs: {
                     label: '自定义物品栏标签：启用',
@@ -10412,10 +10412,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 openableAnalytics_valueUntradeables: {
                     id: 'openableAnalytics_valueUntradeables',
-                    label: 'Openable Analytics: Value untradeable drops via shop prices',
+                    label: 'Value untradeable drops via shop prices (item tooltips and Openable Analytics)',
                     type: 'checkbox',
                     default: true,
-                    help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with',
+                    help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with. Also applies to the Expected Value shown in chest and crate item tooltips',
                 },
             },
         },
