@@ -2,12 +2,17 @@
 
 import { describe, expect, test, vi } from 'vitest';
 
+const { mockSettings, mockCalculateExpectedValue } = vi.hoisted(() => ({
+    mockSettings: {},
+    mockCalculateExpectedValue: vi.fn(),
+}));
+
 vi.mock('../../core/config.js', () => ({
     default: {
         COLOR_TOOLTIP_INFO: '#2563eb',
         COLOR_TEXT_SECONDARY: '#999',
         COLOR_WARNING: '#ffa500',
-        getSetting: vi.fn(() => false),
+        getSetting: vi.fn((key) => mockSettings[key] ?? false),
         getSettingValue: vi.fn((key, fallback) => (key === 'formatting_useKMBFormat' ? 'full' : fallback)),
     },
 }));
@@ -25,11 +30,13 @@ vi.mock('../../core/i18n.js', () => ({
     }),
 }));
 
-vi.mock('../../core/data-manager.js', () => ({ default: {} }));
+vi.mock('../../core/data-manager.js', () => ({ default: { getItemDetails: vi.fn(() => ({ isOpenable: true })) } }));
 vi.mock('../../core/dom-observer.js', () => ({ default: { onClass: vi.fn(() => () => {}) } }));
 vi.mock('./profit-calculator.js', () => ({ default: {} }));
 vi.mock('./alchemy-profit-calculator.js', () => ({ default: {} }));
-vi.mock('./expected-value-calculator.js', () => ({ default: { isInitialized: false } }));
+vi.mock('./expected-value-calculator.js', () => ({
+    default: { isInitialized: false, calculateExpectedValue: mockCalculateExpectedValue },
+}));
 vi.mock('../../api/marketplace.js', () => ({ default: { getPrice: vi.fn(() => null), on: vi.fn() } }));
 vi.mock('../../utils/market-data.js', () => ({ getItemPrices: vi.fn() }));
 vi.mock('../../utils/profit-helpers.js', () => ({
@@ -115,5 +122,40 @@ describe('TooltipPrices.injectMultiActionProfitDisplay loadout prediction', () =
             savedLoadoutContext
         );
         expect(tooltipElement.querySelector('.market-multi-action-injected')).not.toBeNull();
+    });
+});
+
+describe('TooltipPrices.handleTooltip expected value pricing', () => {
+    function buildContainerTooltip() {
+        const tooltipElement = buildTooltipElement();
+        const nameElement = document.createElement('div');
+        nameElement.className = 'ItemTooltipText_name__2JAHA';
+        nameElement.textContent = "Purdora's Box (Combat)";
+        tooltipElement.appendChild(nameElement);
+        return tooltipElement;
+    }
+
+    function openContainerTooltip() {
+        vi.spyOn(tooltipPrices, 'extractItemHridFromName').mockReturnValue('/items/purdoras_box_combat');
+        mockCalculateExpectedValue.mockReturnValue(null);
+        return tooltipPrices.handleTooltip(buildContainerTooltip());
+    }
+
+    test('values untradeable drops through shop redemption by default', async () => {
+        mockSettings.itemTooltip_expectedValue = true;
+        mockSettings.openableAnalytics_valueUntradeables = true;
+
+        await openContainerTooltip();
+
+        expect(mockCalculateExpectedValue).toHaveBeenCalledWith('/items/purdoras_box_combat', { allowIndirect: true });
+    });
+
+    test('leaves them unpriced when the untradeable-valuation setting is off', async () => {
+        mockSettings.itemTooltip_expectedValue = true;
+        mockSettings.openableAnalytics_valueUntradeables = false;
+
+        await openContainerTooltip();
+
+        expect(mockCalculateExpectedValue).toHaveBeenCalledWith('/items/purdoras_box_combat', { allowIndirect: false });
     });
 });

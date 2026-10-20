@@ -1663,10 +1663,10 @@ export const settingsGroups = {
             },
             openableAnalytics_valueUntradeables: {
                 id: 'openableAnalytics_valueUntradeables',
-                label: 'Openable Analytics: Value untradeable drops via shop prices',
+                label: 'Value untradeable drops via shop prices (item tooltips and Openable Analytics)',
                 type: 'checkbox',
                 default: true,
-                help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with',
+                help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with. Also applies to the Expected Value shown in chest and crate item tooltips',
             },
         },
     },

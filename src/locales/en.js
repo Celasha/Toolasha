@@ -3532,8 +3532,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 help: 'Pins a panel to the left of the Opened Loot window with Opened, Income, Profit, Luck, Expected income, and vs. expected for the current opening and its lifetime history',
             },
             openableAnalytics_valueUntradeables: {
-                label: 'Openable Analytics: Value untradeable drops via shop prices',
-                help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with',
+                label: 'Value untradeable drops via shop prices (item tooltips and Openable Analytics)',
+                help: 'Untradeable drops (capes, seals, tokens) have no market price, so they are valued from what they cost in the shop. Turn off to leave them out of Actual, Expected, and Luck (shown as "no price yet"). Past openings keep the value they were recorded with. Also applies to the Expected Value shown in chest and crate item tooltips',
             },
             inventoryTabs: {
                 label: 'Custom Inventory Tabs: Enable',

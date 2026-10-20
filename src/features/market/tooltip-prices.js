@@ -11,6 +11,7 @@ import marketAPI from '../../api/marketplace.js';
 import profitCalculator from './profit-calculator.js';
 import alchemyProfitCalculator from './alchemy-profit-calculator.js';
 import expectedValueCalculator from './expected-value-calculator.js';
+import { allowIndirectPricing } from '../inventory/openable-analytics/openable-analytics-pricing.js';
 import {
     calculateEnhancementPath,
     buildEnhancementTooltipHTML,
@@ -282,7 +283,11 @@ class TooltipPrices {
 
         // Check if this is an openable container first (they have no market price)
         if (itemDetails.isOpenable && config.getSetting('itemTooltip_expectedValue')) {
-            const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
+            // Same shop-redemption fallback net worth and Openable Analytics use, so seals and
+            // tokens the market doesn't price still count toward the tooltip's total.
+            const evData = expectedValueCalculator.calculateExpectedValue(itemHrid, {
+                allowIndirect: allowIndirectPricing(),
+            });
             if (evData) {
                 // Compute chest key deduction for dungeon chests
                 let keyPrice = 0;
