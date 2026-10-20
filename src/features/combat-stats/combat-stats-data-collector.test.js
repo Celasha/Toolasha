@@ -837,3 +837,22 @@ describe('CombatStatsDataCollector connection-interrupted flagging', () => {
         expect(webSocketHook.offSocketEvent).toHaveBeenCalledWith('close', expect.any(Function));
     });
 });
+
+describe('CombatStatsDataCollector consumable diagnostics (issue #803)', () => {
+    test('exposes a console report that tallies accepted events and cleans up after itself', async () => {
+        vi.stubGlobal('window', globalThis);
+        const collector = new CombatStatsDataCollector();
+        await collector.initialize();
+        expect(typeof globalThis.toolashaConsumableDebug).toBe('function');
+
+        await collector.onConsumableUsed({ consumable: { itemHrid: '/items/ultimate_magic_coffee', count: 50 } });
+        const report = globalThis.toolashaConsumableDebug();
+
+        expect(report.items['/items/ultimate_magic_coffee'].eventsAccepted).toBeGreaterThanOrEqual(1);
+        expect(report.trackedItems['/items/ultimate_magic_coffee'].trackedActualConsumed).toBe(1);
+
+        collector.cleanup();
+        expect(globalThis.toolashaConsumableDebug).toBeUndefined();
+        vi.unstubAllGlobals();
+    });
+});

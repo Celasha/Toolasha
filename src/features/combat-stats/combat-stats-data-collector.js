@@ -9,6 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import { calculateLevelGapDebuff, calculateCombatLevelFromLevelFields } from '../combat-sim/combat-sim-adapter.js';
 import dungeonTracker from '../combat/dungeon-tracker.js';
 import ExpectedLootTracker from './expected-loot-tracker.js';
+import consumableDebugRecorder from './combat-stats-consumable-debug.js';
 
 const COMBAT_STATS_STORE = 'combatStats';
 const LEGACY_STORAGE_KEYS = Object.freeze({
@@ -18,6 +19,13 @@ const LEGACY_STORAGE_KEYS = Object.freeze({
     latestCombatRun: 'latestCombatRun',
 });
 const STORAGE_MISSING = Symbol('storage-missing');
+const CONSUMABLE_DEBUG_GLOBAL = 'toolashaConsumableDebug';
+
+/** The page window, so the console can reach the diagnostics function from a userscript sandbox. */
+function getPageWindow() {
+    if (typeof unsafeWindow !== 'undefined') return unsafeWindow;
+    return typeof window !== 'undefined' ? window : null;
+}
 
 /**
  * Derive a player's raw (unfloored) Combat Level from the seven whole skill-level fields on
@@ -152,6 +160,7 @@ class CombatStatsDataCollector {
         // the current session's numbers as possibly incomplete rather than silently trusting them.
         this.socketCloseHandler = () => {
             if (generation !== this.lifecycleGeneration) return;
+            consumableDebugRecorder.recordSocketClose();
             if (this.consumableTracker.startTime) {
                 this.connectionInterrupted = true;
             }
@@ -171,6 +180,9 @@ class CombatStatsDataCollector {
             }
         };
         dungeonTracker.onUpdate(this.dungeonCompletionHandler);
+
+        const pageWindow = getPageWindow();
+        if (pageWindow) pageWindow[CONSUMABLE_DEBUG_GLOBAL] = () => this.getConsumableDebugReport();
     }
 
     /**
@@ -442,9 +454,11 @@ class CombatStatsDataCollector {
             // (game sometimes sends duplicate events)
             const lastEventTime = this.consumableTracker.lastEventByItem[itemHrid] || 0;
             if (now - lastEventTime < 100) {
+                consumableDebugRecorder.recordEvent(itemHrid, false);
                 return; // Skip duplicate event
             }
             this.consumableTracker.lastEventByItem[itemHrid] = now;
+            consumableDebugRecorder.recordEvent(itemHrid, true, data.consumable.count);
 
             // Initialize tracking if first event
             if (!this.consumableTracker.startTime) {
@@ -625,6 +639,11 @@ class CombatStatsDataCollector {
                 (elapsedSeconds > 0 && durationSeconds < elapsedSeconds);
 
             if (shouldResetTracking) {
+                consumableDebugRecorder.recordTrackingReset(
+                    this.currentBattleId !== null && battleId < this.currentBattleId
+                        ? 'battleId decreased'
+                        : 'combat duration shorter than tracking duration'
+                );
                 await this.resetConsumableTracking(characterId);
                 if (generation !== this.lifecycleGeneration) return;
                 this.pendingEncounter = null;
@@ -640,6 +659,9 @@ class CombatStatsDataCollector {
             const currentCharacterId = dataManager.getCurrentCharacterId();
 
             this.processExpectedLoot(data, currentCharacterId);
+
+            const selfPlayer = data.players.find((p) => p?.character?.id === currentCharacterId);
+            consumableDebugRecorder.recordNewBattle(selfPlayer?.combatConsumables);
 
             // Track party member consumables via inventory snapshots (MCS-style)
             const currentPartyMembers = new Set();
@@ -907,6 +929,30 @@ class CombatStatsDataCollector {
     }
 
     /**
+     * Diagnostics for the current player's consumable counts (issue #803), read from the console
+     * via `toolashaConsumableDebug()`.
+     * @returns {Object}
+     */
+    getConsumableDebugReport() {
+        const elapsedSeconds = this.calcElapsedSeconds();
+        const trackedItems = {};
+        for (const [itemHrid, eventCount] of Object.entries(this.consumableTracker.actualConsumed)) {
+            trackedItems[itemHrid] = {
+                trackedActualConsumed: eventCount,
+                trackedRatePerHour: elapsedSeconds > 0 ? Number(((eventCount / elapsedSeconds) * 3600).toFixed(2)) : 0,
+            };
+        }
+        return consumableDebugRecorder.getReport({
+            trackerStartedAt: this.consumableTracker.startTime
+                ? new Date(this.consumableTracker.startTime).toISOString()
+                : null,
+            trackedHours: Number((elapsedSeconds / 3600).toFixed(2)),
+            connectionInterrupted: this.connectionInterrupted,
+            trackedItems,
+        });
+    }
+
+    /**
      * Whether a WS disconnect/reconnect happened during the current tracking session, meaning
      * some events may have been missed and the session's numbers may be incomplete.
      * @returns {boolean}
@@ -930,6 +976,8 @@ class CombatStatsDataCollector {
      */
     cleanup() {
         this.lifecycleGeneration += 1;
+        const pageWindow = getPageWindow();
+        if (pageWindow) delete pageWindow[CONSUMABLE_DEBUG_GLOBAL];
 
         if (this.newBattleHandler) {
             webSocketHook.off('new_battle', this.newBattleHandler);
