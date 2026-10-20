@@ -2,10 +2,9 @@
 
 ## [3.22.4](https://github.com/Celasha/Toolasha/compare/v3.22.3...v3.22.4) (2026-10-20)
 
-
 ### Bug Fixes
 
-* sum remaining kills for same-monster tasks in zone task progress ([1c7275e](https://github.com/Celasha/Toolasha/commit/1c7275e99b72e42fb7c56e933383c4d12bdf233c))
+- sum remaining kills for same-monster tasks in zone task progress ([1c7275e](https://github.com/Celasha/Toolasha/commit/1c7275e99b72e42fb7c56e933383c4d12bdf233c))
 
 ## [3.22.3](https://github.com/Celasha/Toolasha/compare/v3.22.2...v3.22.3) (2026-10-20)
 
