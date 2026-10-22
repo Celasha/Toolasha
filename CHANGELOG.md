@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.22.5](https://github.com/Celasha/Toolasha/compare/v3.22.4...v3.22.5) (2026-10-22)
+
+
+### Bug Fixes
+
+* reconcile consumable tracking against battle snapshots ([a68437e](https://github.com/Celasha/Toolasha/commit/a68437eb7a7cafd74c4cdc437d99845b2065900a))
+
 ## [3.22.4](https://github.com/Celasha/Toolasha/compare/v3.22.3...v3.22.4) (2026-10-20)
 
 ### Bug Fixes
