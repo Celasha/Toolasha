@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.22.4
+ * Version: 3.22.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -29905,6 +29905,10 @@
             firstSnapshotCount: null,
             lastSnapshotCount: null,
             lastPayloadCount: null,
+            gapCredited: 0,
+            gapRejected: 0,
+            gapRejectedAmount: 0,
+            gapRestocks: 0,
         };
     }
 
@@ -29922,6 +29926,7 @@
             this.lastNewBattleAt = null;
             this.socketCloses = [];
             this.trackingResets = [];
+            this.unobservedGaps = [];
         }
 
         _item(itemHrid) {
@@ -29979,6 +29984,34 @@
             }
         }
 
+        /**
+         * Record the outcome of one snapshot reconciliation for the current player.
+         * @param {{unobserved: boolean, excludeSeconds: number, items: Array<{itemHrid: string, action: string, credited: number, missed: number}>}} result
+         * @param {number|null} gapSeconds
+         * @param {number} [now]
+         */
+        recordReconcile(result, gapSeconds, now = Date.now()) {
+            for (const entry of result.items) {
+                const item = this._item(entry.itemHrid);
+                if (entry.action === 'credit') item.gapCredited += entry.credited;
+                else if (entry.action === 'reject') {
+                    item.gapRejected++;
+                    item.gapRejectedAmount += entry.missed;
+                } else if (entry.action === 'restock') item.gapRestocks++;
+            }
+            if (result.unobserved) {
+                this.unobservedGaps.push({
+                    at: new Date(now).toISOString(),
+                    gapSeconds: Math.round(gapSeconds),
+                    excludedSeconds: Math.round(result.excludeSeconds),
+                    items: result.items
+                        .filter((entry) => entry.action !== 'none')
+                        .map((entry) => `${entry.itemHrid}:${entry.action}:${entry.missed}`),
+                });
+                if (this.unobservedGaps.length > MAX_LOG_ENTRIES) this.unobservedGaps.shift();
+            }
+        }
+
         recordSocketClose(now = Date.now()) {
             this.socketCloses.push(new Date(now).toISOString());
             if (this.socketCloses.length > MAX_LOG_ENTRIES) this.socketCloses.shift();
@@ -30005,6 +30038,7 @@
                 newBattleGapsOver60s: this.newBattleGapsOver60s,
                 socketCloses: this.socketCloses,
                 trackingResets: this.trackingResets,
+                unobservedGaps: this.unobservedGaps,
                 items: this.items,
                 ...context,
             };
@@ -30012,6 +30046,141 @@
     }
 
     const consumableDebugRecorder = new ConsumableDebugRecorder();
+
+    /**
+     * Temporary console diagnostics for the consumable tracking investigation (#803).
+     * Every line starts with DIAG_TAG so it can be filtered in the browser console.
+     * Remove once the tracking redesign settles.
+     */
+
+    const DIAG_TAG = '[ToolashaDiag]';
+
+    /**
+     * @param {string} kind - Short event name
+     * @param {Object} fields - JSON-serialisable details
+     */
+    function diagLog(kind, fields = {}) {
+        console.log(DIAG_TAG, kind, JSON.stringify({ at: new Date().toISOString(), ...fields }));
+    }
+
+    /**
+     * Consumable reconciliation (issue #803).
+     *
+     * Event counting misses consumption whenever the page is not receiving events (closed tab,
+     * suspended page, reconnect). Every new_battle carries the player's current consumable counts, so
+     * the difference between the count we last held and the count in the payload is the consumption
+     * we missed. This module decides how much of that difference to believe and how much of the
+     * unobserved time belongs in the rate's time base. It is pure: callers apply the result.
+     */
+
+    /** A silence longer than this between two messages is treated as "we were not watching". */
+    const UNOBSERVED_GAP_SECONDS = 180;
+
+    /** Headroom over the cooldown-based maximum rate, covering rounding and drink concentration. */
+    const PLAUSIBILITY_FACTOR = 1.5;
+
+    /** Minimum number of normal message intervals before an average wave time is trusted. */
+    const MIN_WAVE_SAMPLES = 3;
+
+    /**
+     * Classify one item's count difference.
+     * @param {Object} params
+     * @param {number|undefined} params.lastKnown - Count we last held, undefined when never seen
+     * @param {number} params.snapshot - Count in the new_battle payload
+     * @param {number} params.effectiveGapSeconds - Seconds the item could have been consumed for
+     * @param {number} params.maxRatePerSecond - Cooldown-based maximum consumption rate
+     * @returns {{action: 'none'|'baseline'|'credit'|'reject'|'restock', credited: number, missed: number}}
+     */
+    function classifyItem({ lastKnown, snapshot, effectiveGapSeconds, maxRatePerSecond }) {
+        if (lastKnown === undefined || lastKnown === null) {
+            return { action: 'baseline', credited: 0, missed: 0 };
+        }
+
+        const missed = lastKnown - snapshot;
+        if (missed === 0) return { action: 'none', credited: 0, missed: 0 };
+        if (missed < 0) return { action: 'restock', credited: 0, missed };
+
+        const plausibleMax = Math.max(1, Math.ceil(effectiveGapSeconds * maxRatePerSecond * PLAUSIBILITY_FACTOR));
+        if (missed <= plausibleMax) return { action: 'credit', credited: missed, missed };
+        return { action: 'reject', credited: 0, missed };
+    }
+
+    /**
+     * Reconcile every item of one tracker against a new_battle snapshot.
+     * @param {Object} params
+     * @param {Array<{itemHrid: string, lastKnown: (number|undefined), snapshot: number, maxRatePerSecond: number}>} params.items
+     * @param {number|null} params.gapSeconds - Seconds since this tracker last saw a message, null if never
+     * @param {number|null} params.fightingSeconds - Estimated fighting time inside the gap, null if unknown
+     * @returns {{unobserved: boolean, excludeSeconds: number, items: Array<{itemHrid: string, action: string, credited: number, missed: number}>}}
+     *   `excludeSeconds` is the part of the gap that must be removed from the tracker's time base.
+     */
+    function reconcileSnapshot({ items, gapSeconds, fightingSeconds }) {
+        if (gapSeconds === null || gapSeconds === undefined) {
+            return {
+                unobserved: false,
+                excludeSeconds: 0,
+                items: items.map((item) => ({ itemHrid: item.itemHrid, action: 'baseline', credited: 0, missed: 0 })),
+            };
+        }
+
+        const gap = Math.max(0, gapSeconds);
+        const unobserved = gap > UNOBSERVED_GAP_SECONDS;
+        const effectiveGap = unobserved && fightingSeconds > 0 ? Math.min(gap, fightingSeconds) : gap;
+
+        const results = items.map((item) => ({
+            itemHrid: item.itemHrid,
+            ...classifyItem({
+                lastKnown: item.lastKnown,
+                snapshot: item.snapshot,
+                effectiveGapSeconds: effectiveGap,
+                maxRatePerSecond: item.maxRatePerSecond,
+            }),
+        }));
+
+        let excludeSeconds = 0;
+        if (unobserved) {
+            const creditedAny = results.some((result) => result.action === 'credit');
+            excludeSeconds = creditedAny ? gap - effectiveGap : gap;
+        }
+
+        return { unobserved, excludeSeconds, items: results };
+    }
+
+    /**
+     * Number of waves fought between two new_battle messages of the same run.
+     * Regular zones advance battleId once per wave. Dungeons advance battleId once per run and reset
+     * `wave` each run, so waves are battleId change x max waves + wave change.
+     * @param {Object} params
+     * @param {number|null} params.previousBattleId
+     * @param {number|null} params.previousWave
+     * @param {number} params.battleId
+     * @param {number|null} params.wave
+     * @param {number|null} params.dungeonMaxWaves - Max waves when in a dungeon, otherwise null
+     * @returns {number|null} Null when it cannot be derived or is not positive
+     */
+    function wavesElapsed({ previousBattleId, previousWave, battleId, wave, dungeonMaxWaves }) {
+        if (previousBattleId === null || previousBattleId === undefined) return null;
+
+        let waves;
+        if (dungeonMaxWaves > 0) {
+            if (typeof previousWave !== 'number' || typeof wave !== 'number') return null;
+            waves = (battleId - previousBattleId) * dungeonMaxWaves + (wave - previousWave);
+        } else {
+            waves = battleId - previousBattleId;
+        }
+        return waves > 0 ? waves : null;
+    }
+
+    /**
+     * Estimated fighting time for a gap from the wave count and the run's average wave time.
+     * @param {number|null} waves
+     * @param {{sum: number, count: number}|null} waveStats - Sum and count of normal message intervals
+     * @returns {number|null}
+     */
+    function estimateFightingSeconds(waves, waveStats) {
+        if (!waves || !waveStats || waveStats.count < MIN_WAVE_SAMPLES || waveStats.sum <= 0) return null;
+        return waves * (waveStats.sum / waveStats.count);
+    }
 
     /**
      * Combat Statistics Data Collector
@@ -30106,6 +30275,16 @@
                 startTime,
                 lastUpdate: null,
                 lastEventByItem: {},
+                // Reconciliation state (issue #803): time we deliberately leave out of the rate, the last
+                // time any message about this tracker arrived, and the run position for wave counting
+                excludedMs: 0,
+                lastObservedAt: null,
+                runKey: null,
+                lastBattleId: null,
+                lastWave: null,
+                lastBattleAt: null,
+                waveIntervalSum: 0,
+                waveIntervalCount: 0,
             };
         }
 
@@ -30208,6 +30387,161 @@
         }
 
         /**
+         * Max waves of a dungeon from game data.
+         * @param {string} zoneHrid - Combat action HRID
+         * @returns {number|null}
+         */
+        getDungeonMaxWaves(zoneHrid) {
+            return dataManager.getActionDetails(zoneHrid)?.combatZoneInfo?.dungeonInfo?.maxWaves || null;
+        }
+
+        /**
+         * Estimate how long the character was actually fighting since the previous new_battle, from the
+         * wave count and the run's average wave time. Null when it cannot be derived.
+         * @param {Object} data - new_battle message data
+         * @returns {number|null} Seconds
+         */
+        estimateGapFightingSeconds(data) {
+            const tracker = this.consumableTracker;
+            const zone = this.getCurrentZoneInfo();
+            let dungeonMaxWaves = null;
+            if (zone?.isDungeon) {
+                dungeonMaxWaves = this.getDungeonMaxWaves(zone.zoneHrid);
+                // Without the dungeon's wave count the run counter cannot be turned into waves
+                if (!dungeonMaxWaves) return null;
+            }
+
+            const waves = wavesElapsed({
+                previousBattleId: tracker.lastBattleId,
+                previousWave: tracker.lastWave,
+                battleId: data.battleId || 0,
+                wave: typeof data.wave === 'number' ? data.wave : null,
+                dungeonMaxWaves,
+            });
+            return estimateFightingSeconds(waves, {
+                sum: tracker.waveIntervalSum,
+                count: tracker.waveIntervalCount,
+            });
+        }
+
+        /**
+         * Record this message's run position and, for ordinary intervals, feed the average wave time.
+         * @param {Object} data - new_battle message data
+         * @param {number} now - Timestamp (ms)
+         */
+        updateRunPosition(data, now) {
+            const tracker = this.consumableTracker;
+            if (tracker.lastBattleAt) {
+                const intervalSeconds = (now - tracker.lastBattleAt) / 1000;
+                if (intervalSeconds > 0 && intervalSeconds <= UNOBSERVED_GAP_SECONDS) {
+                    tracker.waveIntervalSum += intervalSeconds;
+                    tracker.waveIntervalCount++;
+                }
+            }
+            tracker.lastBattleAt = now;
+            tracker.lastBattleId = data.battleId || 0;
+            tracker.lastWave = typeof data.wave === 'number' ? data.wave : null;
+            if (data.combatStartTime) tracker.runKey = data.combatStartTime;
+        }
+
+        /**
+         * Apply a reconciliation result to a tracker: credit recovered consumption and drop the
+         * unobserved part of the gap from its time base.
+         * @param {Object} tracker - Self or party tracker
+         * @param {{excludeSeconds: number, items: Array<{itemHrid: string, action: string, credited: number}>}} result
+         * @param {number} now - Timestamp (ms)
+         */
+        applyReconciliation(tracker, result, now) {
+            for (const entry of result.items) {
+                if (entry.action !== 'credit') continue;
+                // Recovered consumption before any event started the clock: start it where we last looked
+                if (!tracker.startTime) tracker.startTime = tracker.lastObservedAt || now;
+                if (tracker.actualConsumed[entry.itemHrid] === undefined) {
+                    tracker.actualConsumed[entry.itemHrid] = 0;
+                    tracker.defaultConsumed[entry.itemHrid] = this.getDefaultConsumed(entry.itemHrid);
+                }
+                tracker.actualConsumed[entry.itemHrid] += entry.credited;
+                tracker.lastUpdate = now;
+            }
+            tracker.excludedMs = (tracker.excludedMs || 0) + Math.round(result.excludeSeconds * 1000);
+            tracker.lastObservedAt = now;
+        }
+
+        /**
+         * Reconcile the current player's consumables against this new_battle snapshot.
+         * @param {Object|undefined} selfPlayer - The current player's entry in the new_battle payload
+         * @param {number|null} fightingSeconds - Estimated fighting time in the gap
+         * @param {number} now - Timestamp (ms)
+         */
+        reconcileSelfConsumables(selfPlayer, fightingSeconds, now) {
+            const tracker = this.consumableTracker;
+            const consumables = (selfPlayer?.combatConsumables || []).filter(
+                (consumable) => consumable?.itemHrid && typeof consumable.count === 'number'
+            );
+            if (consumables.length === 0) return;
+
+            const gapSeconds = tracker.lastObservedAt != null ? (now - tracker.lastObservedAt) / 1000 : null;
+            const result = reconcileSnapshot({
+                items: consumables.map((consumable) => ({
+                    itemHrid: consumable.itemHrid,
+                    lastKnown: tracker.inventoryAmount[consumable.itemHrid],
+                    snapshot: consumable.count,
+                    maxRatePerSecond: this.getMaxRatePerDay(consumable.itemHrid) / 86400,
+                })),
+                gapSeconds,
+                fightingSeconds,
+            });
+            this.applyReconciliation(tracker, result, now);
+            consumableDebugRecorder.recordReconcile(result, gapSeconds, now);
+            this.logReconciliation('self', result, gapSeconds, fightingSeconds);
+        }
+
+        /**
+         * Reconcile a party member's consumables against this new_battle snapshot.
+         * @param {Object} tracker - The member's tracker
+         * @param {Object} snapshots - The member's previous counts by item HRID
+         * @param {Object} player - The member's entry in the new_battle payload
+         * @param {number|null} fightingSeconds - Estimated fighting time in the gap
+         * @param {number} now - Timestamp (ms)
+         */
+        reconcilePartyConsumables(tracker, snapshots, player, fightingSeconds, now) {
+            const consumables = (player.combatConsumables || []).filter(
+                (consumable) => consumable?.itemHrid && typeof consumable.count === 'number'
+            );
+            if (consumables.length === 0) return;
+
+            const gapSeconds = tracker.lastObservedAt != null ? (now - tracker.lastObservedAt) / 1000 : null;
+            const result = reconcileSnapshot({
+                items: consumables.map((consumable) => ({
+                    itemHrid: consumable.itemHrid,
+                    lastKnown: snapshots?.[consumable.itemHrid],
+                    snapshot: consumable.count,
+                    maxRatePerSecond: this.getMaxRatePerDay(consumable.itemHrid) / 86400,
+                })),
+                gapSeconds,
+                fightingSeconds,
+            });
+            this.applyReconciliation(tracker, result, now);
+            this.logReconciliation(player.character?.name || 'party', result, gapSeconds, fightingSeconds);
+        }
+
+        /**
+         * Temporary console diagnostics (#803): only outcomes worth looking at.
+         */
+        logReconciliation(who, result, gapSeconds, fightingSeconds) {
+            const notable = result.items.filter((entry) => entry.action !== 'none' && entry.action !== 'baseline');
+            if (notable.length === 0) return;
+            diagLog('reconcile', {
+                who,
+                gapSeconds: gapSeconds === null ? null : Math.round(gapSeconds),
+                fightingSeconds: fightingSeconds === null ? null : Math.round(fightingSeconds),
+                unobserved: result.unobserved,
+                excludeSeconds: Math.round(result.excludeSeconds),
+                items: notable.map((entry) => `${entry.itemHrid}:${entry.action}:${entry.missed}`),
+            });
+        }
+
+        /**
          * @param {string} itemHrid - Item HRID
          * @returns {number} Default consumed count (2 for drinks, 10 for food)
          */
@@ -30235,7 +30569,7 @@
             if (!targetTracker.startTime) {
                 return 0;
             }
-            return Math.max(0, (Date.now() - targetTracker.startTime) / 1000);
+            return Math.max(0, (Date.now() - targetTracker.startTime - (targetTracker.excludedMs || 0)) / 1000);
         }
 
         /**
@@ -30249,6 +30583,8 @@
                 inventoryAmount: {},
                 startTime: Date.now(),
                 lastUpdate: null,
+                excludedMs: 0,
+                lastObservedAt: null,
             };
         }
 
@@ -30272,8 +30608,20 @@
                     this.consumableTracker.inventoryAmount = saved.inventoryAmount || {};
                     this.consumableTracker.lastUpdate = saved.lastUpdate || null;
 
-                    // Restore elapsed time by adjusting startTime
-                    if (saved.elapsedMs !== undefined && saved.saveTimestamp) {
+                    if (saved.trackerVersion === 2 && saved.startTime) {
+                        // Wall-clock start plus the explicit time left out of the rate, so time the page
+                        // spent closed is reconciled against the next snapshot instead of silently dropped
+                        this.consumableTracker.startTime = saved.startTime;
+                        this.consumableTracker.excludedMs = saved.excludedMs || 0;
+                        this.consumableTracker.lastObservedAt = saved.lastObservedAt || null;
+                        this.consumableTracker.runKey = saved.runKey || null;
+                        this.consumableTracker.lastBattleId = saved.lastBattleId ?? null;
+                        this.consumableTracker.lastWave = saved.lastWave ?? null;
+                        this.consumableTracker.lastBattleAt = saved.lastBattleAt || null;
+                        this.consumableTracker.waveIntervalSum = saved.waveIntervalSum || 0;
+                        this.consumableTracker.waveIntervalCount = saved.waveIntervalCount || 0;
+                    } else if (saved.elapsedMs !== undefined && saved.saveTimestamp) {
+                        // Legacy format: restore elapsed time by adjusting startTime (no baseline to reconcile)
                         this.consumableTracker.startTime = Date.now() - saved.elapsedMs;
                     } else if (saved.startTime) {
                         // Legacy: direct startTime (will include offline time)
@@ -30298,12 +30646,15 @@
                             playerTracker.inventoryAmount
                         ) {
                             const elapsedMs = playerTracker.elapsedMs || 0;
+                            const isCurrentFormat = playerTracker.trackerVersion === 2 && playerTracker.startTime;
                             this.partyConsumableTrackers[playerName] = {
                                 actualConsumed: playerTracker.actualConsumed || {},
                                 defaultConsumed: playerTracker.defaultConsumed || {},
                                 inventoryAmount: playerTracker.inventoryAmount || {},
-                                startTime: now - elapsedMs,
+                                startTime: isCurrentFormat ? playerTracker.startTime : now - elapsedMs,
                                 lastUpdate: playerTracker.lastUpdate || null,
+                                excludedMs: isCurrentFormat ? playerTracker.excludedMs || 0 : 0,
+                                lastObservedAt: isCurrentFormat ? playerTracker.lastObservedAt || null : null,
                             };
                         }
                     });
@@ -30354,7 +30705,10 @@
                 const partyTrackersKey = this._getStorageKey(LEGACY_STORAGE_KEYS.partyConsumableTrackers, characterId);
                 const partySnapshotsKey = this._getStorageKey(LEGACY_STORAGE_KEYS.partyConsumableSnapshots, characterId);
 
-                const rawElapsedMs = this.consumableTracker.startTime ? Date.now() - this.consumableTracker.startTime : 0;
+                const selfExcludedMs = this.consumableTracker.excludedMs || 0;
+                const rawElapsedMs = this.consumableTracker.startTime
+                    ? Date.now() - this.consumableTracker.startTime - selfExcludedMs
+                    : 0;
                 const { counts: cappedActual, elapsedMs: cappedElapsed } = this.capToWindow(
                     this.consumableTracker.actualConsumed,
                     rawElapsedMs,
@@ -30372,6 +30726,16 @@
                     lastUpdate: this.consumableTracker.lastUpdate,
                     elapsedMs: cappedElapsed,
                     saveTimestamp: Date.now(),
+                    trackerVersion: 2,
+                    startTime: this.consumableTracker.startTime ? Date.now() - cappedElapsed - selfExcludedMs : null,
+                    excludedMs: selfExcludedMs,
+                    lastObservedAt: this.consumableTracker.lastObservedAt,
+                    runKey: this.consumableTracker.runKey,
+                    lastBattleId: this.consumableTracker.lastBattleId,
+                    lastWave: this.consumableTracker.lastWave,
+                    lastBattleAt: this.consumableTracker.lastBattleAt,
+                    waveIntervalSum: this.consumableTracker.waveIntervalSum,
+                    waveIntervalCount: this.consumableTracker.waveIntervalCount,
                 };
 
                 const partyTrackersToSave = {};
@@ -30379,7 +30743,8 @@
                     const tracker = this.partyConsumableTrackers[playerName];
                     if (!tracker?.actualConsumed || !tracker.defaultConsumed || !tracker.inventoryAmount) return;
 
-                    const rawPartyElapsedMs = tracker.startTime ? Date.now() - tracker.startTime : 0;
+                    const partyExcludedMs = tracker.excludedMs || 0;
+                    const rawPartyElapsedMs = tracker.startTime ? Date.now() - tracker.startTime - partyExcludedMs : 0;
                     const { counts: pCappedActual, elapsedMs: pCappedElapsed } = this.capToWindow(
                         tracker.actualConsumed,
                         rawPartyElapsedMs,
@@ -30397,6 +30762,10 @@
                         elapsedMs: pCappedElapsed,
                         lastUpdate: tracker.lastUpdate || null,
                         saveTimestamp: Date.now(),
+                        trackerVersion: 2,
+                        startTime: tracker.startTime ? Date.now() - pCappedElapsed - partyExcludedMs : null,
+                        excludedMs: partyExcludedMs,
+                        lastObservedAt: tracker.lastObservedAt || null,
                     };
                 });
                 const partySnapshotsToSave = structuredClone(this.partyConsumableSnapshots);
@@ -30466,6 +30835,7 @@
                     return; // Skip duplicate event
                 }
                 this.consumableTracker.lastEventByItem[itemHrid] = now;
+                this.consumableTracker.lastObservedAt = now;
                 consumableDebugRecorder.recordEvent(itemHrid, true, data.consumable.count);
 
                 // Initialize tracking if first event
@@ -30642,16 +31012,20 @@
                 // Detect new combat session and reset consumable tracking
                 // Primary: battleId decreased (went back to 1 or lower)
                 // Fallback: combat duration is shorter than tracking duration (missed a reset while offline)
+                // A different combatStartTime is a different run, even if the page was closed in between
+                const runChanged =
+                    Boolean(this.consumableTracker.runKey) &&
+                    Boolean(data.combatStartTime) &&
+                    this.consumableTracker.runKey !== data.combatStartTime;
+                const battleIdDecreased = this.currentBattleId !== null && battleId < this.currentBattleId;
                 const shouldResetTracking =
-                    (this.currentBattleId !== null && battleId < this.currentBattleId) ||
-                    (elapsedSeconds > 0 && durationSeconds < elapsedSeconds);
+                    runChanged || battleIdDecreased || (elapsedSeconds > 0 && durationSeconds < elapsedSeconds);
 
                 if (shouldResetTracking) {
-                    consumableDebugRecorder.recordTrackingReset(
-                        this.currentBattleId !== null && battleId < this.currentBattleId
-                            ? 'battleId decreased'
-                            : 'combat duration shorter than tracking duration'
-                    );
+                    let resetReason = 'combat duration shorter than tracking duration';
+                    if (runChanged) resetReason = 'combatStartTime changed';
+                    else if (battleIdDecreased) resetReason = 'battleId decreased';
+                    consumableDebugRecorder.recordTrackingReset(resetReason);
                     await this.resetConsumableTracking(characterId);
                     if (generation !== this.lifecycleGeneration) return;
                     this.pendingEncounter = null;
@@ -30670,6 +31044,12 @@
 
                 const selfPlayer = data.players.find((p) => p?.character?.id === currentCharacterId);
                 consumableDebugRecorder.recordNewBattle(selfPlayer?.combatConsumables);
+
+                // Recover consumption the event stream missed while the page was closed or suspended
+                const now = Date.now();
+                const fightingSeconds = this.estimateGapFightingSeconds(data);
+                this.reconcileSelfConsumables(selfPlayer, fightingSeconds, now);
+                this.updateRunPosition(data, now);
 
                 // Track party member consumables via inventory snapshots (MCS-style)
                 const currentPartyMembers = new Set();
@@ -30727,6 +31107,15 @@
                         });
                     }
 
+                    // Credit consumption missed since this member's last snapshot, then take a new baseline
+                    this.reconcilePartyConsumables(
+                        tracker,
+                        this.partyConsumableSnapshots[playerName],
+                        player,
+                        fightingSeconds,
+                        now
+                    );
+
                     // Track current consumables
                     const currentlySeenHrids = new Set();
                     if (player.combatConsumables && player.combatConsumables.length > 0) {
@@ -30735,7 +31124,6 @@
 
                             const itemHrid = consumable.itemHrid;
                             const currentCount = consumable.count;
-                            const previousCount = this.partyConsumableSnapshots[playerName][itemHrid];
 
                             currentlySeenHrids.add(itemHrid);
 
@@ -30743,17 +31131,6 @@
                                 itemHrid: itemHrid,
                                 lastSeenCount: currentCount,
                             };
-
-                            // Compare with previous snapshot to detect consumption (MCS-style)
-                            if (previousCount !== undefined) {
-                                const diff = previousCount - currentCount;
-
-                                // Accept 1-5 consumed between events; rejects stale cross-session diffs
-                                if (diff > 0 && diff <= 5) {
-                                    tracker.actualConsumed[itemHrid] = (tracker.actualConsumed[itemHrid] || 0) + diff;
-                                    tracker.lastUpdate = Date.now();
-                                }
-                            }
 
                             // Update snapshot
                             this.partyConsumableSnapshots[playerName][itemHrid] = currentCount;
@@ -30955,6 +31332,7 @@
                     ? new Date(this.consumableTracker.startTime).toISOString()
                     : null,
                 trackedHours: Number((elapsedSeconds / 3600).toFixed(2)),
+                excludedHours: Number(((this.consumableTracker.excludedMs || 0) / 3600000).toFixed(2)),
                 connectionInterrupted: this.connectionInterrupted,
                 trackedItems,
             });
