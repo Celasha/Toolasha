@@ -21,6 +21,10 @@ function createItemStats() {
         firstSnapshotCount: null,
         lastSnapshotCount: null,
         lastPayloadCount: null,
+        gapCredited: 0,
+        gapRejected: 0,
+        gapRejectedAmount: 0,
+        gapRestocks: 0,
     };
 }
 
@@ -38,6 +42,7 @@ class ConsumableDebugRecorder {
         this.lastNewBattleAt = null;
         this.socketCloses = [];
         this.trackingResets = [];
+        this.unobservedGaps = [];
     }
 
     _item(itemHrid) {
@@ -95,6 +100,34 @@ class ConsumableDebugRecorder {
         }
     }
 
+    /**
+     * Record the outcome of one snapshot reconciliation for the current player.
+     * @param {{unobserved: boolean, excludeSeconds: number, items: Array<{itemHrid: string, action: string, credited: number, missed: number}>}} result
+     * @param {number|null} gapSeconds
+     * @param {number} [now]
+     */
+    recordReconcile(result, gapSeconds, now = Date.now()) {
+        for (const entry of result.items) {
+            const item = this._item(entry.itemHrid);
+            if (entry.action === 'credit') item.gapCredited += entry.credited;
+            else if (entry.action === 'reject') {
+                item.gapRejected++;
+                item.gapRejectedAmount += entry.missed;
+            } else if (entry.action === 'restock') item.gapRestocks++;
+        }
+        if (result.unobserved) {
+            this.unobservedGaps.push({
+                at: new Date(now).toISOString(),
+                gapSeconds: Math.round(gapSeconds),
+                excludedSeconds: Math.round(result.excludeSeconds),
+                items: result.items
+                    .filter((entry) => entry.action !== 'none')
+                    .map((entry) => `${entry.itemHrid}:${entry.action}:${entry.missed}`),
+            });
+            if (this.unobservedGaps.length > MAX_LOG_ENTRIES) this.unobservedGaps.shift();
+        }
+    }
+
     recordSocketClose(now = Date.now()) {
         this.socketCloses.push(new Date(now).toISOString());
         if (this.socketCloses.length > MAX_LOG_ENTRIES) this.socketCloses.shift();
@@ -121,6 +154,7 @@ class ConsumableDebugRecorder {
             newBattleGapsOver60s: this.newBattleGapsOver60s,
             socketCloses: this.socketCloses,
             trackingResets: this.trackingResets,
+            unobservedGaps: this.unobservedGaps,
             items: this.items,
             ...context,
         };

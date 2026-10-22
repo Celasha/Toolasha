@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
     settingValues: { combatStats_runwayWarningThreshold: 12 },
 }));
 
+// The game keeps combatStartTime constant for a whole run; a changed value means a new run
+const RUN_START = new Date(Date.now() - 3600000).toISOString();
+
 vi.mock('../../core/storage.js', () => ({
     default: {
         getJSON: vi.fn(async (key, _store, defaultValue = null) =>
@@ -334,7 +337,7 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
     function battlePayload({ battleId, monsterHrids, combatLevel = 100, combatStats = {}, totalLootMap = {} }) {
         return {
             battleId,
-            combatStartTime: new Date().toISOString(),
+            combatStartTime: RUN_START,
             monsters: monsterHrids.map((hrid) => ({ hrid })),
             players: [
                 {
@@ -638,7 +641,7 @@ describe('CombatStatsDataCollector Loot Luck sample window (exact start/end boun
     function battlePayload({ battleId, monsterHrids }) {
         return {
             battleId,
-            combatStartTime: new Date().toISOString(),
+            combatStartTime: RUN_START,
             monsters: monsterHrids.map((hrid) => ({ hrid })),
             players: [
                 {
@@ -854,5 +857,157 @@ describe('CombatStatsDataCollector consumable diagnostics (issue #803)', () => {
         collector.cleanup();
         expect(globalThis.toolashaConsumableDebug).toBeUndefined();
         vi.unstubAllGlobals();
+    });
+});
+
+describe('CombatStatsDataCollector snapshot reconciliation (#803)', () => {
+    const GUMMY = '/items/dragon_fruit_gummy';
+    const COFFEE = '/items/ultra_magic_coffee';
+    const T0 = 1_700_000_000_000;
+    const RUN = new Date(T0 - 3600000).toISOString();
+
+    function payload({ battleId = 1, wave = 0, runStart = RUN, self = [], ally = null }) {
+        const players = [
+            {
+                character: { id: 'character-a', name: 'Self' },
+                combatConsumables: self,
+                totalLootMap: {},
+                totalSkillExperienceMap: {},
+            },
+        ];
+        if (ally) {
+            players.push({
+                character: { id: 'character-b', name: 'Ally' },
+                combatConsumables: ally,
+                totalLootMap: {},
+                totalSkillExperienceMap: {},
+            });
+        }
+        return { battleId, wave, combatStartTime: runStart, players };
+    }
+
+    function makeCollector() {
+        const collector = new CombatStatsDataCollector();
+        collector.isInitialized = true;
+        collector.characterId = 'character-a';
+        mocks.currentCharacterId = 'character-a';
+        return collector;
+    }
+
+    const send = (collector, message) => collector.onNewBattle(message, collector.lifecycleGeneration);
+
+    beforeEach(() => {
+        dataManager.getCurrentActions.mockReturnValue([]);
+        dataManager.getActionDetails.mockReturnValue(null);
+        vi.useFakeTimers();
+        vi.setSystemTime(T0);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('credits consumption missed while the page was silent and keeps that time in the rate', async () => {
+        const collector = makeCollector();
+        await send(collector, payload({ self: [{ itemHrid: GUMMY, count: 1000 }] }));
+
+        vi.advanceTimersByTime(3600 * 1000);
+        await send(collector, payload({ battleId: 2, self: [{ itemHrid: GUMMY, count: 940 }] }));
+
+        expect(collector.consumableTracker.actualConsumed[GUMMY]).toBe(60);
+        expect(collector.calcElapsedSeconds()).toBeCloseTo(3600);
+    });
+
+    test('an impossible drop is rejected and the unobserved time is left out of the rate', async () => {
+        const collector = makeCollector();
+        await send(collector, payload({ self: [{ itemHrid: COFFEE, count: 5552 }] }));
+
+        vi.advanceTimersByTime(11 * 3600 * 1000);
+        await send(collector, payload({ battleId: 2, self: [{ itemHrid: COFFEE, count: 1667 }] }));
+
+        expect(collector.consumableTracker.actualConsumed[COFFEE]).toBeUndefined();
+        expect(collector.consumableTracker.excludedMs).toBe(11 * 3600 * 1000);
+    });
+
+    test('a restock is not consumption', async () => {
+        const collector = makeCollector();
+        await send(collector, payload({ self: [{ itemHrid: GUMMY, count: 1961 }] }));
+
+        vi.advanceTimersByTime(3600 * 1000);
+        await send(collector, payload({ battleId: 2, self: [{ itemHrid: GUMMY, count: 2262 }] }));
+
+        expect(collector.consumableTracker.actualConsumed[GUMMY]).toBeUndefined();
+    });
+
+    test('an ordinary gap with matching counts changes nothing', async () => {
+        const collector = makeCollector();
+        await send(collector, payload({ self: [{ itemHrid: GUMMY, count: 1000 }] }));
+
+        vi.advanceTimersByTime(13 * 1000);
+        await send(collector, payload({ battleId: 2, self: [{ itemHrid: GUMMY, count: 1000 }] }));
+
+        expect(collector.consumableTracker.actualConsumed[GUMMY]).toBeUndefined();
+        expect(collector.consumableTracker.excludedMs).toBe(0);
+    });
+
+    test('a different combatStartTime is a new run and discards the old tracking', async () => {
+        const collector = makeCollector();
+        await send(collector, payload({ self: [{ itemHrid: GUMMY, count: 1000 }] }));
+        collector.consumableTracker.actualConsumed[GUMMY] = 42;
+
+        vi.advanceTimersByTime(60 * 1000);
+        const newRun = new Date(T0 + 30 * 1000).toISOString();
+        await send(collector, payload({ battleId: 1, runStart: newRun, self: [{ itemHrid: GUMMY, count: 5 }] }));
+
+        expect(collector.consumableTracker.actualConsumed[GUMMY]).toBeUndefined();
+        expect(collector.consumableTracker.runKey).toBe(newRun);
+    });
+
+    test('a party member drop over a long gap is credited instead of ignored', async () => {
+        const collector = makeCollector();
+        await send(collector, payload({ ally: [{ itemHrid: GUMMY, count: 1000 }] }));
+
+        vi.advanceTimersByTime(3600 * 1000);
+        await send(collector, payload({ battleId: 2, ally: [{ itemHrid: GUMMY, count: 950 }] }));
+
+        expect(collector.partyConsumableTrackers.Ally.actualConsumed[GUMMY]).toBe(50);
+    });
+
+    test('dungeon gaps clamp the credit by waves fought across a run boundary', async () => {
+        dataManager.getCurrentActions.mockReturnValue([
+            { actionHrid: '/actions/combat/pirate_cove', isDone: false, difficultyTier: 0 },
+        ]);
+        dataManager.getActionDetails.mockReturnValue({
+            combatZoneInfo: { isDungeon: true, dungeonInfo: { maxWaves: 65 } },
+        });
+        const collector = makeCollector();
+
+        // Establish ~15s per wave
+        for (let wave = 1; wave <= 5; wave++) {
+            await send(collector, payload({ battleId: 30, wave, self: [{ itemHrid: GUMMY, count: 1000 }] }));
+            vi.advanceTimersByTime(15 * 1000);
+        }
+        // Silent for 10 hours, but only 2 runs' worth of waves (130 waves ~ 32 min) happened
+        vi.advanceTimersByTime(10 * 3600 * 1000);
+        await send(collector, payload({ battleId: 32, wave: 5, self: [{ itemHrid: GUMMY, count: 700 }] }));
+
+        // 300 gummies in ~32 fighting minutes is impossible at 1/min, so it is rejected
+        expect(collector.consumableTracker.actualConsumed[GUMMY]).toBeUndefined();
+    });
+
+    test('saved tracking keeps the run, the excluded time and the observation point across a reload', async () => {
+        const collector = makeCollector();
+        await send(collector, payload({ self: [{ itemHrid: COFFEE, count: 100 }] }));
+        vi.advanceTimersByTime(11 * 3600 * 1000);
+        await send(collector, payload({ battleId: 2, self: [{ itemHrid: COFFEE, count: 99 }] }));
+        const saved = { ...collector.consumableTracker };
+
+        const reloaded = makeCollector();
+        await reloaded.loadConsumableTracking('character-a');
+
+        expect(reloaded.consumableTracker.runKey).toBe(saved.runKey);
+        expect(reloaded.consumableTracker.excludedMs).toBe(saved.excludedMs);
+        expect(reloaded.consumableTracker.lastObservedAt).toBe(saved.lastObservedAt);
+        expect(reloaded.consumableTracker.lastBattleId).toBe(2);
     });
 });
