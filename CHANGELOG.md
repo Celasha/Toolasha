@@ -2,10 +2,9 @@
 
 ## [3.23.0](https://github.com/Celasha/Toolasha/compare/v3.22.5...v3.23.0) (2026-10-24)
 
-
 ### Features
 
-* add a Labyrinth room grid size control ([fbecd34](https://github.com/Celasha/Toolasha/commit/fbecd3412361bcb00ee3ea13e032122c3ebebba4))
+- add a Labyrinth room grid size control ([fbecd34](https://github.com/Celasha/Toolasha/commit/fbecd3412361bcb00ee3ea13e032122c3ebebba4))
 
 ## [3.22.5](https://github.com/Celasha/Toolasha/compare/v3.22.4...v3.22.5) (2026-10-22)
 
