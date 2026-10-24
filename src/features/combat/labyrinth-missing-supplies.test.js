@@ -196,11 +196,11 @@ describe('injectButton', () => {
         document.body.innerHTML = '';
     });
 
-    test('inserts the button immediately after the Supplies label', () => {
+    test('puts the button on the Supplies label row', () => {
         const { wrapper, label } = buildSuppliesSection();
         injectButton(wrapper.querySelector('[class*="LabyrinthPanel_suppliesGrid"]'));
 
-        expect(label.nextElementSibling.className).toBe('mwi-labyrinth-missing-supplies-button');
+        expect(label.lastElementChild.className).toBe('mwi-labyrinth-missing-supplies-button');
     });
 
     test('does not insert a second button on repeated calls for the same panel', () => {

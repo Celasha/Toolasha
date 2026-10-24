@@ -641,7 +641,7 @@ export default {
         runNumberedLabel: (p) => `第 ${p.number} 次：${p.label}`,
     },
     labyrinthMissingSupplies: {
-        buttonLabel: '购买缺少的补给',
+        buttonLabel: '购买补给',
     },
     labyrinthGridScale: {
         label: '大小',

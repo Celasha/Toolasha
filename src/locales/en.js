@@ -1903,7 +1903,7 @@ export default {
         protectFromLabel: (p) => `From: +${p.level}`,
     },
     labyrinthMissingSupplies: {
-        buttonLabel: 'Buy Missing Supplies',
+        buttonLabel: 'Buy Supplies',
     },
     labyrinthGridScale: {
         label: 'Size',
