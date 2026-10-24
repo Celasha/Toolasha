@@ -89,6 +89,7 @@ class CombatStatsDataCollector {
         this.latestSelfCombatDropQuantity = 0;
         this.actualLootSnapshot = null;
         this.trackedZoneKey = null;
+        this.runLuckSnapshot = null;
         this.expectedLootTracker = new ExpectedLootTracker();
         this.dungeonCompletionHandler = null;
         this.socketCloseHandler = null;
@@ -738,6 +739,7 @@ class CombatStatsDataCollector {
             this.pendingEncounter = null;
             this.actualLootSnapshot = null;
             this.trackedZoneKey = null;
+            this.runLuckSnapshot = null;
             return;
         }
 
@@ -786,6 +788,53 @@ class CombatStatsDataCollector {
             combatDropQuantity: this.latestSelfCombatDropQuantity,
             debuffOnLevelGap,
         };
+
+        this.updateRunLuckSnapshot(data, selfPlayer, zoneInfo, this.pendingEncounter);
+    }
+
+    /**
+     * Snapshot what the run-wide loot luck needs from this message: the run's wave count, age and
+     * cumulative loot, plus the player's current modifiers. Stateless by design - each message
+     * replaces the last, and `battleId` already includes waves fought while the page was closed.
+     * @param {Object} data - new_battle message data
+     * @param {Object|undefined} selfPlayer - The current player's entry in `data.players`
+     * @param {{zoneHrid: string, difficultyTier: number}} zoneInfo - The active regular zone
+     * @param {Object} modifiers - Current drop modifiers (see `buildRunLootData`)
+     */
+    updateRunLuckSnapshot(data, selfPlayer, zoneInfo, modifiers) {
+        const capturedAt = Date.now();
+        const startedAt = data.combatStartTime ? new Date(data.combatStartTime).getTime() : NaN;
+        const battleId = Number(data.battleId);
+
+        if (!selfPlayer || !Number.isFinite(startedAt) || !Number.isFinite(battleId) || battleId < 2) {
+            this.runLuckSnapshot = null;
+            return;
+        }
+
+        this.runLuckSnapshot = {
+            zoneHrid: zoneInfo.zoneHrid,
+            completedWaves: battleId - 1,
+            elapsedSeconds: (capturedAt - startedAt) / 1000,
+            actualLoot: Object.entries(sumLootByItemHrid(selfPlayer.totalLootMap)).map(([itemHrid, count]) => ({
+                itemHrid,
+                count,
+            })),
+            modifiers: {
+                difficultyTier: modifiers.difficultyTier,
+                numberOfPlayers: modifiers.numberOfPlayers,
+                dropRateMultiplier: modifiers.dropRateMultiplier,
+                rareFindMultiplier: modifiers.rareFindMultiplier,
+                combatDropQuantity: modifiers.combatDropQuantity,
+                debuffOnLevelGap: modifiers.debuffOnLevelGap,
+            },
+        };
+    }
+
+    /**
+     * @returns {Object|null} The latest run luck snapshot, null outside a regular-zone run
+     */
+    getRunLuckSnapshot() {
+        return this.runLuckSnapshot;
     }
 
     /**
@@ -861,6 +910,7 @@ class CombatStatsDataCollector {
                 this.pendingEncounter = null;
                 this.actualLootSnapshot = null;
                 this.trackedZoneKey = null;
+                this.runLuckSnapshot = null;
                 this.expectedLootTracker.reset();
             }
 
@@ -1222,6 +1272,7 @@ class CombatStatsDataCollector {
         this.latestSelfCombatDropQuantity = 0;
         this.actualLootSnapshot = null;
         this.trackedZoneKey = null;
+        this.runLuckSnapshot = null;
         this.expectedLootTracker.reset();
         // Note: Don't reset consumableTracker here - it's persisted
     }

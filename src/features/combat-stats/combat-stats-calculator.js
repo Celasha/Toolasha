@@ -14,6 +14,7 @@ import {
     getCheapestKeyCost,
     KEY_PRICING_MODE_CHEAPEST,
 } from '../../utils/dungeon-key-cost.js';
+import { calculateZScore, classifyLuck } from './run-loot-luck.js';
 
 // Maps regular dungeon chest HRIDs to their required entry key HRIDs (1:1 relationship)
 const DUNGEON_CHEST_KEYS = {
@@ -155,6 +156,29 @@ export function calculateValuedRevenue(items) {
     }
 
     return { revenue, isPartial, unvaluedItemHrids };
+}
+
+/**
+ * Variance of the expected revenue, in the same units and with the same per-item prices as
+ * `calculateValuedRevenue` (unvalued items are skipped, as they are there).
+ * @param {Map<string, number>} [varianceUnits] - itemHrid -> variance in squared item counts
+ * @returns {number} Variance in squared gold
+ */
+export function calculateValuedVariance(varianceUnits) {
+    let variance = 0;
+
+    for (const [itemHrid, units] of varianceUnits || []) {
+        const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, 0);
+        if (!resolved) continue;
+
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        const canBeSold = itemDetails?.isTradable !== false;
+        const unitValue = resolved.needsTax && canBeSold ? calculatePriceAfterTax(resolved.value) : resolved.value;
+
+        variance += unitValue * unitValue * units;
+    }
+
+    return variance;
 }
 
 /**
@@ -398,11 +422,11 @@ export function formatLootList(lootMap) {
  * Calculate all statistics for a player
  * @param {Object} playerData - Player data from combat data
  * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
- * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize, elapsedSeconds,
- *   actualLootSinceTracking }` for the current player only (Combat Sim's canonical drop math has
+ * @param {Object|null} expectedLootData - `{ expectedDropsMap, varianceUnits, sampleSize, elapsedSeconds,
+ *   actualLoot, modifiers }` for the current player only (Combat Sim's canonical drop math has
  *   no meaningful "expected" concept for a party member Toolasha did not simulate); null/omitted
- *   for every other player. `elapsedSeconds` is the tracker's own observed window, NOT the combat
- *   session duration; `actualLootSinceTracking` is loot gained only during that same window.
+ *   for every other player. `sampleSize` is the waves of the current run and `elapsedSeconds` its
+ *   age; `actualLoot` is the run's cumulative loot over that same window.
  * @returns {Object} Calculated statistics
  */
 export function calculatePlayerStats(playerData, durationSeconds = null, expectedLootData = null) {
@@ -471,11 +495,9 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
         expectedLootData.sampleSize > 0 &&
         expectedLootData.elapsedSeconds > 0
     ) {
-        // Both sides must cover the exact same window. Reusing the session-wide totalLootMap for
-        // "Actual" would compare a short Expected sample against a much longer Actual window
-        // (e.g. the script attaching mid-fight), silently mis-scaling the result - so Actual here
-        // is the loot gained only since the expected-loot tracker itself started observing.
-        const actualItems = expectedLootData.actualLootSinceTracking || [];
+        // Both sides cover the same window: the whole current run. Actual is the server's
+        // cumulative totalLootMap and Expected is recomputed from the same run's wave count.
+        const actualItems = expectedLootData.actualLoot || [];
         const expectedItems = Array.from(expectedLootData.expectedDropsMap || [], ([itemHrid, count]) => ({
             itemHrid,
             count,
@@ -487,6 +509,11 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
         // Both sides share the same elapsed-time denominator, since both now cover the same window.
         const actualRevenuePerDay = calculateDailyRate(actualValuation.revenue, expectedLootData.elapsedSeconds);
         const expectedRevenuePerDay = calculateDailyRate(expectedValuation.revenue, expectedLootData.elapsedSeconds);
+        const luckZScore = calculateZScore(
+            actualValuation.revenue,
+            expectedValuation.revenue,
+            calculateValuedVariance(expectedLootData.varianceUnits)
+        );
         const rngDeltaValue = actualRevenuePerDay - expectedRevenuePerDay;
         const rngDeltaPercent = expectedRevenuePerDay !== 0 ? (rngDeltaValue / expectedRevenuePerDay) * 100 : 0;
 
@@ -505,6 +532,9 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
             expectedProfitPerDay: expectedRevenuePerDay - dailyConsumableCosts - dailyKeyCosts,
             sampleSize: expectedLootData.sampleSize,
             elapsedSeconds: expectedLootData.elapsedSeconds,
+            luckZScore,
+            luckRating: classifyLuck(luckZScore),
+            modifiers: expectedLootData.modifiers || null,
             isPartial: actualValuation.isPartial || expectedValuation.isPartial,
             unvaluedItemHrids: [...actualValuation.unvaluedItemHrids, ...expectedValuation.unvaluedItemHrids],
             itemDeltas: buildItemDeltas(scaleToDaily(actualItems), scaleToDaily(expectedItems)),
@@ -585,7 +615,7 @@ function buildItemDeltas(actualItems, expectedItems) {
  * Calculate statistics for all players
  * @param {Object} combatData - Combat data from data collector
  * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
- * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize, elapsedSeconds, actualLootSinceTracking }` for the current player
+ * @param {Object|null} expectedLootData - `{ expectedDropsMap, varianceUnits, sampleSize, elapsedSeconds, actualLoot, modifiers }` for the current player
  * @returns {Array} Array of player statistics
  */
 export function calculateAllPlayerStats(combatData, durationSeconds = null, expectedLootData = null) {

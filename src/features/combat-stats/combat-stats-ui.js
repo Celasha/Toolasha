@@ -10,6 +10,7 @@ import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import combatStatsDataCollector from './combat-stats-data-collector.js';
 import { calculateAllPlayerStats } from './combat-stats-calculator.js';
+import { buildRunLootData } from './run-loot-luck.js';
 import {
     formatWithSeparator,
     coinFormatter,
@@ -143,6 +144,28 @@ export function getRunwayColor(seconds) {
         return '#f0a830';
     }
     return '#888';
+}
+
+const LUCK_RATING_COLORS = {
+    normal: '#9ca3af',
+    lucky: '#51cf66',
+    veryLucky: '#51cf66',
+    unlucky: '#ff6b6b',
+    veryUnlucky: '#ff6b6b',
+};
+
+/**
+ * The modifiers the whole run was priced with, so a mid-run gear or buff change is visible.
+ * @param {Object} modifiers - Run luck modifiers (multipliers, 1 = no bonus)
+ * @returns {string}
+ */
+function formatLuckModifiers(modifiers) {
+    const percent = (value) => `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1).replace(/\.0$/, '')}%`;
+    return t('combatStatsUi.lootLuckModifiersValue', {
+        dropRate: percent((modifiers.dropRateMultiplier || 1) - 1),
+        rareFind: percent((modifiers.rareFindMultiplier || 1) - 1),
+        dropQuantity: percent(modifiers.combatDropQuantity || 0),
+    });
 }
 
 class CombatStatsUI {
@@ -409,15 +432,13 @@ class CombatStatsUI {
         }
 
         // Calculate statistics
-        const expectedLootTracker = combatStatsDataCollector.expectedLootTracker;
-        const expectedLootData = expectedLootTracker?.hasData()
-            ? {
-                  expectedDropsMap: expectedLootTracker.getExpectedDrops(dataManager.getInitClientData() || {}),
-                  sampleSize: expectedLootTracker.getSampleSize(),
-                  elapsedSeconds: expectedLootTracker.getElapsedSeconds(),
-                  actualLootSinceTracking: combatStatsDataCollector.getActualLootSinceTrackingStarted(),
-                  isDungeon: expectedLootTracker.isDungeon,
-              }
+        const runLuckSnapshot = combatStatsDataCollector.getRunLuckSnapshot();
+        const expectedLootData = runLuckSnapshot
+            ? buildRunLootData(
+                  runLuckSnapshot,
+                  dataManager.getInitClientData(),
+                  dataManager.getActionDetails(runLuckSnapshot.zoneHrid)?.combatZoneInfo?.fightInfo
+              )
             : null;
         const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);
 
@@ -808,6 +829,30 @@ class CombatStatsUI {
                               unvaluedItemHrids: stats.actualVsExpected.unvaluedItemHrids,
                               group: 'actualVsExpected',
                           },
+                          ...(stats.actualVsExpected.luckRating
+                              ? [
+                                    {
+                                        label: t('combatStatsUi.lootLuckRatingLabel'),
+                                        value: t('combatStatsUi.lootLuckRatingValue', {
+                                            z: `${stats.actualVsExpected.luckZScore >= 0 ? '+' : ''}${stats.actualVsExpected.luckZScore.toFixed(1)}`,
+                                            rating: t(
+                                                `combatStatsUi.lootLuckRating_${stats.actualVsExpected.luckRating}`
+                                            ),
+                                        }),
+                                        color: LUCK_RATING_COLORS[stats.actualVsExpected.luckRating],
+                                        group: 'actualVsExpected',
+                                    },
+                                ]
+                              : []),
+                          ...(stats.actualVsExpected.modifiers
+                              ? [
+                                    {
+                                        label: t('combatStatsUi.lootLuckModifiersLabel'),
+                                        value: formatLuckModifiers(stats.actualVsExpected.modifiers),
+                                        group: 'actualVsExpected',
+                                    },
+                                ]
+                              : []),
                           {
                               label: t('combatStatsUi.actualProfitPerDayLabel'),
                               value: t('combatStatsUi.perDaySuffix', {

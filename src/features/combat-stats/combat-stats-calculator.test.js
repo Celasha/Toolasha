@@ -334,7 +334,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
             expectedDropsMap: new Map(),
             sampleSize: 0,
             elapsedSeconds: 3600,
-            actualLootSinceTracking: [],
+            actualLoot: [],
         });
         expect(stats.actualVsExpected).toBeNull();
     });
@@ -344,7 +344,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
             expectedDropsMap: new Map([['/items/log', 10]]),
             sampleSize: 5,
             elapsedSeconds: 0,
-            actualLootSinceTracking: [{ itemHrid: '/items/log', count: 20 }],
+            actualLoot: [{ itemHrid: '/items/log', count: 20 }],
         });
 
         expect(stats.actualVsExpected).toBeNull();
@@ -355,7 +355,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
             expectedDropsMap: new Map([['/items/dungeon_reward', 2]]),
             sampleSize: 3,
             elapsedSeconds: 3600,
-            actualLootSinceTracking: [],
+            actualLoot: [],
             isDungeon: true,
         });
 
@@ -367,7 +367,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
             expectedDropsMap: new Map([['/items/log', 10]]),
             sampleSize: 5,
             elapsedSeconds: 3600,
-            actualLootSinceTracking: [{ itemHrid: '/items/log', count: 20 }],
+            actualLoot: [{ itemHrid: '/items/log', count: 20 }],
         });
 
         expect(stats.actualVsExpected.rngDeltaValue).toBeGreaterThan(0);
@@ -375,10 +375,38 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
         expect(stats.actualVsExpected.elapsedSeconds).toBe(3600);
     });
 
-    test('never uses the whole-session totalLootMap for Actual - only actualLootSinceTracking', () => {
+    test('rates the run with a z-score from the drop variance, priced like the revenue (#779)', () => {
+        // Item is worth 100: actual 90 vs expected 100 is -1000. Variance 25 items^2 = 250000, sd 500.
+        const stats = calculatePlayerStats(basePlayerData(), 3600, {
+            expectedDropsMap: new Map([['/items/log', 100]]),
+            varianceUnits: new Map([['/items/log', 25]]),
+            sampleSize: 200,
+            elapsedSeconds: 3600,
+            actualLoot: [{ itemHrid: '/items/log', count: 90 }],
+            modifiers: { dropRateMultiplier: 1.2, rareFindMultiplier: 1, combatDropQuantity: 0 },
+        });
+
+        expect(stats.actualVsExpected.luckZScore).toBeCloseTo(-2);
+        expect(stats.actualVsExpected.luckRating).toBe('veryUnlucky');
+        expect(stats.actualVsExpected.modifiers.dropRateMultiplier).toBe(1.2);
+    });
+
+    test('has no z-score or rating when there is no variance to measure against', () => {
+        const stats = calculatePlayerStats(basePlayerData(), 3600, {
+            expectedDropsMap: new Map([['/items/log', 100]]),
+            sampleSize: 200,
+            elapsedSeconds: 3600,
+            actualLoot: [{ itemHrid: '/items/log', count: 90 }],
+        });
+
+        expect(stats.actualVsExpected.luckZScore).toBeNull();
+        expect(stats.actualVsExpected.luckRating).toBeNull();
+    });
+
+    test('never uses the whole-session totalLootMap for Actual - only actualLoot', () => {
         // playerData.loot represents a much longer whole-session total than the tracker's own
         // short observed window; the comparison must ignore it entirely and use only the
-        // window-scoped actualLootSinceTracking, or Actual and Expected would cover different
+        // window-scoped actualLoot, or Actual and Expected would cover different
         // samples again.
         const stats = calculatePlayerStats(
             basePlayerData({ '/items/log': { itemHrid: '/items/log', count: 999999 } }),
@@ -387,7 +415,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
                 expectedDropsMap: new Map([['/items/log', 10]]),
                 sampleSize: 5,
                 elapsedSeconds: 3600,
-                actualLootSinceTracking: [{ itemHrid: '/items/log', count: 20 }],
+                actualLoot: [{ itemHrid: '/items/log', count: 20 }],
             }
         );
 
@@ -408,7 +436,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
             expectedDropsMap: new Map([['/items/log', 1]]),
             sampleSize: 1,
             elapsedSeconds: trackerElapsedSeconds,
-            actualLootSinceTracking: [{ itemHrid: '/items/log', count: 1 }],
+            actualLoot: [{ itemHrid: '/items/log', count: 1 }],
         });
 
         // 1 unit * value 100, scaled to a full day from a 60-second window: 100 * 86400/60 = 144000
@@ -430,7 +458,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
             ]),
             sampleSize: 5,
             elapsedSeconds: 3600,
-            actualLootSinceTracking: [
+            actualLoot: [
                 { itemHrid: '/items/common_bulk', count: 1000 },
                 { itemHrid: '/items/rare_tiny', count: 1 },
             ],
@@ -447,7 +475,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
             expectedDropsMap: new Map([['/items/log', 5]]),
             sampleSize: 3,
             elapsedSeconds: 1800, // 30-minute window
-            actualLootSinceTracking: [{ itemHrid: '/items/log', count: 8 }],
+            actualLoot: [{ itemHrid: '/items/log', count: 8 }],
         });
 
         const tableSum = stats.actualVsExpected.itemDeltas.reduce((sum, item) => sum + item.valueDelta, 0);
@@ -464,7 +492,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
             expectedDropsMap: new Map([['/items/rare_drop', 0.001]]),
             sampleSize: 1,
             elapsedSeconds: 120,
-            actualLootSinceTracking: [],
+            actualLoot: [],
         });
 
         const row = stats.actualVsExpected.itemDeltas.find((item) => item.itemHrid === '/items/rare_drop');

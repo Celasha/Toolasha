@@ -445,6 +445,65 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
         expect(collector.pendingEncounter).not.toBeNull(); // this battle's own snapshot for the next completion
     });
 
+    test('snapshots the whole run for loot luck: waves, age, cumulative loot and current modifiers (#779)', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction('/actions/combat/rat', 2)]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({
+                battleId: 205,
+                monsterHrids: ['/monsters/rat'],
+                combatStats: { combatDropRate: 0.2, combatRareFind: 0.5, combatDropQuantity: 0.1 },
+                totalLootMap: compositeLootMap({ '/items/tail': 42, '/items/coin': 1000 }),
+            }),
+            collector.lifecycleGeneration
+        );
+
+        const snapshot = collector.getRunLuckSnapshot();
+        expect(snapshot.zoneHrid).toBe('/actions/combat/rat');
+        expect(snapshot.completedWaves).toBe(204);
+        expect(snapshot.elapsedSeconds).toBeGreaterThan(3590);
+        expect(snapshot.actualLoot).toEqual(
+            expect.arrayContaining([
+                { itemHrid: '/items/tail', count: 42 },
+                { itemHrid: '/items/coin', count: 1000 },
+            ])
+        );
+        expect(snapshot.modifiers).toMatchObject({
+            difficultyTier: 2,
+            numberOfPlayers: 1,
+            dropRateMultiplier: 1.2,
+            rareFindMultiplier: 1.5,
+            combatDropQuantity: 0.1,
+        });
+    });
+
+    test('the run luck snapshot is replaced by each message and needs at least one completed wave', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(battlePayload({ battleId: 1, monsterHrids: [] }), collector.lifecycleGeneration);
+        expect(collector.getRunLuckSnapshot()).toBeNull();
+
+        await collector.onNewBattle(battlePayload({ battleId: 4, monsterHrids: [] }), collector.lifecycleGeneration);
+        expect(collector.getRunLuckSnapshot().completedWaves).toBe(3);
+
+        await collector.onNewBattle(battlePayload({ battleId: 9, monsterHrids: [] }), collector.lifecycleGeneration);
+        expect(collector.getRunLuckSnapshot().completedWaves).toBe(8);
+    });
+
+    test('dungeons never produce a run luck snapshot', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction('/actions/combat/chimerical_den')]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: true } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(battlePayload({ battleId: 30, monsterHrids: [] }), collector.lifecycleGeneration);
+
+        expect(collector.getRunLuckSnapshot()).toBeNull();
+    });
+
     test('I: derives Level Malus input from the raw (unfloored) whole-level Combat Level, never the native floored field', async () => {
         dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
         dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
