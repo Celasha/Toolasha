@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.24.1
+ * Version: 3.24.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2583,7 +2583,7 @@
             protectFromLabel: (p) => `From: +${p.level}`,
         },
         labyrinthMissingSupplies: {
-            buttonLabel: 'Buy Missing Supplies',
+            buttonLabel: 'Buy Supplies',
         },
         labyrinthGridScale: {
             label: 'Size',
@@ -6685,7 +6685,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             runNumberedLabel: (p) => `第 ${p.number} 次：${p.label}`,
         },
         labyrinthMissingSupplies: {
-            buttonLabel: '购买缺少的补给',
+            buttonLabel: '购买补给',
         },
         labyrinthGridScale: {
             label: '大小',

@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.24.1
+ * Version: 3.24.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13997,7 +13997,7 @@
 
     /**
      * Labyrinth Missing Supplies Button
-     * Adds a button next to the Labyrinth entry screen's "Supplies" label that opens the
+     * Adds a button on the same row as the Labyrinth entry screen's "Supplies" label that opens the
      * marketplace with tabs for whichever Torch/Shroud/Beacon tier is short of its carry cap.
      */
 
@@ -14051,7 +14051,17 @@
         }
 
         autofillManager.cleanup();
-        document.querySelectorAll(`.${BUTTON_CLASS$2}`).forEach((el) => el.remove());
+        document.querySelectorAll(`.${BUTTON_CLASS$2}`).forEach((el) => {
+            const label = el.parentElement;
+            el.remove();
+            if (label?.dataset.mwiSuppliesRow) {
+                delete label.dataset.mwiSuppliesRow;
+                label.style.display = '';
+                label.style.alignItems = '';
+                label.style.justifyContent = '';
+                label.style.gap = '';
+            }
+        });
         timerRegistry$2.clearAll();
     }
 
@@ -14070,7 +14080,10 @@
             return;
         }
 
-        label.insertAdjacentElement('afterend', createButton());
+        // Same row as the label (not a new row below it) so the Supplies section does not grow taller
+        label.style.cssText += 'display:flex; align-items:center; justify-content:center; gap:8px;';
+        label.dataset.mwiSuppliesRow = 'true';
+        label.appendChild(createButton());
     }
 
     function createButton() {
@@ -14079,8 +14092,9 @@
         button.className = BUTTON_CLASS$2;
         button.textContent = i18n_js.t('labyrinthMissingSupplies.buttonLabel');
         button.style.cssText = `
-        margin: 4px 0 8px 0;
-        padding: 4px 10px;
+        margin: 0;
+        padding: 1px 8px;
+        line-height: 1.2;
         background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
         color: #ffffff;
         border: 1px solid rgba(91, 141, 239, 0.4);

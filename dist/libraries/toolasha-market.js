@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.24.1
+ * Version: 3.24.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -964,7 +964,7 @@
         const targetCosts = new Array(currentEnhancementLevel + 1);
         const targetTimes = new Array(currentEnhancementLevel + 1);
         const targetAttempts = new Array(currentEnhancementLevel + 1);
-        targetCosts[0] = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+        targetCosts[0] = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
             ? Math.min(getOptimalCraftingCost(itemHrid) || Infinity, marketData_js.getItemPrices(itemHrid, 0)?.ask || Infinity) ||
               getRealisticBaseItemPrice(itemHrid)
             : getRealisticBaseItemPrice(itemHrid); // Level 0: base item
@@ -1009,7 +1009,7 @@
 
                 let fodderCost, fodderTime, fodderAttempts;
                 if (fodderLevel === 0) {
-                    fodderCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+                    fodderCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
                         ? Math.min(
                               getOptimalCraftingCost(baseItemHrid) || Infinity,
                               marketData_js.getItemPrices(baseItemHrid, 0)?.ask || Infinity
@@ -1494,7 +1494,7 @@
         const baseItemPrices = marketData_js.getItemPrices(itemHrid, 0);
         const marketAsk = baseItemPrices?.ask > 0 ? baseItemPrices.ask : 0;
         const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
-        const useCraftingCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost');
+        const useCraftingCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost');
         // Ask drives the decision: use crafted if ask is missing OR crafted ask is cheaper
         const askIsCrafted = useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
         const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
@@ -1997,7 +1997,7 @@
                 ? i18n_js.t('tooltipEnhancement.craftItemLabel')
                 : i18n_js.t('tooltipEnhancement.buyItemLabel');
             rows.push({
-                name: toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+                name: toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
                     ? baseItemLabel
                     : i18n_js.t('tooltipEnhancement.baseItemLabel'),
                 count: 1,
