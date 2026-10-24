@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.24.3](https://github.com/Celasha/Toolasha/compare/v3.24.2...v3.24.3) (2026-10-24)
+
+
+### Bug Fixes
+
+* let tooltip craft cost include crafting sub-materials, with a setting ([6a2f113](https://github.com/Celasha/Toolasha/commit/6a2f113cc31a452b58277b12772602d938d1d202))
+* price Combat Stats with the profit pricing mode; key pricing mode only prices keys ([94fee1e](https://github.com/Celasha/Toolasha/commit/94fee1eebef2ecdea0d9c27fa318a814ca695161))
+* show market tax in Combat Stats and drop the duplicate Actual Profit/day ([f0de4aa](https://github.com/Celasha/Toolasha/commit/f0de4aa0718744207957dd08b06367c1f12c16ce))
+* use the item tooltip's craft cost for the enhancement path base item ([3d869ac](https://github.com/Celasha/Toolasha/commit/3d869ac170181fb07fb98f9e1e43769c72038176))
+
 ## [3.24.2](https://github.com/Celasha/Toolasha/compare/v3.24.1...v3.24.2) (2026-10-24)
 
 ### Bug Fixes
