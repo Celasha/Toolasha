@@ -790,6 +790,15 @@ class CombatStatsUI {
                       },
                   ]
                 : []),
+            ...(stats.dailyMarketTax[priceKey] > 0
+                ? [
+                      {
+                          label: t('combatStatsUi.dailyMarketTaxLabel'),
+                          value: t('combatStatsUi.perDaySuffix', { value: formatNum(stats.dailyMarketTax[priceKey]) }),
+                          color: '#ff6b6b',
+                      },
+                  ]
+                : []),
             {
                 label: t('combatStatsUi.dailyProfitLabel'),
                 value: t('combatStatsUi.perDaySuffix', { value: formatNum(stats.dailyProfit[priceKey]) }),
@@ -854,14 +863,6 @@ class CombatStatsUI {
                                     },
                                 ]
                               : []),
-                          {
-                              label: t('combatStatsUi.actualProfitPerDayLabel'),
-                              value: t('combatStatsUi.perDaySuffix', {
-                                  value: formatNum(stats.actualVsExpected.actualProfitPerDay),
-                              }),
-                              color: stats.actualVsExpected.actualProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
-                              group: 'actualVsExpected',
-                          },
                           {
                               label: t('combatStatsUi.expectedProfitPerDayLabel'),
                               value: t('combatStatsUi.perDaySuffix', {

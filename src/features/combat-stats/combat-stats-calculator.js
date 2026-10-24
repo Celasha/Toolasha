@@ -131,10 +131,12 @@ export function calculateIncomeBreakdown(lootMap) {
  * and Expected revenue never disagree because of two different pricing paths. Missing valuation
  * is never treated as a silent zero - the caller is told the total is partial instead.
  * @param {Array<{itemHrid: string, count: number, enhancementLevel?: number}>} items - Items to value
- * @returns {{revenue: number, isPartial: boolean, unvaluedItemHrids: Array<string>}} Valuation result
+ * @returns {{revenue: number, gross: number, tax: number, isPartial: boolean, unvaluedItemHrids: Array<string>}}
+ *   `revenue` is after market tax, `gross` is before it and `tax` is the difference
  */
 export function calculateValuedRevenue(items) {
     let revenue = 0;
+    let gross = 0;
     let isPartial = false;
     const unvaluedItemHrids = [];
 
@@ -153,9 +155,10 @@ export function calculateValuedRevenue(items) {
         const unitValue = resolved.needsTax && canBeSold ? calculatePriceAfterTax(resolved.value) : resolved.value;
 
         revenue += unitValue * item.count;
+        gross += resolved.value * item.count;
     }
 
-    return { revenue, isPartial, unvaluedItemHrids };
+    return { revenue, gross, tax: gross - revenue, isPartial, unvaluedItemHrids };
 }
 
 /**
@@ -458,9 +461,19 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
     const dailyKeyCosts = keyData.dailyCost;
     const keyBreakdown = keyData.breakdown;
 
-    // Calculate daily profit (income minus consumables and key costs)
-    const dailyProfitAsk = dailyIncomeAsk - dailyConsumableCosts - dailyKeyCosts;
-    const dailyProfitBid = dailyIncomeBid - dailyConsumableCosts - dailyKeyCosts;
+    // Market tax the loot would pay when sold, from the same sell-side valuation the Loot Luck rows
+    // use. Applied as a share of each side's income, so the ask and bid columns each lose the tax
+    // fraction of their own figure.
+    const lootValuation = calculateValuedRevenue(Object.values(playerData.loot || {}));
+    const taxFraction = lootValuation.gross > 0 ? lootValuation.tax / lootValuation.gross : 0;
+    const dailyMarketTax = {
+        ask: dailyIncomeAsk * taxFraction,
+        bid: dailyIncomeBid * taxFraction,
+    };
+
+    // Calculate daily profit (income minus market tax, consumables and key costs)
+    const dailyProfitAsk = dailyIncomeAsk - dailyMarketTax.ask - dailyConsumableCosts - dailyKeyCosts;
+    const dailyProfitBid = dailyIncomeBid - dailyMarketTax.bid - dailyConsumableCosts - dailyKeyCosts;
 
     // Calculate total experience
     const totalExp = calculateTotalExperience(playerData.experience);
@@ -528,7 +541,6 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
             expectedRevenuePerDay,
             rngDeltaValue,
             rngDeltaPercent,
-            actualProfitPerDay: actualRevenuePerDay - dailyConsumableCosts - dailyKeyCosts,
             expectedProfitPerDay: expectedRevenuePerDay - dailyConsumableCosts - dailyKeyCosts,
             sampleSize: expectedLootData.sampleSize,
             elapsedSeconds: expectedLootData.elapsedSeconds,
@@ -559,6 +571,7 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
         keyCosts,
         dailyKeyCosts,
         keyBreakdown,
+        dailyMarketTax,
         dailyProfit: {
             ask: dailyProfitAsk,
             bid: dailyProfitBid,

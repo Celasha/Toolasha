@@ -272,6 +272,16 @@ describe('calculateValuedRevenue - shared Actual/Expected valuation semantics', 
         expect(revenue).toBeCloseTo(100 * 0.96 * 10, 5); // MARKET_TAX = 0.04
     });
 
+    test('reports the gross value and the tax alongside the after-tax revenue', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, source: 'market', needsTax: true });
+
+        const { revenue, gross, tax } = calculateValuedRevenue([{ itemHrid: '/items/log', count: 10 }]);
+
+        expect(gross).toBe(1000);
+        expect(tax).toBeCloseTo(40, 5);
+        expect(revenue).toBeCloseTo(960, 5);
+    });
+
     test('does not apply tax for an openable valued via Expected Value (needsTax false)', () => {
         expectedValueCalculator.resolveSellSideValue.mockReturnValue({
             value: 5000,
@@ -575,5 +585,40 @@ describe('calculateKeyCosts - cheapest pricing mode (buy vs craft)', () => {
 
         expect(breakdown).toHaveLength(0);
         expect(ask).toBe(0);
+    });
+});
+
+describe('calculatePlayerStats - daily market tax', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        getPricingMode.mockImplementation(() => 'ask');
+        dataManager.getItemDetails.mockReset().mockReturnValue({ name: 'Test Item', isTradable: true });
+    });
+
+    const playerData = {
+        name: 'Self',
+        loot: { log: { itemHrid: '/items/log', count: 10 } },
+        experience: {},
+        deathCount: 0,
+        consumables: [],
+    };
+
+    test('takes the market tax off Daily Profit and reports it as its own figure', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 500, source: 'market', needsTax: true });
+
+        const stats = calculatePlayerStats(playerData, 3600);
+
+        // Income 10 x 500 = 5000/hr at the mocked ask, 4% of it is tax
+        expect(stats.dailyMarketTax.ask).toBeCloseTo(stats.dailyIncome.ask * 0.04, 5);
+        expect(stats.dailyProfit.ask).toBeCloseTo(stats.dailyIncome.ask * 0.96, 5);
+    });
+
+    test('has no tax when nothing in the loot is taxed', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 500, source: 'market', needsTax: false });
+
+        const stats = calculatePlayerStats(playerData, 3600);
+
+        expect(stats.dailyMarketTax.ask).toBe(0);
+        expect(stats.dailyProfit.ask).toBeCloseTo(stats.dailyIncome.ask, 5);
     });
 });
