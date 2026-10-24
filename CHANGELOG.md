@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.24.2](https://github.com/Celasha/Toolasha/compare/v3.24.1...v3.24.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* honor the enhancement path base item crafting cost setting ([61675ed](https://github.com/Celasha/Toolasha/commit/61675ed87f5be1c6d471e55dd616e1ca9c6e0b79))
+* move Labyrinth Buy Supplies button onto the Supplies label row ([e9945fe](https://github.com/Celasha/Toolasha/commit/e9945fee1017b029fbe14acfffa2a1d0377b10fa))
+
 ## [3.24.1](https://github.com/Celasha/Toolasha/compare/v3.24.0...v3.24.1) (2026-10-24)
 
 ### Bug Fixes
