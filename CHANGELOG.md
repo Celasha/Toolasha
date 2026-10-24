@@ -2,10 +2,9 @@
 
 ## [3.24.1](https://github.com/Celasha/Toolasha/compare/v3.24.0...v3.24.1) (2026-10-24)
 
-
 ### Bug Fixes
 
-* show Labyrinth attempt number in skilling rooms ([8a6262f](https://github.com/Celasha/Toolasha/commit/8a6262ff7fddb4da5e1df9e3352697931e97131e))
+- show Labyrinth attempt number in skilling rooms ([8a6262f](https://github.com/Celasha/Toolasha/commit/8a6262ff7fddb4da5e1df9e3352697931e97131e))
 
 ## [3.24.0](https://github.com/Celasha/Toolasha/compare/v3.23.0...v3.24.0) (2026-10-24)
 
