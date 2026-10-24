@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.23.0
+ * Version: 3.24.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6512,6 +6512,23 @@ self.onmessage = function (e) {
         if (priceInfo.value === null) return { price: null, isOutlier: false };
         return { price: priceInfo.value, isOutlier: priceInfo.isOutlier };
     }
+
+    /**
+     * Combat Simulator Adapter
+     * Bridges Toolasha's live data to the combat sim engine.
+     *
+     * Extracts game data maps, builds player DTOs, and provides
+     * combat zone metadata for the simulation UI.
+     */
+
+
+    // Maps dungeon chest HRIDs to their required entry key HRIDs
+    const DUNGEON_ENTRY_KEYS = {
+        '/items/chimerical_chest': '/items/chimerical_entry_key',
+        '/items/sinister_chest': '/items/sinister_entry_key',
+        '/items/enchanted_chest': '/items/enchanted_entry_key',
+        '/items/pirate_chest': '/items/pirate_entry_key',
+    };
 
     /**
      * Combat Statistics Calculator
@@ -35531,23 +35548,6 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             warnings: [],
         };
     }
-
-    /**
-     * Combat Simulator Adapter
-     * Bridges Toolasha's live data to the combat sim engine.
-     *
-     * Extracts game data maps, builds player DTOs, and provides
-     * combat zone metadata for the simulation UI.
-     */
-
-
-    // Maps dungeon chest HRIDs to their required entry key HRIDs
-    const DUNGEON_ENTRY_KEYS = {
-        '/items/chimerical_chest': '/items/chimerical_entry_key',
-        '/items/sinister_chest': '/items/sinister_entry_key',
-        '/items/enchanted_chest': '/items/enchanted_entry_key',
-        '/items/pirate_chest': '/items/pirate_entry_key',
-    };
 
     /**
      * Openable Analytics Cost

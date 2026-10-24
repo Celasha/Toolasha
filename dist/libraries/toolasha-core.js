@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.23.0
+ * Version: 3.24.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1747,7 +1747,17 @@
             deathsPerHrLabel: 'Deaths/hr:',
             perDaySuffix: (p) => `${p.value}/d`,
             perHourSuffix: (p) => `${p.value}/h`,
-            lootLuckSampleHeading: (p) => `Loot Luck sample · ${p.count} encounters · ${p.elapsed}`,
+            lootLuckSampleHeading: (p) => `Loot Luck for this run · ${p.count} waves · ${p.elapsed}`,
+            lootLuckRatingLabel: 'Luck rating:',
+            lootLuckRatingValue: (p) => `z ${p.z} · ${p.rating}`,
+            lootLuckRating_normal: 'Normal variance',
+            lootLuckRating_lucky: 'Lucky',
+            lootLuckRating_veryLucky: 'Very lucky',
+            lootLuckRating_unlucky: 'Unlucky',
+            lootLuckRating_veryUnlucky: 'Very unlucky',
+            lootLuckModifiersLabel: 'Computed with:',
+            lootLuckModifiersValue: (p) =>
+                `${p.dropRate} drop rate, ${p.rareFind} rare find, ${p.dropQuantity} drop quantity`,
             recentSampleLabel: 'Recent sample',
             actualPerDayColumn: 'Actual/d',
             expectedPerDayColumn: 'Expected/d',
@@ -6459,7 +6469,16 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             deathsPerHrLabel: '死亡/时：',
             perDaySuffix: (p) => `${p.value}/天`,
             perHourSuffix: (p) => `${p.value}/时`,
-            lootLuckSampleHeading: (p) => `掉落幸运值样本 · ${p.count} 次遭遇 · ${p.elapsed}`,
+            lootLuckSampleHeading: (p) => `本次运行的掉落幸运值 · ${p.count} 波 · ${p.elapsed}`,
+            lootLuckRatingLabel: '幸运评级：',
+            lootLuckRatingValue: (p) => `z ${p.z} · ${p.rating}`,
+            lootLuckRating_normal: '正常波动',
+            lootLuckRating_lucky: '幸运',
+            lootLuckRating_veryLucky: '非常幸运',
+            lootLuckRating_unlucky: '不幸',
+            lootLuckRating_veryUnlucky: '非常不幸',
+            lootLuckModifiersLabel: '计算所用加成：',
+            lootLuckModifiersValue: (p) => `掉落率 ${p.dropRate}，稀有发现 ${p.rareFind}，掉落数量 ${p.dropQuantity}`,
             recentSampleLabel: '近期样本',
             actualPerDayColumn: '实际/天',
             expectedPerDayColumn: '预期/天',

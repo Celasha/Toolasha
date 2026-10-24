@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.23.0
+ * Version: 3.24.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -30396,6 +30396,7 @@
             this.latestSelfCombatDropQuantity = 0;
             this.actualLootSnapshot = null;
             this.trackedZoneKey = null;
+            this.runLuckSnapshot = null;
             this.expectedLootTracker = new ExpectedLootTracker();
             this.dungeonCompletionHandler = null;
             this.socketCloseHandler = null;
@@ -31045,6 +31046,7 @@
                 this.pendingEncounter = null;
                 this.actualLootSnapshot = null;
                 this.trackedZoneKey = null;
+                this.runLuckSnapshot = null;
                 return;
             }
 
@@ -31093,6 +31095,53 @@
                 combatDropQuantity: this.latestSelfCombatDropQuantity,
                 debuffOnLevelGap,
             };
+
+            this.updateRunLuckSnapshot(data, selfPlayer, zoneInfo, this.pendingEncounter);
+        }
+
+        /**
+         * Snapshot what the run-wide loot luck needs from this message: the run's wave count, age and
+         * cumulative loot, plus the player's current modifiers. Stateless by design - each message
+         * replaces the last, and `battleId` already includes waves fought while the page was closed.
+         * @param {Object} data - new_battle message data
+         * @param {Object|undefined} selfPlayer - The current player's entry in `data.players`
+         * @param {{zoneHrid: string, difficultyTier: number}} zoneInfo - The active regular zone
+         * @param {Object} modifiers - Current drop modifiers (see `buildRunLootData`)
+         */
+        updateRunLuckSnapshot(data, selfPlayer, zoneInfo, modifiers) {
+            const capturedAt = Date.now();
+            const startedAt = data.combatStartTime ? new Date(data.combatStartTime).getTime() : NaN;
+            const battleId = Number(data.battleId);
+
+            if (!selfPlayer || !Number.isFinite(startedAt) || !Number.isFinite(battleId) || battleId < 2) {
+                this.runLuckSnapshot = null;
+                return;
+            }
+
+            this.runLuckSnapshot = {
+                zoneHrid: zoneInfo.zoneHrid,
+                completedWaves: battleId - 1,
+                elapsedSeconds: (capturedAt - startedAt) / 1000,
+                actualLoot: Object.entries(sumLootByItemHrid(selfPlayer.totalLootMap)).map(([itemHrid, count]) => ({
+                    itemHrid,
+                    count,
+                })),
+                modifiers: {
+                    difficultyTier: modifiers.difficultyTier,
+                    numberOfPlayers: modifiers.numberOfPlayers,
+                    dropRateMultiplier: modifiers.dropRateMultiplier,
+                    rareFindMultiplier: modifiers.rareFindMultiplier,
+                    combatDropQuantity: modifiers.combatDropQuantity,
+                    debuffOnLevelGap: modifiers.debuffOnLevelGap,
+                },
+            };
+        }
+
+        /**
+         * @returns {Object|null} The latest run luck snapshot, null outside a regular-zone run
+         */
+        getRunLuckSnapshot() {
+            return this.runLuckSnapshot;
         }
 
         /**
@@ -31168,6 +31217,7 @@
                     this.pendingEncounter = null;
                     this.actualLootSnapshot = null;
                     this.trackedZoneKey = null;
+                    this.runLuckSnapshot = null;
                     this.expectedLootTracker.reset();
                 }
 
@@ -31529,6 +31579,7 @@
             this.latestSelfCombatDropQuantity = 0;
             this.actualLootSnapshot = null;
             this.trackedZoneKey = null;
+            this.runLuckSnapshot = null;
             this.expectedLootTracker.reset();
             // Note: Don't reset consumableTracker here - it's persisted
         }
@@ -31575,6 +31626,216 @@
             isOutlier: plan.isOutlier || false,
             plan: plan.strategy === 'craft' ? plan : null,
         };
+    }
+
+    /**
+     * Run loot luck (issue #779).
+     *
+     * Recomputes the expected loot of a whole regular-zone combat run from the counters the server
+     * sends with every new_battle message (`battleId`, `combatStartTime`, `totalLootMap`), instead of
+     * sampling encounter by encounter. `battleId` keeps advancing while the page is closed, so the run
+     * is covered offline too. Everything here is pure: the collector snapshots the message and the UI
+     * calls `buildRunLootData` to turn that snapshot into the shape the stats calculator consumes.
+     *
+     * Assumptions, all intentional and surfaced to the player:
+     *  - Every wave is cleared (a wiped wave is counted as if it paid out).
+     *  - Current modifiers (drop rate, rare find, drop quantity, party size, level gap) are applied to
+     *    the whole run, so mid-run gear or buff changes reprice history.
+     *  - Drop quantity is treated as its average. Only whether a drop happens is random in the
+     *    variance, which is why the z-score is an approximation rather than an exact test.
+     */
+
+
+    /** |z| below the first limit reads as normal variance, at or above the second as a strong result. */
+    const NORMAL_Z_LIMIT = 1;
+    const STRONG_Z_LIMIT = 2;
+
+    /**
+     * Expected number of each monster per regular wave. Mirrors the Combat Sim's spawn roll: up to
+     * `maxSpawnCount` draws, each picking a spawn weighted by `rate`, stopping at the first draw that
+     * would push the total strength past `maxTotalStrength` (that draw is discarded).
+     * @param {{spawns: Array, maxSpawnCount: number, maxTotalStrength: number}|null|undefined} randomSpawnInfo
+     * @returns {Map<string, number>} monsterHrid -> expected spawns per wave
+     */
+    function expectedSpawnsPerWave(randomSpawnInfo) {
+        const expected = new Map();
+        const spawns = (randomSpawnInfo?.spawns || []).filter((spawn) => spawn.rate > 0);
+        const totalWeight = spawns.reduce((sum, spawn) => sum + spawn.rate, 0);
+        if (spawns.length === 0 || totalWeight <= 0) return expected;
+
+        const maxSpawnCount = randomSpawnInfo.maxSpawnCount || 0;
+        const maxTotalStrength = randomSpawnInfo.maxTotalStrength;
+
+        // Probability that the first i draws were all accepted with a given total strength
+        let reachable = new Map([[0, 1]]);
+        for (let draw = 0; draw < maxSpawnCount; draw++) {
+            const next = new Map();
+            for (const [strengthSoFar, probability] of reachable) {
+                for (const spawn of spawns) {
+                    const strength = strengthSoFar + (spawn.strength || 0);
+                    if (strength > maxTotalStrength) continue;
+                    const transition = probability * (spawn.rate / totalWeight);
+                    next.set(strength, (next.get(strength) || 0) + transition);
+                    expected.set(spawn.combatMonsterHrid, (expected.get(spawn.combatMonsterHrid) || 0) + transition);
+                }
+            }
+            reachable = next;
+        }
+        return expected;
+    }
+
+    /**
+     * Expected kills of each monster over `completedWaves` waves of a regular zone.
+     * Every `battlesPerBoss`-th wave is the boss wave, which spawns only the boss monsters.
+     * @param {Object} params
+     * @param {Object} params.fightInfo - actionDetail.combatZoneInfo.fightInfo of the zone
+     * @param {number} params.completedWaves - Waves finished so far (`battleId - 1`)
+     * @returns {Object} monsterHrid -> expected kills (fractional)
+     */
+    function expectedKillsForRun({ fightInfo, completedWaves }) {
+        const deaths = {};
+        if (!fightInfo || !(completedWaves > 0)) return deaths;
+
+        const bossSpawns = fightInfo.bossSpawns || [];
+        const battlesPerBoss = fightInfo.battlesPerBoss || 0;
+        const hasBoss = battlesPerBoss > 0 && bossSpawns.length > 0;
+
+        const bossWaves = hasBoss ? Math.floor(completedWaves / battlesPerBoss) : 0;
+        const normalWaves = completedWaves - bossWaves;
+
+        for (const [monsterHrid, perWave] of expectedSpawnsPerWave(fightInfo.randomSpawnInfo)) {
+            deaths[monsterHrid] = (deaths[monsterHrid] || 0) + perWave * normalWaves;
+        }
+        for (const boss of bossSpawns) {
+            if (!boss?.combatMonsterHrid) continue;
+            deaths[boss.combatMonsterHrid] = (deaths[boss.combatMonsterHrid] || 0) + bossWaves;
+        }
+        return deaths;
+    }
+
+    /**
+     * Per-item variance of the drop count, in units of (items)^2: sum over monsters and drops of
+     * kills * p * (1 - p) * quantity^2. Uses the same rate and quantity formulas as
+     * `calculateExpectedDrops`; the parity test keeps the two in step.
+     * @param {Object} params
+     * @param {Object} params.deaths - monsterHrid -> expected kills
+     * @param {Object} params.gameData - Needs `combatMonsterDetailMap`
+     * @param {Object} params.modifiers - See `buildRunLootData`
+     * @returns {Map<string, number>} itemHrid -> variance in squared item counts
+     */
+    function dropVarianceUnits({ deaths, gameData, modifiers }) {
+        const variance = new Map();
+        const difficultyTier = modifiers.difficultyTier || 0;
+        const numberOfPlayers = modifiers.numberOfPlayers || 1;
+        const dropRateMultiplier = modifiers.dropRateMultiplier || 1;
+        const rareFindMultiplier = modifiers.rareFindMultiplier || 1;
+        const combatDropQuantity = modifiers.combatDropQuantity || 0;
+        const debuffOnLevelGap = modifiers.debuffOnLevelGap || 0;
+        const tierMultiplier = 1 + 0.1 * difficultyTier;
+
+        const add = (itemHrid, kills, probability, averageCount) => {
+            const p = Math.min(1, Math.max(0, probability));
+            if (p <= 0 || p >= 1) return;
+            const quantity = (averageCount * (1 + debuffOnLevelGap) * (1 + combatDropQuantity)) / numberOfPlayers;
+            variance.set(itemHrid, (variance.get(itemHrid) || 0) + kills * p * (1 - p) * quantity * quantity);
+        };
+
+        for (const [monsterHrid, kills] of Object.entries(deaths)) {
+            const monster = gameData?.combatMonsterDetailMap?.[monsterHrid];
+            if (!monster) continue;
+
+            for (const drop of monster.dropTable || []) {
+                if (drop.minDifficultyTier > difficultyTier) continue;
+                const baseRate = drop.dropRate + (drop.dropRatePerDifficultyTier ?? 0) * difficultyTier;
+                add(
+                    drop.itemHrid,
+                    kills,
+                    tierMultiplier * baseRate * dropRateMultiplier,
+                    (drop.minCount + drop.maxCount) / 2
+                );
+            }
+            for (const drop of monster.rareDropTable || []) {
+                if (drop.minDifficultyTier > difficultyTier) continue;
+                add(
+                    drop.itemHrid,
+                    kills,
+                    drop.dropRate * rareFindMultiplier,
+                    (drop.minCount + (drop.maxCount ?? drop.minCount)) / 2
+                );
+            }
+        }
+        return variance;
+    }
+
+    /**
+     * Turn a collector snapshot into the loot data the stats calculator expects.
+     * @param {Object|null} snapshot - Collector's run luck snapshot
+     * @param {string} snapshot.zoneHrid
+     * @param {number} snapshot.completedWaves - `battleId - 1`
+     * @param {number} snapshot.elapsedSeconds - From `combatStartTime` to when the snapshot was taken
+     * @param {Array<{itemHrid: string, count: number}>} snapshot.actualLoot - The player's `totalLootMap`
+     * @param {Object} snapshot.modifiers - difficultyTier, numberOfPlayers, dropRateMultiplier (1 = none),
+     *   rareFindMultiplier (1 = none), combatDropQuantity (0 = none), debuffOnLevelGap (<= 0)
+     * @param {Object} gameData - `dataManager.getInitClientData()`
+     * @param {Object|null} fightInfo - The zone's `combatZoneInfo.fightInfo`
+     * @returns {Object|null} Null when the run cannot be evaluated
+     */
+    function buildRunLootData(snapshot, gameData, fightInfo) {
+        if (!snapshot || !gameData || !fightInfo || !(snapshot.completedWaves > 0) || !(snapshot.elapsedSeconds > 0)) {
+            return null;
+        }
+
+        const { modifiers } = snapshot;
+        const deaths = expectedKillsForRun({ fightInfo, completedWaves: snapshot.completedWaves });
+
+        const expectedDropsMap = calculateExpectedDrops(
+            {
+                isDungeon: false,
+                zoneName: snapshot.zoneHrid,
+                deaths,
+                numberOfPlayers: modifiers.numberOfPlayers || 1,
+                difficultyTier: modifiers.difficultyTier || 0,
+                dropRateMultiplier: { player1: modifiers.dropRateMultiplier || 1 },
+                rareFindMultiplier: { player1: modifiers.rareFindMultiplier || 1 },
+                combatDropQuantity: { player1: modifiers.combatDropQuantity || 0 },
+                debuffOnLevelGap: { player1: modifiers.debuffOnLevelGap || 0 },
+            },
+            gameData,
+            'player1'
+        );
+
+        return {
+            expectedDropsMap,
+            varianceUnits: dropVarianceUnits({ deaths, gameData, modifiers }),
+            sampleSize: snapshot.completedWaves,
+            elapsedSeconds: snapshot.elapsedSeconds,
+            actualLoot: snapshot.actualLoot,
+            modifiers,
+            isDungeon: false,
+        };
+    }
+
+    /**
+     * z-score of the actual value against the expected value.
+     * @param {number} actualValue
+     * @param {number} expectedValue
+     * @param {number} variance - In squared value units
+     * @returns {number|null} Null when there is no variance to measure against
+     */
+    function calculateZScore(actualValue, expectedValue, variance) {
+        if (!(variance > 0)) return null;
+        return (actualValue - expectedValue) / Math.sqrt(variance);
+    }
+
+    /**
+     * @param {number|null} z
+     * @returns {'normal'|'lucky'|'veryLucky'|'unlucky'|'veryUnlucky'|null}
+     */
+    function classifyLuck(z) {
+        if (z === null || !Number.isFinite(z)) return null;
+        if (Math.abs(z) < NORMAL_Z_LIMIT) return 'normal';
+        if (z > 0) return z >= STRONG_Z_LIMIT ? 'veryLucky' : 'lucky';
+        return z <= -STRONG_Z_LIMIT ? 'veryUnlucky' : 'unlucky';
     }
 
     /**
@@ -31723,6 +31984,29 @@
         }
 
         return { revenue, isPartial, unvaluedItemHrids };
+    }
+
+    /**
+     * Variance of the expected revenue, in the same units and with the same per-item prices as
+     * `calculateValuedRevenue` (unvalued items are skipped, as they are there).
+     * @param {Map<string, number>} [varianceUnits] - itemHrid -> variance in squared item counts
+     * @returns {number} Variance in squared gold
+     */
+    function calculateValuedVariance(varianceUnits) {
+        let variance = 0;
+
+        for (const [itemHrid, units] of varianceUnits || []) {
+            const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, 0);
+            if (!resolved) continue;
+
+            const itemDetails = dataManager.getItemDetails(itemHrid);
+            const canBeSold = itemDetails?.isTradable !== false;
+            const unitValue = resolved.needsTax && canBeSold ? profitHelpers_js.calculatePriceAfterTax(resolved.value) : resolved.value;
+
+            variance += unitValue * unitValue * units;
+        }
+
+        return variance;
     }
 
     /**
@@ -31966,11 +32250,11 @@
      * Calculate all statistics for a player
      * @param {Object} playerData - Player data from combat data
      * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
-     * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize, elapsedSeconds,
-     *   actualLootSinceTracking }` for the current player only (Combat Sim's canonical drop math has
+     * @param {Object|null} expectedLootData - `{ expectedDropsMap, varianceUnits, sampleSize, elapsedSeconds,
+     *   actualLoot, modifiers }` for the current player only (Combat Sim's canonical drop math has
      *   no meaningful "expected" concept for a party member Toolasha did not simulate); null/omitted
-     *   for every other player. `elapsedSeconds` is the tracker's own observed window, NOT the combat
-     *   session duration; `actualLootSinceTracking` is loot gained only during that same window.
+     *   for every other player. `sampleSize` is the waves of the current run and `elapsedSeconds` its
+     *   age; `actualLoot` is the run's cumulative loot over that same window.
      * @returns {Object} Calculated statistics
      */
     function calculatePlayerStats(playerData, durationSeconds = null, expectedLootData = null) {
@@ -32039,11 +32323,9 @@
             expectedLootData.sampleSize > 0 &&
             expectedLootData.elapsedSeconds > 0
         ) {
-            // Both sides must cover the exact same window. Reusing the session-wide totalLootMap for
-            // "Actual" would compare a short Expected sample against a much longer Actual window
-            // (e.g. the script attaching mid-fight), silently mis-scaling the result - so Actual here
-            // is the loot gained only since the expected-loot tracker itself started observing.
-            const actualItems = expectedLootData.actualLootSinceTracking || [];
+            // Both sides cover the same window: the whole current run. Actual is the server's
+            // cumulative totalLootMap and Expected is recomputed from the same run's wave count.
+            const actualItems = expectedLootData.actualLoot || [];
             const expectedItems = Array.from(expectedLootData.expectedDropsMap || [], ([itemHrid, count]) => ({
                 itemHrid,
                 count,
@@ -32055,6 +32337,11 @@
             // Both sides share the same elapsed-time denominator, since both now cover the same window.
             const actualRevenuePerDay = calculateDailyRate(actualValuation.revenue, expectedLootData.elapsedSeconds);
             const expectedRevenuePerDay = calculateDailyRate(expectedValuation.revenue, expectedLootData.elapsedSeconds);
+            const luckZScore = calculateZScore(
+                actualValuation.revenue,
+                expectedValuation.revenue,
+                calculateValuedVariance(expectedLootData.varianceUnits)
+            );
             const rngDeltaValue = actualRevenuePerDay - expectedRevenuePerDay;
             const rngDeltaPercent = expectedRevenuePerDay !== 0 ? (rngDeltaValue / expectedRevenuePerDay) * 100 : 0;
 
@@ -32073,6 +32360,9 @@
                 expectedProfitPerDay: expectedRevenuePerDay - dailyConsumableCosts - dailyKeyCosts,
                 sampleSize: expectedLootData.sampleSize,
                 elapsedSeconds: expectedLootData.elapsedSeconds,
+                luckZScore,
+                luckRating: classifyLuck(luckZScore),
+                modifiers: expectedLootData.modifiers || null,
                 isPartial: actualValuation.isPartial || expectedValuation.isPartial,
                 unvaluedItemHrids: [...actualValuation.unvaluedItemHrids, ...expectedValuation.unvaluedItemHrids],
                 itemDeltas: buildItemDeltas(scaleToDaily(actualItems), scaleToDaily(expectedItems)),
@@ -32153,7 +32443,7 @@
      * Calculate statistics for all players
      * @param {Object} combatData - Combat data from data collector
      * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
-     * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize, elapsedSeconds, actualLootSinceTracking }` for the current player
+     * @param {Object|null} expectedLootData - `{ expectedDropsMap, varianceUnits, sampleSize, elapsedSeconds, actualLoot, modifiers }` for the current player
      * @returns {Array} Array of player statistics
      */
     function calculateAllPlayerStats(combatData, durationSeconds = null, expectedLootData = null) {
@@ -32624,6 +32914,28 @@
         return '#888';
     }
 
+    const LUCK_RATING_COLORS = {
+        normal: '#9ca3af',
+        lucky: '#51cf66',
+        veryLucky: '#51cf66',
+        unlucky: '#ff6b6b',
+        veryUnlucky: '#ff6b6b',
+    };
+
+    /**
+     * The modifiers the whole run was priced with, so a mid-run gear or buff change is visible.
+     * @param {Object} modifiers - Run luck modifiers (multipliers, 1 = no bonus)
+     * @returns {string}
+     */
+    function formatLuckModifiers(modifiers) {
+        const percent = (value) => `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1).replace(/\.0$/, '')}%`;
+        return i18n_js.t('combatStatsUi.lootLuckModifiersValue', {
+            dropRate: percent((modifiers.dropRateMultiplier || 1) - 1),
+            rareFind: percent((modifiers.rareFindMultiplier || 1) - 1),
+            dropQuantity: percent(modifiers.combatDropQuantity || 0),
+        });
+    }
+
     class CombatStatsUI {
         constructor() {
             this.isInitialized = false;
@@ -32888,15 +33200,13 @@
             }
 
             // Calculate statistics
-            const expectedLootTracker = combatStatsDataCollector.expectedLootTracker;
-            const expectedLootData = expectedLootTracker?.hasData()
-                ? {
-                      expectedDropsMap: expectedLootTracker.getExpectedDrops(dataManager.getInitClientData() || {}),
-                      sampleSize: expectedLootTracker.getSampleSize(),
-                      elapsedSeconds: expectedLootTracker.getElapsedSeconds(),
-                      actualLootSinceTracking: combatStatsDataCollector.getActualLootSinceTrackingStarted(),
-                      isDungeon: expectedLootTracker.isDungeon,
-                  }
+            const runLuckSnapshot = combatStatsDataCollector.getRunLuckSnapshot();
+            const expectedLootData = runLuckSnapshot
+                ? buildRunLootData(
+                      runLuckSnapshot,
+                      dataManager.getInitClientData(),
+                      dataManager.getActionDetails(runLuckSnapshot.zoneHrid)?.combatZoneInfo?.fightInfo
+                  )
                 : null;
             const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);
 
@@ -33287,6 +33597,30 @@
                                   unvaluedItemHrids: stats.actualVsExpected.unvaluedItemHrids,
                                   group: 'actualVsExpected',
                               },
+                              ...(stats.actualVsExpected.luckRating
+                                  ? [
+                                        {
+                                            label: i18n_js.t('combatStatsUi.lootLuckRatingLabel'),
+                                            value: i18n_js.t('combatStatsUi.lootLuckRatingValue', {
+                                                z: `${stats.actualVsExpected.luckZScore >= 0 ? '+' : ''}${stats.actualVsExpected.luckZScore.toFixed(1)}`,
+                                                rating: i18n_js.t(
+                                                    `combatStatsUi.lootLuckRating_${stats.actualVsExpected.luckRating}`
+                                                ),
+                                            }),
+                                            color: LUCK_RATING_COLORS[stats.actualVsExpected.luckRating],
+                                            group: 'actualVsExpected',
+                                        },
+                                    ]
+                                  : []),
+                              ...(stats.actualVsExpected.modifiers
+                                  ? [
+                                        {
+                                            label: i18n_js.t('combatStatsUi.lootLuckModifiersLabel'),
+                                            value: formatLuckModifiers(stats.actualVsExpected.modifiers),
+                                            group: 'actualVsExpected',
+                                        },
+                                    ]
+                                  : []),
                               {
                                   label: i18n_js.t('combatStatsUi.actualProfitPerDayLabel'),
                                   value: i18n_js.t('combatStatsUi.perDaySuffix', {
