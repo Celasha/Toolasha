@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.22.5
+ * Version: 3.23.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2575,6 +2575,11 @@
         labyrinthMissingSupplies: {
             buttonLabel: 'Buy Missing Supplies',
         },
+        labyrinthGridScale: {
+            label: 'Size',
+            smaller: 'Smaller grid',
+            larger: 'Larger grid',
+        },
         enhancementUi: {
             panelTitle: 'Enhancement Tracker',
             clearAllSessionsTooltip: 'Clear all sessions',
@@ -4316,6 +4321,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Labyrinth clear rate calculator',
                     help: 'Shows expected clear time and success rate on labyrinth skilling room tiles',
                 },
+                labyrinthGridScaleControl: {
+                    label: 'Labyrinth: Show grid size control',
+                    help: 'Adds a - / + control to the Labyrinth header row that enlarges the room grid',
+                },
+                labyrinthGridScale: {
+                    label: 'Labyrinth: Room grid size',
+                    help: 'Scale of the Labyrinth room grid. Also adjustable with the - / + control on the Labyrinth panel',
+                },
                 labyrinthMissingSuppliesButton: {
                     label: 'Labyrinth: Show "Buy Missing Supplies" button',
                     help: 'Adds a button next to the Supplies section that opens the marketplace with tabs for whatever Torch/Shroud/Beacon tier is short of its carry cap',
@@ -5578,6 +5591,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help: '在迷宫商店标签页中为可交易物品显示卖价/买价市场价格',
                 },
                 labyrinthClearRate: { label: '迷宫通关率计算器', help: '在迷宫生产房间的方块上显示预计通关时间和成功率' },
+                labyrinthGridScaleControl: {
+                    label: '迷宫：显示网格大小控制',
+                    help: '在迷宫标题行添加 - / + 控件，用于放大房间网格',
+                },
+                labyrinthGridScale: {
+                    label: '迷宫：房间网格大小',
+                    help: '迷宫房间网格的缩放比例。也可使用迷宫面板上的 - / + 控件调整',
+                },
                 labyrinthMissingSuppliesButton: {
                     label: '迷宫：显示“购买缺少的补给”按钮',
                     help: '在补给区域旁添加一个按钮，打开市场并显示低于携带上限的火把/斗篷/探照灯标签',
@@ -6646,6 +6667,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         },
         labyrinthMissingSupplies: {
             buttonLabel: '购买缺少的补给',
+        },
+        labyrinthGridScale: {
+            label: '大小',
+            smaller: '缩小网格',
+            larger: '放大网格',
         },
         labyrinthClearRate: {
             errorLoadoutUnavailable: '所选配装不可用',
@@ -10642,6 +10668,23 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'checkbox',
                     default: false,
                     help: 'Uses the darker, more muted colors on the clear rate badges over the room tiles instead of the brighter default colors',
+                },
+                labyrinthGridScaleControl: {
+                    id: 'labyrinthGridScaleControl',
+                    label: 'Labyrinth: Show grid size control',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a - / + control to the Labyrinth header row that enlarges the room grid',
+                },
+                labyrinthGridScale: {
+                    id: 'labyrinthGridScale',
+                    label: 'Labyrinth: Room grid size',
+                    type: 'slider',
+                    default: 1,
+                    min: 1,
+                    max: 2,
+                    step: 0.25,
+                    help: 'Scale of the Labyrinth room grid. Also adjustable with the - / + control on the Labyrinth panel',
                 },
                 labyrinthMissingSuppliesButton: {
                     id: 'labyrinthMissingSuppliesButton',
