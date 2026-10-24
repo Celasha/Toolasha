@@ -18,10 +18,14 @@ import {
     MIN_ACTION_TIME_SECONDS,
 } from './profit-constants.js';
 import { getItemPriceOutlierInfo } from './market-data.js';
+import { t } from '../core/i18n.js';
 import { getItemName } from './game-i18n.js';
 import { getCustomPrice } from '../features/settings/custom-price-overrides.js';
 import { getShopCoinCost } from './game-lookups.js';
 import { getProductionCost } from '../features/enhancement/tooltip-enhancement.js';
+import config from '../core/config.js';
+import dataManager from '../core/data-manager.js';
+import { calculateArtisanBonus } from './material-calculator.js';
 
 /**
  * Calculate actions per hour from action time
@@ -496,3 +500,150 @@ export default {
     calculateProductionActionTotalsFromBase,
     calculateGatheringActionTotalsFromBase,
 };
+
+/**
+ * Rows for an upgrade item's own crafting chain, one per tier, each priced at its direct cost.
+ * A tier that is cheaper to buy than craft ends the chain.
+ * @param {string} itemHrid - The item whose recipe's upgrade item is expanded
+ * @param {number} depth - Indent level of the first row
+ * @returns {Array<{itemName: string, amount: number, askPrice: number, bidPrice: number, depth: number}>}
+ */
+export function getUpgradeChainRows(itemHrid, depth) {
+    const gameData = dataManager.getInitClientData();
+    if (!gameData?.actionDetailMap) return [];
+
+    const action = Object.values(gameData.actionDetailMap).find((act) => act.outputItems?.[0]?.itemHrid === itemHrid);
+    if (!action || !action.upgradeItemHrid) return [];
+
+    const upgradeHrid = action.upgradeItemHrid;
+    const upgradeDetails = dataManager.getItemDetails(upgradeHrid);
+    if (!upgradeDetails) return [];
+
+    let askPrice = resolveItemPrice(upgradeHrid, { mode: 'ask', side: 'buy' }).price;
+    let bidPrice = resolveItemPrice(upgradeHrid, { mode: 'bid', side: 'buy' }).price;
+
+    const craftAsk = getProductionCost(upgradeHrid, 'ask');
+    const craftBid = getProductionCost(upgradeHrid, 'bid');
+    const isCrafted = craftAsk > 0 && (askPrice === 0 || craftAsk < askPrice);
+
+    if (isCrafted) {
+        const deeperRows = getUpgradeChainRows(upgradeHrid, depth + 1);
+        const deeperAsk = deeperRows.reduce((sum, row) => sum + row.askPrice * row.amount, 0);
+        const deeperBid = deeperRows.reduce((sum, row) => sum + row.bidPrice * row.amount, 0);
+        askPrice = craftAsk - deeperAsk;
+        bidPrice = (craftBid || craftAsk) - deeperBid;
+        return [
+            {
+                itemName: t('tooltipPrices.craftItemName', {
+                    itemName: getItemName(upgradeHrid, upgradeDetails.name),
+                }),
+                amount: 1,
+                askPrice,
+                bidPrice,
+                depth,
+            },
+            ...deeperRows,
+        ];
+    }
+
+    if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
+    return [
+        {
+            itemName: t('tooltipPrices.buyItemName', { itemName: getItemName(upgradeHrid, upgradeDetails.name) }),
+            amount: 1,
+            askPrice,
+            bidPrice,
+            depth,
+        },
+    ];
+}
+
+/**
+ * Price the materials of a craft, deciding for the upgrade item whether it is crafted or bought.
+ * This is the single place that rule lives: the item tooltip's PROFIT table renders these rows and
+ * `calculateTooltipCraftCost` sums them, so every tooltip that quotes a craft cost quotes the same number.
+ * @param {Array<{itemHrid: string, itemName: string, amount: number, isUpgradeItem?: boolean}>} materialCosts
+ * @returns {Array<Object>} The materials with `askPrice` / `bidPrice` and, for a crafted upgrade item, `subRows`
+ */
+export function resolveCraftMaterialRows(materialCosts) {
+    return materialCosts.map((material) => {
+        if (material.itemHrid === '/items/coin') {
+            return { ...material, askPrice: 1, bidPrice: 1 };
+        }
+
+        let askPrice = resolveItemPrice(material.itemHrid, { mode: 'ask', side: 'buy' }).price;
+        let bidPrice = resolveItemPrice(material.itemHrid, { mode: 'bid', side: 'buy' }).price;
+
+        if (material.isUpgradeItem) {
+            const craftEnabled = config.getSetting('profitCalc_craftUpgradeItems');
+            const craftAsk = craftEnabled ? getProductionCost(material.itemHrid, 'ask') : 0;
+            const craftBid = craftEnabled ? getProductionCost(material.itemHrid, 'bid') : 0;
+            const isCrafted = craftAsk > 0 && (askPrice === 0 || craftAsk < askPrice);
+            if (isCrafted) {
+                // Split: show only direct inputs cost on this row, sub-rows handle deeper chain
+                const subRows = getUpgradeChainRows(material.itemHrid, 1);
+                const subAskTotal = subRows.reduce((sum, row) => sum + row.askPrice * row.amount, 0);
+                const subBidTotal = subRows.reduce((sum, row) => sum + row.bidPrice * row.amount, 0);
+                askPrice = craftAsk - subAskTotal;
+                bidPrice = (craftBid || craftAsk) - subBidTotal;
+                return {
+                    ...material,
+                    itemName: t('tooltipPrices.craftItemName', { itemName: material.itemName }),
+                    askPrice,
+                    bidPrice,
+                    subRows,
+                };
+            }
+            if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
+            return {
+                ...material,
+                itemName: t('tooltipPrices.buyItemName', { itemName: material.itemName }),
+                askPrice,
+                bidPrice,
+            };
+        }
+
+        return { ...material, askPrice, bidPrice };
+    });
+}
+
+/**
+ * Cost to craft an item once, as the item tooltip's PROFIT table totals it: direct inputs at market
+ * (reduced by Artisan Tea) plus the upgrade item, built through `resolveCraftMaterialRows`.
+ * @param {string} itemHrid
+ * @param {'ask'|'bid'} [mode='ask'] - Which side of the market prices the materials
+ * @returns {number} Total cost, or 0 when the item has no recipe
+ */
+export function calculateTooltipCraftCost(itemHrid, mode = 'ask') {
+    const actionDetailMap = dataManager.getInitClientData()?.actionDetailMap;
+    if (!actionDetailMap) return 0;
+
+    const action = Object.values(actionDetailMap).find((a) => a.outputItems?.[0]?.itemHrid === itemHrid);
+    if (!action) return 0;
+
+    const artisanBonus = calculateArtisanBonus(action);
+    const materialCosts = (action.inputItems || []).map((input) => ({
+        itemHrid: input.itemHrid,
+        itemName: input.itemHrid,
+        amount: (input.count || input.amount || 1) * (1 - artisanBonus),
+    }));
+    if (action.upgradeItemHrid) {
+        // Upgrade items are not affected by Artisan Tea
+        materialCosts.push({
+            itemHrid: action.upgradeItemHrid,
+            itemName: action.upgradeItemHrid,
+            amount: 1,
+            isUpgradeItem: true,
+        });
+    }
+
+    const priceKey = mode === 'bid' ? 'bidPrice' : 'askPrice';
+    let total = 0;
+    for (const material of resolveCraftMaterialRows(materialCosts)) {
+        total += material[priceKey] * material.amount;
+        for (const sub of material.subRows || []) {
+            total += sub[priceKey] * sub.amount;
+        }
+    }
+    return total;
+}

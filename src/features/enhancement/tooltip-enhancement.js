@@ -28,17 +28,17 @@ import { parseItemCount } from '../../utils/number-parser.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import marketAPI from '../../api/marketplace.js';
 import marketValuesAPI from '../../api/market-values.js';
-import { computeBestCraftingPlan } from '../crafting-plan/crafting-plan-calculator.js';
+import { calculateTooltipCraftCost } from '../../utils/profit-helpers.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 const _costCache = new Map();
 const _chainTimeCache = new Map();
-const _craftPlanCache = new Map();
+const _craftCostCache = new Map();
 
 marketAPI.on(() => {
     _costCache.clear();
     _chainTimeCache.clear();
-    _craftPlanCache.clear();
+    _craftCostCache.clear();
 });
 
 /**
@@ -106,7 +106,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     const targetTimes = new Array(currentEnhancementLevel + 1);
     const targetAttempts = new Array(currentEnhancementLevel + 1);
     targetCosts[0] = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
-        ? Math.min(getOptimalCraftingCost(itemHrid) || Infinity, getItemPrices(itemHrid, 0)?.ask || Infinity) ||
+        ? Math.min(getTooltipCraftCostCached(itemHrid) || Infinity, getItemPrices(itemHrid, 0)?.ask || Infinity) ||
           getRealisticBaseItemPrice(itemHrid)
         : getRealisticBaseItemPrice(itemHrid); // Level 0: base item
     targetTimes[0] = 0; // Level 0: no time needed
@@ -152,7 +152,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
             if (fodderLevel === 0) {
                 fodderCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
                     ? Math.min(
-                          getOptimalCraftingCost(baseItemHrid) || Infinity,
+                          getTooltipCraftCostCached(baseItemHrid) || Infinity,
                           getItemPrices(baseItemHrid, 0)?.ask || Infinity
                       ) || getRealisticBaseItemPrice(baseItemHrid)
                     : getRealisticBaseItemPrice(baseItemHrid);
@@ -632,8 +632,8 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     }
 
     // Base item cost (initial investment) — market price or min(crafting, market) per setting
-    const craftingCostAsk = getOptimalCraftingCost(itemHrid, 'ask');
-    const craftingCostBid = getOptimalCraftingCost(itemHrid, 'bid');
+    const craftingCostAsk = getTooltipCraftCostCached(itemHrid, 'ask');
+    const craftingCostBid = getTooltipCraftCostCached(itemHrid, 'bid');
     const baseItemPrices = getItemPrices(itemHrid, 0);
     const marketAsk = baseItemPrices?.ask > 0 ? baseItemPrices.ask : 0;
     const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
@@ -643,7 +643,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
     const baseBidPrice = askIsCrafted
         ? craftingCostBid || craftingCostAsk
-        : marketBid || getOptimalCraftingCost(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
+        : marketBid || getTooltipCraftCostCached(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
     const baseCost = baseAskPrice;
     const baseAskIsCrafted = askIsCrafted;
     const baseBidIsCrafted = askIsCrafted;
@@ -807,51 +807,25 @@ function _computeProductionCost(itemHrid, mode = 'ask') {
 }
 
 /**
- * Get the optimal (recursive buy-vs-craft) cost to obtain the base item, matching the Best
- * Crafting Plan calculation shown on the item's production action page. Unlike
- * getProductionCost() above (a shallow walk that only recurses through upgrade-item chains,
- * pricing every regular input at market value even when crafting that input would be cheaper),
- * this walks the full material tree and picks whichever is cheaper -- buy or craft -- at every
- * tier down to raw materials, honoring the same Crafting Plan settings used on the production
- * page so the two stay consistent.
+ * Cost to craft the base item, as the item tooltip's PROFIT table shows it. Delegates to the
+ * shared helper so the enhancement path's "Craft Item" and the item tooltip's total can never
+ * disagree, whichever tooltip is looked at. Cached until the next price update.
  * @param {string} itemHrid
  * @param {'ask'|'bid'} [mode='ask']
  * @private
  */
-function getOptimalCraftingCost(itemHrid, mode = 'ask') {
+function getTooltipCraftCostCached(itemHrid, mode = 'ask') {
     const cacheKey = `${itemHrid}|${mode}`;
-    if (_craftPlanCache.has(cacheKey)) return _craftPlanCache.get(cacheKey);
-
-    const buyIntermediates = toolashaConfig.getSetting('actionPanel_craftingPlanBuyIntermediates');
-    const noProcessing = toolashaConfig.getSetting('actionPanel_craftingPlanNoProcessing');
-    const taskMode = toolashaConfig.getSetting('actionPanel_craftingPlanTaskMode');
-    const timeCostEnabled = toolashaConfig.getSetting('actionPanel_craftingPlanTimeCost');
-    const goldPerHour = Number(toolashaConfig.getSettingValue('actionPanel_craftingPlanGoldPerHour', 0)) || 0;
+    if (_craftCostCache.has(cacheKey)) return _craftCostCache.get(cacheKey);
 
     let result = 0;
     try {
-        const plan = computeBestCraftingPlan(
-            itemHrid,
-            1,
-            mode,
-            new Set(),
-            new Map(),
-            0,
-            undefined,
-            buyIntermediates,
-            taskMode,
-            timeCostEnabled ? goldPerHour : 0,
-            noProcessing
-        );
-        // computeBestCraftingPlan can return Infinity (depth limit reached with no buyable price
-        // anywhere in the chain) - treat that the same as "unknown" (0), matching
-        // getProductionCost()'s own contract, so callers' existing `|| fallback` chains still work.
-        result = Number.isFinite(plan?.totalCost) && plan.totalCost > 0 ? plan.totalCost : 0;
+        result = calculateTooltipCraftCost(itemHrid, mode);
     } catch (error) {
-        console.error('[Enhancement Tooltip] computeBestCraftingPlan failed for', itemHrid, error);
+        console.error('[Enhancement Tooltip] craft cost failed for', itemHrid, error);
     }
 
-    _craftPlanCache.set(cacheKey, result);
+    _craftCostCache.set(cacheKey, result);
     return result;
 }
 

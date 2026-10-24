@@ -16,7 +16,6 @@ import {
     calculateEnhancementPath,
     buildEnhancementTooltipHTML,
     buildEnhancementMilestonesHTML,
-    getProductionCost,
 } from '../enhancement/tooltip-enhancement.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { getEnhancingParams, getAutoDetectedParams } from '../../utils/enhancement-config.js';
@@ -29,7 +28,7 @@ import {
 } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
-import { resolveItemPrice, calculatePriceAfterTax } from '../../utils/profit-helpers.js';
+import { calculatePriceAfterTax, resolveCraftMaterialRows } from '../../utils/profit-helpers.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import dom from '../../utils/dom.js';
 import { parseItemCount } from '../../utils/number-parser.js';
@@ -748,69 +747,6 @@ class TooltipPrices {
     }
 
     /**
-     * Get upgrade chain sub-rows for a crafted upgrade item (recursive).
-     * Each row represents one level of the chain with its direct inputs cost only.
-     * @param {string} itemHrid - Upgrade item to expand
-     * @param {number} depth - Current nesting depth
-     * @returns {Array} Flat array of sub-row objects
-     */
-    _getUpgradeChainRows(itemHrid, depth) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) return [];
-
-        let action = null;
-        for (const act of Object.values(gameData.actionDetailMap)) {
-            if (act.outputItems?.[0]?.itemHrid === itemHrid) {
-                action = act;
-                break;
-            }
-        }
-        if (!action || !action.upgradeItemHrid) return [];
-
-        const upgradeHrid = action.upgradeItemHrid;
-        const upgradeDetails = dataManager.getItemDetails(upgradeHrid);
-        if (!upgradeDetails) return [];
-
-        let askPrice = resolveItemPrice(upgradeHrid, { mode: 'ask', side: 'buy' }).price;
-        let bidPrice = resolveItemPrice(upgradeHrid, { mode: 'bid', side: 'buy' }).price;
-
-        const craftAsk = getProductionCost(upgradeHrid, 'ask');
-        const craftBid = getProductionCost(upgradeHrid, 'bid');
-        const isCrafted = craftAsk > 0 && (askPrice === 0 || craftAsk < askPrice);
-
-        if (isCrafted) {
-            const deeperRows = this._getUpgradeChainRows(upgradeHrid, depth + 1);
-            const deeperAsk = deeperRows.reduce((s, r) => s + r.askPrice * r.amount, 0);
-            const deeperBid = deeperRows.reduce((s, r) => s + r.bidPrice * r.amount, 0);
-            askPrice = craftAsk - deeperAsk;
-            bidPrice = (craftBid || craftAsk) - deeperBid;
-            return [
-                {
-                    itemName: t('tooltipPrices.craftItemName', {
-                        itemName: getItemName(upgradeHrid, upgradeDetails.name),
-                    }),
-                    amount: 1,
-                    askPrice,
-                    bidPrice,
-                    depth,
-                },
-                ...deeperRows,
-            ];
-        }
-
-        if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
-        return [
-            {
-                itemName: t('tooltipPrices.buyItemName', { itemName: getItemName(upgradeHrid, upgradeDetails.name) }),
-                amount: 1,
-                askPrice,
-                bidPrice,
-                depth,
-            },
-        ];
-    }
-
-    /**
      * Build detailed profit display with materials table
      * @param {Object} profitData - Profit calculation data
      * @returns {string} HTML string for detailed display
@@ -831,46 +767,8 @@ class TooltipPrices {
             html += `<th style="padding: 2px 4px; text-align: right;">${t('tooltipPrices.bidHeader')}</th>`;
             html += '</tr>';
 
-            // Resolve prices for all materials through unified chain
-            const materialsWithPrices = profitData.materialCosts.map((material) => {
-                if (material.itemHrid === '/items/coin') {
-                    return { ...material, askPrice: 1, bidPrice: 1 };
-                }
-
-                let askPrice = resolveItemPrice(material.itemHrid, { mode: 'ask', side: 'buy' }).price;
-                let bidPrice = resolveItemPrice(material.itemHrid, { mode: 'bid', side: 'buy' }).price;
-
-                if (material.isUpgradeItem) {
-                    const craftEnabled = config.getSetting('profitCalc_craftUpgradeItems');
-                    const craftAsk = craftEnabled ? getProductionCost(material.itemHrid, 'ask') : 0;
-                    const craftBid = craftEnabled ? getProductionCost(material.itemHrid, 'bid') : 0;
-                    const isCrafted = craftAsk > 0 && (askPrice === 0 || craftAsk < askPrice);
-                    if (isCrafted) {
-                        // Split: show only direct inputs cost on this row, sub-rows handle deeper chain
-                        const subRows = this._getUpgradeChainRows(material.itemHrid, 1);
-                        const subAskTotal = subRows.reduce((s, r) => s + r.askPrice * r.amount, 0);
-                        const subBidTotal = subRows.reduce((s, r) => s + r.bidPrice * r.amount, 0);
-                        askPrice = craftAsk - subAskTotal;
-                        bidPrice = (craftBid || craftAsk) - subBidTotal;
-                        return {
-                            ...material,
-                            itemName: t('tooltipPrices.craftItemName', { itemName: material.itemName }),
-                            askPrice,
-                            bidPrice,
-                            subRows,
-                        };
-                    }
-                    if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
-                    return {
-                        ...material,
-                        itemName: t('tooltipPrices.buyItemName', { itemName: material.itemName }),
-                        askPrice,
-                        bidPrice,
-                    };
-                }
-
-                return { ...material, askPrice, bidPrice };
-            });
+            // Resolve prices for all materials through unified chain (shared with the enhancement tooltip)
+            const materialsWithPrices = resolveCraftMaterialRows(profitData.materialCosts);
 
             // Calculate totals (include sub-rows for correct additive sum)
             let totalCount = 0;

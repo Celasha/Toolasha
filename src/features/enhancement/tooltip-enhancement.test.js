@@ -44,6 +44,8 @@ vi.mock('../../core/data-manager.js', () => ({
 
 const marketPrices = {};
 
+vi.mock('../../utils/material-calculator.js', () => ({ calculateArtisanBonus: () => 0 }));
+
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: vi.fn(() => 0),
     getItemPrices: vi.fn(() => ({ ask: 400_000_000, bid: 390_000_000 })),
@@ -595,7 +597,7 @@ describe('buildEnhancementTooltipHTML - Crafting Cost / Enhancing Cost subtotals
     });
 });
 
-describe('buildEnhancementMilestonesHTML - Craft Cost / Enhance Cost columns (recursive crafting plan)', () => {
+describe('buildEnhancementMilestonesHTML - Craft Cost / Enhance Cost columns (item tooltip craft cost)', () => {
     const enhancingConfig = {
         enhancingLevel: 300,
         houseLevel: 8,
@@ -645,14 +647,13 @@ describe('buildEnhancementMilestonesHTML - Craft Cost / Enhance Cost columns (re
         getItemPrices.mockImplementation((hrid) => marketPrices[hrid] ?? null);
     });
 
-    test('prices the base item via the full recursive buy-vs-craft chain, not a one-tier market lookup', () => {
+    test('prices the base item exactly as the item tooltip does: direct inputs at market, no deeper recursion', () => {
         const result = calculateEnhancementPath('/items/gadget_body', 1, enhancingConfig);
 
         expect(result).not.toBeNull();
-        // Deep-optimal: craft gadget_body from alloy, and craft alloy from ore too (unit cost 10),
-        // instead of buying alloy outright (1000) or gadget_body outright (5M).
-        expect(result.optimalStrategy.baseAskPrice).toBeCloseTo(10, 5);
-        expect(result.optimalStrategy.baseAskPrice).toBeLessThan(1000);
+        // One craft step: the alloy input is priced at its market ask (1000), not crafted down to
+        // ore (10), so the number matches the item tooltip's PROFIT total.
+        expect(result.optimalStrategy.baseAskPrice).toBeCloseTo(1000, 5);
         expect(result.optimalStrategy.baseAskIsCrafted).toBe(true);
     });
 
@@ -673,10 +674,10 @@ describe('buildEnhancementMilestonesHTML - Craft Cost / Enhance Cost columns (re
         expect(html).toContain('Enhance Cost');
         expect(html).not.toContain('>Cost<');
 
-        // The craft leg should stay pinned near the deep-optimal ~10 cost at every milestone
-        // level, since the base item's own cost doesn't change with target level.
+        // The craft leg should stay pinned at the 1000 cost at every milestone level, since the
+        // base item's own cost doesn't change with target level.
         const craftCostIndex = html.indexOf('Craft Cost');
         const rowsSection = html.slice(craftCostIndex);
-        expect(rowsSection).toContain('10');
+        expect(rowsSection).toContain('1.00K');
     });
 });
