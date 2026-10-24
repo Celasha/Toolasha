@@ -2364,6 +2364,8 @@ export default {
         alternativeActionsHeader: 'Alternative Actions:',
         askHeader: 'Ask',
         bidHeader: 'Bid',
+        bestPlanLabel: 'Best plan',
+        bestPlanNote: 'Best plan crafts sub-materials when cheaper. Profit above uses the Total row.',
         buyItemName: (p) => `Buy ${p.itemName}`,
         costPerItemLine: (p) => `Cost: ${p.cost}/item`,
         countHeader: 'Count',
@@ -2737,6 +2739,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         craftCostHeader: 'Craft Cost',
         craftingCostSubtotalLabel: 'Crafting Cost',
         craftItemLabel: 'Craft Item',
+        craftItemPlanLabel: 'Craft Item (best plan)',
         enhanceCostHeader: 'Enhance Cost',
         enhancingCostSubtotalLabel: 'Enhancing Cost',
         expectedAttemptsLine: (p) => `Expected Attempts: ${p.value}`,
@@ -3118,6 +3121,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             itemTooltip_detailedProfit: {
                 label: 'Show detailed materials breakdown in profit display',
                 help: 'Shows material costs table with Ask/Bid prices, actions/hour, and profit breakdown',
+            },
+            itemTooltip_craftCostSubMaterials: {
+                label: 'Craft cost includes crafting sub-materials',
+                help: 'Enhancement tooltips and the item tooltip\'s "Best plan" line price crafted items by buying or crafting each ingredient, whichever is cheaper, all the way down. When off, only the recipe\'s direct inputs are counted. The profit/hr figure always uses the direct-input total.',
             },
             itemTooltip_multiActionProfit: {
                 label: 'Show profit comparison for all item actions',

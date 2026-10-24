@@ -44,7 +44,10 @@ vi.mock('../../core/data-manager.js', () => ({
 
 const marketPrices = {};
 
-vi.mock('../../utils/material-calculator.js', () => ({ calculateArtisanBonus: () => 0 }));
+vi.mock('../../utils/material-calculator.js', async (importOriginal) => ({
+    ...(await importOriginal()),
+    calculateArtisanBonus: () => 0,
+}));
 
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: vi.fn(() => 0),
@@ -654,6 +657,16 @@ describe('buildEnhancementMilestonesHTML - Craft Cost / Enhance Cost columns (it
         // One craft step: the alloy input is priced at its market ask (1000), not crafted down to
         // ore (10), so the number matches the item tooltip's PROFIT total.
         expect(result.optimalStrategy.baseAskPrice).toBeCloseTo(1000, 5);
+        expect(result.optimalStrategy.baseAskIsCrafted).toBe(true);
+    });
+
+    test('crafts sub-materials when the tooltip craft cost includes them', () => {
+        settingsMap.itemTooltip_craftCostSubMaterials = { isTrue: true };
+
+        const result = calculateEnhancementPath('/items/gadget_body', 1, enhancingConfig);
+
+        // Craft gadget_body from alloy and craft alloy from ore (10), instead of buying alloy (1000).
+        expect(result.optimalStrategy.baseAskPrice).toBeCloseTo(10, 5);
         expect(result.optimalStrategy.baseAskIsCrafted).toBe(true);
     });
 

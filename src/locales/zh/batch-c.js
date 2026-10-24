@@ -584,6 +584,7 @@ export default {
         craftCostHeader: '制作花费',
         craftingCostSubtotalLabel: '制作花费',
         craftItemLabel: '制作物品',
+        craftItemPlanLabel: '制作物品（最佳方案）',
         enhanceCostHeader: '强化花费',
         enhancingCostSubtotalLabel: '强化花费',
         expectedAttemptsLine: (p) => `预期尝试次数：${p.value}`,

@@ -26,6 +26,7 @@ import { getProductionCost } from '../features/enhancement/tooltip-enhancement.j
 import config from '../core/config.js';
 import dataManager from '../core/data-manager.js';
 import { calculateArtisanBonus } from './material-calculator.js';
+import { computeBestCraftingPlan } from '../features/crafting-plan/crafting-plan-calculator.js';
 
 /**
  * Calculate actions per hour from action time
@@ -608,17 +609,24 @@ export function resolveCraftMaterialRows(materialCosts) {
 }
 
 /**
- * Cost to craft an item once, as the item tooltip's PROFIT table totals it: direct inputs at market
- * (reduced by Artisan Tea) plus the upgrade item, built through `resolveCraftMaterialRows`.
+ * Whether tooltips quote the whole-tree craft cost (crafting sub-materials when cheaper) instead of
+ * the one-level cost.
+ * @returns {boolean}
+ */
+export function isCraftCostIncludingSubMaterials() {
+    return config.getSetting('itemTooltip_craftCostSubMaterials');
+}
+
+/**
+ * One-level cost to craft an item once, as the item tooltip's PROFIT table totals it: direct inputs at
+ * market (reduced by Artisan Tea) plus the upgrade item, built through `resolveCraftMaterialRows`.
+ * This is also the cost the profit calculator's Net per hour uses.
  * @param {string} itemHrid
  * @param {'ask'|'bid'} [mode='ask'] - Which side of the market prices the materials
  * @returns {number} Total cost, or 0 when the item has no recipe
  */
-export function calculateTooltipCraftCost(itemHrid, mode = 'ask') {
-    const actionDetailMap = dataManager.getInitClientData()?.actionDetailMap;
-    if (!actionDetailMap) return 0;
-
-    const action = Object.values(actionDetailMap).find((a) => a.outputItems?.[0]?.itemHrid === itemHrid);
+export function calculateOneLevelCraftCost(itemHrid, mode = 'ask') {
+    const action = findProductionActionFor(itemHrid);
     if (!action) return 0;
 
     const artisanBonus = calculateArtisanBonus(action);
@@ -646,4 +654,53 @@ export function calculateTooltipCraftCost(itemHrid, mode = 'ask') {
         }
     }
     return total;
+}
+
+/**
+ * Whole-tree cost to craft an item once: each ingredient is bought or crafted, whichever is cheaper,
+ * all the way down (the Best Crafting Plan). The item itself is always crafted. Honors the plan's
+ * "buy raw only" and "no processing" settings, which decide what counts as craftable, and ignores
+ * task mode and time cost, which are about the player's time and goals, not material cost.
+ * @param {string} itemHrid
+ * @param {'ask'|'bid'} [mode='ask']
+ * @returns {number} Total cost, or 0 when the item has no recipe or cannot be priced
+ */
+export function calculateCraftPlanCost(itemHrid, mode = 'ask') {
+    if (!findProductionActionFor(itemHrid)) return 0;
+
+    const plan = computeBestCraftingPlan(
+        itemHrid,
+        1,
+        mode,
+        new Set(),
+        new Map(),
+        0,
+        undefined,
+        config.getSetting('actionPanel_craftingPlanBuyIntermediates'),
+        true,
+        0,
+        config.getSetting('actionPanel_craftingPlanNoProcessing')
+    );
+    return Number.isFinite(plan?.totalCost) && plan.totalCost > 0 ? plan.totalCost : 0;
+}
+
+/**
+ * The craft cost every tooltip quotes for an item: the whole-tree cost or the one-level cost,
+ * according to `itemTooltip_craftCostSubMaterials`.
+ * @param {string} itemHrid
+ * @param {'ask'|'bid'} [mode='ask']
+ * @returns {number} Total cost, or 0 when the item has no recipe
+ */
+export function calculateTooltipCraftCost(itemHrid, mode = 'ask') {
+    if (isCraftCostIncludingSubMaterials()) {
+        const planCost = calculateCraftPlanCost(itemHrid, mode);
+        if (planCost > 0) return planCost;
+    }
+    return calculateOneLevelCraftCost(itemHrid, mode);
+}
+
+function findProductionActionFor(itemHrid) {
+    const actionDetailMap = dataManager.getInitClientData()?.actionDetailMap;
+    if (!actionDetailMap) return null;
+    return Object.values(actionDetailMap).find((a) => a.outputItems?.[0]?.itemHrid === itemHrid) || null;
 }

@@ -28,7 +28,12 @@ import {
 } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
-import { calculatePriceAfterTax, resolveCraftMaterialRows } from '../../utils/profit-helpers.js';
+import {
+    calculatePriceAfterTax,
+    resolveCraftMaterialRows,
+    isCraftCostIncludingSubMaterials,
+    calculateTooltipCraftCost,
+} from '../../utils/profit-helpers.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import dom from '../../utils/dom.js';
 import { parseItemCount } from '../../utils/number-parser.js';
@@ -794,6 +799,22 @@ class TooltipPrices {
             html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(totalAsk)}</td>`;
             html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(totalBid)}</td>`;
             html += '</tr>';
+
+            // Best plan: the whole-tree cost the enhancement tooltips quote. Shown only when it differs
+            // from the Total row, with a note, so the two numbers are never silently different.
+            if (profitData.itemHrid && isCraftCostIncludingSubMaterials()) {
+                const planAsk = calculateTooltipCraftCost(profitData.itemHrid, 'ask');
+                const planBid = calculateTooltipCraftCost(profitData.itemHrid, 'bid');
+                if (planAsk > 0 && (Math.abs(planAsk - totalAsk) > 0.5 || Math.abs(planBid - totalBid) > 0.5)) {
+                    html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
+                    html += `<td style="padding: 2px 4px; font-weight: bold;">${t('tooltipPrices.bestPlanLabel')}</td>`;
+                    html += '<td style="padding: 2px 4px; text-align: center;"></td>';
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(planAsk)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(planBid)}</td>`;
+                    html += '</tr>';
+                    html += `<tr><td colspan="4" style="padding: 2px 4px; opacity: 0.7; font-style: italic;">${t('tooltipPrices.bestPlanNote')}</td></tr>`;
+                }
+            }
 
             // Material rows
             for (const material of materialsWithPrices) {

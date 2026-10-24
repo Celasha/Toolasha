@@ -170,6 +170,8 @@ export default {
         buyItemName: (p) => `购买 ${p.itemName}`,
         costPerItemLine: (p) => `成本：${p.cost}/个`,
         countHeader: '数量',
+        bestPlanLabel: '最佳方案',
+        bestPlanNote: '最佳方案会在更便宜时制作子材料。上方利润使用总计行。',
         craftItemName: (p) => `制作 ${p.itemName}`,
         decomposeValueLine: (p) => `分解价值：${p.ask} / ${p.bid}`,
         dropNoPriceLine: (p) => `• ${p.itemName}（${p.dropRate}）：平均 ${p.avgCount} → 暂无价格数据`,

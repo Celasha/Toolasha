@@ -738,6 +738,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'Shows material costs table with Ask/Bid prices, actions/hour, and profit breakdown',
             },
+            itemTooltip_craftCostSubMaterials: {
+                id: 'itemTooltip_craftCostSubMaterials',
+                label: 'Craft cost includes crafting sub-materials',
+                type: 'checkbox',
+                default: true,
+                help: 'Enhancement tooltips and the item tooltip\'s "Best plan" line price crafted items by buying or crafting each ingredient, whichever is cheaper, all the way down. When off, only the recipe\'s direct inputs are counted. The profit/hr figure always uses the direct-input total.',
+            },
             itemTooltip_multiActionProfit: {
                 id: 'itemTooltip_multiActionProfit',
                 label: 'Show profit comparison for all item actions',

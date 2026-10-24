@@ -28,7 +28,7 @@ import { parseItemCount } from '../../utils/number-parser.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import marketAPI from '../../api/marketplace.js';
 import marketValuesAPI from '../../api/market-values.js';
-import { calculateTooltipCraftCost } from '../../utils/profit-helpers.js';
+import { calculateTooltipCraftCost, isCraftCostIncludingSubMaterials } from '../../utils/profit-helpers.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 const _costCache = new Map();
@@ -815,7 +815,7 @@ function _computeProductionCost(itemHrid, mode = 'ask') {
  * @private
  */
 function getTooltipCraftCostCached(itemHrid, mode = 'ask') {
-    const cacheKey = `${itemHrid}|${mode}`;
+    const cacheKey = `${itemHrid}|${mode}|${isCraftCostIncludingSubMaterials()}`;
     if (_craftCostCache.has(cacheKey)) return _craftCostCache.get(cacheKey);
 
     let result = 0;
@@ -1221,8 +1221,11 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         const rows = [];
 
         // Base item row
+        const craftLabelKey = isCraftCostIncludingSubMaterials()
+            ? 'tooltipEnhancement.craftItemPlanLabel'
+            : 'tooltipEnhancement.craftItemLabel';
         const baseItemLabel = optimalStrategy.baseAskIsCrafted
-            ? t('tooltipEnhancement.craftItemLabel')
+            ? t(craftLabelKey)
             : t('tooltipEnhancement.buyItemLabel');
         rows.push({
             name: toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')

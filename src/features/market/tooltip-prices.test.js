@@ -42,6 +42,11 @@ vi.mock('../../utils/market-data.js', () => ({ getItemPrices: vi.fn() }));
 vi.mock('../../utils/profit-helpers.js', () => ({
     resolveItemPrice: vi.fn(),
     calculatePriceAfterTax: vi.fn((price) => price),
+    resolveCraftMaterialRows: vi.fn((materials) =>
+        materials.map((material) => ({ ...material, askPrice: 100, bidPrice: 90 }))
+    ),
+    isCraftCostIncludingSubMaterials: vi.fn(() => true),
+    calculateTooltipCraftCost: vi.fn((itemHrid, mode) => (mode === 'ask' ? 150 : 140)),
 }));
 vi.mock('../../utils/dungeon-key-cost.js', () => ({ getKeyPrice: vi.fn(() => 0) }));
 vi.mock('../../utils/material-calculator.js', () => ({ calculateArtisanBonus: vi.fn(() => 0) }));
@@ -51,6 +56,7 @@ import tooltipPrices from './tooltip-prices.js';
 import alchemyProfitCalculator from './alchemy-profit-calculator.js';
 import profitCalculator from './profit-calculator.js';
 import { resolveActionContext } from '../../utils/action-context.js';
+import { isCraftCostIncludingSubMaterials, calculateTooltipCraftCost } from '../../utils/profit-helpers.js';
 
 function buildTooltipElement() {
     const tooltipElement = document.createElement('div');
@@ -157,5 +163,37 @@ describe('TooltipPrices.handleTooltip expected value pricing', () => {
         await openContainerTooltip();
 
         expect(mockCalculateExpectedValue).toHaveBeenCalledWith('/items/purdoras_box_combat', { allowIndirect: false });
+    });
+});
+
+describe('TooltipPrices.buildDetailedProfitDisplay best plan row', () => {
+    const profitData = {
+        itemHrid: '/items/blooming_trident',
+        materialCosts: [{ itemHrid: '/items/amethyst', itemName: 'Amethyst', amount: 2 }],
+    };
+
+    test('shows the best plan total and a note when it differs from the one-level total', () => {
+        const html = tooltipPrices.buildDetailedProfitDisplay(profitData, false);
+
+        expect(html).toContain('tooltipPrices.bestPlanLabel');
+        expect(html).toContain('tooltipPrices.bestPlanNote');
+        expect(html).toContain('150');
+    });
+
+    test('omits the row when the best plan equals the one-level total', () => {
+        calculateTooltipCraftCost.mockImplementation((itemHrid, mode) => (mode === 'ask' ? 200 : 180));
+
+        const html = tooltipPrices.buildDetailedProfitDisplay(profitData, false);
+
+        expect(html).not.toContain('tooltipPrices.bestPlanLabel');
+    });
+
+    test('omits the row when the setting is off', () => {
+        isCraftCostIncludingSubMaterials.mockReturnValue(false);
+
+        const html = tooltipPrices.buildDetailedProfitDisplay(profitData, false);
+
+        expect(html).not.toContain('tooltipPrices.bestPlanLabel');
+        isCraftCostIncludingSubMaterials.mockReturnValue(true);
     });
 });
