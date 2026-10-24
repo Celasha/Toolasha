@@ -837,6 +837,14 @@ export default {
                 help: '在迷宫商店标签页中为可交易物品显示卖价/买价市场价格',
             },
             labyrinthClearRate: { label: '迷宫通关率计算器', help: '在迷宫生产房间的方块上显示预计通关时间和成功率' },
+            labyrinthGridScaleControl: {
+                label: '迷宫：显示网格大小控制',
+                help: '在迷宫标题行添加 - / + 控件，用于放大房间网格',
+            },
+            labyrinthGridScale: {
+                label: '迷宫：房间网格大小',
+                help: '迷宫房间网格的缩放比例。也可使用迷宫面板上的 - / + 控件调整',
+            },
             labyrinthMissingSuppliesButton: {
                 label: '迷宫：显示“购买缺少的补给”按钮',
                 help: '在补给区域旁添加一个按钮，打开市场并显示低于携带上限的火把/斗篷/探照灯标签',

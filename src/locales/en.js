@@ -1895,6 +1895,11 @@ export default {
     labyrinthMissingSupplies: {
         buttonLabel: 'Buy Missing Supplies',
     },
+    labyrinthGridScale: {
+        label: 'Size',
+        smaller: 'Smaller grid',
+        larger: 'Larger grid',
+    },
     enhancementUi: {
         panelTitle: 'Enhancement Tracker',
         clearAllSessionsTooltip: 'Clear all sessions',
@@ -3635,6 +3640,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             labyrinthClearRate: {
                 label: 'Labyrinth clear rate calculator',
                 help: 'Shows expected clear time and success rate on labyrinth skilling room tiles',
+            },
+            labyrinthGridScaleControl: {
+                label: 'Labyrinth: Show grid size control',
+                help: 'Adds a - / + control to the Labyrinth header row that enlarges the room grid',
+            },
+            labyrinthGridScale: {
+                label: 'Labyrinth: Room grid size',
+                help: 'Scale of the Labyrinth room grid. Also adjustable with the - / + control on the Labyrinth panel',
             },
             labyrinthMissingSuppliesButton: {
                 label: 'Labyrinth: Show "Buy Missing Supplies" button',

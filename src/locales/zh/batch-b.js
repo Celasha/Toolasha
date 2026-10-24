@@ -634,6 +634,11 @@ export default {
     labyrinthMissingSupplies: {
         buttonLabel: '购买缺少的补给',
     },
+    labyrinthGridScale: {
+        label: '大小',
+        smaller: '缩小网格',
+        larger: '放大网格',
+    },
     labyrinthClearRate: {
         errorLoadoutUnavailable: '所选配装不可用',
         errorLoadoutChangedDuringSim: '模拟过程中更换了配装',

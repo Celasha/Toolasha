@@ -517,6 +517,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'labyrinthGridScale',
+            name: 'Labyrinth Grid Scale',
+            category: 'Combat',
+            module: Combat.labyrinthGridScale,
+            async: false,
+        },
+        {
             key: 'scrollSimulatorUI',
             name: 'Scroll Simulator UI',
             category: 'Combat',

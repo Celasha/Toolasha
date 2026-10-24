@@ -1894,6 +1894,23 @@ export const settingsGroups = {
                 default: false,
                 help: 'Uses the darker, more muted colors on the clear rate badges over the room tiles instead of the brighter default colors',
             },
+            labyrinthGridScaleControl: {
+                id: 'labyrinthGridScaleControl',
+                label: 'Labyrinth: Show grid size control',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a - / + control to the Labyrinth header row that enlarges the room grid',
+            },
+            labyrinthGridScale: {
+                id: 'labyrinthGridScale',
+                label: 'Labyrinth: Room grid size',
+                type: 'slider',
+                default: 1,
+                min: 1,
+                max: 2,
+                step: 0.25,
+                help: 'Scale of the Labyrinth room grid. Also adjustable with the - / + control on the Labyrinth panel',
+            },
             labyrinthMissingSuppliesButton: {
                 id: 'labyrinthMissingSuppliesButton',
                 label: 'Labyrinth: Show "Buy Missing Supplies" button',
