@@ -2,10 +2,9 @@
 
 ## [3.24.0](https://github.com/Celasha/Toolasha/compare/v3.23.0...v3.24.0) (2026-10-24)
 
-
 ### Features
 
-* compute Loot Luck for the whole current run from battleId ([#779](https://github.com/Celasha/Toolasha/issues/779)) ([8db0795](https://github.com/Celasha/Toolasha/commit/8db07951c125572fbd5e136dfe5eb2291ba4f22b))
+- compute Loot Luck for the whole current run from battleId ([#779](https://github.com/Celasha/Toolasha/issues/779)) ([8db0795](https://github.com/Celasha/Toolasha/commit/8db07951c125572fbd5e136dfe5eb2291ba4f22b))
 
 ## [3.23.0](https://github.com/Celasha/Toolasha/compare/v3.22.5...v3.23.0) (2026-10-24)
 
