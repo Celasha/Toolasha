@@ -47,7 +47,7 @@ import expectedValueCalculator from '../market/expected-value-calculator.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import { computeBestCraftingPlan } from '../crafting-plan/crafting-plan-calculator.js';
-import { getItemPriceOutlierInfo, getItemPrices } from '../../utils/market-data.js';
+import { getItemPriceOutlierInfo, getItemPrices, getPricingMode } from '../../utils/market-data.js';
 
 describe('calculateConsumableCosts - timeToZeroSeconds zero-safe fallback', () => {
     beforeEach(() => {
@@ -122,6 +122,17 @@ describe('outlier guard propagation', () => {
         const { breakdown } = calculateConsumableCosts(consumables, 3600);
 
         expect(breakdown[0].isOutlier).toBe(true);
+    });
+
+    test('prices consumables on the buy side of the profit pricing mode, not a fixed ask', () => {
+        getPricingMode.mockImplementation((context, side) => (side === 'buy' ? 'bid' : 'ask'));
+        const consumables = [{ itemHrid: '/items/coffee', consumed: 5, actualConsumed: 5 }];
+
+        calculateConsumableCosts(consumables, 3600);
+
+        expect(getPricingMode).toHaveBeenCalledWith('profit', 'buy');
+        expect(getItemPriceOutlierInfo).toHaveBeenCalledWith('/items/coffee', { mode: 'bid' });
+        getPricingMode.mockImplementation(() => 'ask');
     });
 
     test('calculateConsumableCosts falls back to the 500 default price with isOutlier false when no market data exists', () => {

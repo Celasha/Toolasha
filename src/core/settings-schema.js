@@ -1477,7 +1477,7 @@ export const settingsGroups = {
                     { value: 'bid', label: 'Bid (patient buy)' },
                     { value: 'cheapest', label: 'Cheapest (buy or craft)' },
                 ],
-                help: 'How to value dungeon keys in tooltips, networth, and combat income calculations: ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
+                help: 'How to value dungeon keys in tooltips, networth, and Combat Stats key costs (it prices keys only; other Combat Stats prices follow Profit calculation pricing mode): ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
             },
             profitCalc_customPriceOverrides: {
                 id: 'profitCalc_customPriceOverrides',

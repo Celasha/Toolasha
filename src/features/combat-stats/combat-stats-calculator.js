@@ -8,7 +8,7 @@ import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
-import { getItemPriceOutlierInfo, getItemPrices } from '../../utils/market-data.js';
+import { getItemPriceOutlierInfo, getItemPrices, getPricingMode } from '../../utils/market-data.js';
 import {
     getKeyPricingModeSetting,
     getCheapestKeyCost,
@@ -300,7 +300,7 @@ export function calculateConsumableCosts(consumables, durationSeconds) {
             continue;
         }
 
-        const priceInfo = getItemPriceOutlierInfo(consumable.itemHrid, { mode: 'ask' });
+        const priceInfo = getItemPriceOutlierInfo(consumable.itemHrid, { mode: getPricingMode('profit', 'buy') });
         const itemPrice = priceInfo.value !== null ? priceInfo.value : 500;
         const isOutlier = priceInfo.value !== null ? priceInfo.isOutlier : false;
         const itemCost = itemPrice * consumed;

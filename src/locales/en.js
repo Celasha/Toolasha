@@ -3443,7 +3443,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             profitCalc_keyPricingMode: {
                 label: 'Key pricing mode',
-                help: 'How to value dungeon keys in tooltips, networth, and combat income calculations: ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
+                help: 'How to value dungeon keys in tooltips, networth, and Combat Stats key costs (it prices keys only; other Combat Stats prices follow Profit calculation pricing mode): ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
                 options: {
                     ask: 'Ask (instant buy)',
                     bid: 'Bid (patient buy)',

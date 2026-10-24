@@ -23,19 +23,20 @@ import { getKeyPricingModeSetting, KEY_PRICING_MODE_CHEAPEST } from '../../utils
 import { renderCraftingPlanBreakdown } from '../crafting-plan/crafting-plan-tree-renderer.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { getItemName } from '../../utils/game-i18n.js';
+import { getPricingMode } from '../../utils/market-data.js';
 
 const YEAR_SECONDS = 365 * 86400;
 
 /**
  * `priceKey` selects which of an ask/bid-only stats field (income, dailyIncome, dailyProfit,
- * keyCosts) to display. Those fields never carry a 'cheapest' entry — key-cost math already
- * resolves 'cheapest' to a concrete number in `calculateKeyCosts()` and stores the identical
- * value under both `.ask`/`.bid`, so any general ask/bid-only indexing falls back to 'ask'.
- * @param {string} settingValue - Raw `profitCalc_keyPricingMode` value
+ * keyCosts) to display. It follows the profit pricing mode (sell side, since income is what the
+ * player sells); the key pricing mode only prices keys. Key-cost math already resolves its own
+ * 'cheapest' to a concrete number in `calculateKeyCosts()` and stores the identical value under
+ * both `.ask`/`.bid`, so indexing keyCosts by this key is always safe.
  * @returns {'ask'|'bid'}
  */
-function resolveDisplayPriceKey(settingValue) {
-    return settingValue === 'bid' ? 'bid' : 'ask';
+function resolveDisplayPriceKey() {
+    return getPricingMode('profit', 'sell') === 'bid' ? 'bid' : 'ask';
 }
 
 /**
@@ -294,7 +295,7 @@ class CombatStatsUI {
     shareStatsToChat(stats) {
         // Get chat message format from config (use getSettingValue for template type)
         const messageTemplate = config.getSettingValue('combatStatsChatMessage');
-        const priceKey = resolveDisplayPriceKey(getKeyPricingModeSetting());
+        const priceKey = resolveDisplayPriceKey();
 
         // Normalize the stored template (JSON string of items; legacy raw array)
         const templateItems = resolveTemplateItems(messageTemplate);
@@ -718,7 +719,7 @@ class CombatStatsUI {
                 ? coinFormatter(Math.round(num))
                 : new Intl.NumberFormat('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(num);
 
-        const priceKey = resolveDisplayPriceKey(getKeyPricingModeSetting());
+        const priceKey = resolveDisplayPriceKey();
 
         const statsRows = [
             {
