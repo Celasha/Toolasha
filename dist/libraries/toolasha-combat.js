@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.24.0
+ * Version: 3.24.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7996,7 +7996,7 @@
      * Injects a battle/wave counter next to the action name in the top-left header panel.
      * - Regular zones: "Battle #N" — from battleId in new_battle message
      * - Dungeons: "Wave N · Battle #N" — wave from wave index, battle from battleId
-     * - Labyrinth: "Attempt #N" — from entryCount in labyrinth_updated room data
+     * - Labyrinth: "Attempt #N" — from entryCount in labyrinth_updated room data (combat and skilling rooms)
      *
      * Target: Header_actionName (inline with zone name, e.g. "Chimerical Den · Wave 5")
      * domObserver watches Header_actionName so the span is re-injected whenever
@@ -8086,7 +8086,7 @@
 
             const active = pathCoords[pathCoords.length - 1];
             const room = labyrinth.roomData?.[active.y]?.[active.x];
-            if (!room || room.roomType !== '/labyrinth_room_types/combat') return;
+            if (!room) return;
 
             const entryCount = room.entryCount || 0;
             if (entryCount > 0) {
