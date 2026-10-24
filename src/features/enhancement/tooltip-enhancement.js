@@ -105,7 +105,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     const targetCosts = new Array(currentEnhancementLevel + 1);
     const targetTimes = new Array(currentEnhancementLevel + 1);
     const targetAttempts = new Array(currentEnhancementLevel + 1);
-    targetCosts[0] = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+    targetCosts[0] = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
         ? Math.min(getOptimalCraftingCost(itemHrid) || Infinity, getItemPrices(itemHrid, 0)?.ask || Infinity) ||
           getRealisticBaseItemPrice(itemHrid)
         : getRealisticBaseItemPrice(itemHrid); // Level 0: base item
@@ -150,7 +150,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
 
             let fodderCost, fodderTime, fodderAttempts;
             if (fodderLevel === 0) {
-                fodderCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+                fodderCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
                     ? Math.min(
                           getOptimalCraftingCost(baseItemHrid) || Infinity,
                           getItemPrices(baseItemHrid, 0)?.ask || Infinity
@@ -637,7 +637,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     const baseItemPrices = getItemPrices(itemHrid, 0);
     const marketAsk = baseItemPrices?.ask > 0 ? baseItemPrices.ask : 0;
     const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
-    const useCraftingCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost');
+    const useCraftingCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost');
     // Ask drives the decision: use crafted if ask is missing OR crafted ask is cheaper
     const askIsCrafted = useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
     const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
@@ -1251,7 +1251,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             ? t('tooltipEnhancement.craftItemLabel')
             : t('tooltipEnhancement.buyItemLabel');
         rows.push({
-            name: toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+            name: toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
                 ? baseItemLabel
                 : t('tooltipEnhancement.baseItemLabel'),
             count: 1,

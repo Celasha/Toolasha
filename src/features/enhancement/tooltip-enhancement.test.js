@@ -19,9 +19,10 @@ vi.mock('../../core/config.js', () => ({
         COLOR_TOOLTIP_PROFIT: '#047857',
         COLOR_TOOLTIP_LOSS: '#dc2626',
         COLOR_MIRROR: '#ffd700',
-        // Keyed off settingsMap like getSetting below, so individual tests can flip a specific
-        // feature on (e.g. enhanceSim_baseItemCraftingCost) without affecting any other key.
-        isFeatureEnabled: (key) => settingsMap[key]?.isTrue ?? false,
+        // Mirrors the real config.js: keys that are settings rather than registered features are
+        // not in its feature table, so it reports them enabled no matter what the setting says.
+        // Settings must be read through getSetting below.
+        isFeatureEnabled: () => true,
         // Boolean-only accessor, mirrors the real config.js: reads .isTrue, defaults to false.
         // A text-type setting has no .isTrue, so this must NOT be used to read its value.
         getSetting: (key) => settingsMap[key]?.isTrue ?? false,
@@ -653,6 +654,15 @@ describe('buildEnhancementMilestonesHTML - Craft Cost / Enhance Cost columns (re
         expect(result.optimalStrategy.baseAskPrice).toBeCloseTo(10, 5);
         expect(result.optimalStrategy.baseAskPrice).toBeLessThan(1000);
         expect(result.optimalStrategy.baseAskIsCrafted).toBe(true);
+    });
+
+    test('uses the market ask for the base item when the crafting cost setting is off', () => {
+        settingsMap.enhanceSim_baseItemCraftingCost = { isTrue: false };
+
+        const result = calculateEnhancementPath('/items/gadget_body', 1, enhancingConfig);
+
+        expect(result.optimalStrategy.baseAskPrice).toBe(5_000_000);
+        expect(result.optimalStrategy.baseAskIsCrafted).toBe(false);
     });
 
     test('splits Craft Cost from Enhance Cost per milestone row, instead of one combined Cost column', () => {
