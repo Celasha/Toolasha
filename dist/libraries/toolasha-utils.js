@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.24.2
+ * Version: 3.24.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3122,223 +3122,149 @@
     });
 
     /**
-     * Action Calculator
-     * Shared calculation logic for action time and efficiency
-     * Used by action-time-display.js and quick-input-buttons.js
+     * Shared warning-icon helper
+     * Produces the inline ⚠ markup used throughout Toolasha to flag estimated/overridden values,
+     * matching the existing pattern (orange COLOR_WARNING span with a title tooltip).
      */
 
 
     /**
-     * Calculate complete action statistics (time + efficiency)
-     * @param {Object} actionDetails - Action detail object from game data
-     * @param {Object} options - Configuration options
-     * @param {Array} options.skills - Character skills array
-     * @param {Array|Map} options.equipment - Character equipment for legacy callers
-     * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Atomic equipment+drinks
-     *   context. When provided, both fields are used together and no second live/saved context is
-     *   resolved for drinks - prevents mixing e.g. current equipment with saved-loadout drinks.
-     * @param {Object} options.itemDetailMap - Item detail map from game data
-     * @param {string} options.actionHrid - Action HRID for task detection (optional)
-     * @param {boolean} options.includeCommunityBuff - Include community buff in efficiency (default: false)
-     * @param {boolean} options.includeBreakdown - Include detailed breakdown data (default: false)
-     * @param {number} options.levelRequirementOverride - Override base level requirement (e.g., item level for alchemy)
-     * @returns {Object} { actionTime, totalEfficiency, breakdown? }
+     * Build a bare ⚠ warning icon span with a tooltip.
+     * @param {string} tooltipText
+     * @returns {string} HTML string, e.g. `<span style="color: #ffa500;" title="...">⚠</span>`
      */
-    function calculateActionStats(actionDetails, options = {}) {
-        const {
-            skills,
-            equipment: equipmentOption,
-            actionContext = null,
-            itemDetailMap,
-            actionHrid,
-            includeCommunityBuff = false,
-            includeBreakdown = false,
-            levelRequirementOverride,
-        } = options;
+    function buildWarningIcon(tooltipText) {
+        return `<span style="color: ${config.COLOR_WARNING};" title="${tooltipText}">⚠</span>`;
+    }
 
-        try {
-            const equipment = actionContext?.equipment ?? equipmentOption;
-            // Calculate base action time
-            const baseTime = actionDetails.baseTimeCost / 1e9; // nanoseconds to seconds
+    /**
+     * Build the icon (with a leading space, ready to append after a displayed value) flagging that
+     * a price was substituted by the market-data outlier guard, or an empty string when it wasn't.
+     * @param {boolean} isOutlier
+     * @returns {string}
+     */
+    function buildOutlierPriceWarningIcon(isOutlier) {
+        if (!isOutlier) {
+            return '';
+        }
+        return ' ' + buildWarningIcon(i18n.t('marketData.outlierPriceWarningTooltip'));
+    }
 
-            // Get equipment speed bonus
-            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
-            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
+    var warningIcon = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        buildOutlierPriceWarningIcon: buildOutlierPriceWarningIcon,
+        buildWarningIcon: buildWarningIcon
+    });
 
-            const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
-            const guildSpeedBonus = guildBuffs.reduce(
-                (sum, b) =>
-                    b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
-                0
-            );
-            const guildEfficiency = guildBuffs.reduce(
-                (sum, b) =>
-                    b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
-                0
-            );
+    /**
+     * Enhancement Tooltip Module
+     *
+     * Provides enhancement analysis for item tooltips.
+     * Calculates optimal enhancement path and total costs for reaching current enhancement level.
+     *
+     * This module is part of Phase 2 of Option D (Hybrid Approach):
+     * - Enhancement panel: Shows 20-level enhancement table
+     * - Item tooltips: Shows optimal path to reach current enhancement level
+     */
 
-            // Calculate action time with equipment speed
-            let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus + guildSpeedBonus);
 
-            // Apply task speed multiplicatively (if action is an active task)
-            if (actionHrid && dataManager.isTaskAction(actionHrid)) {
-                const taskSpeedBonus = dataManager.getTaskSpeedBonus(); // Returns percentage (e.g., 15 for 15%)
-                actionTime = actionTime / (1 + taskSpeedBonus / 100); // Apply multiplicatively
-            }
+    const _costCache = new Map();
+    const _chainTimeCache = new Map();
+    const _craftCostCache = new Map();
 
-            // Enforce game minimum action time
-            actionTime = Math.max(MIN_ACTION_TIME_SECONDS, actionTime);
+    marketAPI.on(() => {
+        _costCache.clear();
+        _chainTimeCache.clear();
+        _craftCostCache.clear();
+    });
 
-            // Calculate efficiency
-            const skillLevel = getSkillLevel(skills, actionDetails.type);
-            const baseRequirement = levelRequirementOverride ?? actionDetails.levelRequirement?.level ?? 1;
+    /**
+     * Calculate production cost from crafting recipe
+     * Matches original MWI Tools v25.0 getBaseItemProductionCost logic
+     * @param {string} itemHrid
+     * @param {'ask'|'bid'} [mode='ask'] - Pricing side to use for input materials
+     * @private
+     */
+    function getProductionCost(itemHrid, mode = 'ask') {
+        const cacheKey = `${itemHrid}|${mode}`;
+        if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
+        const result = _computeProductionCost(itemHrid, mode);
+        _costCache.set(cacheKey, result);
+        return result;
+    }
 
-            // Get drink concentration
-            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+    function _computeProductionCost(itemHrid, mode = 'ask') {
+        const gameData = dataManager.getInitClientData();
+        const itemDetails = gameData.itemDetailMap[itemHrid];
 
-            // Keep equipment and drinks atomic when the caller supplied an explicit context. Legacy
-            // callers without actionContext retain the existing loadout-aware drink behavior.
-            const activeDrinks = actionContext?.drinks ?? resolveActionContext(actionDetails.type).drinks;
+        if (!itemDetails || !itemDetails.name) {
+            return 0;
+        }
 
-            // Calculate Action Level bonus from teas
-            const actionLevelBonus = parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);
-
-            // Get Action Level bonus breakdown (if requested)
-            let actionLevelBreakdown = null;
-            if (includeBreakdown) {
-                actionLevelBreakdown = parseActionLevelBonusBreakdown(activeDrinks, itemDetailMap, drinkConcentration);
-            }
-
-            // Calculate effective requirement
-            // Game uses full fractional action level bonus (no flooring)
-            const effectiveRequirement = baseRequirement + actionLevelBonus;
-
-            // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
-            const teaSkillLevelBonus = parseTeaSkillLevelBonus(
-                actionDetails.type,
-                activeDrinks,
-                itemDetailMap,
-                drinkConcentration
-            );
-
-            // Calculate efficiency components
-            // Apply tea skill level bonus to effective player level
-            const effectiveLevel = skillLevel + teaSkillLevelBonus;
-            const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
-            const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
-            const equipmentEfficiency = parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap);
-            const achievementEfficiency =
-                dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
-            const personalEfficiency =
-                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
-
-            // Calculate tea efficiency
-            let teaEfficiency;
-            let teaBreakdown = null;
-            if (includeBreakdown) {
-                // Get detailed breakdown
-                teaBreakdown = parseTeaEfficiencyBreakdown(
-                    actionDetails.type,
-                    activeDrinks,
-                    itemDetailMap,
-                    drinkConcentration
-                );
-                teaEfficiency = teaBreakdown.reduce((sum, tea) => sum + tea.efficiency, 0);
-            } else {
-                // Simple total
-                teaEfficiency = parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
-            }
-
-            // Get community buff efficiency (if requested)
-            let communityEfficiency = 0;
-            if (includeCommunityBuff) {
-                // Production Efficiency buff applies to production skills and alchemy
-                const productionSkills = [
-                    '/action_types/alchemy',
-                    '/action_types/brewing',
-                    '/action_types/cheesesmithing',
-                    '/action_types/cooking',
-                    '/action_types/crafting',
-                    '/action_types/tailoring',
-                ];
-
-                if (productionSkills.includes(actionDetails.type)) {
-                    const communityBuffLevel = dataManager.getCommunityBuffLevel(
-                        '/community_buff_types/production_efficiency'
-                    );
-                    communityEfficiency = communityBuffLevel ? (0.14 + (communityBuffLevel - 1) * 0.003) * 100 : 0;
+        // Find the action that produces this item
+        let actionHrid = null;
+        let outputCount = 1;
+        for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (action.outputItems && action.outputItems.length > 0) {
+                const output = action.outputItems[0];
+                if (output.itemHrid === itemHrid) {
+                    actionHrid = hrid;
+                    outputCount = output.count || 1;
+                    break;
                 }
             }
+        }
 
-            // Total efficiency (stack all components additively)
-            const totalEfficiency = stackAdditive(
-                levelEfficiency,
-                houseEfficiency,
-                equipmentEfficiency,
-                teaEfficiency,
-                communityEfficiency,
-                achievementEfficiency,
-                personalEfficiency,
-                guildEfficiency
-            );
+        if (!actionHrid) {
+            return 0;
+        }
 
-            // Build result object
-            const result = {
-                actionTime,
-                totalEfficiency,
-            };
+        const action = gameData.actionDetailMap[actionHrid];
+        let totalPrice = 0;
 
-            // Add breakdown if requested
-            if (includeBreakdown) {
-                result.efficiencyBreakdown = {
-                    levelEfficiency,
-                    houseEfficiency,
-                    equipmentEfficiency,
-                    teaEfficiency,
-                    teaBreakdown,
-                    communityEfficiency,
-                    achievementEfficiency,
-                    personalEfficiency,
-                    guildEfficiency,
-                    skillLevel,
-                    baseRequirement,
-                    actionLevelBonus,
-                    actionLevelBreakdown,
-                    effectiveRequirement,
-                };
+        // Compute artisan tea reduction dynamically (same approach as material-calculator.js)
+        let artisanBonus = 0;
+        try {
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = gameData.itemDetailMap || {};
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+            const activeDrinks = dataManager.getActionDrinkSlots(action.type);
+            artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        } catch {
+            // Fall back to no reduction if data unavailable
+        }
+
+        // Sum up input material costs (artisan tea reduces material quantities, not upgrade items)
+        if (action.inputItems) {
+            for (const input of action.inputItems) {
+                if (input.itemHrid === '/items/coin') {
+                    totalPrice += input.count * (1 - artisanBonus);
+                    continue;
+                }
+                let inputPrice = getItemPrice(input.itemHrid, { mode }) || 0;
+                if (inputPrice === 0) {
+                    inputPrice = getProductionCost(input.itemHrid, mode);
+                }
+                totalPrice += inputPrice * input.count * (1 - artisanBonus);
             }
-
-            return result;
-        } catch (error) {
-            console.error('[Action Calculator] Error calculating action stats:', error);
-            return null;
         }
+
+        // Add upgrade item cost if this is an upgrade recipe (not affected by artisan tea)
+        // Use min(market, craft) so refined items reflect the cheapest way to obtain the base item
+        if (action.upgradeItemHrid) {
+            const upgradeMarketPrice = getItemPrice(action.upgradeItemHrid, { mode }) || 0;
+            const upgradeCraftPrice = getProductionCost(action.upgradeItemHrid, mode);
+            let upgradePrice;
+            if (upgradeMarketPrice > 0 && upgradeCraftPrice > 0) {
+                upgradePrice = Math.min(upgradeMarketPrice, upgradeCraftPrice);
+            } else {
+                upgradePrice = upgradeMarketPrice || upgradeCraftPrice;
+            }
+            totalPrice += upgradePrice;
+        }
+
+        return totalPrice / outputCount;
     }
-
-    /**
-     * Get character skill level for a skill type
-     * @param {Array} skills - Character skills array
-     * @param {string} skillType - Skill type HRID (e.g., "/action_types/cheesesmithing")
-     * @returns {number} Skill level
-     */
-    function getSkillLevel(skills, skillType) {
-        // Combat/labyrinth actions don't map to a single skill — efficiency scaling doesn't apply
-        if (skillType === '/action_types/combat' || skillType === '/action_types/labyrinth') {
-            return 1;
-        }
-        // Map action type to skill HRID
-        const skillHrid = skillType.replace('/action_types/', '/skills/');
-        const skill = skills.find((s) => s.skillHrid === skillHrid);
-        if (!skill) {
-            console.error(`[ActionCalculator] Skill not found: ${skillHrid}`);
-        }
-        return skill?.level || 1;
-    }
-
-    var actionCalculator = /*#__PURE__*/Object.freeze({
-        __proto__: null,
-        calculateActionStats: calculateActionStats
-    });
 
     /**
      * Skill Gear Detector
@@ -4742,148 +4668,615 @@
     });
 
     /**
-     * Shared warning-icon helper
-     * Produces the inline ⚠ markup used throughout Toolasha to flag estimated/overridden values,
-     * matching the existing pattern (orange COLOR_WARNING span with a title tooltip).
+     * Action Calculator
+     * Shared calculation logic for action time and efficiency
+     * Used by action-time-display.js and quick-input-buttons.js
      */
 
 
     /**
-     * Build a bare ⚠ warning icon span with a tooltip.
-     * @param {string} tooltipText
-     * @returns {string} HTML string, e.g. `<span style="color: #ffa500;" title="...">⚠</span>`
+     * Calculate complete action statistics (time + efficiency)
+     * @param {Object} actionDetails - Action detail object from game data
+     * @param {Object} options - Configuration options
+     * @param {Array} options.skills - Character skills array
+     * @param {Array|Map} options.equipment - Character equipment for legacy callers
+     * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Atomic equipment+drinks
+     *   context. When provided, both fields are used together and no second live/saved context is
+     *   resolved for drinks - prevents mixing e.g. current equipment with saved-loadout drinks.
+     * @param {Object} options.itemDetailMap - Item detail map from game data
+     * @param {string} options.actionHrid - Action HRID for task detection (optional)
+     * @param {boolean} options.includeCommunityBuff - Include community buff in efficiency (default: false)
+     * @param {boolean} options.includeBreakdown - Include detailed breakdown data (default: false)
+     * @param {number} options.levelRequirementOverride - Override base level requirement (e.g., item level for alchemy)
+     * @returns {Object} { actionTime, totalEfficiency, breakdown? }
      */
-    function buildWarningIcon(tooltipText) {
-        return `<span style="color: ${config.COLOR_WARNING};" title="${tooltipText}">⚠</span>`;
-    }
+    function calculateActionStats(actionDetails, options = {}) {
+        const {
+            skills,
+            equipment: equipmentOption,
+            actionContext = null,
+            itemDetailMap,
+            actionHrid,
+            includeCommunityBuff = false,
+            includeBreakdown = false,
+            levelRequirementOverride,
+        } = options;
 
-    /**
-     * Build the icon (with a leading space, ready to append after a displayed value) flagging that
-     * a price was substituted by the market-data outlier guard, or an empty string when it wasn't.
-     * @param {boolean} isOutlier
-     * @returns {string}
-     */
-    function buildOutlierPriceWarningIcon(isOutlier) {
-        if (!isOutlier) {
-            return '';
+        try {
+            const equipment = actionContext?.equipment ?? equipmentOption;
+            // Calculate base action time
+            const baseTime = actionDetails.baseTimeCost / 1e9; // nanoseconds to seconds
+
+            // Get equipment speed bonus
+            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
+            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
+
+            const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
+            const guildSpeedBonus = guildBuffs.reduce(
+                (sum, b) =>
+                    b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
+                0
+            );
+            const guildEfficiency = guildBuffs.reduce(
+                (sum, b) =>
+                    b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
+                0
+            );
+
+            // Calculate action time with equipment speed
+            let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus + guildSpeedBonus);
+
+            // Apply task speed multiplicatively (if action is an active task)
+            if (actionHrid && dataManager.isTaskAction(actionHrid)) {
+                const taskSpeedBonus = dataManager.getTaskSpeedBonus(); // Returns percentage (e.g., 15 for 15%)
+                actionTime = actionTime / (1 + taskSpeedBonus / 100); // Apply multiplicatively
+            }
+
+            // Enforce game minimum action time
+            actionTime = Math.max(MIN_ACTION_TIME_SECONDS, actionTime);
+
+            // Calculate efficiency
+            const skillLevel = getSkillLevel(skills, actionDetails.type);
+            const baseRequirement = levelRequirementOverride ?? actionDetails.levelRequirement?.level ?? 1;
+
+            // Get drink concentration
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+
+            // Keep equipment and drinks atomic when the caller supplied an explicit context. Legacy
+            // callers without actionContext retain the existing loadout-aware drink behavior.
+            const activeDrinks = actionContext?.drinks ?? resolveActionContext(actionDetails.type).drinks;
+
+            // Calculate Action Level bonus from teas
+            const actionLevelBonus = parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+            // Get Action Level bonus breakdown (if requested)
+            let actionLevelBreakdown = null;
+            if (includeBreakdown) {
+                actionLevelBreakdown = parseActionLevelBonusBreakdown(activeDrinks, itemDetailMap, drinkConcentration);
+            }
+
+            // Calculate effective requirement
+            // Game uses full fractional action level bonus (no flooring)
+            const effectiveRequirement = baseRequirement + actionLevelBonus;
+
+            // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
+            const teaSkillLevelBonus = parseTeaSkillLevelBonus(
+                actionDetails.type,
+                activeDrinks,
+                itemDetailMap,
+                drinkConcentration
+            );
+
+            // Calculate efficiency components
+            // Apply tea skill level bonus to effective player level
+            const effectiveLevel = skillLevel + teaSkillLevelBonus;
+            const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
+            const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+            const equipmentEfficiency = parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap);
+            const achievementEfficiency =
+                dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+            const personalEfficiency =
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+
+            // Calculate tea efficiency
+            let teaEfficiency;
+            let teaBreakdown = null;
+            if (includeBreakdown) {
+                // Get detailed breakdown
+                teaBreakdown = parseTeaEfficiencyBreakdown(
+                    actionDetails.type,
+                    activeDrinks,
+                    itemDetailMap,
+                    drinkConcentration
+                );
+                teaEfficiency = teaBreakdown.reduce((sum, tea) => sum + tea.efficiency, 0);
+            } else {
+                // Simple total
+                teaEfficiency = parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
+            }
+
+            // Get community buff efficiency (if requested)
+            let communityEfficiency = 0;
+            if (includeCommunityBuff) {
+                // Production Efficiency buff applies to production skills and alchemy
+                const productionSkills = [
+                    '/action_types/alchemy',
+                    '/action_types/brewing',
+                    '/action_types/cheesesmithing',
+                    '/action_types/cooking',
+                    '/action_types/crafting',
+                    '/action_types/tailoring',
+                ];
+
+                if (productionSkills.includes(actionDetails.type)) {
+                    const communityBuffLevel = dataManager.getCommunityBuffLevel(
+                        '/community_buff_types/production_efficiency'
+                    );
+                    communityEfficiency = communityBuffLevel ? (0.14 + (communityBuffLevel - 1) * 0.003) * 100 : 0;
+                }
+            }
+
+            // Total efficiency (stack all components additively)
+            const totalEfficiency = stackAdditive(
+                levelEfficiency,
+                houseEfficiency,
+                equipmentEfficiency,
+                teaEfficiency,
+                communityEfficiency,
+                achievementEfficiency,
+                personalEfficiency,
+                guildEfficiency
+            );
+
+            // Build result object
+            const result = {
+                actionTime,
+                totalEfficiency,
+            };
+
+            // Add breakdown if requested
+            if (includeBreakdown) {
+                result.efficiencyBreakdown = {
+                    levelEfficiency,
+                    houseEfficiency,
+                    equipmentEfficiency,
+                    teaEfficiency,
+                    teaBreakdown,
+                    communityEfficiency,
+                    achievementEfficiency,
+                    personalEfficiency,
+                    guildEfficiency,
+                    skillLevel,
+                    baseRequirement,
+                    actionLevelBonus,
+                    actionLevelBreakdown,
+                    effectiveRequirement,
+                };
+            }
+
+            return result;
+        } catch (error) {
+            console.error('[Action Calculator] Error calculating action stats:', error);
+            return null;
         }
-        return ' ' + buildWarningIcon(i18n.t('marketData.outlierPriceWarningTooltip'));
     }
 
-    var warningIcon = /*#__PURE__*/Object.freeze({
+    /**
+     * Get character skill level for a skill type
+     * @param {Array} skills - Character skills array
+     * @param {string} skillType - Skill type HRID (e.g., "/action_types/cheesesmithing")
+     * @returns {number} Skill level
+     */
+    function getSkillLevel(skills, skillType) {
+        // Combat/labyrinth actions don't map to a single skill — efficiency scaling doesn't apply
+        if (skillType === '/action_types/combat' || skillType === '/action_types/labyrinth') {
+            return 1;
+        }
+        // Map action type to skill HRID
+        const skillHrid = skillType.replace('/action_types/', '/skills/');
+        const skill = skills.find((s) => s.skillHrid === skillHrid);
+        if (!skill) {
+            console.error(`[ActionCalculator] Skill not found: ${skillHrid}`);
+        }
+        return skill?.level || 1;
+    }
+
+    var actionCalculator = /*#__PURE__*/Object.freeze({
         __proto__: null,
-        buildOutlierPriceWarningIcon: buildOutlierPriceWarningIcon,
-        buildWarningIcon: buildWarningIcon
+        calculateActionStats: calculateActionStats
     });
 
     /**
-     * Enhancement Tooltip Module
-     *
-     * Provides enhancement analysis for item tooltips.
-     * Calculates optimal enhancement path and total costs for reaching current enhancement level.
-     *
-     * This module is part of Phase 2 of Option D (Hybrid Approach):
-     * - Enhancement panel: Shows 20-level enhancement table
-     * - Item tooltips: Shows optimal path to reach current enhancement level
+     * Crafting Plan Calculator
+     * Computes the optimal buy-vs-craft plan for a target item by recursively
+     * comparing market price against crafting cost at each material tier.
      */
 
 
-    const _costCache = new Map();
-    const _chainTimeCache = new Map();
-    const _craftPlanCache = new Map();
-
-    marketAPI.on(() => {
-        _costCache.clear();
-        _chainTimeCache.clear();
-        _craftPlanCache.clear();
-    });
+    const MAX_DEPTH = 15;
 
     /**
-     * Calculate production cost from crafting recipe
-     * Matches original MWI Tools v25.0 getBaseItemProductionCost logic
+     * Find the production action that creates a given item.
      * @param {string} itemHrid
-     * @param {'ask'|'bid'} [mode='ask'] - Pricing side to use for input materials
-     * @private
+     * @returns {{ actionHrid: string, action: Object, outputCount: number } | null}
      */
-    function getProductionCost(itemHrid, mode = 'ask') {
-        const cacheKey = `${itemHrid}|${mode}`;
-        if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
-        const result = _computeProductionCost(itemHrid, mode);
-        _costCache.set(cacheKey, result);
-        return result;
-    }
-
-    function _computeProductionCost(itemHrid, mode = 'ask') {
+    function findProductionAction(itemHrid) {
         const gameData = dataManager.getInitClientData();
-        const itemDetails = gameData.itemDetailMap[itemHrid];
+        if (!gameData?.actionDetailMap) return null;
 
-        if (!itemDetails || !itemDetails.name) {
-            return 0;
-        }
-
-        // Find the action that produces this item
-        let actionHrid = null;
-        let outputCount = 1;
-        for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
-            if (action.outputItems && action.outputItems.length > 0) {
-                const output = action.outputItems[0];
+        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (!action.outputItems) continue;
+            for (const output of action.outputItems) {
                 if (output.itemHrid === itemHrid) {
-                    actionHrid = hrid;
-                    outputCount = output.count || 1;
-                    break;
+                    return { actionHrid, action, outputCount: output.count || 1 };
                 }
             }
         }
+        return null;
+    }
 
-        if (!actionHrid) {
+    /**
+     * Get artisan tea material reduction bonus for an action type.
+     * @param {string} actionType - e.g. '/action_types/brewing'
+     * @returns {number} Reduction as decimal (e.g. 0.112 for 11.2%)
+     */
+    function getArtisanBonus(actionType) {
+        try {
+            const gameData = dataManager.getInitClientData();
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = gameData?.itemDetailMap || {};
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+            const activeDrinks = dataManager.getActionDrinkSlots(actionType);
+            return parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        } catch {
             return 0;
         }
+    }
 
-        const action = gameData.actionDetailMap[actionHrid];
-        let totalPrice = 0;
+    /**
+     * Compute the optimal crafting plan for an item.
+     * At each node, decides whether buying from market or crafting is cheaper.
+     *
+     * @param {string} itemHrid - Target item
+     * @param {number} quantity - How many needed
+     * @param {string} [mode='ask'] - Pricing mode for market lookups
+     * @param {Set} [visited] - Circular dependency guard
+     * @param {Map} [memo] - Memoization cache (unit cost per itemHrid)
+     * @param {number} [depth=0] - Current recursion depth
+     * @param {number} [maxDepth=MAX_DEPTH] - Maximum recursion depth (1 = buy all sub-materials)
+     * @param {boolean} [buyRawOnly=false] - When true, always craft items that have a recipe; only buy uncraftable items
+     * @param {boolean} [forceRootCraft=false] - When true, forces the root item (depth 0) to be crafted
+     * @param {number} [timeCostPerHour=0] - Gold value per hour of player time (0 = disabled)
+     * @param {boolean} [skipProcessing=false] - When true, forces buy for processing actions (single input, no upgrade)
+     * @returns {CraftingPlanNode}
+     */
+    function computeBestCraftingPlan(
+        itemHrid,
+        quantity = 1,
+        mode = 'ask',
+        visited = new Set(),
+        memo = new Map(),
+        depth = 0,
+        maxDepth = MAX_DEPTH,
+        buyRawOnly = false,
+        forceRootCraft = false,
+        timeCostPerHour = 0,
+        skipProcessing = false
+    ) {
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        const itemName = itemDetails?.name || itemHrid.split('/').pop();
+        const isTradable = itemDetails?.isTradable ?? false;
+        const artisanMode = getArtisanMaterialMode();
 
-        // Compute artisan tea reduction dynamically (same approach as material-calculator.js)
-        let artisanBonus = 0;
-        try {
-            const equipment = dataManager.getEquipment();
-            const itemDetailMap = gameData.itemDetailMap || {};
-            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-            const activeDrinks = dataManager.getActionDrinkSlots(action.type);
-            artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
-        } catch {
-            // Fall back to no reduction if data unavailable
+        // Get market buy price (min of market ask and shop cost)
+        let buyPrice = null;
+        let buyPriceOutlier = false;
+        if (isTradable) {
+            const marketPriceInfo = getItemPriceOutlierInfo(itemHrid, { mode, context: 'profit', side: 'buy' });
+            if (marketPriceInfo.value !== null && marketPriceInfo.value > 0) {
+                buyPrice = marketPriceInfo.value;
+                buyPriceOutlier = marketPriceInfo.isOutlier;
+            }
+        }
+        const shopCost = getShopCoinCost(itemHrid);
+        if (shopCost > 0 && (buyPrice === null || shopCost < buyPrice)) {
+            buyPrice = shopCost;
+            buyPriceOutlier = false; // Shop cost is a fixed vendor price, never a market outlier
         }
 
-        // Sum up input material costs (artisan tea reduces material quantities, not upgrade items)
+        // Coins always cost 1 each
+        if (itemHrid === '/items/coin') {
+            return {
+                itemHrid,
+                itemName: i18n.t('craftingPlanCalculator.coinItemName'),
+                quantity,
+                strategy: 'buy',
+                unitCost: 1,
+                totalCost: quantity,
+                buyPrice: 1,
+                isOutlier: false,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Check memo for previously computed unit cost
+        if (memo.has(itemHrid)) {
+            const cachedUnitCost = memo.get(itemHrid);
+            const actionsNeeded =
+                cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0;
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: cachedUnitCost.strategy,
+                unitCost: cachedUnitCost.unitCost,
+                totalCost: cachedUnitCost.unitCost * quantity,
+                buyPrice,
+                isOutlier: buyPriceOutlier,
+                craftCost: cachedUnitCost.craftCost,
+                actionHrid: cachedUnitCost.actionHrid,
+                actionsNeeded,
+                children:
+                    cachedUnitCost.strategy === 'craft'
+                        ? cachedUnitCost.childrenTemplate.map((c) =>
+                              computeBestCraftingPlan(
+                                  c.itemHrid,
+                                  c.isUpgrade
+                                      ? actionsNeeded
+                                      : calculateTotalRequired(
+                                            c.basePerAction,
+                                            cachedUnitCost.artisanBonus,
+                                            actionsNeeded,
+                                            artisanMode
+                                        ),
+                                  mode,
+                                  visited,
+                                  memo,
+                                  depth + 1,
+                                  maxDepth,
+                                  buyRawOnly,
+                                  forceRootCraft,
+                                  timeCostPerHour,
+                                  skipProcessing
+                              )
+                          )
+                        : [],
+            };
+        }
+
+        // Circular dependency or depth limit — must buy
+        if (visited.has(itemHrid) || depth >= maxDepth) {
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost: buyPrice ?? Infinity,
+                totalCost: (buyPrice ?? Infinity) * quantity,
+                buyPrice,
+                isOutlier: buyPriceOutlier,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Find production action
+        const production = findProductionAction(itemHrid);
+        if (!production) {
+            // No recipe — must buy
+            const unitCost = buyPrice ?? 0;
+            memo.set(itemHrid, {
+                strategy: 'buy',
+                unitCost,
+                craftCost: null,
+                actionHrid: null,
+                outputCount: 1,
+                childrenTemplate: [],
+            });
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost,
+                totalCost: unitCost * quantity,
+                buyPrice,
+                isOutlier: buyPriceOutlier,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Skip processing actions if flag is set
+        // Processing = material conversion actions (milk → cheese, fiber → fabric, log → lumber)
+        // Identified by category ending in /material or /lumber (vs equipment crafting like /feet, /crossbow)
+        const isProcessingAction =
+            production.action.category?.endsWith('/material') || production.action.category?.endsWith('/lumber');
+        if (skipProcessing && isProcessingAction) {
+            const unitCost = buyPrice ?? Infinity;
+            memo.set(itemHrid, {
+                strategy: 'buy',
+                unitCost,
+                craftCost: null,
+                actionHrid: null,
+                outputCount: 1,
+                childrenTemplate: [],
+            });
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost,
+                totalCost: unitCost * quantity,
+                buyPrice,
+                isOutlier: buyPriceOutlier,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Recurse into crafting
+        visited.add(itemHrid);
+        const { actionHrid, action, outputCount } = production;
+        const artisanBonus = getArtisanBonus(action.type);
+        const actionsForOne = 1 / outputCount; // actions per 1 output item
+        const actionsNeeded = Math.ceil(quantity / outputCount);
+
+        let craftCostPerUnit = 0;
+        const childrenTemplate = []; // { itemHrid, basePerAction, isUpgrade } for memo reconstruction
+
+        // Input items (affected by artisan bonus)
         if (action.inputItems) {
             for (const input of action.inputItems) {
-                if (input.itemHrid === '/items/coin') {
-                    totalPrice += input.count * (1 - artisanBonus);
-                    continue;
-                }
-                let inputPrice = getItemPrice(input.itemHrid, { mode }) || 0;
-                if (inputPrice === 0) {
-                    inputPrice = getProductionCost(input.itemHrid, mode);
-                }
-                totalPrice += inputPrice * input.count * (1 - artisanBonus);
+                const inputCountPerAction = input.count || 1;
+                const qtyPerUnit = inputCountPerAction * (1 - artisanBonus) * actionsForOne;
+
+                const inputQty = calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
+                const childPlan = computeBestCraftingPlan(
+                    input.itemHrid,
+                    inputQty,
+                    mode,
+                    visited,
+                    memo,
+                    depth + 1,
+                    maxDepth,
+                    buyRawOnly,
+                    forceRootCraft,
+                    timeCostPerHour,
+                    skipProcessing
+                );
+
+                craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
+                childrenTemplate.push({ itemHrid: input.itemHrid, basePerAction: inputCountPerAction, isUpgrade: false });
             }
         }
 
-        // Add upgrade item cost if this is an upgrade recipe (not affected by artisan tea)
-        // Use min(market, craft) so refined items reflect the cheapest way to obtain the base item
+        // Upgrade item (NOT affected by artisan bonus)
         if (action.upgradeItemHrid) {
-            const upgradeMarketPrice = getItemPrice(action.upgradeItemHrid, { mode }) || 0;
-            const upgradeCraftPrice = getProductionCost(action.upgradeItemHrid, mode);
-            let upgradePrice;
-            if (upgradeMarketPrice > 0 && upgradeCraftPrice > 0) {
-                upgradePrice = Math.min(upgradeMarketPrice, upgradeCraftPrice);
-            } else {
-                upgradePrice = upgradeMarketPrice || upgradeCraftPrice;
-            }
-            totalPrice += upgradePrice;
+            const qtyPerUnit = actionsForOne; // 1 upgrade per action
+            const upgradePlan = computeBestCraftingPlan(
+                action.upgradeItemHrid,
+                actionsNeeded,
+                mode,
+                visited,
+                memo,
+                depth + 1,
+                maxDepth,
+                buyRawOnly,
+                forceRootCraft,
+                timeCostPerHour,
+                skipProcessing
+            );
+
+            craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
+            childrenTemplate.push({ itemHrid: action.upgradeItemHrid, basePerAction: 1, isUpgrade: true });
         }
 
-        return totalPrice / outputCount;
+        visited.delete(itemHrid);
+
+        // Add time cost to craft cost if enabled
+        if (timeCostPerHour > 0) {
+            const gameData = dataManager.getInitClientData();
+            const actionDetails = gameData?.actionDetailMap?.[actionHrid];
+            if (actionDetails) {
+                const stats = calculateActionStats(actionDetails, {
+                    skills: dataManager.getSkills(),
+                    equipment: dataManager.getEquipment(),
+                    itemDetailMap: gameData.itemDetailMap,
+                });
+                const effMultiplier = calculateEfficiencyMultiplier(stats.totalEfficiency);
+                const timePerUnit = (stats.actionTime / effMultiplier) * actionsForOne;
+                craftCostPerUnit += timePerUnit * (timeCostPerHour / 3600);
+            }
+        }
+
+        // Buy vs craft decision
+        // When buyRawOnly is true, always craft (we only reach here if a recipe exists)
+        // When forceRootCraft is true and depth === 0, always craft the root item
+        const shouldBuy =
+            !buyRawOnly && !(forceRootCraft && depth === 0) && buyPrice !== null && buyPrice <= craftCostPerUnit;
+        const strategy = shouldBuy ? 'buy' : 'craft';
+        const unitCost = shouldBuy ? buyPrice : craftCostPerUnit;
+
+        // Cache the decision
+        memo.set(itemHrid, {
+            strategy,
+            unitCost,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            outputCount,
+            artisanBonus,
+            childrenTemplate: strategy === 'craft' ? childrenTemplate : [],
+        });
+
+        // Build children for the actual quantities
+        let children = [];
+        if (!shouldBuy) {
+            children = [];
+            if (action.inputItems) {
+                for (const input of action.inputItems) {
+                    const inputCountPerAction = input.count || 1;
+                    const inputQty = calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
+                    children.push(
+                        computeBestCraftingPlan(
+                            input.itemHrid,
+                            inputQty,
+                            mode,
+                            visited,
+                            memo,
+                            depth + 1,
+                            maxDepth,
+                            buyRawOnly,
+                            forceRootCraft,
+                            timeCostPerHour,
+                            skipProcessing
+                        )
+                    );
+                }
+            }
+            if (action.upgradeItemHrid) {
+                children.push(
+                    computeBestCraftingPlan(
+                        action.upgradeItemHrid,
+                        actionsNeeded,
+                        mode,
+                        visited,
+                        memo,
+                        depth + 1,
+                        maxDepth,
+                        buyRawOnly,
+                        forceRootCraft,
+                        timeCostPerHour,
+                        skipProcessing
+                    )
+                );
+            }
+        }
+
+        return {
+            itemHrid,
+            itemName,
+            quantity,
+            strategy,
+            unitCost,
+            totalCost: unitCost * quantity,
+            buyPrice,
+            isOutlier: buyPriceOutlier,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,
+            children,
+        };
     }
 
     /**
@@ -5373,22 +5766,231 @@
         calculateGatheringActionTotalsFromBase,
     };
 
+    /**
+     * Rows for an upgrade item's own crafting chain, one per tier, each priced at its direct cost.
+     * A tier that is cheaper to buy than craft ends the chain.
+     * @param {string} itemHrid - The item whose recipe's upgrade item is expanded
+     * @param {number} depth - Indent level of the first row
+     * @returns {Array<{itemName: string, amount: number, askPrice: number, bidPrice: number, depth: number}>}
+     */
+    function getUpgradeChainRows(itemHrid, depth) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) return [];
+
+        const action = Object.values(gameData.actionDetailMap).find((act) => act.outputItems?.[0]?.itemHrid === itemHrid);
+        if (!action || !action.upgradeItemHrid) return [];
+
+        const upgradeHrid = action.upgradeItemHrid;
+        const upgradeDetails = dataManager.getItemDetails(upgradeHrid);
+        if (!upgradeDetails) return [];
+
+        let askPrice = resolveItemPrice(upgradeHrid, { mode: 'ask', side: 'buy' }).price;
+        let bidPrice = resolveItemPrice(upgradeHrid, { mode: 'bid', side: 'buy' }).price;
+
+        const craftAsk = getProductionCost(upgradeHrid, 'ask');
+        const craftBid = getProductionCost(upgradeHrid, 'bid');
+        const isCrafted = craftAsk > 0 && (askPrice === 0 || craftAsk < askPrice);
+
+        if (isCrafted) {
+            const deeperRows = getUpgradeChainRows(upgradeHrid, depth + 1);
+            const deeperAsk = deeperRows.reduce((sum, row) => sum + row.askPrice * row.amount, 0);
+            const deeperBid = deeperRows.reduce((sum, row) => sum + row.bidPrice * row.amount, 0);
+            askPrice = craftAsk - deeperAsk;
+            bidPrice = (craftBid || craftAsk) - deeperBid;
+            return [
+                {
+                    itemName: i18n.t('tooltipPrices.craftItemName', {
+                        itemName: getItemName(upgradeHrid, upgradeDetails.name),
+                    }),
+                    amount: 1,
+                    askPrice,
+                    bidPrice,
+                    depth,
+                },
+                ...deeperRows,
+            ];
+        }
+
+        if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
+        return [
+            {
+                itemName: i18n.t('tooltipPrices.buyItemName', { itemName: getItemName(upgradeHrid, upgradeDetails.name) }),
+                amount: 1,
+                askPrice,
+                bidPrice,
+                depth,
+            },
+        ];
+    }
+
+    /**
+     * Price the materials of a craft, deciding for the upgrade item whether it is crafted or bought.
+     * This is the single place that rule lives: the item tooltip's PROFIT table renders these rows and
+     * `calculateTooltipCraftCost` sums them, so every tooltip that quotes a craft cost quotes the same number.
+     * @param {Array<{itemHrid: string, itemName: string, amount: number, isUpgradeItem?: boolean}>} materialCosts
+     * @returns {Array<Object>} The materials with `askPrice` / `bidPrice` and, for a crafted upgrade item, `subRows`
+     */
+    function resolveCraftMaterialRows(materialCosts) {
+        return materialCosts.map((material) => {
+            if (material.itemHrid === '/items/coin') {
+                return { ...material, askPrice: 1, bidPrice: 1 };
+            }
+
+            let askPrice = resolveItemPrice(material.itemHrid, { mode: 'ask', side: 'buy' }).price;
+            let bidPrice = resolveItemPrice(material.itemHrid, { mode: 'bid', side: 'buy' }).price;
+
+            if (material.isUpgradeItem) {
+                const craftEnabled = config.getSetting('profitCalc_craftUpgradeItems');
+                const craftAsk = craftEnabled ? getProductionCost(material.itemHrid, 'ask') : 0;
+                const craftBid = craftEnabled ? getProductionCost(material.itemHrid, 'bid') : 0;
+                const isCrafted = craftAsk > 0 && (askPrice === 0 || craftAsk < askPrice);
+                if (isCrafted) {
+                    // Split: show only direct inputs cost on this row, sub-rows handle deeper chain
+                    const subRows = getUpgradeChainRows(material.itemHrid, 1);
+                    const subAskTotal = subRows.reduce((sum, row) => sum + row.askPrice * row.amount, 0);
+                    const subBidTotal = subRows.reduce((sum, row) => sum + row.bidPrice * row.amount, 0);
+                    askPrice = craftAsk - subAskTotal;
+                    bidPrice = (craftBid || craftAsk) - subBidTotal;
+                    return {
+                        ...material,
+                        itemName: i18n.t('tooltipPrices.craftItemName', { itemName: material.itemName }),
+                        askPrice,
+                        bidPrice,
+                        subRows,
+                    };
+                }
+                if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
+                return {
+                    ...material,
+                    itemName: i18n.t('tooltipPrices.buyItemName', { itemName: material.itemName }),
+                    askPrice,
+                    bidPrice,
+                };
+            }
+
+            return { ...material, askPrice, bidPrice };
+        });
+    }
+
+    /**
+     * Whether tooltips quote the whole-tree craft cost (crafting sub-materials when cheaper) instead of
+     * the one-level cost.
+     * @returns {boolean}
+     */
+    function isCraftCostIncludingSubMaterials() {
+        return config.getSetting('itemTooltip_craftCostSubMaterials');
+    }
+
+    /**
+     * One-level cost to craft an item once, as the item tooltip's PROFIT table totals it: direct inputs at
+     * market (reduced by Artisan Tea) plus the upgrade item, built through `resolveCraftMaterialRows`.
+     * This is also the cost the profit calculator's Net per hour uses.
+     * @param {string} itemHrid
+     * @param {'ask'|'bid'} [mode='ask'] - Which side of the market prices the materials
+     * @returns {number} Total cost, or 0 when the item has no recipe
+     */
+    function calculateOneLevelCraftCost(itemHrid, mode = 'ask') {
+        const action = findProductionActionFor(itemHrid);
+        if (!action) return 0;
+
+        const artisanBonus = calculateArtisanBonus(action);
+        const materialCosts = (action.inputItems || []).map((input) => ({
+            itemHrid: input.itemHrid,
+            itemName: input.itemHrid,
+            amount: (input.count || input.amount || 1) * (1 - artisanBonus),
+        }));
+        if (action.upgradeItemHrid) {
+            // Upgrade items are not affected by Artisan Tea
+            materialCosts.push({
+                itemHrid: action.upgradeItemHrid,
+                itemName: action.upgradeItemHrid,
+                amount: 1,
+                isUpgradeItem: true,
+            });
+        }
+
+        const priceKey = mode === 'bid' ? 'bidPrice' : 'askPrice';
+        let total = 0;
+        for (const material of resolveCraftMaterialRows(materialCosts)) {
+            total += material[priceKey] * material.amount;
+            for (const sub of material.subRows || []) {
+                total += sub[priceKey] * sub.amount;
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Whole-tree cost to craft an item once: each ingredient is bought or crafted, whichever is cheaper,
+     * all the way down (the Best Crafting Plan). The item itself is always crafted. Honors the plan's
+     * "buy raw only" and "no processing" settings, which decide what counts as craftable, and ignores
+     * task mode and time cost, which are about the player's time and goals, not material cost.
+     * @param {string} itemHrid
+     * @param {'ask'|'bid'} [mode='ask']
+     * @returns {number} Total cost, or 0 when the item has no recipe or cannot be priced
+     */
+    function calculateCraftPlanCost(itemHrid, mode = 'ask') {
+        if (!findProductionActionFor(itemHrid)) return 0;
+
+        const plan = computeBestCraftingPlan(
+            itemHrid,
+            1,
+            mode,
+            new Set(),
+            new Map(),
+            0,
+            undefined,
+            config.getSetting('actionPanel_craftingPlanBuyIntermediates'),
+            true,
+            0,
+            config.getSetting('actionPanel_craftingPlanNoProcessing')
+        );
+        return Number.isFinite(plan?.totalCost) && plan.totalCost > 0 ? plan.totalCost : 0;
+    }
+
+    /**
+     * The craft cost every tooltip quotes for an item: the whole-tree cost or the one-level cost,
+     * according to `itemTooltip_craftCostSubMaterials`.
+     * @param {string} itemHrid
+     * @param {'ask'|'bid'} [mode='ask']
+     * @returns {number} Total cost, or 0 when the item has no recipe
+     */
+    function calculateTooltipCraftCost(itemHrid, mode = 'ask') {
+        if (isCraftCostIncludingSubMaterials()) {
+            const planCost = calculateCraftPlanCost(itemHrid, mode);
+            if (planCost > 0) return planCost;
+        }
+        return calculateOneLevelCraftCost(itemHrid, mode);
+    }
+
+    function findProductionActionFor(itemHrid) {
+        const actionDetailMap = dataManager.getInitClientData()?.actionDetailMap;
+        if (!actionDetailMap) return null;
+        return Object.values(actionDetailMap).find((a) => a.outputItems?.[0]?.itemHrid === itemHrid) || null;
+    }
+
     var profitHelpers$1 = /*#__PURE__*/Object.freeze({
         __proto__: null,
         calculateActionsPerHour: calculateActionsPerHour,
+        calculateCraftPlanCost: calculateCraftPlanCost,
         calculateDrinksPerHour: calculateDrinksPerHour,
         calculateEffectiveActionsPerHour: calculateEffectiveActionsPerHour,
         calculateGatheringActionTotalsFromBase: calculateGatheringActionTotalsFromBase,
         calculateHoursForActions: calculateHoursForActions,
+        calculateOneLevelCraftCost: calculateOneLevelCraftCost,
         calculatePriceAfterTax: calculatePriceAfterTax,
         calculateProductionActionTotalsFromBase: calculateProductionActionTotalsFromBase,
         calculateProfitPerAction: calculateProfitPerAction,
         calculateProfitPerDay: calculateProfitPerDay,
         calculateSecondsForActions: calculateSecondsForActions,
         calculateTeaCostsPerHour: calculateTeaCostsPerHour,
+        calculateTooltipCraftCost: calculateTooltipCraftCost,
         calculateTotalProfitForActions: calculateTotalProfitForActions,
         createPriceCache: createPriceCache,
         default: profitHelpers,
+        getUpgradeChainRows: getUpgradeChainRows,
+        isCraftCostIncludingSubMaterials: isCraftCostIncludingSubMaterials,
+        resolveCraftMaterialRows: resolveCraftMaterialRows,
         resolveItemPrice: resolveItemPrice
     });
 

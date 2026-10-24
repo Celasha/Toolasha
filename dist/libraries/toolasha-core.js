@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.24.2
+ * Version: 3.24.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1735,11 +1735,11 @@
             lowestRunwayLabel: 'Lowest runway:',
             keyCostsLabel: 'Key Costs:',
             dailyKeyCostsLabel: 'Daily Key Costs:',
+            dailyMarketTaxLabel: 'Daily Market Tax:',
             dailyProfitLabel: 'Daily Profit:',
             actualRateLabel: 'Actual Rate:',
             expectedRateLabel: 'Expected Rate:',
             lootLuckLabel: 'Loot Luck:',
-            actualProfitPerDayLabel: 'Actual Profit/day:',
             expectedProfitPerDayLabel: 'Expected Profit/day:',
             totalExpLabel: 'Total EXP:',
             expPerHourLabel: 'EXP/hour:',
@@ -3044,6 +3044,8 @@
             alternativeActionsHeader: 'Alternative Actions:',
             askHeader: 'Ask',
             bidHeader: 'Bid',
+            bestPlanLabel: 'Best plan',
+            bestPlanNote: 'Best plan crafts sub-materials when cheaper. Profit above uses the Total row.',
             buyItemName: (p) => `Buy ${p.itemName}`,
             costPerItemLine: (p) => `Cost: ${p.cost}/item`,
             countHeader: 'Count',
@@ -3417,6 +3419,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             craftCostHeader: 'Craft Cost',
             craftingCostSubtotalLabel: 'Crafting Cost',
             craftItemLabel: 'Craft Item',
+            craftItemPlanLabel: 'Craft Item (best plan)',
             enhanceCostHeader: 'Enhance Cost',
             enhancingCostSubtotalLabel: 'Enhancing Cost',
             expectedAttemptsLine: (p) => `Expected Attempts: ${p.value}`,
@@ -3799,6 +3802,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Show detailed materials breakdown in profit display',
                     help: 'Shows material costs table with Ask/Bid prices, actions/hour, and profit breakdown',
                 },
+                itemTooltip_craftCostSubMaterials: {
+                    label: 'Craft cost includes crafting sub-materials',
+                    help: 'Enhancement tooltips and the item tooltip\'s "Best plan" line price crafted items by buying or crafting each ingredient, whichever is cheaper, all the way down. When off, only the recipe\'s direct inputs are counted. The profit/hr figure always uses the direct-input total.',
+                },
                 itemTooltip_multiActionProfit: {
                     label: 'Show profit comparison for all item actions',
                     help: 'Displays best profit/hr highlighted, with other alternative actions (craft, coinify, decompose, transmute) summarized below',
@@ -4116,7 +4123,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 profitCalc_keyPricingMode: {
                     label: 'Key pricing mode',
-                    help: 'How to value dungeon keys in tooltips, networth, and combat income calculations: ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
+                    help: 'How to value dungeon keys in tooltips, networth, and Combat Stats key costs (it prices keys only; other Combat Stats prices follow Profit calculation pricing mode): ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
                     options: {
                         ask: 'Ask (instant buy)',
                         bid: 'Bid (patient buy)',
@@ -5104,6 +5111,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '在利润显示中显示详细材料明细',
                     help: '显示材料成本表格，包含卖价/买价、每小时动作次数和利润明细',
                 },
+                itemTooltip_craftCostSubMaterials: {
+                    label: '制作成本包含制作子材料',
+                    help: '强化提示和物品提示中的“最佳方案”行会对每种材料比较购买与制作，选择更便宜的一种，逐层向下计算。关闭后仅计算配方的直接材料。利润/时始终使用直接材料总计。',
+                },
                 itemTooltip_multiActionProfit: {
                     label: '显示该物品所有动作的利润对比',
                     help: '高亮最佳利润/时，并在下方汇总其他可选动作（制作、兑换金币、分解、转化）',
@@ -5403,7 +5414,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 profitCalc_keyPricingMode: {
                     label: '钥匙定价模式',
-                    help: '在提示框、净资产和战斗收入计算中如何为地下城钥匙估值：卖价（即时购买）、买价（耐心购买），或最低价（比较直接购买与自行制作的费用，制作时使用“最佳制作方案”引擎，并按你利润计算定价模式的购买基准计价）。',
+                    help: '在提示框、净资产和战斗统计的钥匙成本中如何为地下城钥匙估值（仅用于钥匙；战斗统计的其他价格遵循利润计算定价模式）：卖价（即时购买）、买价（耐心购买），或最低价（比较直接购买与自行制作的费用，制作时使用“最佳制作方案”引擎，并按你利润计算定价模式的购买基准计价）。',
                     options: {
                         ask: '卖价（即时购买）',
                         bid: '买价（耐心购买）',
@@ -6457,11 +6468,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             lowestRunwayLabel: '最低续航：',
             keyCostsLabel: '钥匙花费：',
             dailyKeyCostsLabel: '每日钥匙花费：',
+            dailyMarketTaxLabel: '每日市场税：',
             dailyProfitLabel: '每日利润：',
             actualRateLabel: '实际速率：',
             expectedRateLabel: '预期速率：',
             lootLuckLabel: '掉落幸运值：',
-            actualProfitPerDayLabel: '实际利润/天：',
             expectedProfitPerDayLabel: '预期利润/天：',
             totalExpLabel: '总经验：',
             expPerHourLabel: '经验/时：',
@@ -7323,6 +7334,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             craftCostHeader: '制作花费',
             craftingCostSubtotalLabel: '制作花费',
             craftItemLabel: '制作物品',
+            craftItemPlanLabel: '制作物品（最佳方案）',
             enhanceCostHeader: '强化花费',
             enhancingCostSubtotalLabel: '强化花费',
             expectedAttemptsLine: (p) => `预期尝试次数：${p.value}`,
@@ -7543,6 +7555,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             buyItemName: (p) => `购买 ${p.itemName}`,
             costPerItemLine: (p) => `成本：${p.cost}/个`,
             countHeader: '数量',
+            bestPlanLabel: '最佳方案',
+            bestPlanNote: '最佳方案会在更便宜时制作子材料。上方利润使用总计行。',
             craftItemName: (p) => `制作 ${p.itemName}`,
             decomposeValueLine: (p) => `分解价值：${p.ask} / ${p.bid}`,
             dropNoPriceLine: (p) => `• ${p.itemName}（${p.dropRate}）：平均 ${p.avgCount} → 暂无价格数据`,
@@ -9532,6 +9546,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     default: false,
                     help: 'Shows material costs table with Ask/Bid prices, actions/hour, and profit breakdown',
                 },
+                itemTooltip_craftCostSubMaterials: {
+                    id: 'itemTooltip_craftCostSubMaterials',
+                    label: 'Craft cost includes crafting sub-materials',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Enhancement tooltips and the item tooltip\'s "Best plan" line price crafted items by buying or crafting each ingredient, whichever is cheaper, all the way down. When off, only the recipe\'s direct inputs are counted. The profit/hr figure always uses the direct-input total.',
+                },
                 itemTooltip_multiActionProfit: {
                     id: 'itemTooltip_multiActionProfit',
                     label: 'Show profit comparison for all item actions',
@@ -10264,7 +10285,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         { value: 'bid', label: 'Bid (patient buy)' },
                         { value: 'cheapest', label: 'Cheapest (buy or craft)' },
                     ],
-                    help: 'How to value dungeon keys in tooltips, networth, and combat income calculations: ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
+                    help: 'How to value dungeon keys in tooltips, networth, and Combat Stats key costs (it prices keys only; other Combat Stats prices follow Profit calculation pricing mode): ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
                 },
                 profitCalc_customPriceOverrides: {
                     id: 'profitCalc_customPriceOverrides',
