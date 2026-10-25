@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.24.3
+ * Version: 3.24.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1748,6 +1748,8 @@
             perDaySuffix: (p) => `${p.value}/d`,
             perHourSuffix: (p) => `${p.value}/h`,
             lootLuckSampleHeading: (p) => `Loot Luck for this run · ${p.count} waves · ${p.elapsed}`,
+            lootLuckRatingHelp:
+                'Compares your actual loot to the loot the drop tables predicted for the same number of waves.\n\nz is how many standard deviations apart they are. 0 means exactly as expected. Within ±1 is ordinary variance. ±2 or more is unusual, roughly 1 run in 20 by chance alone. Positive means luckier than expected, negative means unluckier.\n\nIt is an approximation: every wave is counted as cleared, and your current gear and buffs are applied to the whole run.',
             lootLuckRatingLabel: 'Luck rating:',
             lootLuckRatingValue: (p) => `z ${p.z} · ${p.rating}`,
             lootLuckRating_normal: 'Normal variance',
@@ -6481,6 +6483,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             perDaySuffix: (p) => `${p.value}/天`,
             perHourSuffix: (p) => `${p.value}/时`,
             lootLuckSampleHeading: (p) => `本次运行的掉落幸运值 · ${p.count} 波 · ${p.elapsed}`,
+            lootLuckRatingHelp:
+                '将你实际获得的掉落与掉落表对相同波数预测的掉落进行比较。\n\nz 表示两者相差多少个标准差。0 表示与预期完全一致，±1 以内属于正常波动，±2 及以上较为罕见，单凭运气大约每 20 次才会出现 1 次。正数表示比预期更幸运，负数表示更不幸。\n\n这是一个近似值：每一波都按已通关计算，并且当前的装备和增益会应用到整个运行期间。',
             lootLuckRatingLabel: '幸运评级：',
             lootLuckRatingValue: (p) => `z ${p.z} · ${p.rating}`,
             lootLuckRating_normal: '正常波动',

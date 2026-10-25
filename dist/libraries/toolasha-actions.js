@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.24.3
+ * Version: 3.24.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5644,6 +5644,14 @@
                     // Both same pin state — apply active sort mode
                     return this._compareByMode(a, b, sortMode);
                 });
+
+                // Re-attaching panels counts as DOM insertions for every observer handler, so skip it
+                // when the registered panels already sit at the end of the container in sorted order.
+                const sortedPanels = panels.map(({ panel }) => panel);
+                const trailing = Array.from(container.children).slice(-sortedPanels.length);
+                if (trailing.length === sortedPanels.length && trailing.every((el, i) => el === sortedPanels[i])) {
+                    continue;
+                }
 
                 // Reorder DOM elements using DocumentFragment to batch reflows
                 // This prevents 50 individual reflows (one per appendChild)
@@ -15115,6 +15123,7 @@
 
                 if (maxCrafts === null) {
                     data.displayElement.style.display = 'none';
+                    data.lastHtml = null; // Force the next render to rewrite and re-show the element
                     this.syncStatsLayout(actionPanel, data.displayElement);
                     return;
                 }
@@ -15242,6 +15251,12 @@
                 html += `<span data-stat="overall" style="color: #fff;">${i18n_js.t('maxProduceable.effXpPerHourLine', { value: formatters_js.formatKMB(expPerHour) })}</span></div>`;
             }
 
+            // Rewriting innerHTML inserts new elements every time, which wakes every DOM observer handler.
+            // When the rendered lines are unchanged keep the existing elements (and their emoji/font fit).
+            if (data.lastHtml === html && (!html || data.displayElement.firstElementChild)) {
+                return;
+            }
+            data.lastHtml = html;
             data.displayElement.innerHTML = html;
             if (!html) {
                 data.displayElement.style.display = 'none';
