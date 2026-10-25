@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.24.4](https://github.com/Celasha/Toolasha/compare/v3.24.3...v3.24.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* add a help hint explaining the Loot Luck rating ([9d980f7](https://github.com/Celasha/Toolasha/commit/9d980f7c1832276adcb5523888de76bcfe73b816))
+* stop rewriting unchanged action tile stats and re-attaching sorted tiles ([f83d881](https://github.com/Celasha/Toolasha/commit/f83d88104b47cc188886ce7d35b007c3c3eb1d8e))
+
 ## [3.24.3](https://github.com/Celasha/Toolasha/compare/v3.24.2...v3.24.3) (2026-10-24)
 
 ### Bug Fixes
