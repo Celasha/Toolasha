@@ -47,10 +47,17 @@ vi.mock('../../core/loadout-state.js', () => ({
 vi.mock('../../api/marketplace.js', () => ({ default: { on: vi.fn(), off: vi.fn() } }));
 
 vi.mock('./action-panel-sort.js', () => ({
-    default: { initialize: vi.fn(async () => {}), clearAllPanels: vi.fn(), updateMaxProduceable: vi.fn() },
+    default: {
+        initialize: vi.fn(async () => {}),
+        clearAllPanels: vi.fn(),
+        updateMaxProduceable: vi.fn(),
+        updateProfit: vi.fn(),
+        updateExpPerHour: vi.fn(),
+        isPinned: vi.fn(() => false),
+    },
 }));
 
-vi.mock('./action-filter.js', () => ({ default: {} }));
+vi.mock('./action-filter.js', () => ({ default: { isFilterHidden: vi.fn(() => false) } }));
 
 import config from '../../core/config.js';
 import loadoutState from '../../core/loadout-state.js';
@@ -229,5 +236,66 @@ describe('MaxProduceable.calculateMaxProduceable - upgrade item enhancement-leve
         ]);
 
         expect(maxProduceable.calculateMaxProduceable('/actions/tailoring/icy_robe_top')).toBe(13545);
+    });
+});
+
+describe('MaxProduceable.updateCount - unchanged render', () => {
+    let panel;
+    let display;
+
+    beforeEach(() => {
+        dataManager.getActionDetails.mockReturnValue(null); // No profit/exp lookups: only the can-produce line renders
+        panel = document.createElement('div');
+        display = document.createElement('div');
+        panel.appendChild(display);
+        document.body.appendChild(panel);
+        maxProduceable.actionElements.set(panel, { actionHrid: '/actions/test', displayElement: display });
+        vi.spyOn(maxProduceable, 'fitLineFontSizes').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        maxProduceable.actionElements.clear();
+        panel.remove();
+        vi.restoreAllMocks();
+    });
+
+    test('keeps the existing line elements when the rendered text is unchanged', async () => {
+        vi.spyOn(maxProduceable, 'calculateMaxProduceable').mockReturnValue(5);
+
+        await maxProduceable.updateCount(panel, new Map());
+        const firstLine = display.firstElementChild;
+        expect(firstLine).not.toBeNull();
+        expect(maxProduceable.fitLineFontSizes).toHaveBeenCalledTimes(1);
+
+        await maxProduceable.updateCount(panel, new Map());
+
+        expect(display.firstElementChild).toBe(firstLine);
+        expect(maxProduceable.fitLineFontSizes).toHaveBeenCalledTimes(1);
+    });
+
+    test('rewrites the lines when the text changes', async () => {
+        const calc = vi.spyOn(maxProduceable, 'calculateMaxProduceable').mockReturnValue(5);
+
+        await maxProduceable.updateCount(panel, new Map());
+        const firstLine = display.firstElementChild;
+
+        calc.mockReturnValue(6);
+        await maxProduceable.updateCount(panel, new Map());
+
+        expect(display.firstElementChild).not.toBe(firstLine);
+        expect(maxProduceable.fitLineFontSizes).toHaveBeenCalledTimes(2);
+    });
+
+    test('shows the display again after it was hidden for an unavailable count', async () => {
+        const calc = vi.spyOn(maxProduceable, 'calculateMaxProduceable').mockReturnValue(5);
+        await maxProduceable.updateCount(panel, new Map());
+
+        calc.mockReturnValue(null);
+        await maxProduceable.updateCount(panel, new Map());
+        expect(display.style.display).toBe('none');
+
+        calc.mockReturnValue(5);
+        await maxProduceable.updateCount(panel, new Map());
+        expect(display.style.display).toBe('block');
     });
 });

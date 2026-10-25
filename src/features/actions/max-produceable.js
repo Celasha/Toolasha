@@ -506,6 +506,7 @@ class MaxProduceable {
 
             if (maxCrafts === null) {
                 data.displayElement.style.display = 'none';
+                data.lastHtml = null; // Force the next render to rewrite and re-show the element
                 this.syncStatsLayout(actionPanel, data.displayElement);
                 return;
             }
@@ -633,6 +634,12 @@ class MaxProduceable {
             html += `<span data-stat="overall" style="color: #fff;">${t('maxProduceable.effXpPerHourLine', { value: formatKMB(expPerHour) })}</span></div>`;
         }
 
+        // Rewriting innerHTML inserts new elements every time, which wakes every DOM observer handler.
+        // When the rendered lines are unchanged keep the existing elements (and their emoji/font fit).
+        if (data.lastHtml === html && (!html || data.displayElement.firstElementChild)) {
+            return;
+        }
+        data.lastHtml = html;
         data.displayElement.innerHTML = html;
         if (!html) {
             data.displayElement.style.display = 'none';

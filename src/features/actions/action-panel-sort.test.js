@@ -96,4 +96,41 @@ describe('Action Panel Sort - craftable mode', () => {
             expect(Array.from(container.children)).toEqual([pinned, unpinned]);
         });
     });
+
+    test('does not re-attach panels that are already in sorted order', () => {
+        const low = makePanel(container);
+        const high = makePanel(container);
+
+        actionPanelSort.registerPanel(low, '/actions/low');
+        actionPanelSort.updateMaxProduceable(low, 3);
+        actionPanelSort.registerPanel(high, '/actions/high');
+        actionPanelSort.updateMaxProduceable(high, 50);
+
+        actionPanelSort.setSortMode('craftable');
+        actionPanelSort.sortPanelsByProfit();
+        expect(Array.from(container.children)).toEqual([high, low]);
+
+        const appendSpy = vi.spyOn(container, 'appendChild');
+        actionPanelSort.sortPanelsByProfit();
+
+        expect(appendSpy).not.toHaveBeenCalled();
+        expect(Array.from(container.children)).toEqual([high, low]);
+    });
+
+    test('still reorders when an unregistered element trails the sorted panels', () => {
+        const low = makePanel(container);
+        const high = makePanel(container);
+        const trailer = makePanel(container);
+
+        actionPanelSort.registerPanel(low, '/actions/low');
+        actionPanelSort.updateMaxProduceable(low, 3);
+        actionPanelSort.registerPanel(high, '/actions/high');
+        actionPanelSort.updateMaxProduceable(high, 50);
+
+        actionPanelSort.setSortMode('craftable');
+        actionPanelSort.sortPanelsByProfit();
+
+        // Registered panels are moved to the end, so the trailer ends up first
+        expect(Array.from(container.children)).toEqual([trailer, high, low]);
+    });
 });

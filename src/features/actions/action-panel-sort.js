@@ -368,6 +368,14 @@ class ActionPanelSort {
                 return this._compareByMode(a, b, sortMode);
             });
 
+            // Re-attaching panels counts as DOM insertions for every observer handler, so skip it
+            // when the registered panels already sit at the end of the container in sorted order.
+            const sortedPanels = panels.map(({ panel }) => panel);
+            const trailing = Array.from(container.children).slice(-sortedPanels.length);
+            if (trailing.length === sortedPanels.length && trailing.every((el, i) => el === sortedPanels[i])) {
+                continue;
+            }
+
             // Reorder DOM elements using DocumentFragment to batch reflows
             // This prevents 50 individual reflows (one per appendChild)
             const fragment = document.createDocumentFragment();
