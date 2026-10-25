@@ -40,6 +40,21 @@ function resolveDisplayPriceKey() {
 }
 
 /**
+ * Small circled "?" that explains a row on hover, matching the hint used in the task zone estimates.
+ * @param {string} text - Explanation shown as the tooltip
+ * @returns {HTMLSpanElement}
+ */
+export function createHelpHint(text) {
+    const hint = document.createElement('span');
+    hint.className = 'mwi-combat-stats-help';
+    hint.textContent = '?';
+    hint.title = text;
+    hint.style.cssText =
+        'display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; margin-left: 6px; border: 1px solid currentColor; border-radius: 50%; font-size: 9px; line-height: 1; cursor: help; opacity: 0.8;';
+    return hint;
+}
+
+/**
  * Format a consumable's remaining runway for display. Capped at >1y - beyond that the estimate
  * is both unreadable and, given how thin the underlying sample usually is, not meaningfully more
  * precise than "a long time". Use `formatRunwayExact` for the uncapped value in a tooltip.
@@ -850,6 +865,7 @@ class CombatStatsUI {
                                             ),
                                         }),
                                         color: LUCK_RATING_COLORS[stats.actualVsExpected.luckRating],
+                                        help: t('combatStatsUi.lootLuckRatingHelp'),
                                         group: 'actualVsExpected',
                                     },
                                 ]
@@ -932,6 +948,9 @@ class CombatStatsUI {
             const label = document.createElement('span');
             label.textContent = row.label;
             label.style.color = textColor;
+            if (row.help) {
+                label.appendChild(createHelpHint(row.help));
+            }
 
             const value = document.createElement('span');
             value.textContent = row.value + (row.isOutlier ? ' ⚠' : '');

@@ -1068,6 +1068,8 @@ export default {
         perDaySuffix: (p) => `${p.value}/d`,
         perHourSuffix: (p) => `${p.value}/h`,
         lootLuckSampleHeading: (p) => `Loot Luck for this run · ${p.count} waves · ${p.elapsed}`,
+        lootLuckRatingHelp:
+            'Compares your actual loot to the loot the drop tables predicted for the same number of waves.\n\nz is how many standard deviations apart they are. 0 means exactly as expected. Within ±1 is ordinary variance. ±2 or more is unusual, roughly 1 run in 20 by chance alone. Positive means luckier than expected, negative means unluckier.\n\nIt is an approximation: every wave is counted as cleared, and your current gear and buffs are applied to the whole run.',
         lootLuckRatingLabel: 'Luck rating:',
         lootLuckRatingValue: (p) => `z ${p.z} · ${p.rating}`,
         lootLuckRating_normal: 'Normal variance',
