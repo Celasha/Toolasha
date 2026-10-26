@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.24.5](https://github.com/Celasha/Toolasha/compare/v3.24.4...v3.24.5) (2026-10-26)
+
+
+### Bug Fixes
+
+* match item tooltip table precision to the enhancement tooltip and compact large counts ([0b90457](https://github.com/Celasha/Toolasha/commit/0b9045747661a577fd7617142ddcc2b5249dc2e8))
+
 ## [3.24.4](https://github.com/Celasha/Toolasha/compare/v3.24.3...v3.24.4) (2026-10-25)
 
 ### Bug Fixes
