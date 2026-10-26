@@ -11,6 +11,7 @@ import {
     formatWithSeparator,
     formatKMB,
     formatKMB3Digits,
+    formatItemCount,
     coinFormatter,
     formatRelativeTime,
     networthFormatter,
@@ -482,5 +483,14 @@ describe('formatActivityStatusTime', () => {
         const target = new Date(2026, 7, 23, 7, 46).getTime();
 
         expect(formatActivityStatusTime(target, {}, now)).toBe('08-23 07:46');
+    });
+});
+
+describe('formatItemCount', () => {
+    test('keeps one decimal below 1,000 and compacts above', () => {
+        expect(formatItemCount(8.9)).toBe('8.9');
+        expect(formatItemCount(159746.4)).toBe('159.7K');
+        expect(formatItemCount(5000000)).toBe('5.0M');
+        expect(formatItemCount(null)).toBeNull();
     });
 });

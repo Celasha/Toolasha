@@ -191,6 +191,18 @@ export function formatKMB(num, decimals = 1) {
 }
 
 /**
+ * Format an item count: one decimal below 1,000 (fractional counts matter), compact K/M/B above.
+ * @param {number} count
+ * @returns {string} e.g. "8.9", "159.7K"
+ */
+export function formatItemCount(count) {
+    if (count === null || count === undefined) {
+        return null;
+    }
+    return Math.abs(count) >= 1000 ? formatKMB(count) : count.toFixed(1);
+}
+
+/**
  * Format large numbers in K/M/B notation with 3 significant digits
  * @param {number} num - The number to format
  * @returns {string} Formatted number (e.g., "999", "1.25K", "82.1K", "825K", "1.25M")
