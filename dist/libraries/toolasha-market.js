@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.24.4
+ * Version: 3.24.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7367,9 +7367,9 @@ self.onmessage = function (e) {
                 // Total row
                 html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
                 html += `<td style="padding: 2px 4px; font-weight: bold;">${i18n_js.t('tooltipPrices.totalLabel')}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: center;">${totalCount.toFixed(1)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(totalAsk)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(totalBid)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatItemCount(totalCount)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(totalAsk)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(totalBid)}</td>`;
                 html += '</tr>';
 
                 // Best plan: the whole-tree cost the enhancement tooltips quote. Shown only when it differs
@@ -7381,8 +7381,8 @@ self.onmessage = function (e) {
                         html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
                         html += `<td style="padding: 2px 4px; font-weight: bold;">${i18n_js.t('tooltipPrices.bestPlanLabel')}</td>`;
                         html += '<td style="padding: 2px 4px; text-align: center;"></td>';
-                        html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(planAsk)}</td>`;
-                        html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(planBid)}</td>`;
+                        html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(planAsk)}</td>`;
+                        html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(planBid)}</td>`;
                         html += '</tr>';
                         html += `<tr><td colspan="4" style="padding: 2px 4px; opacity: 0.7; font-style: italic;">${i18n_js.t('tooltipPrices.bestPlanNote')}</td></tr>`;
                     }
@@ -7392,18 +7392,18 @@ self.onmessage = function (e) {
                 for (const material of materialsWithPrices) {
                     html += '<tr>';
                     html += `<td style="padding: 2px 4px;">${material.itemName}</td>`;
-                    html += `<td style="padding: 2px 4px; text-align: center;">${material.amount.toFixed(1)}</td>`;
-                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(material.askPrice)}</td>`;
-                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(material.bidPrice)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatItemCount(material.amount)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(material.askPrice)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatLargeNumber(material.bidPrice)}</td>`;
                     html += '</tr>';
                     if (material.subRows) {
                         for (const sub of material.subRows) {
                             const indent = 8 + sub.depth * 10;
                             html += '<tr>';
                             html += `<td style="padding: 2px 4px; padding-left: ${indent}px; opacity: 0.8;">${sub.itemName}</td>`;
-                            html += `<td style="padding: 2px 4px; text-align: center; opacity: 0.8;">${sub.amount.toFixed(1)}</td>`;
-                            html += `<td style="padding: 2px 4px; text-align: right; opacity: 0.8;">${formatters_js.formatKMB(sub.askPrice)}</td>`;
-                            html += `<td style="padding: 2px 4px; text-align: right; opacity: 0.8;">${formatters_js.formatKMB(sub.bidPrice)}</td>`;
+                            html += `<td style="padding: 2px 4px; text-align: center; opacity: 0.8;">${formatters_js.formatItemCount(sub.amount)}</td>`;
+                            html += `<td style="padding: 2px 4px; text-align: right; opacity: 0.8;">${formatters_js.formatLargeNumber(sub.askPrice)}</td>`;
+                            html += `<td style="padding: 2px 4px; text-align: right; opacity: 0.8;">${formatters_js.formatLargeNumber(sub.bidPrice)}</td>`;
                             html += '</tr>';
                         }
                     }

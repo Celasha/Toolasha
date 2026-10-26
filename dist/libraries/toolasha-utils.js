@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.24.4
+ * Version: 3.24.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -196,6 +196,18 @@
         } else {
             return sign + absNum.toFixed(0);
         }
+    }
+
+    /**
+     * Format an item count: one decimal below 1,000 (fractional counts matter), compact K/M/B above.
+     * @param {number} count
+     * @returns {string} e.g. "8.9", "159.7K"
+     */
+    function formatItemCount(count) {
+        if (count === null || count === undefined) {
+            return null;
+        }
+        return Math.abs(count) >= 1000 ? formatKMB(count) : count.toFixed(1);
     }
 
     /**
@@ -628,6 +640,7 @@
         formatCompactNumber: formatCompactNumber,
         formatCurrency: formatCurrency,
         formatDateTime: formatDateTime,
+        formatItemCount: formatItemCount,
         formatKMB: formatKMB,
         formatKMB3Digits: formatKMB3Digits,
         formatLargeNumber: formatLargeNumber,
