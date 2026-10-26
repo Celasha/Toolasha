@@ -174,7 +174,7 @@ if (combatSimSite === 'shykai') {
     const toolashaRoot = targetWindow.Toolasha || {};
     targetWindow.Toolasha = toolashaRoot;
 
-    toolashaRoot.version = '3.24.4';
+    toolashaRoot.version = '3.24.5';
 
     toolashaRoot.features = {
         list: () => config.getFeaturesByCategory(),
