@@ -195,11 +195,15 @@ describe('computeLiveProjection - limiter selection', () => {
         expect(result.segments).toHaveLength(2);
     });
 
-    test('uncertain Combat action stops the trustworthy chain -> unknown, even with more queued after it', () => {
-        mocks.currentActions = [action({ id: 'a1', actionHrid: '/actions/combat/aqua_planet' }), action({ id: 'a2' })];
-        mocks.actionDetailsByHrid['/actions/combat/aqua_planet'] = actionDetails({
-            name: 'Aqua Planet',
+    test('a dungeon stays uncertain and stops the chain, even with more queued after it', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/combat/chimerical_den' }),
+            action({ id: 'a2' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/combat/chimerical_den'] = actionDetails({
+            name: 'Chimerical Den',
             type: '/action_types/combat',
+            combatZoneInfo: { isDungeon: true },
         });
 
         const result = computeLiveProjection(1000);
@@ -207,11 +211,49 @@ describe('computeLiveProjection - limiter selection', () => {
         expect(result.terminalCause).toBe('unknown');
         expect(result.terminalAt).toBeNull();
         expect(result.certainty).toBe('uncertain');
+        expect(result.attention).toBeNull();
         expect(result.segments).toHaveLength(1);
         expect(result.segments[0].stopCause).toBe('combat');
         // The real native queue has 2 entries; projection stops at index 0, but the true remaining
         // count (1) must still be recoverable from this segment, not derived from segments.length.
         expect(result.segments[0].remainingQueuedCount).toBe(1);
+    });
+
+    test('regular-zone combat is a true-infinite tail (runs-infinite when it is the front action)', () => {
+        mocks.currentActions = [action({ id: 'a1', actionHrid: '/actions/combat/aqua_planet', hasMaxCount: false })];
+        mocks.actionDetailsByHrid['/actions/combat/aqua_planet'] = actionDetails({
+            name: 'Aqua Planet',
+            type: '/action_types/combat',
+        });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.terminalCause).toBe('infinite');
+        expect(result.certainty).toBe('trustworthy');
+        expect(result.attention).toEqual({ mode: 'runs-infinite' });
+        expect(result.segments[0].stopCause).toBe('infinite');
+    });
+
+    test('combat queued behind finite actions is a queue-infinite tail after the trustworthy prefix', () => {
+        mocks.currentActions = [
+            action({ id: 'a1' }),
+            action({ id: 'a2', actionHrid: '/actions/combat/smelly_planet', hasMaxCount: false }),
+        ];
+        mocks.actionDetailsByHrid['/actions/combat/smelly_planet'] = actionDetails({
+            name: 'Smelly Planet',
+            type: '/action_types/combat',
+        });
+        mocks.actionDetailsByHrid['/actions/woodcutting/redwood'] = actionDetails();
+        mocks.timingByActionId.a1 = timing({ totalTime: 100 });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.terminalCause).toBe('infinite');
+        expect(result.attention).toEqual({ mode: 'queue-infinite' });
+        expect(result.segments).toHaveLength(2);
+        expect(result.segments[0].endAt).toBe(101000);
+        expect(result.segments[1].startAt).toBe(101000);
+        expect(result.segments[1].stopCause).toBe('infinite');
     });
 
     test('CA-25: a later queued segment with invalid timing stops the chain as unknown while the earlier trustworthy running segment is retained', () => {
@@ -1076,7 +1118,7 @@ describe('computeLiveProjection - infinite-tail attention continuity (TLA-025A)'
     });
 
     test.each([
-        ['CA-A11 Combat', { actionHrid: '/actions/combat/aqua_planet' }, {}],
+        ['CA-A11 Dungeon', { actionHrid: '/actions/combat/chimerical_den' }, { combatZoneInfo: { isDungeon: true } }],
         ['CA-A12 Labyrinth', { actionHrid: '/actions/labyrinth/explore' }, { type: '/action_types/labyrinth' }],
         ['CA-A13 Enhancing', { actionHrid: '/actions/enhancing/sword' }, { type: '/action_types/enhancing' }],
         [

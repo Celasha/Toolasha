@@ -28,6 +28,13 @@ const RESOURCE_STOP_CAUSES = new Set(['materials', 'coins', 'upgrade-materials']
 const ATTENTION_MODE_RUNS_INFINITE = 'runs-infinite';
 const ATTENTION_MODE_QUEUE_INFINITE = 'queue-infinite';
 
+// Combat has no dedicated action type of its own - identified by hrid. Regular-zone combat never ends
+// on its own (a death revives and resumes), so it is a true-infinite tail; a dungeon can end or
+// restart on a party wipe, so it stays uncertain.
+function isInfiniteCombat(actionObj, actionDetails) {
+    return Boolean(actionObj.actionHrid?.includes('/combat/')) && actionDetails?.combatZoneInfo?.isDungeon !== true;
+}
+
 // Combat has no dedicated action type of its own - identified by hrid, checked before the map.
 function classifyUncertainty(actionObj, actionDetails) {
     if (actionObj.actionHrid?.includes('/combat/')) return 'combat';
@@ -351,6 +358,8 @@ function findGuaranteedInfiniteAttentionTail(actions, startIndex, inventoryLooku
         const actionDetails = dataManager.getActionDetails(actionObj.actionHrid);
         if (!actionDetails) return null;
 
+        if (isInfiniteCombat(actionObj, actionDetails)) return { mode: ATTENTION_MODE_QUEUE_INFINITE };
+
         if (classifyUncertainty(actionObj, actionDetails)) return null;
 
         const resolvedContext = resolveProjectionActionContext(actionObj, actionDetails, i);
@@ -472,6 +481,27 @@ export function computeLiveProjection(now = Date.now()) {
         const actionObj = actions[i];
         const actionDetails = dataManager.getActionDetails(actionObj.actionHrid);
         const remainingQueuedCount = actions.length - i - 1;
+
+        // Skips the timing/drink math on purpose: combat has no duration to project and its drinks
+        // are auto-consumed from inventory, so no buff boundary can be asserted for it.
+        if (actionDetails && isInfiniteCombat(actionObj, actionDetails)) {
+            segments.push(
+                buildSegment({
+                    actionObj,
+                    actionDetails,
+                    queuedIndex: i,
+                    remainingQueuedCount,
+                    startAt: currentTime,
+                    endAt: null,
+                    certainty: 'trustworthy',
+                    stopCause: 'infinite',
+                })
+            );
+            terminalCause = 'infinite';
+            terminalAt = null;
+            attention = { mode: i === 0 ? ATTENTION_MODE_RUNS_INFINITE : ATTENTION_MODE_QUEUE_INFINITE };
+            break;
+        }
 
         const uncertainReason = actionDetails ? classifyUncertainty(actionObj, actionDetails) : 'timing-unavailable';
         if (uncertainReason) {
