@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.25.2](https://github.com/Celasha/Toolasha/compare/v3.25.1...v3.25.2) (2026-10-29)
+
+### Bug Fixes
+
+- include the guild shrine speed in the quick-input panel's speed total and base time ([35d1d66](https://github.com/Celasha/Toolasha/commit/35d1d66dbb60ec778633e83f19020e37d747f4fa))
+
 ## [3.25.1](https://github.com/Celasha/Toolasha/compare/v3.25.0...v3.25.1) (2026-10-29)
 
 ### Bug Fixes
