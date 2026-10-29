@@ -25,10 +25,15 @@ vi.mock('../../core/data-manager.js', () => ({
     default: {
         getInitClientData: vi.fn(() => ({ itemDetailMap: mocks.itemDetailMap })),
         getSkills: vi.fn(() => mocks.skills),
+        getItemDetails: vi.fn((hrid) => mocks.itemDetailMap[hrid] ?? null),
     },
 }));
 
-vi.mock('../../core/i18n.js', () => ({ t: (key) => key }));
+vi.mock('../enhancement/untradable-cape-value.js', () => ({
+    getUntradableCapeValue: vi.fn(() => 12345),
+}));
+
+vi.mock('../../core/i18n.js', () => ({ t: (key, params) => (params?.value ? `${key}:${params.value}` : key) }));
 
 vi.mock('../market/alchemy-profit-calculator.js', () => ({
     default: {
@@ -187,5 +192,39 @@ describe('AlchemyBestItems level-aware filter (player-level accounting)', () => 
         const cells = levelCells();
         expect(cells).toHaveLength(1);
         expect(cells[0].style.color).toBe('rgb(248, 113, 113)'); // still red - player is level 40, item needs 45
+    });
+});
+
+describe('AlchemyBestItems untradable items', () => {
+    let instance;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.settingValues = { alchemyBestItems_prefillLevelFilter: false };
+        mocks.skills = [{ skillHrid: '/skills/alchemy', level: 100 }];
+        mocks.itemDetailMap = {};
+        instance = new AlchemyBestItems();
+    });
+
+    function nameCells() {
+        return [...instance.modal.querySelectorAll('[data-mwi-best-table] tbody tr td:nth-child(2)')];
+    }
+
+    test('an untradable cape gets an asterisk and a tooltip with its assumed value', async () => {
+        buildItem('/items/chance_cape', { itemLevel: 80, name: 'Chance Cape' });
+        await instance.openModal();
+
+        const [cell] = nameCells();
+        expect(cell.textContent).toBe('Chance Cape*');
+        expect(cell.title).toBe('alchemyBestItems.untradeableTooltip:12345');
+    });
+
+    test('a tradable item gets no asterisk or tooltip', async () => {
+        buildItem('/items/iron_bar', { itemLevel: 10, name: 'Iron Bar' });
+        await instance.openModal();
+
+        const [cell] = nameCells();
+        expect(cell.textContent).toBe('Iron Bar');
+        expect(cell.title).toBe('');
     });
 });

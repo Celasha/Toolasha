@@ -1774,6 +1774,7 @@ export default {
         colCostPerHour: 'Cost/Hr',
     },
     alchemyBestItems: {
+        untradeableTooltip: (p) => `Untradeable item; Assumed Value: ${p.value}`,
         tabLabel: 'Best Items',
         modalTitle: (p) => `Best Items — ${p.type}`,
         sortByLabel: 'Sort by:',
@@ -3438,6 +3439,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     optimistic: 'Buy: Bid / Sell: Ask (Patient Buy / Patient Sell)',
                     patientBuy: 'Buy: Bid / Sell: Bid (Patient Buy / Instant Sell)',
                 },
+            },
+            untradableCapeBaseValue: {
+                label: 'Untradable capes: base value',
+                options: {
+                    zero: 'Nothing (0)',
+                    mirror: 'Same as a Mirror of Protection',
+                },
+                help: 'Capes cannot be traded, so they have no market price. Sets what an unrefined cape is assumed to be worth in alchemy profit, enhancement costs, net worth and chest values. Refined and enhanced capes add their refinement cost and average enhancement cost (using your own stats) on top. Capes are never taxed, since they cannot be sold.',
             },
             profitCalc_pricingNaming: {
                 label: 'Pricing mode naming convention',

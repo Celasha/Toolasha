@@ -13,6 +13,7 @@ const {
     mockGetAllSnapshots,
     mockGetMarketValue,
     mockCheckOutlier,
+    mockGetUntradableCapeValue,
 } = vi.hoisted(() => ({
     mockGetInitClientData: vi.fn(),
     mockGetCharacterGuildBuffLevel: vi.fn(),
@@ -26,6 +27,7 @@ const {
     mockGetAllSnapshots: vi.fn(() => []),
     mockGetMarketValue: vi.fn(() => null),
     mockCheckOutlier: vi.fn((_itemHrid, _level, rawValue) => ({ value: rawValue, isOutlier: false })),
+    mockGetUntradableCapeValue: vi.fn(),
 }));
 
 vi.mock('../../core/data-manager.js', () => ({
@@ -80,6 +82,7 @@ vi.mock('../../utils/ability-cost-calculator.js', () => ({
 vi.mock('../../utils/house-cost-calculator.js', () => ({ calculateHouseBuildCost: vi.fn(() => 0) }));
 vi.mock('../enhancement/tooltip-enhancement.js', () => ({ calculateEnhancementPath: vi.fn(() => null) }));
 vi.mock('../../utils/enhancement-config.js', () => ({ getEnhancingParams: vi.fn(() => ({})) }));
+vi.mock('../enhancement/untradable-cape-value.js', () => ({ getUntradableCapeValue: mockGetUntradableCapeValue }));
 vi.mock('../tasks/task-profit-calculator.js', () => ({ calculateTaskTokenValue: vi.fn(() => null) }));
 vi.mock('../../utils/token-valuation.js', () => ({ calculateDungeonTokenValue: vi.fn(() => 0) }));
 vi.mock('../market/expected-value-calculator.js', () => ({
@@ -617,6 +620,37 @@ describe('calculateItemValue - reference market value fallback (getMarketPrice)'
         expect(mockGetMarketValue).toHaveBeenCalledWith('/items/some_gear', 0);
         expect(mockGetMarketValue).not.toHaveBeenCalledWith('/items/some_gear', 5);
         expect(value).toBe(555);
+    });
+});
+
+describe('calculateItemValue - untradable capes', () => {
+    beforeEach(() => {
+        mockGetUntradableCapeValue.mockReset();
+        mockGetItemPrice.mockReset();
+    });
+
+    test('values a cape from the cape value helper, times the count, at its own enhancement level', async () => {
+        mockGetUntradableCapeValue.mockImplementation((_hrid, level) => (level === 0 ? 1000 : 90000));
+
+        expect(
+            await calculateItemValue({ itemHrid: '/items/chance_cape_refined', enhancementLevel: 0, count: 2 })
+        ).toBe(2000);
+        expect(await calculateItemValue({ itemHrid: '/items/chance_cape_refined', enhancementLevel: 7 })).toBe(90000);
+        expect(mockGetUntradableCapeValue).toHaveBeenCalledWith('/items/chance_cape_refined', 7);
+    });
+
+    test('a cape the helper cannot value counts as nothing', async () => {
+        mockGetUntradableCapeValue.mockReturnValue(null);
+
+        expect(await calculateItemValue({ itemHrid: '/items/gatherer_cape', enhancementLevel: 0 })).toBe(0);
+    });
+
+    test('other items never go through the cape helper', async () => {
+        mockGetItemPrice.mockReturnValue(null);
+
+        await calculateItemValue({ itemHrid: '/items/totally_unpriced_item', enhancementLevel: 0 });
+
+        expect(mockGetUntradableCapeValue).not.toHaveBeenCalled();
     });
 });
 

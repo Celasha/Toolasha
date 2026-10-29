@@ -419,6 +419,7 @@ export default {
         csvColItemUsedHeader: (p) => `${p.name}使用量`,
     },
     alchemyBestItems: {
+        untradeableTooltip: (p) => `不可交易物品；假定价值：${p.value}`,
         tabLabel: '最佳物品',
         modalTitle: (p) => `最佳物品 —— ${p.type}`,
         sortByLabel: '排序方式：',

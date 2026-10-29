@@ -30,6 +30,12 @@ import marketAPI from '../../api/marketplace.js';
 import marketValuesAPI from '../../api/market-values.js';
 import { calculateTooltipCraftCost, isCraftCostIncludingSubMaterials } from '../../utils/profit-helpers.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
+import {
+    getCapeBaseValue,
+    getCapeBaseValueMode,
+    isRefinedCape,
+    isUntradableCape,
+} from '../../utils/untradable-cape.js';
 
 const _costCache = new Map();
 const _chainTimeCache = new Map();
@@ -639,11 +645,17 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
     const useCraftingCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost');
     // Ask drives the decision: use crafted if ask is missing OR crafted ask is cheaper
-    const askIsCrafted = useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
+    // An untradable cape is always priced by getRealisticBaseItemPrice so the cape setting applies
+    // to its base cape too (the crafting-cost helpers know nothing about it).
+    const isUntradable = isUntradableCape(itemHrid);
+    const askIsCrafted =
+        !isUntradable && useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
     const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
     const baseBidPrice = askIsCrafted
         ? craftingCostBid || craftingCostAsk
-        : marketBid || getTooltipCraftCostCached(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
+        : marketBid ||
+          (isUntradable ? 0 : getTooltipCraftCostCached(itemHrid, 'bid')) ||
+          getRealisticBaseItemPrice(itemHrid);
     const baseCost = baseAskPrice;
     const baseAskIsCrafted = askIsCrafted;
     const baseBidIsCrafted = askIsCrafted;
@@ -715,6 +727,11 @@ export function getRealisticBaseItemPrice(itemHrid) {
     if (productionCost > 0) {
         return productionCost;
     }
+    // An unrefined untradable cape has no market, recipe or reference value: use the cape setting.
+    // (A refined cape always has a recipe, so its upgrade item is priced inside getProductionCost.)
+    if (isUntradableCape(itemHrid) && !isRefinedCape(itemHrid)) {
+        return getCapeBaseValue();
+    }
     return marketValuesAPI.getValue(itemHrid, 0) || 0;
 }
 
@@ -726,7 +743,7 @@ export function getRealisticBaseItemPrice(itemHrid) {
  * @private
  */
 export function getProductionCost(itemHrid, mode = 'ask') {
-    const cacheKey = `${itemHrid}|${mode}`;
+    const cacheKey = `${itemHrid}|${mode}|${getCapeBaseValueMode()}`;
     if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
     const result = _computeProductionCost(itemHrid, mode);
     _costCache.set(cacheKey, result);
@@ -799,6 +816,10 @@ function _computeProductionCost(itemHrid, mode = 'ask') {
             upgradePrice = Math.min(upgradeMarketPrice, upgradeCraftPrice);
         } else {
             upgradePrice = upgradeMarketPrice || upgradeCraftPrice;
+        }
+        // An untradable cape has no market and no recipe; it is worth what the cape setting assumes.
+        if (!(upgradePrice > 0) && isUntradableCape(action.upgradeItemHrid)) {
+            upgradePrice = getCapeBaseValue();
         }
         totalPrice += upgradePrice;
     }

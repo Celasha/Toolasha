@@ -14,6 +14,7 @@ import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { calculateEVBatch } from '../../utils/ev-worker-manager.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import { getItemName } from '../../utils/game-i18n.js';
+import { getCapeBaseValue, isRefinedCape, isUntradableCape } from '../../utils/untradable-cape.js';
 
 /**
  * ExpectedValueCalculator class handles EV calculations for openable containers
@@ -331,7 +332,14 @@ class ExpectedValueCalculator {
             // Purdora's boxes) - value it at its own best tradeable redemption. Shop currencies are
             // not market-relistable, so no tax applies (same contract as shopRedemption above).
             const currency = resolveCurrencyValue(itemHrid, { containerValueLookup });
-            if (!currency) return null;
+            if (!currency) {
+                // Last resort for an untradable cape whose shop redemption could not be valued:
+                // the cape setting's assumed value (nothing by default). Never taxed - it can't be sold.
+                const capeValue = isUntradableCape(itemHrid) && !isRefinedCape(itemHrid) ? getCapeBaseValue('sell') : 0;
+                return capeValue > 0
+                    ? { value: capeValue, source: 'untradableCape', needsTax: false, isOutlier: false }
+                    : null;
+            }
             return {
                 value: currency.value,
                 source: 'specialCurrency',

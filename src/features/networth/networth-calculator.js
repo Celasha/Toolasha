@@ -17,6 +17,8 @@ import { calculateAbilityCost } from '../../utils/ability-cost-calculator.js';
 import { calculateHouseBuildCost } from '../../utils/house-cost-calculator.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
+import { isUntradableCape } from '../../utils/untradable-cape.js';
+import { getUntradableCapeValue } from '../enhancement/untradable-cape-value.js';
 import { calculateTaskTokenValue } from '../tasks/task-profit-calculator.js';
 import { calculateDungeonTokenValue } from '../../utils/token-valuation.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
@@ -63,6 +65,13 @@ function getGuildShrineLabel(shrineHrid) {
  */
 export async function calculateItemValue(item, priceCache = null) {
     const { itemHrid, enhancementLevel = 0, count = 1 } = item;
+
+    // Untradable capes have no market: value them at base value + refinement + the average cost of
+    // enhancing them with the player's own stats. Not cached - it depends on current gear and the
+    // cape setting, neither of which the enhancement cache is invalidated by.
+    if (isUntradableCape(itemHrid)) {
+        return (getUntradableCapeValue(itemHrid, enhancementLevel) ?? 0) * count;
+    }
 
     let itemValue = 0;
 
@@ -536,7 +545,7 @@ async function calculateItemValuesParallel(items, priceCache, gameData) {
         // Check if this specific item needs worker processing
         let needsWorker = false;
 
-        if (enhancementLevel >= 1) {
+        if (enhancementLevel >= 1 && !isUntradableCape(item.itemHrid)) {
             // Check if high enhancement cost mode applies
             if (useHighEnhancementCost && enhancementLevel >= minLevel) {
                 needsWorker = true;

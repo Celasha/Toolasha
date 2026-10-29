@@ -2,7 +2,7 @@
  * Tests for the enhancement tooltip's minimum-sell-price calculation
  */
 
-import { describe, test, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import * as mathJs from 'mathjs';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import { calculateEnhancement } from '../../utils/enhancement-calculator.js';
@@ -67,7 +67,7 @@ vi.mock('../../api/market-values.js', () => ({
     default: { getValue: (itemHrid) => referenceValues[itemHrid] ?? null },
 }));
 
-import { getItemPrices } from '../../utils/market-data.js';
+import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 
 const {
     buildEnhancementTooltipHTML,
@@ -401,6 +401,57 @@ describe('getRealisticBaseItemPrice - reference market value fallback', () => {
         referenceValues['/items/liquid_item'] = 99999;
 
         expect(getRealisticBaseItemPrice('/items/liquid_item')).toBe(500);
+    });
+});
+
+describe('getRealisticBaseItemPrice - untradable capes', () => {
+    const BASE_CAPE = '/items/chance_cape';
+    const REFINED_CAPE = '/items/chance_cape_refined';
+    const SHARD = '/items/labyrinth_refinement_shard';
+    const MIRROR = '/items/mirror_of_protection';
+
+    beforeEach(() => {
+        itemDetailMap[BASE_CAPE] = { name: 'Chance Cape', isTradable: null };
+        itemDetailMap[REFINED_CAPE] = { name: 'Chance Cape (Refined)', isTradable: null };
+        actionDetailMap['/actions/tailoring/chance_cape_refined'] = {
+            type: '/action_types/tailoring',
+            outputItems: [{ itemHrid: REFINED_CAPE, count: 1 }],
+            inputItems: [{ itemHrid: SHARD, count: 100 }],
+            upgradeItemHrid: BASE_CAPE,
+        };
+        getItemPrices.mockReturnValue(null);
+        getItemPrice.mockImplementation((hrid) => ({ [SHARD]: 1000, [MIRROR]: 9_500_000 })[hrid] ?? 0);
+    });
+
+    afterEach(() => {
+        delete settingsMap.untradableCapeBaseValue;
+        delete actionDetailMap['/actions/tailoring/chance_cape_refined'];
+        getItemPrices.mockReset().mockReturnValue({ ask: 400_000_000, bid: 390_000_000 });
+        getItemPrice.mockReset().mockReturnValue(0);
+    });
+
+    test('a base cape is worth nothing by default', () => {
+        expect(getRealisticBaseItemPrice(BASE_CAPE)).toBe(0);
+    });
+
+    test('a base cape copies the Mirror of Protection price when the setting says so', () => {
+        settingsMap.untradableCapeBaseValue = { value: 'mirror' };
+
+        expect(getRealisticBaseItemPrice(BASE_CAPE)).toBe(9_500_000);
+    });
+
+    test('a refined cape costs its shards plus the base cape value', () => {
+        expect(getRealisticBaseItemPrice(REFINED_CAPE)).toBe(100 * 1000);
+
+        settingsMap.untradableCapeBaseValue = { value: 'mirror' };
+
+        expect(getRealisticBaseItemPrice(REFINED_CAPE)).toBe(100 * 1000 + 9_500_000);
+    });
+
+    test('an ordinary unpriced item is unaffected by the cape setting', () => {
+        settingsMap.untradableCapeBaseValue = { value: 'mirror' };
+
+        expect(getRealisticBaseItemPrice('/items/totally_unpriced_item')).toBe(0);
     });
 });
 

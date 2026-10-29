@@ -20,6 +20,8 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { getDrinkConcentration } from '../../utils/tea-parser.js';
 import { getItemPrice, getItemPriceOutlierInfo, getItemPrices } from '../../utils/market-data.js';
+import { isUntradableCape } from '../../utils/untradable-cape.js';
+import { getUntradableCapeValue } from '../enhancement/untradable-cape-value.js';
 import { SECONDS_PER_HOUR, MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import { getAlchemySuccessBonus } from '../../utils/buff-parser.js';
 import {
@@ -224,6 +226,36 @@ function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDe
             total: totalEssenceFindBonus,
         },
     };
+}
+
+/**
+ * Price info for an alchemy input or output. Untradable capes have no market, so they fall back
+ * to the cape setting (and are flagged so the sell side skips market tax: they can't be sold).
+ * @param {string} itemHrid
+ * @param {Object} options - getItemPriceOutlierInfo options
+ * @returns {{value: number|null, isOutlier: boolean, assumedUntradeable?: boolean}}
+ */
+function getAlchemyPriceInfo(itemHrid, options) {
+    const info = getItemPriceOutlierInfo(itemHrid, options);
+    if (info.value !== null || !isUntradableCape(itemHrid)) {
+        return info;
+    }
+    return {
+        ...info,
+        value: getUntradableCapeValue(itemHrid, options?.enhancementLevel || 0),
+        isOutlier: false,
+        assumedUntradeable: true,
+    };
+}
+
+/**
+ * Value of a sold output after market tax. Assumed (untradable) values are never taxed.
+ * @param {number} price
+ * @param {{assumedUntradeable?: boolean}} priceInfo
+ * @returns {number}
+ */
+function afterSellTax(price, priceInfo) {
+    return priceInfo.assumedUntradeable ? price : calculatePriceAfterTax(price);
 }
 
 class AlchemyProfitCalculator {
@@ -747,7 +779,7 @@ class AlchemyProfitCalculator {
 
             // Calculate input cost (material cost)
             const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-            const pricePerItemInfo = getItemPriceOutlierInfo(itemHrid, {
+            const pricePerItemInfo = getAlchemyPriceInfo(itemHrid, {
                 context: 'profit',
                 side: 'buy',
                 enhancementLevel,
@@ -1054,7 +1086,7 @@ class AlchemyProfitCalculator {
             // Some items (e.g. Holy Milk) consume multiple copies per action - bulkMultiplier
             // scales both the input consumed and the base decompose outputs received.
             const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-            const pricePerItemInfo = getItemPriceOutlierInfo(itemHrid, {
+            const pricePerItemInfo = getAlchemyPriceInfo(itemHrid, {
                 context: 'profit',
                 side: 'buy',
                 enhancementLevel,
@@ -1071,10 +1103,10 @@ class AlchemyProfitCalculator {
 
             // 1. Base decompose items (always received on success)
             for (const output of itemDetails.alchemyDetail.decomposeItems) {
-                const outputPriceInfo = getItemPriceOutlierInfo(output.itemHrid, { context: 'profit', side: 'sell' });
+                const outputPriceInfo = getAlchemyPriceInfo(output.itemHrid, { context: 'profit', side: 'sell' });
                 const outputPrice = outputPriceInfo.value;
                 if (outputPrice !== null) {
-                    const afterTax = calculatePriceAfterTax(outputPrice);
+                    const afterTax = afterSellTax(outputPrice, outputPriceInfo);
                     const outputCount = output.count * bulkMultiplier;
                     const dropValue = afterTax * outputCount;
                     outputValue += dropValue;
@@ -1344,6 +1376,12 @@ class AlchemyProfitCalculator {
             const addOutput = (outputHrid, count) => {
                 const prices = getItemPrices(outputHrid, 0);
                 if (!prices) {
+                    // An untradable cape can't be sold, so it is valued untaxed on both sides
+                    if (isUntradableCape(outputHrid)) {
+                        const capeValue = (getUntradableCapeValue(outputHrid, 0) ?? 0) * count;
+                        totalAsk += capeValue;
+                        totalBid += capeValue;
+                    }
                     return;
                 }
                 const taxRate = excludeSellTax ? 0 : outputHrid === COWBELL_BAG_HRID ? COWBELL_BAG_TAX : MARKET_TAX;
@@ -1474,7 +1512,7 @@ class AlchemyProfitCalculator {
 
             // Get input cost (market price of the refined item being unrefined, at its own level)
             const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-            const pricePerItemInfo = getItemPriceOutlierInfo(itemHrid, {
+            const pricePerItemInfo = getAlchemyPriceInfo(itemHrid, {
                 context: 'profit',
                 side: 'buy',
                 enhancementLevel,
@@ -1489,7 +1527,7 @@ class AlchemyProfitCalculator {
             // (enhancement level is preserved, per the native client's Unrefine drop table), plus
             // refinement shards. Neither output scales with bulkMultiplier there - equipment is
             // never bulk-processed the way stackable materials are.
-            const outputPriceInfo = getItemPriceOutlierInfo(unrefineDetail.baseItemHrid, {
+            const outputPriceInfo = getAlchemyPriceInfo(unrefineDetail.baseItemHrid, {
                 context: 'profit',
                 side: 'sell',
                 enhancementLevel,
@@ -1498,7 +1536,7 @@ class AlchemyProfitCalculator {
             if (outputPrice === null) {
                 return null; // No market data
             }
-            const baseItemAfterTax = calculatePriceAfterTax(outputPrice);
+            const baseItemAfterTax = afterSellTax(outputPrice, outputPriceInfo);
 
             const dropDetails = [
                 {
@@ -1815,7 +1853,7 @@ class AlchemyProfitCalculator {
             const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
 
             // Get input cost (market price of the item being transmuted)
-            const inputPriceInfo = getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'buy' });
+            const inputPriceInfo = getAlchemyPriceInfo(itemHrid, { context: 'profit', side: 'buy' });
             const inputPrice = inputPriceInfo.value;
             if (inputPrice === null) {
                 return null; // No market data
@@ -1841,10 +1879,10 @@ class AlchemyProfitCalculator {
                     selfReturnCount = averageCount * bulkMultiplier;
                 }
 
-                const outputPriceInfo = getItemPriceOutlierInfo(drop.itemHrid, { context: 'profit', side: 'sell' });
+                const outputPriceInfo = getAlchemyPriceInfo(drop.itemHrid, { context: 'profit', side: 'sell' });
                 const outputPrice = outputPriceInfo.value;
                 if (outputPrice !== null) {
-                    const afterTax = calculatePriceAfterTax(outputPrice);
+                    const afterTax = afterSellTax(outputPrice, outputPriceInfo);
                     // Expected value: price × dropRate × averageCount × bulkMultiplier
                     const dropValue = afterTax * drop.dropRate * averageCount * bulkMultiplier;
 

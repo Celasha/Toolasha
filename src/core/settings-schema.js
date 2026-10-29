@@ -1460,6 +1460,17 @@ export const settingsGroups = {
                     { value: 'patientBuy', label: 'Buy: Bid / Sell: Bid (Patient Buy / Instant Sell)' },
                 ],
             },
+            untradableCapeBaseValue: {
+                id: 'untradableCapeBaseValue',
+                label: 'Untradable capes: base value',
+                type: 'select',
+                default: 'zero',
+                options: [
+                    { value: 'zero', label: 'Nothing (0)' },
+                    { value: 'mirror', label: 'Same as a Mirror of Protection' },
+                ],
+                help: 'Capes cannot be traded, so they have no market price. Sets what an unrefined cape is assumed to be worth in alchemy profit, enhancement costs, net worth and chest values. Refined and enhanced capes add their refinement cost and average enhancement cost (using your own stats) on top. Capes are never taxed, since they cannot be sold.',
+            },
             profitCalc_pricingNaming: {
                 id: 'profitCalc_pricingNaming',
                 label: 'Pricing mode naming convention',

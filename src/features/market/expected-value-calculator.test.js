@@ -9,6 +9,7 @@ const {
     mockGetInitClientData,
     mockGetItemDetails,
     mockGetSetting,
+    mockGetSettingValue,
     mockGetCustomPrice,
     mockResolveShopRedemptionValue,
     mockResolveCurrencyValue,
@@ -22,6 +23,7 @@ const {
         mockGetInitClientData: vi.fn(),
         mockGetItemDetails: vi.fn(),
         mockGetSetting: vi.fn(() => true),
+        mockGetSettingValue: vi.fn((_key, def) => def),
         mockGetCustomPrice: vi.fn(() => null),
         mockResolveShopRedemptionValue: vi.fn(),
         mockResolveCurrencyValue: vi.fn(),
@@ -39,7 +41,9 @@ vi.mock('../../utils/shop-redemption-valuation.js', () => ({
     resolveShopRedemptionValue: mockResolveShopRedemptionValue,
     resolveCurrencyValue: mockResolveCurrencyValue,
 }));
-vi.mock('../../core/config.js', () => ({ default: { getSetting: mockGetSetting } }));
+vi.mock('../../core/config.js', () => ({
+    default: { getSetting: mockGetSetting, getSettingValue: mockGetSettingValue },
+}));
 vi.mock('../../core/data-manager.js', () => ({
     default: { getInitClientData: mockGetInitClientData, getItemDetails: mockGetItemDetails },
 }));
@@ -201,6 +205,49 @@ describe('resolveSellSideValue', () => {
         expect(
             expectedValueCalculator.resolveSellSideValue('/items/seal_of_efficiency', 0, { allowIndirect: true })
         ).toBeNull();
+    });
+
+    describe('untradable capes with no redemption value', () => {
+        const CAPE = '/items/sinister_cape';
+
+        beforeEach(() => {
+            mockGetItemPrice.mockImplementation((hrid) => (hrid === '/items/mirror_of_protection' ? 9500000 : null));
+            mockResolveShopRedemptionValue.mockReturnValue(null);
+            mockResolveCurrencyValue.mockReturnValue(null);
+            mockGetItemDetails.mockReturnValue({ isTradable: null });
+            mockGetSettingValue.mockReset().mockImplementation((_key, def) => def);
+        });
+
+        test('are worth nothing by default, so they stay unresolved', () => {
+            expect(expectedValueCalculator.resolveSellSideValue(CAPE, 0, { allowIndirect: true })).toBeNull();
+        });
+
+        test('use the Mirror of Protection price, untaxed, when the cape setting says so', () => {
+            mockGetSettingValue.mockImplementation((key, def) => (key === 'untradableCapeBaseValue' ? 'mirror' : def));
+
+            expect(expectedValueCalculator.resolveSellSideValue(CAPE, 0, { allowIndirect: true })).toEqual({
+                value: 9500000,
+                source: 'untradableCape',
+                needsTax: false,
+                isOutlier: false,
+            });
+        });
+
+        test('keep their shop redemption value ahead of the cape setting', () => {
+            mockGetSettingValue.mockImplementation((key, def) => (key === 'untradableCapeBaseValue' ? 'mirror' : def));
+            mockResolveShopRedemptionValue.mockReturnValue({ value: 40000000, isOutlier: false });
+
+            expect(expectedValueCalculator.resolveSellSideValue(CAPE, 0, { allowIndirect: true })).toMatchObject({
+                value: 40000000,
+                source: 'shopRedemption',
+            });
+        });
+
+        test('are left alone unless indirect pricing was asked for', () => {
+            mockGetSettingValue.mockImplementation((key, def) => (key === 'untradableCapeBaseValue' ? 'mirror' : def));
+
+            expect(expectedValueCalculator.resolveSellSideValue(CAPE, 0)).toBeNull();
+        });
     });
 
     test('allowIndirect prices a dropped shop currency itself at its best tradeable redemption', () => {

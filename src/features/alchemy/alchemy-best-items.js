@@ -13,6 +13,8 @@ import { formatKMB, formatWithSeparator, formatPercentage } from '../../utils/fo
 import { getItemPrice } from '../../utils/market-data.js';
 import { getItemName, getActionName } from '../../utils/game-i18n.js';
 import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
+import { isUntradableCape } from '../../utils/untradable-cape.js';
+import { getUntradableCapeValue } from '../enhancement/untradable-cape-value.js';
 import assetManifest from '../../utils/asset-manifest.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
@@ -725,6 +727,17 @@ export class AlchemyBestItems {
                 navigateToMarketplace(item.itemHrid);
             });
             nameTd.appendChild(nameLink);
+            // Untradable items have no market price, so their value here is an assumption
+            if (isUntradableCape(item.itemHrid)) {
+                const assumedMarker = document.createElement('span');
+                assumedMarker.textContent = '*';
+                assumedMarker.style.cssText = 'color: #fbbf24; margin-left: 2px;';
+                nameTd.appendChild(assumedMarker);
+                nameTd.title = t('alchemyBestItems.untradeableTooltip', {
+                    value: formatKMB(getUntradableCapeValue(item.itemHrid, 0) ?? 0),
+                });
+                nameTd.style.cursor = 'help';
+            }
             row.appendChild(nameTd);
 
             // Level - colored against the player's real current Alchemy level (not the filter

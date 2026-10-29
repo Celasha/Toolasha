@@ -35,6 +35,11 @@ vi.mock('../../core/config.js', () => ({ default: configMock }));
 vi.mock('../../api/marketplace.js', () => ({ default: { getPrice: () => null, on: () => {} } }));
 vi.mock('./expected-value-calculator.js', () => ({ default: {} }));
 
+const capeValues = {};
+vi.mock('../enhancement/untradable-cape-value.js', () => ({
+    getUntradableCapeValue: (hrid, level) => capeValues[`${hrid}:${level}`] ?? 0,
+}));
+
 const { default: alchemyProfitCalculator } = await import('./alchemy-profit-calculator.js');
 
 function baseParams(overrides = {}) {
@@ -653,5 +658,100 @@ describe('catalystChoice on Coinify and Decompose', () => {
         expect(type.successRate).toBeCloseTo(0.7 * 1.15, 8);
         expect(prime.catalystCost.itemHrid).toBe('/items/prime_catalyst');
         expect(prime.successRate).toBeCloseTo(0.7 * 1.25, 8);
+    });
+});
+
+describe('untradable capes (no market price)', () => {
+    const REFINED_CAPE = '/items/chance_cape_refined';
+    const BASE_CAPE = '/items/chance_cape';
+    const SHARD_ITEM = '/items/labyrinth_refinement_shard';
+
+    function setup() {
+        for (const key of Object.keys(marketPrices)) delete marketPrices[key];
+        for (const key of Object.keys(marketPricesAskBid)) delete marketPricesAskBid[key];
+        const itemDetailMap = {
+            [REFINED_CAPE]: {
+                itemLevel: 80,
+                alchemyDetail: {
+                    bulkMultiplier: 1,
+                    decomposeItems: [
+                        { itemHrid: SHARD_ITEM, count: 100 },
+                        { itemHrid: BASE_CAPE, count: 1 },
+                    ],
+                    unrefineDetail: { baseItemHrid: BASE_CAPE, shardReturn: { itemHrid: SHARD_ITEM, count: 50 } },
+                },
+            },
+        };
+        const actionDetailMap = {
+            '/actions/alchemy/unrefine': {
+                type: '/action_types/alchemy',
+                baseTimeCost: 20e9,
+                levelRequirement: { level: 1 },
+            },
+        };
+        dataManagerMock.getInitClientData.mockReturnValue({ itemDetailMap, actionDetailMap });
+        dataManagerMock.getItemDetails.mockReturnValue(itemDetailMap[REFINED_CAPE]);
+        dataManagerMock.getSkills.mockReturnValue([{ skillHrid: '/skills/alchemy', level: 80 }]);
+
+        marketPrices[SHARD_ITEM] = 1000;
+        marketPricesAskBid[SHARD_ITEM] = { ask: 1000, bid: 900, askOutlier: false, bidOutlier: false };
+        for (const key of Object.keys(capeValues)) delete capeValues[key];
+        capeValues[`${REFINED_CAPE}:0`] = 200000;
+        capeValues[`${BASE_CAPE}:0`] = 50000;
+    }
+
+    beforeEach(setup);
+
+    test('unrefine prices the unlisted refined cape input and base cape output from the cape value', () => {
+        const profit = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_CAPE, 0, false, 0);
+
+        expect(profit).not.toBeNull();
+        expect(profit.requirementCosts[0]).toMatchObject({ itemHrid: REFINED_CAPE, price: 200000 });
+    });
+
+    test('a cape output is never taxed but a tradable shard output still is', () => {
+        const profit = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_CAPE, 0, false, 0);
+
+        const capeDrop = profit.dropRevenues.find((d) => d.itemHrid === BASE_CAPE);
+        const shardDrop = profit.dropRevenues.find((d) => d.itemHrid === SHARD_ITEM);
+        expect(capeDrop.revenuePerAttempt).toBe(50000);
+        expect(shardDrop.revenuePerAttempt).toBeCloseTo(50 * 1000 * (1 - MARKET_TAX), 8);
+        expect(profit.incomePerAttempt).toBeCloseTo(50000 + 50 * 1000 * (1 - MARKET_TAX), 8);
+    });
+
+    test('with the default cape value of zero the cape still shows up, valued at nothing', () => {
+        delete capeValues[`${REFINED_CAPE}:0`];
+        delete capeValues[`${BASE_CAPE}:0`];
+
+        const profit = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_CAPE, 0, false, 0);
+
+        expect(profit).not.toBeNull();
+        expect(profit.requirementCosts[0].price).toBe(0);
+    });
+
+    test('decompose value counts the base cape untaxed on both the ask and bid side', () => {
+        const value = alchemyProfitCalculator.calculateDecomposeValue(REFINED_CAPE, 0);
+
+        expect(value.ask).toBeCloseTo(100 * 1000 * (1 - MARKET_TAX) + 50000, 8);
+        expect(value.bid).toBeCloseTo(100 * 900 * (1 - MARKET_TAX) + 50000, 8);
+    });
+
+    test('an unlisted item that is not a cape is still skipped', () => {
+        dataManagerMock.getItemDetails.mockReturnValue({
+            itemLevel: 10,
+            alchemyDetail: { unrefineDetail: { baseItemHrid: '/items/test_base_item', shardReturn: null } },
+        });
+        dataManagerMock.getInitClientData.mockReturnValue({
+            itemDetailMap: {},
+            actionDetailMap: {
+                '/actions/alchemy/unrefine': {
+                    type: '/action_types/alchemy',
+                    baseTimeCost: 20e9,
+                    levelRequirement: { level: 1 },
+                },
+            },
+        });
+
+        expect(alchemyProfitCalculator.calculateUnrefineProfit('/items/test_refined_item', 0, false, 0)).toBeNull();
     });
 });
