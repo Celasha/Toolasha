@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.25.1
+ * Version: 3.25.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13032,7 +13032,12 @@
                     actionDetails.type,
                     '/buff_types/action_speed'
                 );
-                const speedBonus = equipmentSpeedBonus + personalSpeedBonus;
+                // Guild shrine speed is listed in the breakdown and applied by calculateActionStats, so the
+                // displayed total and "Base -> time" line must include it too.
+                const guildSpeedBonus = (dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [])
+                    .filter((buff) => buff.typeHrid === '/buff_types/action_speed')
+                    .reduce((sum, buff) => sum + (buff.flatBoost || 0) + (buff.ratioBoost || 0), 0);
+                const speedBonus = equipmentSpeedBonus + personalSpeedBonus + guildSpeedBonus;
 
                 let speedSection = null;
 
