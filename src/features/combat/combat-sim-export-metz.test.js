@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     partySkills: [],
     partySharableCharacter: undefined,
     partyWearableItemMap: {},
+    loadouts: [],
 }));
 
 vi.mock('../../core/data-manager.js', () => ({
@@ -18,6 +19,10 @@ vi.mock('../../core/data-manager.js', () => ({
         getInventory: vi.fn(() => mocks.inventory),
         getMooPassExpireTime: vi.fn(() => mocks.mooPassExpireTime),
     },
+}));
+
+vi.mock('./combat-sim-loadouts-metz.js', () => ({
+    getMetzLoadouts: vi.fn(() => mocks.loadouts),
 }));
 
 vi.mock('./combat-sim-export.js', () => ({
@@ -114,6 +119,7 @@ describe('Metz export - skilling/owned blocks', () => {
         mocks.partySkills = [];
         mocks.partySharableCharacter = undefined;
         mocks.partyWearableItemMap = {};
+        mocks.loadouts = [];
     });
 
     test('self export moves enhancing/alchemy tools out of player.equipment and into skilling', async () => {
@@ -257,6 +263,26 @@ describe('Metz export - skilling/owned blocks', () => {
 
         expect('skilling' in character).toBe(false);
         expect('owned' in character).toBe(false);
+    });
+
+    test('self export carries saved loadouts, teammates never do', async () => {
+        mocks.characterData = baseCharacter({
+            partyInfo: { partySlotMap: { a: { characterID: 'party-1' } } },
+        });
+        mocks.loadouts = [{ id: '12', name: 'Dungeon' }];
+
+        const team = await constructMetzTeamExport();
+
+        expect(team[0].loadouts).toEqual(mocks.loadouts);
+        expect('loadouts' in team.find((p) => p.name === 'Teammate')).toBe(false);
+    });
+
+    test('self export omits loadouts when there are none', async () => {
+        mocks.characterData = baseCharacter();
+
+        const character = await constructMetzCharacterExport();
+
+        expect('loadouts' in character).toBe(false);
     });
 
     test('party members get best-effort skilling/speedGear from shared profile, but never owned', async () => {

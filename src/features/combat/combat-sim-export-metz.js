@@ -39,6 +39,7 @@ import {
     constructSelfPlayer,
     constructPartyPlayer,
 } from './combat-sim-export.js';
+import { getMetzLoadouts } from './combat-sim-loadouts-metz.js';
 
 const ENHANCING_TOOL_LOCATION = '/item_locations/enhancing_tool';
 const ALCHEMY_TOOL_LOCATION = '/item_locations/alchemy_tool';
@@ -339,7 +340,7 @@ function buildSelfMetzCharacter(characterObj, clientObj) {
         (characterObj.combatUnit?.combatAbilities || []).map((ability) => ability.abilityHrid).filter(Boolean)
     );
 
-    return toMetzCharacter(characterObj.character?.name || 'Player 1', selfPlayer, {
+    const character = toMetzCharacter(characterObj.character?.name || 'Player 1', selfPlayer, {
         hasMooPass: getSelfHasMooPass(characterObj),
         inParty: isCurrentPartyMember(characterObj, characterObj.character?.id),
         skills: characterObj.characterSkills,
@@ -352,6 +353,13 @@ function buildSelfMetzCharacter(characterObj, clientObj) {
             equippedAbilityHrids,
         }),
     });
+
+    // Saved combat loadouts, for Metz's loadout picker. Self-only: a shared profile never carries them.
+    const loadouts = getMetzLoadouts(characterObj.character?.id);
+    if (loadouts.length) {
+        character.loadouts = loadouts;
+    }
+    return character;
 }
 
 /**

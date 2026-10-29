@@ -933,6 +933,9 @@ if (combatSimSite === 'shykai') {
     // Always-on loadout state must capture structured loadout messages independently of feature settings.
     loadoutState.startCapture();
 
+    // Keeps the Metz export's saved-loadout copy fresh for the Metz site, which cannot see loadout state.
+    Combat.startMetzLoadoutPublisher();
+
     // CRITICAL: Start centralized DOM observer SECOND, before features initialize
     domObserver.start();
 
