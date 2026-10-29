@@ -445,6 +445,11 @@ export default {
         doneTitle: '所有计划中的卷轴均已开启。',
         doneSkipped: (p) => `已跳过：${p.items}`,
     },
+    shopTokenValue: {
+        perToken: (p) => `${p.value} / 代币`,
+        assumedTooltip: (p) => `不可交易物品；假定价值：${p.value}`,
+        bestTooltip: '本商店中每代币价值最高',
+    },
     alchemyBestItems: {
         untradeableTooltip: (p) => `不可交易物品；假定价值：${p.value}`,
         tabLabel: '最佳物品',

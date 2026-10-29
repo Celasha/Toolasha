@@ -689,6 +689,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'shopTokenValues',
+            name: 'Shop Token Values',
+            category: 'Shop',
+            module: UI.shopTokenValues,
+            async: false,
+        },
+        {
             key: 'taskProfitDisplay',
             name: 'Task Profit Display',
             category: 'Tasks',

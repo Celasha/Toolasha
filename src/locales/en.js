@@ -1800,6 +1800,11 @@ export default {
         doneTitle: 'All planned scrolls opened.',
         doneSkipped: (p) => `Skipped: ${p.items}`,
     },
+    shopTokenValue: {
+        perToken: (p) => `${p.value} / token`,
+        assumedTooltip: (p) => `Untradeable item; Assumed Value: ${p.value}`,
+        bestTooltip: 'Best value per token in this shop',
+    },
     alchemyBestItems: {
         untradeableTooltip: (p) => `Untradeable item; Assumed Value: ${p.value}`,
         tabLabel: 'Best Items',
@@ -3473,7 +3478,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     zero: 'Nothing (0)',
                     mirror: 'Same as a Mirror of Protection',
                 },
-                help: 'Capes cannot be traded, so they have no market price. Sets what an unrefined cape is assumed to be worth in alchemy profit, enhancement costs, net worth and chest values. Refined and enhanced capes add their refinement cost and average enhancement cost (using your own stats) on top. Capes are never taxed, since they cannot be sold.',
+                help: 'Capes (including the Chimerical Quiver and Enchanted Cloak) cannot be traded, so they have no market price. Sets what an unrefined cape is assumed to be worth in alchemy profit, enhancement costs, net worth and chest values. Refined and enhanced capes add their refinement cost and average enhancement cost (using your own stats) on top. Capes are never taxed, since they cannot be sold.',
             },
             profitCalc_pricingNaming: {
                 label: 'Pricing mode naming convention',
@@ -3691,6 +3696,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             labyrinthTracker: {
                 label: 'Labyrinth best level tracker',
                 help: 'Tracks the highest recommended level enemy defeated per monster type and shows it in the Automation tab',
+            },
+            shopTokenValues: {
+                label: 'Shop: Show value per token',
+                help: 'Shows the market value per token of each entry in the Dungeon and Labyrinth shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
             },
             labyrinthShopPrices: {
                 label: 'Labyrinth Shop: Show market prices',

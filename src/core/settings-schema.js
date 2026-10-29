@@ -175,6 +175,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Adds a Max button to Shop, Task Shop, Labyrinth Shop, and Cowbell Store buy dialogs that fills in the most you can afford',
             },
+            shopTokenValues: {
+                id: 'shopTokenValues',
+                label: 'Shop: Show value per token',
+                type: 'checkbox',
+                default: true,
+                help: 'Shows the market value per token of each entry in the Dungeon and Labyrinth shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
+            },
             notificationLog_maxEntries: {
                 id: 'notificationLog_maxEntries',
                 label: 'Chat: Max notifications to keep',
@@ -1469,7 +1476,7 @@ export const settingsGroups = {
                     { value: 'zero', label: 'Nothing (0)' },
                     { value: 'mirror', label: 'Same as a Mirror of Protection' },
                 ],
-                help: 'Capes cannot be traded, so they have no market price. Sets what an unrefined cape is assumed to be worth in alchemy profit, enhancement costs, net worth and chest values. Refined and enhanced capes add their refinement cost and average enhancement cost (using your own stats) on top. Capes are never taxed, since they cannot be sold.',
+                help: 'Capes (including the Chimerical Quiver and Enchanted Cloak) cannot be traded, so they have no market price. Sets what an unrefined cape is assumed to be worth in alchemy profit, enhancement costs, net worth and chest values. Refined and enhanced capes add their refinement cost and average enhancement cost (using your own stats) on top. Capes are never taxed, since they cannot be sold.',
             },
             profitCalc_pricingNaming: {
                 id: 'profitCalc_pricingNaming',
