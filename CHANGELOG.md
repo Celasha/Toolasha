@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.25.0](https://github.com/Celasha/Toolasha/compare/v3.24.5...v3.25.0) (2026-10-29)
+
+### Features
+
+- add Scroll Planner to plan and step through opening Labyrinth scrolls ([bc0c9ce](https://github.com/Celasha/Toolasha/commit/bc0c9ce5e5a268c6765262a822328c9f77577011))
+- show value per token and the best redemption in the Dungeon and Labyrinth shops ([c8aa801](https://github.com/Celasha/Toolasha/commit/c8aa801d8a28cd8297395136cd599e9a069b471b))
+
+### Bug Fixes
+
+- render the sell-order header icon as a color emoji instead of a grey text glyph ([a971e1c](https://github.com/Celasha/Toolasha/commit/a971e1c82b6d818b77ced1b132aea0735b9d3670))
+- show the offline limit for queues that end in infinite combat ([b3506e9](https://github.com/Celasha/Toolasha/commit/b3506e9d4b9e594adde88386a7a7d33a8aee198c))
+- treat the Chimerical Quiver and Enchanted Cloak as untradable capes ([ef52458](https://github.com/Celasha/Toolasha/commit/ef524589a518fc6ad2f7b5795e4d0b0d9b3dbca5))
+- value untradable capes in alchemy, enhancement, networth and chests ([b440259](https://github.com/Celasha/Toolasha/commit/b440259cd2fd44b2db79e66ae44629c84ede07b8))
+
 ## [3.24.5](https://github.com/Celasha/Toolasha/compare/v3.24.4...v3.24.5) (2026-10-26)
 
 ### Bug Fixes
