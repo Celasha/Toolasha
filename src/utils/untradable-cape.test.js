@@ -23,6 +23,19 @@ describe('untradable cape detection', () => {
         itemDetails['/items/chance_cape_refined'] = {};
         itemDetails['/items/tradable_cape'] = { isTradable: true };
         itemDetails['/items/cheese'] = {};
+        itemDetails['/items/chimerical_quiver'] = { isTradable: null };
+        itemDetails['/items/chimerical_quiver_refined'] = {};
+        itemDetails['/items/enchanted_cloak'] = { isTradable: null };
+        itemDetails['/items/enchanted_cloak_refined'] = {};
+    });
+
+    test('treats the Chimerical Quiver and Enchanted Cloak like capes', () => {
+        for (const hrid of ['chimerical_quiver', 'enchanted_cloak']) {
+            expect(isUntradableCape(`/items/${hrid}`)).toBe(true);
+            expect(isUntradableCape(`/items/${hrid}_refined`)).toBe(true);
+            expect(isRefinedCape(`/items/${hrid}_refined`)).toBe(true);
+            expect(isRefinedCape(`/items/${hrid}`)).toBe(false);
+        }
     });
 
     test('recognises base and refined capes that cannot be traded', () => {

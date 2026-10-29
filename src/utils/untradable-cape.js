@@ -1,8 +1,8 @@
 /**
  * Untradable Cape Value
  *
- * Capes (Chance, Gatherer, Artificer, Culinary, Sinister and their refined versions) cannot be
- * traded, so they never have a market price. Anything that prices a cape (alchemy profit, the
+ * Capes (Chance, Gatherer, Artificer, Culinary, Sinister), the Chimerical Quiver, the Enchanted
+ * Cloak and their refined versions cannot be traded, so they never have a market price. Anything that prices a cape (alchemy profit, the
  * enhancement path, net worth, chest EV) would otherwise drop it or treat it as free by accident.
  * This module owns the single decision of what an unrefined cape's base value is: nothing (the
  * default, matching how the enhancement path already behaved) or the price of a Mirror of
@@ -21,7 +21,9 @@ export const CAPE_BASE_VALUE_ZERO = 'zero';
 export const CAPE_BASE_VALUE_MIRROR = 'mirror';
 
 const MIRROR_OF_PROTECTION_HRID = '/items/mirror_of_protection';
-const CAPE_HRID_PATTERN = /^\/items\/[a-z]+_cape(_refined)?$/;
+// The Chimerical Quiver and Enchanted Cloak are the ranged and magic equivalents of the capes
+const CAPE_HRID_PATTERN = /^\/items\/[a-z]+_(cape|quiver|cloak)(_refined)?$/;
+const REFINED_CAPE_PATTERN = /_(cape|quiver|cloak)_refined$/;
 
 /**
  * @param {string} itemHrid
@@ -39,7 +41,7 @@ export function isUntradableCape(itemHrid) {
  * @returns {boolean} True for the refined version of a cape
  */
 export function isRefinedCape(itemHrid) {
-    return typeof itemHrid === 'string' && itemHrid.endsWith('_cape_refined');
+    return typeof itemHrid === 'string' && REFINED_CAPE_PATTERN.test(itemHrid);
 }
 
 /**
