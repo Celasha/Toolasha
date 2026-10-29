@@ -223,7 +223,7 @@ class MarketOrderTotals {
 
         const itemStyle = 'display: flex; align-items: center; gap: 4px;';
         const tileStyle =
-            'display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 8px; font-size: 11px; flex: none;';
+            'display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 8px; font-size: 11px; flex: none; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;';
 
         // Brynless Mode drops the BO/SO icon tiles but keeps their text labels. The unclaimed tile
         // stays: it is the only thing identifying that number.
@@ -232,7 +232,7 @@ class MarketOrderTotals {
             ? `<span style="${tileStyle} background: rgba(124, 184, 255, 0.16);">🛒</span>`
             : '';
         const sellIcon = showOrderIcons
-            ? `<span style="${tileStyle} background: rgba(74, 222, 128, 0.16);">🏷</span>`
+            ? `<span style="${tileStyle} background: rgba(74, 222, 128, 0.16);">🏷️</span>`
             : '';
 
         // Update display
