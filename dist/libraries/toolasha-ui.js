@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.24.5
+ * Version: 3.25.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketplaceSession_js, reactInput_js, marketAPI, efficiency_js, webSocketHook, selectors_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
+(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketplaceSession_js, reactInput_js, tokenValuation_js, marketData_js, marketAPI, efficiency_js, webSocketHook, selectors_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
     'use strict';
 
     /**
@@ -1196,6 +1196,340 @@
     }
 
     const shopMaxBuyButton = new ShopMaxBuyButton();
+
+    /**
+     * Special-Currency Shop Data (TLA-041E)
+     *
+     * Pure data normalization over the game's official special-currency shops
+     * (`shopItemDetailMap` for dungeon tokens, `taskShopItemDetailMap`, `labyrinthShopItemDetailMap`).
+     * No valuation logic lives here (no Ask/EV/opportunity math) - just "what can be bought, with which
+     * currency, at what cost/outputCount" - so both Profile Score's acquisition resolver and the
+     * existing Token Tooltip feature can read the same shop facts without duplicating the map-scanning.
+     */
+
+
+    let cachedEntries = null;
+    let cachedSource = null;
+
+    /**
+     * @param {Object} shopItem
+     * @param {string} costItemHrid
+     * @param {number} costCount
+     * @param {number} outputCount
+     * @param {Object} itemDetailMap
+     * @returns {{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}}
+     */
+    function normalizeEntry(shopItem, costItemHrid, costCount, outputCount, itemDetailMap) {
+        return {
+            itemHrid: shopItem.itemHrid,
+            currencyHrid: costItemHrid,
+            tokenCost: costCount,
+            outputCount: outputCount || 1,
+            isOpenable: !!itemDetailMap?.[shopItem.itemHrid]?.isOpenable,
+        };
+    }
+
+    /**
+     * @param {Object} gameData
+     * @returns {Array<{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}>}
+     */
+    function computeEntries(gameData) {
+        const itemDetailMap = gameData.itemDetailMap || {};
+        const entries = [];
+
+        for (const shopItem of Object.values(gameData.shopItemDetailMap || {})) {
+            const cost = shopItem.costs?.[0];
+            if (!cost || !cost.itemHrid || cost.itemHrid === '/items/coin' || !(cost.count > 0)) continue;
+            entries.push(normalizeEntry(shopItem, cost.itemHrid, cost.count, shopItem.outputCount, itemDetailMap));
+        }
+
+        for (const shopItem of Object.values(gameData.taskShopItemDetailMap || {})) {
+            const cost = shopItem.cost;
+            if (!cost?.itemHrid || !(cost.count > 0)) continue;
+            entries.push(normalizeEntry(shopItem, cost.itemHrid, cost.count, shopItem.outputCount, itemDetailMap));
+        }
+
+        for (const shopItem of Object.values(gameData.labyrinthShopItemDetailMap || {})) {
+            const cost = shopItem.cost;
+            if (!cost?.itemHrid || !(cost.count > 0)) continue;
+            entries.push(normalizeEntry(shopItem, cost.itemHrid, cost.count, shopItem.outputCount, itemDetailMap));
+        }
+
+        return entries;
+    }
+
+    /**
+     * All official special-currency shop outputs across dungeon/task/labyrinth shops, normalized to one
+     * shape. Cached per game-data snapshot (invalidated automatically when `dataManager` hands out a new
+     * client-data object, e.g. on character switch), since these are static shop facts, not market prices.
+     * @returns {Array<{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}>}
+     */
+    function getAllSpecialCurrencyShopEntries() {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return [];
+
+        if (cachedSource === gameData) return cachedEntries;
+
+        cachedEntries = computeEntries(gameData);
+        cachedSource = gameData;
+        return cachedEntries;
+    }
+
+    /**
+     * Untradable Cape Value
+     *
+     * Capes (Chance, Gatherer, Artificer, Culinary, Sinister), the Chimerical Quiver, the Enchanted
+     * Cloak and their refined versions cannot be traded, so they never have a market price. Anything that prices a cape (alchemy profit, the
+     * enhancement path, net worth, chest EV) would otherwise drop it or treat it as free by accident.
+     * This module owns the single decision of what an unrefined cape's base value is: nothing (the
+     * default, matching how the enhancement path already behaved) or the price of a Mirror of
+     * Protection, which functions as a copy of any equipment.
+     *
+     * Refined and enhanced values are built on top of this base by the callers (base value + refinement
+     * cost + average enhancement cost); see features/enhancement/untradable-cape-value.js.
+     */
+
+
+    const CAPE_BASE_VALUE_SETTING = 'untradableCapeBaseValue';
+    const CAPE_BASE_VALUE_ZERO = 'zero';
+    const CAPE_BASE_VALUE_MIRROR = 'mirror';
+
+    const MIRROR_OF_PROTECTION_HRID = '/items/mirror_of_protection';
+    // The Chimerical Quiver and Enchanted Cloak are the ranged and magic equivalents of the capes
+    const CAPE_HRID_PATTERN = /^\/items\/[a-z]+_(cape|quiver|cloak)(_refined)?$/;
+
+    /**
+     * @param {string} itemHrid
+     * @returns {boolean} True for a cape that has no market because it cannot be traded
+     */
+    function isUntradableCape(itemHrid) {
+        if (typeof itemHrid !== 'string' || !CAPE_HRID_PATTERN.test(itemHrid)) {
+            return false;
+        }
+        return dataManager.getItemDetails(itemHrid)?.isTradable !== true;
+    }
+
+    /**
+     * Value assumed for one unrefined, unenhanced cape.
+     * @param {'buy'|'sell'} [side='buy'] - Price side used when the Mirror of Protection is the stand-in
+     * @returns {number} 0, or the Mirror of Protection price when the setting is on "mirror"
+     */
+    function getCapeBaseValue(side = 'buy') {
+        if (config.getSettingValue(CAPE_BASE_VALUE_SETTING, CAPE_BASE_VALUE_ZERO) !== CAPE_BASE_VALUE_MIRROR) {
+            return 0;
+        }
+        return marketData_js.getItemPrice(MIRROR_OF_PROTECTION_HRID, { context: 'profit', side }) || 0;
+    }
+
+    /**
+     * Shop Token Values logic
+     * Per-token value of one special-currency shop entry, and which entry is best for its currency.
+     */
+
+
+    const PRICING_MODE_SETTING = 'profitCalc_pricingMode';
+    const RESPECT_MODE_SETTING = 'expectedValue_respectPricingMode';
+
+    /**
+     * Value per currency unit of one shop entry: market price × outputCount ÷ tokenCost, on the same
+     * price side as the profit settings. Untradable capes have no market price, so they use the cape
+     * base value setting and are flagged `isAssumed`; those are display-only and never win "best".
+     * @param {{itemHrid: string, tokenCost: number, outputCount: number}} entry
+     * @returns {{perToken: number, isAssumed: boolean, assumedValue: number, isOutlier: boolean}|null}
+     *   null when the item has no price and is not an untradable cape
+     */
+    function getShopRowValue(entry) {
+        const outputCount = entry.outputCount || 1;
+
+        if (isUntradableCape(entry.itemHrid)) {
+            const assumedValue = getCapeBaseValue();
+            return {
+                perToken: assumedValue > 0 ? (assumedValue * outputCount) / entry.tokenCost : 0,
+                isAssumed: true,
+                assumedValue,
+                isOutlier: false,
+            };
+        }
+
+        const mode = tokenValuation_js.resolvePricingSide(PRICING_MODE_SETTING, RESPECT_MODE_SETTING);
+        const priceInfo = marketData_js.getItemPriceOutlierInfo(entry.itemHrid, { mode });
+        if (!(priceInfo.value > 0)) {
+            return null;
+        }
+        return {
+            perToken: (priceInfo.value * outputCount) / entry.tokenCost,
+            isAssumed: false,
+            assumedValue: 0,
+            isOutlier: Boolean(priceInfo.isOutlier),
+        };
+    }
+
+    /**
+     * Item HRID of the best-value entry (highest real per-token value) for every currency in the
+     * given set. Computed over every entry of the currency, not just the tiles on screen.
+     * @param {Set<string>|null} currencyHrids - Currencies to evaluate, or null for all
+     * @returns {Map<string, string>} currencyHrid -> itemHrid of its best entry
+     */
+    function getBestEntryByCurrency(currencyHrids = null) {
+        const best = new Map();
+        const bestValue = new Map();
+        for (const entry of getAllSpecialCurrencyShopEntries()) {
+            if (currencyHrids && !currencyHrids.has(entry.currencyHrid)) {
+                continue;
+            }
+            const row = getShopRowValue(entry);
+            if (!row || row.isAssumed || !(row.perToken > 0)) {
+                continue;
+            }
+            if (row.perToken > (bestValue.get(entry.currencyHrid) || 0)) {
+                bestValue.set(entry.currencyHrid, row.perToken);
+                best.set(entry.currencyHrid, entry.itemHrid);
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Shop Token Values
+     * Shows each special-currency shop entry's value per token (market price × outputCount ÷ token
+     * cost) in the Dungeon shop and the Labyrinth shop, and marks the best-value entry per currency.
+     * Untradable capes show the cape base value setting, flagged as assumed and never marked best.
+     */
+
+
+    const LABYRINTH_TOKEN_HRID = '/items/labyrinth_token';
+    const VALUE_CLASS = 'mwi-shop-token-value';
+    const OBSERVER_NAME = 'ShopTokenValues';
+    const CATCHUP_DELAY_MS = 500;
+    const REFRESH_DEBOUNCE_MS = 100;
+
+    const DUNGEON_TILE_SELECTOR = '[class*="ShopPanel_shopItems"] [class*="ShopPanel_shopItem__"]';
+    const LABYRINTH_TILE_SELECTOR = '[class*="LabyrinthPanel_buyableGrid"] [class*="LabyrinthPanel_item"]';
+
+    class ShopTokenValues {
+        constructor() {
+            this.unregisterHandlers = [];
+            this.timer = null;
+            this.isInitialized = false;
+        }
+
+        initialize() {
+            if (!config.getSetting('shopTokenValues') || this.isInitialized) {
+                return;
+            }
+            this.isInitialized = true;
+
+            for (const className of ['ShopPanel_shopItems', 'LabyrinthPanel_buyableGrid']) {
+                this.unregisterHandlers.push(
+                    domObserver.onClass(`${OBSERVER_NAME}_${className}`, className, () => this.scheduleRefresh())
+                );
+            }
+            this.scheduleRefresh(CATCHUP_DELAY_MS);
+        }
+
+        disable() {
+            clearTimeout(this.timer);
+            this.timer = null;
+            this.unregisterHandlers.forEach((unregister) => unregister());
+            this.unregisterHandlers = [];
+            document.querySelectorAll(`.${VALUE_CLASS}`).forEach((el) => el.remove());
+            this.isInitialized = false;
+        }
+
+        scheduleRefresh(delay = REFRESH_DEBOUNCE_MS) {
+            clearTimeout(this.timer);
+            this.timer = setTimeout(() => {
+                this.timer = null;
+                this.refreshAll();
+            }, delay);
+        }
+
+        /**
+         * @param {Element} tile
+         * @returns {string|null} Item HRID from the tile's icon sprite
+         */
+        extractItemHrid(tile) {
+            const href =
+                tile.querySelector('use')?.getAttribute('href') || tile.querySelector('use')?.getAttribute('xlink:href');
+            const slug = href?.split('#')[1];
+            return slug ? `/items/${slug}` : null;
+        }
+
+        /**
+         * @param {Element} tile
+         * @returns {number|null} Token cost shown on the tile (locale-independent digits)
+         */
+        extractCost(tile) {
+            const text = tile.querySelector('[class*="ShopPanel_costs"]')?.textContent || '';
+            const match = text.match(/\d[\d,.\s]*/);
+            const value = match ? Number(match[0].replace(/[^\d]/g, '')) : NaN;
+            return value > 0 ? value : null;
+        }
+
+        refreshAll() {
+            const entries = getAllSpecialCurrencyShopEntries();
+            if (entries.length === 0) {
+                return;
+            }
+            const bestByCurrency = getBestEntryByCurrency(new Set([...tokenValuation_js.DUNGEON_TOKEN_HRIDS, LABYRINTH_TOKEN_HRID]));
+
+            document.querySelectorAll(DUNGEON_TILE_SELECTOR).forEach((tile) => {
+                const itemHrid = this.extractItemHrid(tile);
+                const cost = this.extractCost(tile);
+                // The cost must match a token entry, so coin-priced tiles (General tab) are ignored
+                const entry = entries.find(
+                    (e) => e.itemHrid === itemHrid && e.tokenCost === cost && tokenValuation_js.DUNGEON_TOKEN_HRIDS.has(e.currencyHrid)
+                );
+                this.renderTile(tile, entry, bestByCurrency);
+            });
+
+            document.querySelectorAll(LABYRINTH_TILE_SELECTOR).forEach((tile) => {
+                const itemHrid = this.extractItemHrid(tile);
+                const entry = entries.find((e) => e.itemHrid === itemHrid && e.currencyHrid === LABYRINTH_TOKEN_HRID);
+                this.renderTile(tile, entry, bestByCurrency);
+            });
+        }
+
+        renderTile(tile, entry, bestByCurrency) {
+            const existing = tile.querySelector(`.${VALUE_CLASS}`);
+            if (!entry) {
+                existing?.remove();
+                return;
+            }
+            const row = getShopRowValue(entry);
+            if (!row) {
+                existing?.remove();
+                return;
+            }
+
+            const element = existing || document.createElement('div');
+            if (!existing) {
+                element.className = VALUE_CLASS;
+                element.style.cssText = 'font-size: 0.7rem; text-align: center; margin-top: 2px; line-height: 1.3;';
+                tile.appendChild(element);
+            }
+
+            const isBest = !row.isAssumed && bestByCurrency.get(entry.currencyHrid) === entry.itemHrid;
+            const value = row.perToken > 0 ? formatters_js.formatKMB(row.perToken) : '—';
+            const suffix = (row.isOutlier ? ' ⚠' : '') + (row.isAssumed ? '*' : '');
+            element.textContent = `${isBest ? '★ ' : ''}${i18n_js.t('shopTokenValue.perToken', { value })}${suffix}`;
+            element.style.color = isBest ? '#4ade80' : '#aaa';
+            element.style.fontWeight = isBest ? '600' : '400';
+            element.title = row.isAssumed
+                ? i18n_js.t('shopTokenValue.assumedTooltip', { value: formatters_js.formatKMB(row.assumedValue) })
+                : isBest
+                  ? i18n_js.t('shopTokenValue.bestTooltip')
+                  : '';
+        }
+    }
+
+    const shopTokenValues = new ShopTokenValues();
+
+    var shopTokenValues$1 = {
+        name: 'Shop Token Values',
+        initialize: () => shopTokenValues.initialize(),
+        cleanup: () => shopTokenValues.disable(),
+    };
 
     /**
      * Item Navigation Utilities
@@ -27157,6 +27491,7 @@ ${starCSS}
         hideGuildBadge,
         draggableModals: draggableModals$1,
         shopMaxBuyButton,
+        shopTokenValues: shopTokenValues$1,
         collectionNavigation: collectionNavigation$1,
         collectionFilters,
         chatCommands,
@@ -27187,4 +27522,4 @@ ${starCSS}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Utils.tokenValuation, Toolasha.Utils.marketData, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);

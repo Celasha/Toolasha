@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.24.5
+ * Version: 3.25.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2453,7 +2453,40 @@
             colRevenuePerHour: 'Revenue/Hr',
             colCostPerHour: 'Cost/Hr',
         },
+        scrollPlanner: {
+            planButton: 'Plan scrolls',
+            modalTitle: 'Scroll Planner',
+            modalHelp: 'Choose how many of each scroll to open. Start walks you through them one at a time.',
+            ownedLabel: (p) => `Owned: ${p.count}`,
+            overOwned: (p) => `Only ${p.owned} owned`,
+            allButton: 'All',
+            totalLabel: (p) => `Total: ${p.count}`,
+            clear: 'Clear',
+            loadLast: 'Load last plan',
+            loadLastEmpty: 'No previous plan saved yet.',
+            loadedLast: 'Loaded your last plan.',
+            start: 'Start',
+            close: 'Close',
+            nothingPlanned: 'Enter a quantity for at least one scroll.',
+            nothingOwned: 'You do not own any of the planned scrolls.',
+            barProgress: (p) => `Scroll ${p.index} of ${p.total}: ${p.name} ×${p.quantity}`,
+            barOpenMenuHint: 'Click the scroll in your inventory, then press the highlighted Open button.',
+            barMenuReadyHint: 'Quantity is filled in. Press the highlighted Open button.',
+            barPrefillFailed: (p) => `Could not fill in the quantity. Set it to ${p.quantity} yourself, then press Open.`,
+            shortfallNote: (p) => `Not enough owned (planned → owned): ${p.items}`,
+            showScroll: 'Show scroll',
+            skip: 'Skip',
+            stop: 'Stop',
+            doneTitle: 'All planned scrolls opened.',
+            doneSkipped: (p) => `Skipped: ${p.items}`,
+        },
+        shopTokenValue: {
+            perToken: (p) => `${p.value} / token`,
+            assumedTooltip: (p) => `Untradeable item; Assumed Value: ${p.value}`,
+            bestTooltip: 'Best value per token in this shop',
+        },
         alchemyBestItems: {
+            untradeableTooltip: (p) => `Untradeable item; Assumed Value: ${p.value}`,
             tabLabel: 'Best Items',
             modalTitle: (p) => `Best Items — ${p.type}`,
             sortByLabel: 'Sort by:',
@@ -4119,6 +4152,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         patientBuy: 'Buy: Bid / Sell: Bid (Patient Buy / Instant Sell)',
                     },
                 },
+                untradableCapeBaseValue: {
+                    label: 'Untradable capes: base value',
+                    options: {
+                        zero: 'Nothing (0)',
+                        mirror: 'Same as a Mirror of Protection',
+                    },
+                    help: 'Capes (including the Chimerical Quiver and Enchanted Cloak) cannot be traded, so they have no market price. Sets what an unrefined cape is assumed to be worth in alchemy profit, enhancement costs, net worth and chest values. Refined and enhanced capes add their refinement cost and average enhancement cost (using your own stats) on top. Capes are never taxed, since they cannot be sold.',
+                },
                 profitCalc_pricingNaming: {
                     label: 'Pricing mode naming convention',
                     help: 'Show pricing modes as "Instant Buy / Instant Sell" instead of "Buy: Ask / Sell: Bid"',
@@ -4227,6 +4268,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Auto-click "All": Skip Scroll of... items',
                     help: 'When enabled, Scroll of... items from the Labyrinth are not auto-opened',
                 },
+                scrollPlanner: {
+                    label: 'Scroll Planner: plan and step through opening scrolls',
+                    help: 'Adds a "Plan scrolls" button to Scroll of... action menus. Choose how many of each scroll to open, then be walked through them one at a time with the quantity pre-filled. Your last plan can be loaded on any character.',
+                },
                 openableAnalytics: {
                     label: 'Openable Analytics: Track Actual vs Expected Value + Luck',
                     help: 'Shows Actual Value, Expected Value, and Luck for chests/crates/caches you open, plus a character-scoped Analytics view with session/lifetime history',
@@ -4331,6 +4376,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 labyrinthTracker: {
                     label: 'Labyrinth best level tracker',
                     help: 'Tracks the highest recommended level enemy defeated per monster type and shows it in the Automation tab',
+                },
+                shopTokenValues: {
+                    label: 'Shop: Show value per token',
+                    help: 'Shows the market value per token of each entry in the Dungeon and Labyrinth shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
                 },
                 labyrinthShopPrices: {
                     label: 'Labyrinth Shop: Show market prices',
@@ -5410,6 +5459,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         patientBuy: '购买：买价 / 出售：买价（耐心购买 / 即时出售）',
                     },
                 },
+                untradableCapeBaseValue: {
+                    label: '不可交易披风：基础价值',
+                    options: {
+                        zero: '无（0）',
+                        mirror: '与保护之镜相同',
+                    },
+                    help: '披风（包括奇幻箭袋和魔法斗篷）无法交易，因此没有市场价格。设置未精炼披风在炼金利润、强化成本、净资产和宝箱价值中的假定价值。精炼和强化后的披风会在此基础上加上精炼成本和平均强化成本（使用你自己的属性）。披风无法出售，因此不计市场税。',
+                },
                 profitCalc_pricingNaming: {
                     label: '定价模式命名方式',
                     help: '以“即时购买 / 即时出售”的形式显示定价模式，而不是“购买：卖价 / 出售：买价”',
@@ -5508,6 +5565,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 autoAllButton_excludeSeals: {
                     label: '自动点击“全部”：跳过“卷轴”类物品',
                     help: '启用后，迷宫中的各类卷轴不会被自动开启',
+                },
+                scrollPlanner: {
+                    label: '卷轴规划器：规划并逐个引导开启卷轴',
+                    help: '在“卷轴”类物品的操作菜单中添加“规划卷轴”按钮。选择每种卷轴要开启的数量，随后会逐个引导你开启并预填数量。上次的方案可在任意角色上载入。',
                 },
                 openableAnalytics: {
                     label: '开箱分析：追踪实际与期望价值对比及幸运值',
@@ -5608,6 +5669,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 labyrinthTracker: {
                     label: '迷宫最高等级追踪器',
                     help: '追踪每种怪物类型已击败的最高推荐等级，并在自动化标签页中显示',
+                },
+                shopTokenValues: {
+                    label: '商店：显示每代币价值',
+                    help: '在地下城商店和迷宫商店中显示每个商品的每代币市场价值，并标出各代币的最佳选择。不可交易的披风按披风基础价值设置显示并以星号标记，且不会被标为最佳。',
                 },
                 labyrinthShopPrices: {
                     label: '迷宫商店：显示市场价格',
@@ -7172,7 +7237,40 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             csvColEnhancementLevelFull: '强化等级',
             csvColItemUsedHeader: (p) => `${p.name}使用量`,
         },
+        scrollPlanner: {
+            planButton: '规划卷轴',
+            modalTitle: '卷轴规划器',
+            modalHelp: '选择每种卷轴要开启的数量。点击“开始”后将逐个引导你开启。',
+            ownedLabel: (p) => `持有：${p.count}`,
+            overOwned: (p) => `仅持有 ${p.owned} 个`,
+            allButton: '全部',
+            totalLabel: (p) => `合计：${p.count}`,
+            clear: '清空',
+            loadLast: '载入上次方案',
+            loadLastEmpty: '尚未保存过方案。',
+            loadedLast: '已载入上次方案。',
+            start: '开始',
+            close: '关闭',
+            nothingPlanned: '请至少为一种卷轴输入数量。',
+            nothingOwned: '你没有方案中的任何卷轴。',
+            barProgress: (p) => `第 ${p.index} / ${p.total} 个：${p.name} ×${p.quantity}`,
+            barOpenMenuHint: '请点击背包中的该卷轴，然后按下高亮的“开启”按钮。',
+            barMenuReadyHint: '数量已填好。请按下高亮的“开启”按钮。',
+            barPrefillFailed: (p) => `无法自动填入数量。请手动设为 ${p.quantity}，然后按“开启”。`,
+            shortfallNote: (p) => `持有数量不足（计划 → 持有）：${p.items}`,
+            showScroll: '显示卷轴',
+            skip: '跳过',
+            stop: '停止',
+            doneTitle: '所有计划中的卷轴均已开启。',
+            doneSkipped: (p) => `已跳过：${p.items}`,
+        },
+        shopTokenValue: {
+            perToken: (p) => `${p.value} / 代币`,
+            assumedTooltip: (p) => `不可交易物品；假定价值：${p.value}`,
+            bestTooltip: '本商店中每代币价值最高',
+        },
         alchemyBestItems: {
+            untradeableTooltip: (p) => `不可交易物品；假定价值：${p.value}`,
             tabLabel: '最佳物品',
             modalTitle: (p) => `最佳物品 —— ${p.type}`,
             sortByLabel: '排序方式：',
@@ -8987,6 +9085,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     default: true,
                     help: 'Adds a Max button to Shop, Task Shop, Labyrinth Shop, and Cowbell Store buy dialogs that fills in the most you can afford',
                 },
+                shopTokenValues: {
+                    id: 'shopTokenValues',
+                    label: 'Shop: Show value per token',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows the market value per token of each entry in the Dungeon and Labyrinth shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
+                },
                 notificationLog_maxEntries: {
                     id: 'notificationLog_maxEntries',
                     label: 'Chat: Max notifications to keep',
@@ -10272,6 +10377,17 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         { value: 'patientBuy', label: 'Buy: Bid / Sell: Bid (Patient Buy / Instant Sell)' },
                     ],
                 },
+                untradableCapeBaseValue: {
+                    id: 'untradableCapeBaseValue',
+                    label: 'Untradable capes: base value',
+                    type: 'select',
+                    default: 'zero',
+                    options: [
+                        { value: 'zero', label: 'Nothing (0)' },
+                        { value: 'mirror', label: 'Same as a Mirror of Protection' },
+                    ],
+                    help: 'Capes (including the Chimerical Quiver and Enchanted Cloak) cannot be traded, so they have no market price. Sets what an unrefined cape is assumed to be worth in alchemy profit, enhancement costs, net worth and chest values. Refined and enhanced capes add their refinement cost and average enhancement cost (using your own stats) on top. Capes are never taxed, since they cannot be sold.',
+                },
                 profitCalc_pricingNaming: {
                     id: 'profitCalc_pricingNaming',
                     label: 'Pricing mode naming convention',
@@ -10465,6 +10581,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'checkbox',
                     default: true,
                     help: 'When enabled, Scroll of... items from the Labyrinth are not auto-opened',
+                },
+                scrollPlanner: {
+                    id: 'scrollPlanner',
+                    label: 'Scroll Planner: plan and step through opening scrolls',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a "Plan scrolls" button to Scroll of... action menus. Choose how many of each scroll to open, then be walked through them one at a time with the quantity pre-filled. Your last plan can be loaded on any character.',
                 },
                 openableAnalytics: {
                     id: 'openableAnalytics',

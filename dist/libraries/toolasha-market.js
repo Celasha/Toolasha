@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.24.5
+ * Version: 3.25.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, profitHelpers_js, warningIcon_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, marketplaceSession_js, materialCalculator_js, loadoutState, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
+(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, profitHelpers_js, warningIcon_js, enhancementConfig_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, dom, marketplaceSession_js, materialCalculator_js, loadoutState, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -196,6 +196,71 @@
         // Parse plain number
         const parsed = parseFloat(text);
         return isNaN(parsed) ? defaultValue : parsed;
+    }
+
+    /**
+     * Untradable Cape Value
+     *
+     * Capes (Chance, Gatherer, Artificer, Culinary, Sinister), the Chimerical Quiver, the Enchanted
+     * Cloak and their refined versions cannot be traded, so they never have a market price. Anything that prices a cape (alchemy profit, the
+     * enhancement path, net worth, chest EV) would otherwise drop it or treat it as free by accident.
+     * This module owns the single decision of what an unrefined cape's base value is: nothing (the
+     * default, matching how the enhancement path already behaved) or the price of a Mirror of
+     * Protection, which functions as a copy of any equipment.
+     *
+     * Refined and enhanced values are built on top of this base by the callers (base value + refinement
+     * cost + average enhancement cost); see features/enhancement/untradable-cape-value.js.
+     */
+
+
+    const CAPE_BASE_VALUE_SETTING = 'untradableCapeBaseValue';
+    const CAPE_BASE_VALUE_ZERO = 'zero';
+    const CAPE_BASE_VALUE_MIRROR = 'mirror';
+
+    const MIRROR_OF_PROTECTION_HRID = '/items/mirror_of_protection';
+    // The Chimerical Quiver and Enchanted Cloak are the ranged and magic equivalents of the capes
+    const CAPE_HRID_PATTERN = /^\/items\/[a-z]+_(cape|quiver|cloak)(_refined)?$/;
+    const REFINED_CAPE_PATTERN = /_(cape|quiver|cloak)_refined$/;
+
+    /**
+     * @param {string} itemHrid
+     * @returns {boolean} True for a cape that has no market because it cannot be traded
+     */
+    function isUntradableCape(itemHrid) {
+        if (typeof itemHrid !== 'string' || !CAPE_HRID_PATTERN.test(itemHrid)) {
+            return false;
+        }
+        return dataManager.getItemDetails(itemHrid)?.isTradable !== true;
+    }
+
+    /**
+     * @param {string} itemHrid
+     * @returns {boolean} True for the refined version of a cape
+     */
+    function isRefinedCape(itemHrid) {
+        return typeof itemHrid === 'string' && REFINED_CAPE_PATTERN.test(itemHrid);
+    }
+
+    /**
+     * Value assumed for one unrefined, unenhanced cape.
+     * @param {'buy'|'sell'} [side='buy'] - Price side used when the Mirror of Protection is the stand-in
+     * @returns {number} 0, or the Mirror of Protection price when the setting is on "mirror"
+     */
+    function getCapeBaseValue(side = 'buy') {
+        if (config.getSettingValue(CAPE_BASE_VALUE_SETTING, CAPE_BASE_VALUE_ZERO) !== CAPE_BASE_VALUE_MIRROR) {
+            return 0;
+        }
+        return marketData_js.getItemPrice(MIRROR_OF_PROTECTION_HRID, { context: 'profit', side }) || 0;
+    }
+
+    /**
+     * Current setting value, for use in cache keys.
+     * @returns {string}
+     */
+    function getCapeBaseValueMode() {
+        return config.getSettingValue(CAPE_BASE_VALUE_SETTING, CAPE_BASE_VALUE_ZERO) === CAPE_BASE_VALUE_MIRROR
+            ? CAPE_BASE_VALUE_MIRROR
+            : CAPE_BASE_VALUE_ZERO;
     }
 
     /**
@@ -817,11 +882,17 @@
         const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
         const useCraftingCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost');
         // Ask drives the decision: use crafted if ask is missing OR crafted ask is cheaper
-        const askIsCrafted = useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
+        // An untradable cape is always priced by getRealisticBaseItemPrice so the cape setting applies
+        // to its base cape too (the crafting-cost helpers know nothing about it).
+        const isUntradable = isUntradableCape(itemHrid);
+        const askIsCrafted =
+            !isUntradable && useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
         const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
         const baseBidPrice = askIsCrafted
             ? craftingCostBid || craftingCostAsk
-            : marketBid || getTooltipCraftCostCached(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
+            : marketBid ||
+              (isUntradable ? 0 : getTooltipCraftCostCached(itemHrid, 'bid')) ||
+              getRealisticBaseItemPrice(itemHrid);
         const baseCost = baseAskPrice;
         const baseAskIsCrafted = askIsCrafted;
         const baseBidIsCrafted = askIsCrafted;
@@ -893,6 +964,11 @@
         if (productionCost > 0) {
             return productionCost;
         }
+        // An unrefined untradable cape has no market, recipe or reference value: use the cape setting.
+        // (A refined cape always has a recipe, so its upgrade item is priced inside getProductionCost.)
+        if (isUntradableCape(itemHrid) && !isRefinedCape(itemHrid)) {
+            return getCapeBaseValue();
+        }
         return marketValuesAPI.getValue(itemHrid, 0) || 0;
     }
 
@@ -904,7 +980,7 @@
      * @private
      */
     function getProductionCost(itemHrid, mode = 'ask') {
-        const cacheKey = `${itemHrid}|${mode}`;
+        const cacheKey = `${itemHrid}|${mode}|${getCapeBaseValueMode()}`;
         if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
         const result = _computeProductionCost(itemHrid, mode);
         _costCache.set(cacheKey, result);
@@ -977,6 +1053,10 @@
                 upgradePrice = Math.min(upgradeMarketPrice, upgradeCraftPrice);
             } else {
                 upgradePrice = upgradeMarketPrice || upgradeCraftPrice;
+            }
+            // An untradable cape has no market and no recipe; it is worth what the cape setting assumes.
+            if (!(upgradePrice > 0) && isUntradableCape(action.upgradeItemHrid)) {
+                upgradePrice = getCapeBaseValue();
             }
             totalPrice += upgradePrice;
         }
@@ -2107,6 +2187,46 @@
     const profitCalculator = new ProfitCalculator();
 
     /**
+     * Untradable cape valuation (refined and enhanced)
+     *
+     * value = base cape value + refinement cost + average enhancement cost
+     *
+     * The base cape value comes from the cape setting (see utils/untradable-cape.js). Refinement and
+     * enhancement costs come from the existing enhancement path, evaluated with the player's OWN
+     * stats and equipped gear (not the manual enhancing parameters), since the point is to estimate
+     * what the player has actually invested in a cape they cannot buy.
+     */
+
+
+    /**
+     * Value of an untradable cape at an enhancement level.
+     * @param {string} itemHrid - Cape item HRID (base or refined)
+     * @param {number} [enhancementLevel=0]
+     * @returns {number|null} Value in coins, or null if the item is not an untradable cape
+     */
+    function getUntradableCapeValue(itemHrid, enhancementLevel = 0) {
+        if (!isUntradableCape(itemHrid)) {
+            return null;
+        }
+
+        const levelZeroValue = isRefinedCape(itemHrid) ? getRealisticBaseItemPrice(itemHrid) : getCapeBaseValue();
+        if (!(enhancementLevel > 0)) {
+            return levelZeroValue;
+        }
+
+        try {
+            const path = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementConfig_js.getAutoDetectedParams());
+            const totalCost = path?.optimalStrategy?.totalCost;
+            if (totalCost > 0) {
+                return totalCost;
+            }
+        } catch (error) {
+            console.error('[UntradableCapeValue] Enhancement path failed for', itemHrid, enhancementLevel, error);
+        }
+        return levelZeroValue;
+    }
+
+    /**
      * Special-Currency Shop Data (TLA-041E)
      *
      * Pure data normalization over the game's official special-currency shops
@@ -3010,7 +3130,14 @@ self.onmessage = function (e) {
                 // Purdora's boxes) - value it at its own best tradeable redemption. Shop currencies are
                 // not market-relistable, so no tax applies (same contract as shopRedemption above).
                 const currency = resolveCurrencyValue(itemHrid, { containerValueLookup });
-                if (!currency) return null;
+                if (!currency) {
+                    // Last resort for an untradable cape whose shop redemption could not be valued:
+                    // the cape setting's assumed value (nothing by default). Never taxed - it can't be sold.
+                    const capeValue = isUntradableCape(itemHrid) && !isRefinedCape(itemHrid) ? getCapeBaseValue('sell') : 0;
+                    return capeValue > 0
+                        ? { value: capeValue, source: 'untradableCape', needsTax: false, isOutlier: false }
+                        : null;
+                }
                 return {
                     value: currency.value,
                     source: 'specialCurrency',
@@ -3456,6 +3583,36 @@ self.onmessage = function (e) {
                 total: totalEssenceFindBonus,
             },
         };
+    }
+
+    /**
+     * Price info for an alchemy input or output. Untradable capes have no market, so they fall back
+     * to the cape setting (and are flagged so the sell side skips market tax: they can't be sold).
+     * @param {string} itemHrid
+     * @param {Object} options - getItemPriceOutlierInfo options
+     * @returns {{value: number|null, isOutlier: boolean, assumedUntradeable?: boolean}}
+     */
+    function getAlchemyPriceInfo(itemHrid, options) {
+        const info = marketData_js.getItemPriceOutlierInfo(itemHrid, options);
+        if (info.value !== null || !isUntradableCape(itemHrid)) {
+            return info;
+        }
+        return {
+            ...info,
+            value: getUntradableCapeValue(itemHrid, options?.enhancementLevel || 0),
+            isOutlier: false,
+            assumedUntradeable: true,
+        };
+    }
+
+    /**
+     * Value of a sold output after market tax. Assumed (untradable) values are never taxed.
+     * @param {number} price
+     * @param {{assumedUntradeable?: boolean}} priceInfo
+     * @returns {number}
+     */
+    function afterSellTax(price, priceInfo) {
+        return priceInfo.assumedUntradeable ? price : profitHelpers_js.calculatePriceAfterTax(price);
     }
 
     class AlchemyProfitCalculator {
@@ -3979,7 +4136,7 @@ self.onmessage = function (e) {
 
                 // Calculate input cost (material cost)
                 const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-                const pricePerItemInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, {
+                const pricePerItemInfo = getAlchemyPriceInfo(itemHrid, {
                     context: 'profit',
                     side: 'buy',
                     enhancementLevel,
@@ -4276,7 +4433,7 @@ self.onmessage = function (e) {
                 // Some items (e.g. Holy Milk) consume multiple copies per action - bulkMultiplier
                 // scales both the input consumed and the base decompose outputs received.
                 const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-                const pricePerItemInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, {
+                const pricePerItemInfo = getAlchemyPriceInfo(itemHrid, {
                     context: 'profit',
                     side: 'buy',
                     enhancementLevel,
@@ -4293,10 +4450,10 @@ self.onmessage = function (e) {
 
                 // 1. Base decompose items (always received on success)
                 for (const output of itemDetails.alchemyDetail.decomposeItems) {
-                    const outputPriceInfo = marketData_js.getItemPriceOutlierInfo(output.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPriceInfo = getAlchemyPriceInfo(output.itemHrid, { context: 'profit', side: 'sell' });
                     const outputPrice = outputPriceInfo.value;
                     if (outputPrice !== null) {
-                        const afterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
+                        const afterTax = afterSellTax(outputPrice, outputPriceInfo);
                         const outputCount = output.count * bulkMultiplier;
                         const dropValue = afterTax * outputCount;
                         outputValue += dropValue;
@@ -4566,6 +4723,12 @@ self.onmessage = function (e) {
                 const addOutput = (outputHrid, count) => {
                     const prices = marketData_js.getItemPrices(outputHrid, 0);
                     if (!prices) {
+                        // An untradable cape can't be sold, so it is valued untaxed on both sides
+                        if (isUntradableCape(outputHrid)) {
+                            const capeValue = (getUntradableCapeValue(outputHrid, 0) ?? 0) * count;
+                            totalAsk += capeValue;
+                            totalBid += capeValue;
+                        }
                         return;
                     }
                     const taxRate = excludeSellTax ? 0 : outputHrid === profitConstants_js.COWBELL_BAG_HRID ? profitConstants_js.COWBELL_BAG_TAX : profitConstants_js.MARKET_TAX;
@@ -4696,7 +4859,7 @@ self.onmessage = function (e) {
 
                 // Get input cost (market price of the refined item being unrefined, at its own level)
                 const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-                const pricePerItemInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, {
+                const pricePerItemInfo = getAlchemyPriceInfo(itemHrid, {
                     context: 'profit',
                     side: 'buy',
                     enhancementLevel,
@@ -4711,7 +4874,7 @@ self.onmessage = function (e) {
                 // (enhancement level is preserved, per the native client's Unrefine drop table), plus
                 // refinement shards. Neither output scales with bulkMultiplier there - equipment is
                 // never bulk-processed the way stackable materials are.
-                const outputPriceInfo = marketData_js.getItemPriceOutlierInfo(unrefineDetail.baseItemHrid, {
+                const outputPriceInfo = getAlchemyPriceInfo(unrefineDetail.baseItemHrid, {
                     context: 'profit',
                     side: 'sell',
                     enhancementLevel,
@@ -4720,7 +4883,7 @@ self.onmessage = function (e) {
                 if (outputPrice === null) {
                     return null; // No market data
                 }
-                const baseItemAfterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
+                const baseItemAfterTax = afterSellTax(outputPrice, outputPriceInfo);
 
                 const dropDetails = [
                     {
@@ -5037,7 +5200,7 @@ self.onmessage = function (e) {
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
 
                 // Get input cost (market price of the item being transmuted)
-                const inputPriceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'buy' });
+                const inputPriceInfo = getAlchemyPriceInfo(itemHrid, { context: 'profit', side: 'buy' });
                 const inputPrice = inputPriceInfo.value;
                 if (inputPrice === null) {
                     return null; // No market data
@@ -5063,10 +5226,10 @@ self.onmessage = function (e) {
                         selfReturnCount = averageCount * bulkMultiplier;
                     }
 
-                    const outputPriceInfo = marketData_js.getItemPriceOutlierInfo(drop.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPriceInfo = getAlchemyPriceInfo(drop.itemHrid, { context: 'profit', side: 'sell' });
                     const outputPrice = outputPriceInfo.value;
                     if (outputPrice !== null) {
-                        const afterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
+                        const afterTax = afterSellTax(outputPrice, outputPriceInfo);
                         // Expected value: price × dropRate × averageCount × bulkMultiplier
                         const dropValue = afterTax * drop.dropRate * averageCount * bulkMultiplier;
 
@@ -12930,7 +13093,7 @@ self.onmessage = function (e) {
 
             const itemStyle = 'display: flex; align-items: center; gap: 4px;';
             const tileStyle =
-                'display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 8px; font-size: 11px; flex: none;';
+                'display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 8px; font-size: 11px; flex: none; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;';
 
             // Brynless Mode drops the BO/SO icon tiles but keeps their text labels. The unclaimed tile
             // stays: it is the only thing identifying that number.
@@ -12939,7 +13102,7 @@ self.onmessage = function (e) {
                 ? `<span style="${tileStyle} background: rgba(124, 184, 255, 0.16);">🛒</span>`
                 : '';
             const sellIcon = showOrderIcons
-                ? `<span style="${tileStyle} background: rgba(74, 222, 128, 0.16);">🏷</span>`
+                ? `<span style="${tileStyle} background: rgba(74, 222, 128, 0.16);">🏷️</span>`
                 : '';
 
             // Update display
@@ -21285,6 +21448,13 @@ self.onmessage = function (e) {
     async function calculateItemValue(item, priceCache = null) {
         const { itemHrid, enhancementLevel = 0, count = 1 } = item;
 
+        // Untradable capes have no market: value them at base value + refinement + the average cost of
+        // enhancing them with the player's own stats. Not cached - it depends on current gear and the
+        // cape setting, neither of which the enhancement cache is invalidated by.
+        if (isUntradableCape(itemHrid)) {
+            return (getUntradableCapeValue(itemHrid, enhancementLevel) ?? 0) * count;
+        }
+
         let itemValue = 0;
 
         // Check if high enhancement cost mode is enabled
@@ -21757,7 +21927,7 @@ self.onmessage = function (e) {
             // Check if this specific item needs worker processing
             let needsWorker = false;
 
-            if (enhancementLevel >= 1) {
+            if (enhancementLevel >= 1 && !isUntradableCape(item.itemHrid)) {
                 // Check if high enhancement cost mode applies
                 if (useHighEnhancementCost && enhancementLevel >= minLevel) {
                     needsWorker = true;
@@ -22366,7 +22536,7 @@ self.onmessage = function (e) {
      */
 
 
-    const STORE_NAME$1 = 'networthHistory';
+    const STORE_NAME$2 = 'networthHistory';
     const SNAPSHOT_INTERVAL = 60 * 60 * 1000; // 1 hour
     const MAX_DETAIL_SNAPSHOTS = 25; // ~24h of hourly snapshots + 1 buffer
 
@@ -22397,11 +22567,11 @@ self.onmessage = function (e) {
 
             // Load existing history from storage
             const storageKey = `networth_${this.characterId}`;
-            this.history = await storage.get(storageKey, STORE_NAME$1, []);
+            this.history = await storage.get(storageKey, STORE_NAME$2, []);
 
             // Load existing detail history from storage
             const detailKey = `networthDetail_${this.characterId}`;
-            this.detailHistory = await storage.get(detailKey, STORE_NAME$1, []);
+            this.detailHistory = await storage.get(detailKey, STORE_NAME$2, []);
 
             // Take an immediate first snapshot
             await this.takeSnapshot();
@@ -22440,10 +22610,10 @@ self.onmessage = function (e) {
 
             // Persist to storage
             const storageKey = `networth_${this.characterId}`;
-            await storage.set(storageKey, this.history, STORE_NAME$1, true);
+            await storage.set(storageKey, this.history, STORE_NAME$2, true);
 
             const detailKey = `networthDetail_${this.characterId}`;
-            await storage.set(detailKey, this.detailHistory, STORE_NAME$1, true);
+            await storage.set(detailKey, this.detailHistory, STORE_NAME$2, true);
         }
 
         /**
@@ -22573,7 +22743,7 @@ self.onmessage = function (e) {
             if (idx === -1) return;
             this.history.splice(idx, 1);
             const storageKey = `networth_${this.characterId}`;
-            await storage.set(storageKey, this.history, STORE_NAME$1);
+            await storage.set(storageKey, this.history, STORE_NAME$2);
         }
 
         /**
@@ -29138,6 +29308,28 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
     };
 
     /**
+     * Scroll Planner run state
+     * Tiny shared flag so other Inventory features (Auto All Button) can stand down while a guided
+     * scroll run owns the item action menu and its quantity field.
+     */
+
+    let runActive = false;
+
+    /**
+     * @param {boolean} active
+     */
+    function setScrollRunActive(active) {
+        runActive = Boolean(active);
+    }
+
+    /**
+     * @returns {boolean} True while a guided scroll run is in progress
+     */
+    function isScrollRunActive() {
+        return runActive;
+    }
+
+    /**
      * Auto All Button Feature
      * Automatically clicks the "All" button when opening loot boxes/containers
      */
@@ -29235,6 +29427,11 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                 return;
             }
 
+            // A guided scroll run owns the quantity field of Scroll of... menus
+            if (isScrollRunActive() && itemHrid.startsWith('/items/seal_of_')) {
+                return;
+            }
+
             // Skip seals if the exclude setting is on
             if (config.getSetting('autoAllButton_excludeSeals') && itemHrid.startsWith('/items/seal_of_')) {
                 return;
@@ -29300,6 +29497,851 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         name: 'Auto All Button',
         initialize: () => autoAllButton.initialize(),
         cleanup: () => autoAllButton.disable(),
+    };
+
+    /**
+     * Scroll Planner logic
+     * Pure helpers: which items count as scrolls, plan normalization, and run construction.
+     *
+     * A run is a list of steps, one per scroll type. Each step stores `targetCount`, the inventory
+     * count at which the step is finished (owned at run start minus the planned quantity). Because
+     * inventory is the source of truth, completion is just `owned <= targetCount`, which also makes a
+     * run resumable after a reload without storing an index.
+     */
+
+    const SCROLL_CATEGORY_HRID = '/item_categories/scroll';
+    const INVENTORY_LOCATION_HRID = '/item_locations/inventory';
+
+    /**
+     * Scroll item HRIDs in the game's own sort order.
+     * @param {Object} itemDetailMap - init_client_data itemDetailMap
+     * @returns {string[]}
+     */
+    function getScrollHrids(itemDetailMap) {
+        if (!itemDetailMap) {
+            return [];
+        }
+        return Object.entries(itemDetailMap)
+            .filter(([, item]) => item?.categoryHrid === SCROLL_CATEGORY_HRID && item.isOpenable)
+            .sort(([, a], [, b]) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0))
+            .map(([hrid]) => hrid);
+    }
+
+    /**
+     * @param {Array} characterItems
+     * @param {string} itemHrid
+     * @returns {number} Unenhanced inventory count of the item
+     */
+    function getOwnedCount(characterItems, itemHrid) {
+        if (!Array.isArray(characterItems)) {
+            return 0;
+        }
+        let total = 0;
+        for (const item of characterItems) {
+            if (
+                item?.itemHrid === itemHrid &&
+                item.itemLocationHrid === INVENTORY_LOCATION_HRID &&
+                !(item.enhancementLevel > 0)
+            ) {
+                total += item.count || 0;
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Keep only positive whole-number quantities for known scrolls.
+     * @param {*} rawPlan - Possibly stale or malformed stored plan
+     * @param {string[]} scrollHrids - Valid scroll HRIDs
+     * @returns {Object<string, number>}
+     */
+    function normalizePlan(rawPlan, scrollHrids) {
+        const valid = new Set(scrollHrids);
+        const plan = {};
+        if (!rawPlan || typeof rawPlan !== 'object') {
+            return plan;
+        }
+        for (const [hrid, quantity] of Object.entries(rawPlan)) {
+            const whole = Math.floor(Number(quantity));
+            if (valid.has(hrid) && whole > 0) {
+                plan[hrid] = whole;
+            }
+        }
+        return plan;
+    }
+
+    /**
+     * Build a run from a plan against what this character owns.
+     * @param {Object<string, number>} plan
+     * @param {string[]} scrollHrids - Ordering of steps
+     * @param {Array} characterItems
+     * @returns {{steps: Array<{itemHrid: string, quantity: number, planned: number, targetCount: number, skipped: boolean}>,
+     *   shortfalls: Array<{itemHrid: string, planned: number, owned: number}>}}
+     */
+    function buildRun(plan, scrollHrids, characterItems) {
+        const steps = [];
+        const shortfalls = [];
+        for (const itemHrid of scrollHrids) {
+            const planned = plan[itemHrid];
+            if (!(planned > 0)) {
+                continue;
+            }
+            const owned = getOwnedCount(characterItems, itemHrid);
+            const quantity = Math.min(planned, owned);
+            if (quantity < planned) {
+                shortfalls.push({ itemHrid, planned, owned });
+            }
+            if (quantity > 0) {
+                steps.push({ itemHrid, quantity, planned, targetCount: owned - quantity, skipped: false });
+            }
+        }
+        return { steps, shortfalls };
+    }
+
+    /**
+     * @param {{itemHrid: string, targetCount: number, skipped: boolean}} step
+     * @param {Array} characterItems
+     * @returns {boolean}
+     */
+    function isStepFinished(step, characterItems) {
+        return step.skipped || getOwnedCount(characterItems, step.itemHrid) <= step.targetCount;
+    }
+
+    /**
+     * First unfinished step, or null when the run is complete.
+     * @param {Array} steps
+     * @param {Array} characterItems
+     * @returns {{step: Object, index: number}|null}
+     */
+    function getCurrentStep(steps, characterItems) {
+        for (let index = 0; index < steps.length; index++) {
+            if (!isStepFinished(steps[index], characterItems)) {
+                return { step: steps[index], index };
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Scrolls still to open for a step (shrinks as the player opens them).
+     * @param {{itemHrid: string, targetCount: number}} step
+     * @param {Array} characterItems
+     * @returns {number}
+     */
+    function getRemainingQuantity(step, characterItems) {
+        return Math.max(0, getOwnedCount(characterItems, step.itemHrid) - step.targetCount);
+    }
+
+    /**
+     * Scroll Planner storage
+     * - The last plan used is account-wide, so it can be loaded on any character.
+     * - An in-progress run is per character (it describes that character's inventory).
+     */
+
+
+    const STORE_NAME$1 = 'settings';
+    const LAST_PLAN_KEY = 'scrollPlanner_lastPlan';
+
+    function runKey(characterId) {
+        return `scrollPlanner_run:${characterId}`;
+    }
+
+    /**
+     * @returns {Promise<Object|null>} Last plan used (itemHrid -> quantity), or null
+     */
+    async function loadLastPlan() {
+        return storage.getJSON(LAST_PLAN_KEY, STORE_NAME$1, null);
+    }
+
+    /**
+     * @param {Object<string, number>} plan
+     * @returns {Promise<boolean>}
+     */
+    async function saveLastPlan(plan) {
+        return storage.setJSON(LAST_PLAN_KEY, plan, STORE_NAME$1, true);
+    }
+
+    /**
+     * @param {string} characterId
+     * @returns {Promise<Object|null>} Saved in-progress run for this character, or null
+     */
+    async function loadRun(characterId) {
+        if (!characterId) {
+            return null;
+        }
+        return storage.getJSON(runKey(characterId), STORE_NAME$1, null);
+    }
+
+    /**
+     * @param {string} characterId
+     * @param {Object} run
+     * @returns {Promise<boolean>}
+     */
+    async function saveRun(characterId, run) {
+        if (!characterId) {
+            return false;
+        }
+        return storage.setJSON(runKey(characterId), run, STORE_NAME$1, true);
+    }
+
+    /**
+     * @param {string} characterId
+     * @returns {Promise<boolean>}
+     */
+    async function clearRun(characterId) {
+        if (!characterId) {
+            return false;
+        }
+        return storage.setJSON(runKey(characterId), null, STORE_NAME$1, true);
+    }
+
+    /**
+     * Scroll Planner
+     * Plan how many of each Labyrinth scroll to open, then be walked through opening them one at a
+     * time: the scroll's action menu is opened, its quantity is filled in, and the game's own Open
+     * button is highlighted. The player still presses Open, so nothing is spent unattended.
+     *
+     * - The "Plan scrolls" button lives in the scroll's item action menu, so it works from any
+     *   inventory view, including the Toolasha custom tabs.
+     * - The last plan used is stored account-wide; "Load last plan" brings it to any character.
+     * - An in-progress run is stored per character and survives a reload.
+     */
+
+
+    const OBSERVER_NAME = 'ScrollPlanner_menu';
+    const BUTTON_CLASS = 'toolasha-scroll-planner-btn';
+    const HIGHLIGHT_OUTLINE = '2px solid #fbbf24';
+    const RUN_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+    const PREFILL_CHECK_DELAY_MS = 150;
+    const AUTO_OPEN_DELAY_MS = 150;
+
+    const CSS_FONT = 'font-family: inherit; font-size: 13px;';
+
+    class ScrollPlanner {
+        constructor() {
+            this.unregisterMenu = null;
+            this.onItemsUpdated = null;
+            this.modal = null;
+            this.bar = null;
+            this.draft = {};
+            this.run = null; // { startedAt, steps }
+            this.shortfalls = [];
+            this.autoOpenedHrid = null;
+            this.prefillFailedHrid = null;
+            this.nameToHrid = null;
+            this.timers = new Set();
+        }
+
+        /**
+         * Initialize the feature
+         */
+        async initialize() {
+            if (!config.getSetting('scrollPlanner')) {
+                return;
+            }
+
+            this.unregisterMenu = domObserver.onClass(OBSERVER_NAME, 'Item_actionMenu', (menu) => {
+                this.handleActionMenu(menu);
+            });
+
+            this.onItemsUpdated = () => this.handleInventoryChange();
+            dataManager.on('items_updated', this.onItemsUpdated);
+
+            await this.resumeSavedRun();
+        }
+
+        /**
+         * Tear everything down
+         */
+        cleanup() {
+            if (this.unregisterMenu) {
+                this.unregisterMenu();
+                this.unregisterMenu = null;
+            }
+            if (this.onItemsUpdated) {
+                dataManager.off('items_updated', this.onItemsUpdated);
+                this.onItemsUpdated = null;
+            }
+            for (const timer of this.timers) {
+                clearTimeout(timer);
+            }
+            this.timers.clear();
+            this.modal?.remove();
+            this.bar?.remove();
+            this.modal = null;
+            this.bar = null;
+            this.run = null;
+            this.shortfalls = [];
+            this.autoOpenedHrid = null;
+            this.prefillFailedHrid = null;
+            this.nameToHrid = null;
+            this.draft = {};
+            setScrollRunActive(false);
+        }
+
+        // ---------------------------------------------------------------------
+        // Helpers
+        // ---------------------------------------------------------------------
+
+        schedule(callback, delay) {
+            const timer = setTimeout(() => {
+                this.timers.delete(timer);
+                callback();
+            }, delay);
+            this.timers.add(timer);
+        }
+
+        getScrollHrids() {
+            return getScrollHrids(dataManager.getInitClientData()?.itemDetailMap);
+        }
+
+        getItems() {
+            return dataManager.characterItems || [];
+        }
+
+        getScrollName(itemHrid) {
+            const fallback = dataManager.getItemDetails(itemHrid)?.name || itemHrid;
+            return getItemName(itemHrid, fallback);
+        }
+
+        /**
+         * Item name (English and translated) -> scroll HRID, for matching the menu's name label.
+         * @returns {Map<string, string>}
+         */
+        getNameLookup() {
+            if (!this.nameToHrid) {
+                this.nameToHrid = new Map();
+                for (const hrid of this.getScrollHrids()) {
+                    const englishName = dataManager.getItemDetails(hrid)?.name;
+                    if (englishName) {
+                        this.nameToHrid.set(englishName, hrid);
+                    }
+                    this.nameToHrid.set(this.getScrollName(hrid), hrid);
+                }
+            }
+            return this.nameToHrid;
+        }
+
+        /**
+         * @param {HTMLElement} menu - Item action menu
+         * @returns {string|null} Scroll HRID the menu belongs to, or null
+         */
+        resolveScrollHrid(menu) {
+            const nameEl = menu.querySelector('[class*="Item_name"]');
+            if (!nameEl) {
+                return null;
+            }
+            return this.getNameLookup().get(nameEl.textContent.trim()) || null;
+        }
+
+        getCharacterId() {
+            return dataManager.getCurrentCharacterId();
+        }
+
+        // ---------------------------------------------------------------------
+        // Item action menu
+        // ---------------------------------------------------------------------
+
+        handleActionMenu(menu) {
+            const itemHrid = this.resolveScrollHrid(menu);
+            if (!itemHrid) {
+                return;
+            }
+            this.injectPlanButton(menu);
+            this.applyStepToMenu(menu, itemHrid);
+        }
+
+        injectPlanButton(menu) {
+            if (menu.querySelector(`.${BUTTON_CLASS}`)) {
+                return;
+            }
+            const reference = menu.querySelector(':scope > button');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `${reference?.className || ''} ${BUTTON_CLASS}`.trim();
+            button.textContent = i18n_js.t('scrollPlanner.planButton');
+            button.addEventListener('click', () => this.openModal());
+            menu.appendChild(button);
+        }
+
+        /**
+         * If the menu belongs to the current step, fill in its quantity and highlight Open.
+         */
+        applyStepToMenu(menu, itemHrid) {
+            if (!this.run) {
+                return;
+            }
+            const current = getCurrentStep(this.run.steps, this.getItems());
+            if (!current || current.step.itemHrid !== itemHrid) {
+                return;
+            }
+
+            const quantity = getRemainingQuantity(current.step, this.getItems());
+            const input = menu.querySelector('[class*="Item_amountInputContainer"] input[type="number"]');
+            const openButton = menu.querySelector(':scope > button');
+
+            if (input) {
+                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                setter.call(input, String(quantity));
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            if (openButton) {
+                openButton.style.outline = HIGHLIGHT_OUTLINE;
+                openButton.style.outlineOffset = '2px';
+            }
+
+            // The game's Open label carries the quantity ("Open 3"); if it does not, the fill did not
+            // take and the player has to type it themselves.
+            this.schedule(() => {
+                const filled = input && openButton && input.value === String(quantity);
+                const labelMatches = openButton?.textContent.includes(String(quantity));
+                this.prefillFailedHrid = filled && labelMatches ? null : itemHrid;
+                this.renderBar();
+            }, PREFILL_CHECK_DELAY_MS);
+            this.prefillFailedHrid = null;
+            this.renderBar();
+        }
+
+        // ---------------------------------------------------------------------
+        // Run lifecycle
+        // ---------------------------------------------------------------------
+
+        async resumeSavedRun() {
+            const characterId = this.getCharacterId();
+            if (!characterId || !dataManager.characterItems) {
+                return;
+            }
+            const saved = await loadRun(characterId);
+            if (!saved?.steps?.length) {
+                return;
+            }
+            const stale = !(Date.now() - saved.startedAt < RUN_MAX_AGE_MS);
+            if (stale || !getCurrentStep(saved.steps, this.getItems())) {
+                await clearRun(characterId);
+                return;
+            }
+            this.run = saved;
+            setScrollRunActive(true);
+            this.renderBar();
+            this.autoOpenCurrentScroll();
+        }
+
+        async startRun(rawPlan) {
+            const plan = normalizePlan(rawPlan, this.getScrollHrids());
+            if (Object.keys(plan).length === 0) {
+                return { error: i18n_js.t('scrollPlanner.nothingPlanned') };
+            }
+
+            await saveLastPlan(plan);
+
+            const { steps, shortfalls } = buildRun(plan, this.getScrollHrids(), this.getItems());
+            if (steps.length === 0) {
+                return { error: i18n_js.t('scrollPlanner.nothingOwned') };
+            }
+
+            this.run = { startedAt: Date.now(), steps };
+            this.shortfalls = shortfalls;
+            this.autoOpenedHrid = null;
+            setScrollRunActive(true);
+            await saveRun(this.getCharacterId(), this.run);
+
+            this.closeModal();
+            this.renderBar();
+            this.autoOpenCurrentScroll();
+            return { error: null };
+        }
+
+        async stopRun() {
+            this.run = null;
+            this.shortfalls = [];
+            this.autoOpenedHrid = null;
+            this.prefillFailedHrid = null;
+            setScrollRunActive(false);
+            await clearRun(this.getCharacterId());
+            this.bar?.remove();
+            this.bar = null;
+        }
+
+        async skipCurrentStep() {
+            if (!this.run) {
+                return;
+            }
+            const current = getCurrentStep(this.run.steps, this.getItems());
+            if (current) {
+                current.step.skipped = true;
+                await saveRun(this.getCharacterId(), this.run);
+            }
+            this.handleInventoryChange();
+        }
+
+        handleInventoryChange() {
+            if (!this.run) {
+                return;
+            }
+            const current = getCurrentStep(this.run.steps, this.getItems());
+            if (!current) {
+                this.finishRun();
+                return;
+            }
+            if (this.autoOpenedHrid !== current.step.itemHrid) {
+                this.autoOpenCurrentScroll();
+            }
+            this.renderBar();
+        }
+
+        async finishRun() {
+            const skipped = this.run.steps.filter((step) => step.skipped).map((step) => step.itemHrid);
+            this.run = null;
+            this.autoOpenedHrid = null;
+            this.prefillFailedHrid = null;
+            setScrollRunActive(false);
+            await clearRun(this.getCharacterId());
+            this.renderBar({ finished: true, skipped });
+        }
+
+        // ---------------------------------------------------------------------
+        // Opening the scroll's action menu
+        // ---------------------------------------------------------------------
+
+        findInventoryTile(itemHrid) {
+            const inventory = document.querySelector('[class*="Inventory_items"]');
+            if (!inventory) {
+                return null;
+            }
+            const names = new Set([dataManager.getItemDetails(itemHrid)?.name, this.getScrollName(itemHrid)]);
+            for (const svg of inventory.querySelectorAll('[class*="Item_itemContainer"] svg[aria-label]')) {
+                if (names.has(svg.getAttribute('aria-label')) && svg.getClientRects().length > 0) {
+                    return svg;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Click the current scroll's inventory tile so the game opens its action menu. Done once per
+         * step; the bar's "Show scroll" button repeats it on demand.
+         */
+        autoOpenCurrentScroll(force = false) {
+            if (!this.run) {
+                return;
+            }
+            const current = getCurrentStep(this.run.steps, this.getItems());
+            if (!current) {
+                return;
+            }
+            const itemHrid = current.step.itemHrid;
+            if (!force && this.autoOpenedHrid === itemHrid) {
+                return;
+            }
+            this.autoOpenedHrid = itemHrid;
+            this.schedule(() => {
+                this.findInventoryTile(itemHrid)?.dispatchEvent(
+                    new MouseEvent('click', { bubbles: true, cancelable: true })
+                );
+            }, AUTO_OPEN_DELAY_MS);
+        }
+
+        // ---------------------------------------------------------------------
+        // Progress bar
+        // ---------------------------------------------------------------------
+
+        ensureBar() {
+            if (this.bar && document.body.contains(this.bar)) {
+                return this.bar;
+            }
+            this.bar = document.createElement('div');
+            this.bar.className = 'toolasha-scroll-planner-bar';
+            this.bar.style.cssText = `
+            position: fixed;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10001;
+            background: #2a2a2a;
+            border: 1px solid #fbbf24;
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #fff;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            max-width: 92vw;
+            ${CSS_FONT}
+        `;
+            document.body.appendChild(this.bar);
+            return this.bar;
+        }
+
+        makeButton(label, onClick, primary = false) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = label;
+            button.style.cssText = `
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 1px solid ${primary ? '#fbbf24' : '#666'};
+            background: ${primary ? '#fbbf24' : '#3a3a3a'};
+            color: ${primary ? '#000' : '#fff'};
+            cursor: pointer;
+            ${CSS_FONT}
+        `;
+            button.addEventListener('click', onClick);
+            return button;
+        }
+
+        makeLine(text, color = '#fff', bold = false) {
+            const line = document.createElement('div');
+            line.textContent = text;
+            line.style.cssText = `color: ${color}; ${bold ? 'font-weight: 600;' : ''}`;
+            return line;
+        }
+
+        renderBar(result = null) {
+            if (!this.run && !result) {
+                return;
+            }
+            const bar = this.ensureBar();
+            bar.replaceChildren();
+
+            if (result?.finished) {
+                bar.appendChild(this.makeLine(i18n_js.t('scrollPlanner.doneTitle'), '#4ade80', true));
+                if (result.skipped.length > 0) {
+                    const names = result.skipped.map((hrid) => this.getScrollName(hrid)).join(', ');
+                    bar.appendChild(this.makeLine(i18n_js.t('scrollPlanner.doneSkipped', { items: names }), '#aaa'));
+                }
+                const actions = document.createElement('div');
+                actions.style.cssText = 'margin-top: 8px; display: flex; gap: 8px; justify-content: flex-end;';
+                actions.appendChild(
+                    this.makeButton(
+                        i18n_js.t('scrollPlanner.close'),
+                        () => {
+                            this.bar?.remove();
+                            this.bar = null;
+                        },
+                        true
+                    )
+                );
+                bar.appendChild(actions);
+                return;
+            }
+
+            const current = getCurrentStep(this.run.steps, this.getItems());
+            if (!current) {
+                return;
+            }
+            const { step, index } = current;
+            const quantity = getRemainingQuantity(step, this.getItems());
+
+            bar.appendChild(
+                this.makeLine(
+                    i18n_js.t('scrollPlanner.barProgress', {
+                        index: index + 1,
+                        total: this.run.steps.length,
+                        name: this.getScrollName(step.itemHrid),
+                        quantity,
+                    }),
+                    '#fbbf24',
+                    true
+                )
+            );
+
+            if (this.prefillFailedHrid === step.itemHrid) {
+                bar.appendChild(this.makeLine(i18n_js.t('scrollPlanner.barPrefillFailed', { quantity }), '#f87171'));
+            } else if (document.querySelector('[class*="Item_actionMenu"]')) {
+                bar.appendChild(this.makeLine(i18n_js.t('scrollPlanner.barMenuReadyHint'), '#ddd'));
+            } else {
+                bar.appendChild(this.makeLine(i18n_js.t('scrollPlanner.barOpenMenuHint'), '#ddd'));
+            }
+
+            if (this.shortfalls.length > 0) {
+                const items = this.shortfalls
+                    .map((entry) => `${this.getScrollName(entry.itemHrid)} (${entry.planned} → ${entry.owned})`)
+                    .join(', ');
+                bar.appendChild(this.makeLine(i18n_js.t('scrollPlanner.shortfallNote', { items }), '#f59e0b'));
+            }
+
+            const actions = document.createElement('div');
+            actions.style.cssText = 'margin-top: 8px; display: flex; gap: 8px; justify-content: flex-end;';
+            actions.appendChild(this.makeButton(i18n_js.t('scrollPlanner.showScroll'), () => this.autoOpenCurrentScroll(true)));
+            actions.appendChild(this.makeButton(i18n_js.t('scrollPlanner.skip'), () => this.skipCurrentStep()));
+            actions.appendChild(this.makeButton(i18n_js.t('scrollPlanner.stop'), () => this.stopRun()));
+            bar.appendChild(actions);
+        }
+
+        // ---------------------------------------------------------------------
+        // Plan modal
+        // ---------------------------------------------------------------------
+
+        openModal() {
+            this.modal?.remove();
+            this.modal = document.createElement('div');
+            this.modal.className = 'toolasha-scroll-planner-modal';
+            this.modal.style.cssText = `
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        `;
+            this.modal.addEventListener('click', (event) => {
+                if (event.target === this.modal) {
+                    this.closeModal();
+                }
+            });
+            document.body.appendChild(this.modal);
+            this.renderModal('');
+        }
+
+        closeModal() {
+            this.modal?.remove();
+            this.modal = null;
+        }
+
+        renderModal(message, messageColor = '#f87171') {
+            if (!this.modal) {
+                return;
+            }
+            this.modal.replaceChildren();
+
+            const content = document.createElement('div');
+            content.style.cssText = `
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            min-width: 360px;
+            max-width: 95vw;
+            max-height: 90%;
+            overflow: auto;
+            color: #fff;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            ${CSS_FONT}
+        `;
+
+            const header = document.createElement('div');
+            header.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+            const title = document.createElement('h3');
+            title.textContent = i18n_js.t('scrollPlanner.modalTitle');
+            title.style.cssText = 'margin: 0; color: #fff;';
+            header.appendChild(title);
+            header.appendChild(this.makeButton('✕', () => this.closeModal()));
+            content.appendChild(header);
+
+            const help = this.makeLine(i18n_js.t('scrollPlanner.modalHelp'), '#aaa');
+            help.style.cssText += 'margin: 8px 0 12px;';
+            content.appendChild(help);
+
+            const totalLine = this.makeLine('', '#ddd');
+            const updateTotal = () => {
+                const total = Object.values(this.draft).reduce((sum, value) => sum + value, 0);
+                totalLine.textContent = i18n_js.t('scrollPlanner.totalLabel', { count: total });
+            };
+
+            for (const itemHrid of this.getScrollHrids()) {
+                content.appendChild(this.buildRow(itemHrid, updateTotal));
+            }
+
+            totalLine.style.cssText += 'margin-top: 10px;';
+            updateTotal();
+            content.appendChild(totalLine);
+
+            const status = this.makeLine(message, messageColor);
+            status.style.cssText += 'margin-top: 6px; min-height: 18px;';
+            content.appendChild(status);
+
+            const footer = document.createElement('div');
+            footer.style.cssText = 'margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end;';
+            footer.appendChild(
+                this.makeButton(i18n_js.t('scrollPlanner.clear'), () => {
+                    this.draft = {};
+                    this.renderModal('');
+                })
+            );
+            footer.appendChild(this.makeButton(i18n_js.t('scrollPlanner.loadLast'), () => this.loadLastIntoDraft()));
+            footer.appendChild(
+                this.makeButton(
+                    i18n_js.t('scrollPlanner.start'),
+                    async () => {
+                        const result = await this.startRun(this.draft);
+                        if (result.error) {
+                            this.renderModal(result.error);
+                        }
+                    },
+                    true
+                )
+            );
+            content.appendChild(footer);
+
+            this.modal.appendChild(content);
+        }
+
+        buildRow(itemHrid, updateTotal) {
+            const owned = getOwnedCount(this.getItems(), itemHrid);
+
+            const row = document.createElement('div');
+            row.style.cssText = `display: flex; align-items: center; gap: 8px; padding: 3px 0; opacity: ${owned > 0 ? 1 : 0.55};`;
+
+            const name = document.createElement('span');
+            name.textContent = this.getScrollName(itemHrid);
+            name.style.cssText = 'flex: 1; min-width: 160px;';
+            row.appendChild(name);
+
+            const ownedLabel = document.createElement('span');
+            ownedLabel.textContent = i18n_js.t('scrollPlanner.ownedLabel', { count: owned });
+            ownedLabel.style.cssText = 'color: #aaa; min-width: 80px; text-align: right;';
+            row.appendChild(ownedLabel);
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = '0';
+            input.value = this.draft[itemHrid] > 0 ? String(this.draft[itemHrid]) : '';
+            input.style.cssText =
+                'width: 64px; padding: 2px 4px; background: #1f1f1f; color: #fff; border: 1px solid #555; border-radius: 4px;';
+            input.addEventListener('input', () => {
+                const value = Math.floor(Number(input.value));
+                if (value > 0) {
+                    this.draft[itemHrid] = value;
+                } else {
+                    delete this.draft[itemHrid];
+                }
+                input.style.borderColor = value > owned ? '#f87171' : '#555';
+                input.title = value > owned ? i18n_js.t('scrollPlanner.overOwned', { owned }) : '';
+                updateTotal();
+            });
+            input.dispatchEvent(new Event('input'));
+            row.appendChild(input);
+
+            row.appendChild(
+                this.makeButton(i18n_js.t('scrollPlanner.allButton'), () => {
+                    if (owned > 0) {
+                        this.draft[itemHrid] = owned;
+                        input.value = String(owned);
+                        input.dispatchEvent(new Event('input'));
+                    }
+                })
+            );
+
+            return row;
+        }
+
+        async loadLastIntoDraft() {
+            const last = normalizePlan(await loadLastPlan(), this.getScrollHrids());
+            if (Object.keys(last).length === 0) {
+                this.renderModal(i18n_js.t('scrollPlanner.loadLastEmpty'));
+                return;
+            }
+            this.draft = last;
+            this.renderModal(i18n_js.t('scrollPlanner.loadedLast'), '#4ade80');
+        }
+    }
+
+    const scrollPlanner = new ScrollPlanner();
+
+    var scrollPlanner$1 = {
+        name: 'Scroll Planner',
+        initialize: () => scrollPlanner.initialize(),
+        cleanup: () => scrollPlanner.cleanup(),
     };
 
     /**
@@ -37572,6 +38614,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         inventoryBadgePrices,
         dungeonTokenTooltips: dungeonTokenTooltips$1,
         autoAllButton: autoAllButton$1,
+        scrollPlanner: scrollPlanner$1,
         inventoryCategoryTotals,
         customTabsFeature: customTabsFeature$1,
         openableAnalytics,
@@ -37581,4 +38624,4 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.warningIcon, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.warningIcon, Toolasha.Utils.enhancementConfig, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);

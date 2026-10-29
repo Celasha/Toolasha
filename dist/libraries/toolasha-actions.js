@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.24.5
+ * Version: 3.25.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7027,6 +7027,71 @@
     }
 
     /**
+     * Untradable Cape Value
+     *
+     * Capes (Chance, Gatherer, Artificer, Culinary, Sinister), the Chimerical Quiver, the Enchanted
+     * Cloak and their refined versions cannot be traded, so they never have a market price. Anything that prices a cape (alchemy profit, the
+     * enhancement path, net worth, chest EV) would otherwise drop it or treat it as free by accident.
+     * This module owns the single decision of what an unrefined cape's base value is: nothing (the
+     * default, matching how the enhancement path already behaved) or the price of a Mirror of
+     * Protection, which functions as a copy of any equipment.
+     *
+     * Refined and enhanced values are built on top of this base by the callers (base value + refinement
+     * cost + average enhancement cost); see features/enhancement/untradable-cape-value.js.
+     */
+
+
+    const CAPE_BASE_VALUE_SETTING = 'untradableCapeBaseValue';
+    const CAPE_BASE_VALUE_ZERO = 'zero';
+    const CAPE_BASE_VALUE_MIRROR = 'mirror';
+
+    const MIRROR_OF_PROTECTION_HRID = '/items/mirror_of_protection';
+    // The Chimerical Quiver and Enchanted Cloak are the ranged and magic equivalents of the capes
+    const CAPE_HRID_PATTERN = /^\/items\/[a-z]+_(cape|quiver|cloak)(_refined)?$/;
+    const REFINED_CAPE_PATTERN = /_(cape|quiver|cloak)_refined$/;
+
+    /**
+     * @param {string} itemHrid
+     * @returns {boolean} True for a cape that has no market because it cannot be traded
+     */
+    function isUntradableCape(itemHrid) {
+        if (typeof itemHrid !== 'string' || !CAPE_HRID_PATTERN.test(itemHrid)) {
+            return false;
+        }
+        return dataManager.getItemDetails(itemHrid)?.isTradable !== true;
+    }
+
+    /**
+     * @param {string} itemHrid
+     * @returns {boolean} True for the refined version of a cape
+     */
+    function isRefinedCape(itemHrid) {
+        return typeof itemHrid === 'string' && REFINED_CAPE_PATTERN.test(itemHrid);
+    }
+
+    /**
+     * Value assumed for one unrefined, unenhanced cape.
+     * @param {'buy'|'sell'} [side='buy'] - Price side used when the Mirror of Protection is the stand-in
+     * @returns {number} 0, or the Mirror of Protection price when the setting is on "mirror"
+     */
+    function getCapeBaseValue(side = 'buy') {
+        if (config.getSettingValue(CAPE_BASE_VALUE_SETTING, CAPE_BASE_VALUE_ZERO) !== CAPE_BASE_VALUE_MIRROR) {
+            return 0;
+        }
+        return marketData_js.getItemPrice(MIRROR_OF_PROTECTION_HRID, { context: 'profit', side }) || 0;
+    }
+
+    /**
+     * Current setting value, for use in cache keys.
+     * @returns {string}
+     */
+    function getCapeBaseValueMode() {
+        return config.getSettingValue(CAPE_BASE_VALUE_SETTING, CAPE_BASE_VALUE_ZERO) === CAPE_BASE_VALUE_MIRROR
+            ? CAPE_BASE_VALUE_MIRROR
+            : CAPE_BASE_VALUE_ZERO;
+    }
+
+    /**
      * Enhancement Tooltip Module
      *
      * Provides enhancement analysis for item tooltips.
@@ -7645,11 +7710,17 @@
         const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
         const useCraftingCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost');
         // Ask drives the decision: use crafted if ask is missing OR crafted ask is cheaper
-        const askIsCrafted = useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
+        // An untradable cape is always priced by getRealisticBaseItemPrice so the cape setting applies
+        // to its base cape too (the crafting-cost helpers know nothing about it).
+        const isUntradable = isUntradableCape(itemHrid);
+        const askIsCrafted =
+            !isUntradable && useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
         const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
         const baseBidPrice = askIsCrafted
             ? craftingCostBid || craftingCostAsk
-            : marketBid || getTooltipCraftCostCached(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
+            : marketBid ||
+              (isUntradable ? 0 : getTooltipCraftCostCached(itemHrid, 'bid')) ||
+              getRealisticBaseItemPrice(itemHrid);
         const baseCost = baseAskPrice;
         const baseAskIsCrafted = askIsCrafted;
         const baseBidIsCrafted = askIsCrafted;
@@ -7721,6 +7792,11 @@
         if (productionCost > 0) {
             return productionCost;
         }
+        // An unrefined untradable cape has no market, recipe or reference value: use the cape setting.
+        // (A refined cape always has a recipe, so its upgrade item is priced inside getProductionCost.)
+        if (isUntradableCape(itemHrid) && !isRefinedCape(itemHrid)) {
+            return getCapeBaseValue();
+        }
         return marketValuesAPI.getValue(itemHrid, 0) || 0;
     }
 
@@ -7732,7 +7808,7 @@
      * @private
      */
     function getProductionCost(itemHrid, mode = 'ask') {
-        const cacheKey = `${itemHrid}|${mode}`;
+        const cacheKey = `${itemHrid}|${mode}|${getCapeBaseValueMode()}`;
         if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
         const result = _computeProductionCost(itemHrid, mode);
         _costCache.set(cacheKey, result);
@@ -7805,6 +7881,10 @@
                 upgradePrice = Math.min(upgradeMarketPrice, upgradeCraftPrice);
             } else {
                 upgradePrice = upgradeMarketPrice || upgradeCraftPrice;
+            }
+            // An untradable cape has no market and no recipe; it is worth what the cape setting assumes.
+            if (!(upgradePrice > 0) && isUntradableCape(action.upgradeItemHrid)) {
+                upgradePrice = getCapeBaseValue();
             }
             totalPrice += upgradePrice;
         }
@@ -30178,6 +30258,46 @@
     const alchemyProfitDisplay = new AlchemyProfitDisplay();
 
     /**
+     * Untradable cape valuation (refined and enhanced)
+     *
+     * value = base cape value + refinement cost + average enhancement cost
+     *
+     * The base cape value comes from the cape setting (see utils/untradable-cape.js). Refinement and
+     * enhancement costs come from the existing enhancement path, evaluated with the player's OWN
+     * stats and equipped gear (not the manual enhancing parameters), since the point is to estimate
+     * what the player has actually invested in a cape they cannot buy.
+     */
+
+
+    /**
+     * Value of an untradable cape at an enhancement level.
+     * @param {string} itemHrid - Cape item HRID (base or refined)
+     * @param {number} [enhancementLevel=0]
+     * @returns {number|null} Value in coins, or null if the item is not an untradable cape
+     */
+    function getUntradableCapeValue(itemHrid, enhancementLevel = 0) {
+        if (!isUntradableCape(itemHrid)) {
+            return null;
+        }
+
+        const levelZeroValue = isRefinedCape(itemHrid) ? getRealisticBaseItemPrice(itemHrid) : getCapeBaseValue();
+        if (!(enhancementLevel > 0)) {
+            return levelZeroValue;
+        }
+
+        try {
+            const path = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementConfig_js.getAutoDetectedParams());
+            const totalCost = path?.optimalStrategy?.totalCost;
+            if (totalCost > 0) {
+                return totalCost;
+            }
+        } catch (error) {
+            console.error('[UntradableCapeValue] Enhancement path failed for', itemHrid, enhancementLevel, error);
+        }
+        return levelZeroValue;
+    }
+
+    /**
      * Alchemy Best Items
      * Shows a ranked table of all eligible items by profit/hr or XP/hr
      * for the active alchemy type (Coinify, Decompose, Transmute).
@@ -30892,6 +31012,17 @@
                     navigateToMarketplace(item.itemHrid);
                 });
                 nameTd.appendChild(nameLink);
+                // Untradable items have no market price, so their value here is an assumption
+                if (isUntradableCape(item.itemHrid)) {
+                    const assumedMarker = document.createElement('span');
+                    assumedMarker.textContent = '*';
+                    assumedMarker.style.cssText = 'color: #fbbf24; margin-left: 2px;';
+                    nameTd.appendChild(assumedMarker);
+                    nameTd.title = i18n_js.t('alchemyBestItems.untradeableTooltip', {
+                        value: formatters_js.formatKMB(getUntradableCapeValue(item.itemHrid, 0) ?? 0),
+                    });
+                    nameTd.style.cursor = 'help';
+                }
                 row.appendChild(nameTd);
 
                 // Level - colored against the player's real current Alchemy level (not the filter

@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.24.5
+ * Version: 3.25.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19326,6 +19326,71 @@
     }
 
     /**
+     * Untradable Cape Value
+     *
+     * Capes (Chance, Gatherer, Artificer, Culinary, Sinister), the Chimerical Quiver, the Enchanted
+     * Cloak and their refined versions cannot be traded, so they never have a market price. Anything that prices a cape (alchemy profit, the
+     * enhancement path, net worth, chest EV) would otherwise drop it or treat it as free by accident.
+     * This module owns the single decision of what an unrefined cape's base value is: nothing (the
+     * default, matching how the enhancement path already behaved) or the price of a Mirror of
+     * Protection, which functions as a copy of any equipment.
+     *
+     * Refined and enhanced values are built on top of this base by the callers (base value + refinement
+     * cost + average enhancement cost); see features/enhancement/untradable-cape-value.js.
+     */
+
+
+    const CAPE_BASE_VALUE_SETTING = 'untradableCapeBaseValue';
+    const CAPE_BASE_VALUE_ZERO = 'zero';
+    const CAPE_BASE_VALUE_MIRROR = 'mirror';
+
+    const MIRROR_OF_PROTECTION_HRID = '/items/mirror_of_protection';
+    // The Chimerical Quiver and Enchanted Cloak are the ranged and magic equivalents of the capes
+    const CAPE_HRID_PATTERN = /^\/items\/[a-z]+_(cape|quiver|cloak)(_refined)?$/;
+    const REFINED_CAPE_PATTERN = /_(cape|quiver|cloak)_refined$/;
+
+    /**
+     * @param {string} itemHrid
+     * @returns {boolean} True for a cape that has no market because it cannot be traded
+     */
+    function isUntradableCape(itemHrid) {
+        if (typeof itemHrid !== 'string' || !CAPE_HRID_PATTERN.test(itemHrid)) {
+            return false;
+        }
+        return dataManager.getItemDetails(itemHrid)?.isTradable !== true;
+    }
+
+    /**
+     * @param {string} itemHrid
+     * @returns {boolean} True for the refined version of a cape
+     */
+    function isRefinedCape(itemHrid) {
+        return typeof itemHrid === 'string' && REFINED_CAPE_PATTERN.test(itemHrid);
+    }
+
+    /**
+     * Value assumed for one unrefined, unenhanced cape.
+     * @param {'buy'|'sell'} [side='buy'] - Price side used when the Mirror of Protection is the stand-in
+     * @returns {number} 0, or the Mirror of Protection price when the setting is on "mirror"
+     */
+    function getCapeBaseValue(side = 'buy') {
+        if (config.getSettingValue(CAPE_BASE_VALUE_SETTING, CAPE_BASE_VALUE_ZERO) !== CAPE_BASE_VALUE_MIRROR) {
+            return 0;
+        }
+        return marketData_js.getItemPrice(MIRROR_OF_PROTECTION_HRID, { context: 'profit', side }) || 0;
+    }
+
+    /**
+     * Current setting value, for use in cache keys.
+     * @returns {string}
+     */
+    function getCapeBaseValueMode() {
+        return config.getSettingValue(CAPE_BASE_VALUE_SETTING, CAPE_BASE_VALUE_ZERO) === CAPE_BASE_VALUE_MIRROR
+            ? CAPE_BASE_VALUE_MIRROR
+            : CAPE_BASE_VALUE_ZERO;
+    }
+
+    /**
      * Enhancement Tooltip Module
      *
      * Provides enhancement analysis for item tooltips.
@@ -19390,6 +19455,11 @@
         if (productionCost > 0) {
             return productionCost;
         }
+        // An unrefined untradable cape has no market, recipe or reference value: use the cape setting.
+        // (A refined cape always has a recipe, so its upgrade item is priced inside getProductionCost.)
+        if (isUntradableCape(itemHrid) && !isRefinedCape(itemHrid)) {
+            return getCapeBaseValue();
+        }
         return marketValuesAPI.getValue(itemHrid, 0) || 0;
     }
 
@@ -19401,7 +19471,7 @@
      * @private
      */
     function getProductionCost(itemHrid, mode = 'ask') {
-        const cacheKey = `${itemHrid}|${mode}`;
+        const cacheKey = `${itemHrid}|${mode}|${getCapeBaseValueMode()}`;
         if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
         const result = _computeProductionCost(itemHrid, mode);
         _costCache.set(cacheKey, result);
@@ -19474,6 +19544,10 @@
                 upgradePrice = Math.min(upgradeMarketPrice, upgradeCraftPrice);
             } else {
                 upgradePrice = upgradeMarketPrice || upgradeCraftPrice;
+            }
+            // An untradable cape has no market and no recipe; it is worth what the cape setting assumes.
+            if (!(upgradePrice > 0) && isUntradableCape(action.upgradeItemHrid)) {
+                upgradePrice = getCapeBaseValue();
             }
             totalPrice += upgradePrice;
         }

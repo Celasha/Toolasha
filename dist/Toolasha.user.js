@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      3.24.5
+// @version      3.25.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -26,13 +26,13 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@6ed99f1b22fc8e2cb1f45e97fa086a5fc882c8a1/dist/libraries/toolasha-core.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@6ed99f1b22fc8e2cb1f45e97fa086a5fc882c8a1/dist/libraries/toolasha-utils.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@6ed99f1b22fc8e2cb1f45e97fa086a5fc882c8a1/dist/libraries/toolasha-market.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@6ed99f1b22fc8e2cb1f45e97fa086a5fc882c8a1/dist/libraries/toolasha-actions.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@6ed99f1b22fc8e2cb1f45e97fa086a5fc882c8a1/dist/libraries/toolasha-combat.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@6ed99f1b22fc8e2cb1f45e97fa086a5fc882c8a1/dist/libraries/toolasha-ui.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@6ed99f1b22fc8e2cb1f45e97fa086a5fc882c8a1/dist/libraries/toolasha-ui2.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui2.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
@@ -402,6 +402,13 @@
                 name: 'Auto All Button',
                 category: 'Inventory',
                 module: Market.autoAllButton,
+                async: false,
+            },
+            {
+                key: 'scrollPlanner',
+                name: 'Scroll Planner',
+                category: 'Inventory',
+                module: Market.scrollPlanner,
                 async: false,
             },
             {
@@ -838,6 +845,13 @@
                 async: false,
             },
             {
+                key: 'shopTokenValues',
+                name: 'Shop Token Values',
+                category: 'Shop',
+                module: UI.shopTokenValues,
+                async: false,
+            },
+            {
                 key: 'taskProfitDisplay',
                 name: 'Task Profit Display',
                 category: 'Tasks',
@@ -1223,7 +1237,7 @@
         // Expose minimal user-facing API
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-        targetWindow.Toolasha.version = '3.24.5';
+        targetWindow.Toolasha.version = '3.25.0';
 
         // Feature toggle API (for users to manage settings via console)
         targetWindow.Toolasha.features = {
