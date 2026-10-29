@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.25.1](https://github.com/Celasha/Toolasha/compare/v3.25.0...v3.25.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* include saved combat loadouts in the Metz simulator export ([6f4942d](https://github.com/Celasha/Toolasha/commit/6f4942d5796bfe745d594d45eadf179d765fdbe7))
+* use the saved loadout for the quick-input panel's speed, efficiency and queue sizing ([03c2e55](https://github.com/Celasha/Toolasha/commit/03c2e55c819388f141fa9f5bbd01c992da9066fc))
+
 ## [3.25.0](https://github.com/Celasha/Toolasha/compare/v3.24.5...v3.25.0) (2026-10-29)
 
 ### Features
