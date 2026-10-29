@@ -44,6 +44,7 @@ import inventorySort from '../features/inventory/inventory-sort.js';
 import inventoryBadgePrices from '../features/inventory/inventory-badge-prices.js';
 import dungeonTokenTooltips from '../features/inventory/dungeon-token-tooltips.js';
 import autoAllButton from '../features/inventory/auto-all-button.js';
+import scrollPlanner from '../features/inventory/scroll-planner/scroll-planner.js';
 import inventoryCategoryTotals from '../features/inventory/inventory-category-totals.js';
 import customTabsFeature from '../features/inventory/custom-tabs/custom-tabs-feature.js';
 import openableAnalytics from '../features/inventory/openable-analytics/openable-analytics.js';
@@ -87,6 +88,7 @@ toolashaRoot.Market = {
     inventoryBadgePrices,
     dungeonTokenTooltips,
     autoAllButton,
+    scrollPlanner,
     inventoryCategoryTotals,
     customTabsFeature,
     openableAnalytics,

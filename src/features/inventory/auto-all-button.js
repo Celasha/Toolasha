@@ -7,6 +7,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import tooltipObserver from '../../core/tooltip-observer.js';
 import { getItemName, translateGameName } from '../../utils/game-i18n.js';
+import { isScrollRunActive } from './scroll-planner/scroll-planner-state.js';
 
 class AutoAllButton {
     constructor() {
@@ -97,6 +98,11 @@ class AutoAllButton {
         const isOpenable = itemDetails?.isOpenable;
         const isAbilityBook = itemDetails?.categoryHrid === '/item_categories/ability_book';
         if (!itemDetails || (!isOpenable && !isAbilityBook)) {
+            return;
+        }
+
+        // A guided scroll run owns the quantity field of Scroll of... menus
+        if (isScrollRunActive() && itemHrid.startsWith('/items/seal_of_')) {
             return;
         }
 

@@ -1665,6 +1665,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'When enabled, Scroll of... items from the Labyrinth are not auto-opened',
             },
+            scrollPlanner: {
+                id: 'scrollPlanner',
+                label: 'Scroll Planner: plan and step through opening scrolls',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a "Plan scrolls" button to Scroll of... action menus. Choose how many of each scroll to open, then be walked through them one at a time with the quantity pre-filled. Your last plan can be loaded on any character.',
+            },
             openableAnalytics: {
                 id: 'openableAnalytics',
                 label: 'Openable Analytics: Track Actual vs Expected Value + Luck',

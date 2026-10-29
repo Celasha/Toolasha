@@ -249,6 +249,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'scrollPlanner',
+            name: 'Scroll Planner',
+            category: 'Inventory',
+            module: Market.scrollPlanner,
+            async: false,
+        },
+        {
             key: 'openableAnalytics',
             name: 'Openable Analytics',
             category: 'Inventory',
