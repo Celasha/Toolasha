@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.25.2
+ * Version: 3.25.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5157,12 +5157,24 @@
     }
 
     /**
-     * Navigate to marketplace for a specific item
+     * Whether an item may be opened in the Marketplace. The game itself only links tradable items;
+     * opening an untradable one would expose its listing dialogs.
+     * @param {string} itemHrid - Item HRID
+     * @returns {boolean} False when the item is known and not tradable
+     */
+    function canOpenInMarketplace(itemHrid) {
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        return !itemDetails || itemDetails.isTradable === true;
+    }
+
+    /**
+     * Navigate to marketplace for a specific item. Untradable items are refused.
      * @param {string} itemHrid - Item HRID to navigate to
      * @param {number} enhancementLevel - Enhancement level (default 0)
      * @returns {boolean} True when the native Marketplace handler was invoked
      */
     function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
+        if (!canOpenInMarketplace(itemHrid)) return false;
         const game = getGameObject$1();
         if (game?.handleGoToMarketplace) {
             game.handleGoToMarketplace(itemHrid, enhancementLevel);

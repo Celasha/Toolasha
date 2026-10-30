@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.25.2
+ * Version: 3.25.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3245,6 +3245,24 @@ ${starCSS}
     collectionFilters.setupSettingListener();
 
     /**
+     * Marketplace Custom Tabs Utility
+     * Provides shared functionality for creating and managing custom marketplace tabs
+     * Used by missing materials features (actions, houses, etc.)
+     */
+
+
+    /**
+     * Whether an item may be opened in the Marketplace. The game itself only links tradable items;
+     * opening an untradable one would expose its listing dialogs.
+     * @param {string} itemHrid - Item HRID
+     * @returns {boolean} False when the item is known and not tradable
+     */
+    function canOpenInMarketplace(itemHrid) {
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        return !itemDetails || itemDetails.isTradable === true;
+    }
+
+    /**
      * Chat Commands Module
      * Adds /item, /wiki, and /market commands to in-game chat
      * Port of MWI Game Commands by Mists, integrated into Toolasha architecture
@@ -3624,6 +3642,11 @@ ${starCSS}
         openMarketplace(itemHrid, enhancementLevel = 0) {
             if (!this.gameCore?.handleGoToMarketplace) {
                 this.showError(i18n_js.t('chatCommands.featureUnavailableMessage'));
+                return;
+            }
+
+            if (!canOpenInMarketplace(itemHrid)) {
+                this.showError(i18n_js.t('chatCommands.marketplaceOpenFailedMessage'));
                 return;
             }
 
