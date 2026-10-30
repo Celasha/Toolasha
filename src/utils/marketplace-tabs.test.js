@@ -373,3 +373,21 @@ describe('marketplace-tabs cleanup diagnostics', () => {
         cleanup();
     });
 });
+
+describe('navigateToMarketplace tradability guard', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    test('refuses untradable items and tradable ones are allowed', async () => {
+        const { default: dataManager } = await import('../core/data-manager.js');
+        const { navigateToMarketplace, canOpenInMarketplace } = await import('./marketplace-tabs.js');
+        vi.spyOn(dataManager, 'getItemDetails').mockImplementation((hrid) =>
+            hrid === '/items/gatherer_cape_refined' ? { isTradable: undefined } : { isTradable: true }
+        );
+
+        expect(canOpenInMarketplace('/items/gatherer_cape_refined')).toBe(false);
+        expect(canOpenInMarketplace('/items/cheese')).toBe(true);
+        expect(navigateToMarketplace('/items/gatherer_cape_refined')).toBe(false);
+    });
+});

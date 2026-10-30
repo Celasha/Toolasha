@@ -10,6 +10,7 @@ import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { getItemName } from '../../utils/game-i18n.js';
+import { canOpenInMarketplace } from '../../utils/marketplace-tabs.js';
 
 class ChatCommands {
     constructor() {
@@ -384,6 +385,11 @@ class ChatCommands {
     openMarketplace(itemHrid, enhancementLevel = 0) {
         if (!this.gameCore?.handleGoToMarketplace) {
             this.showError(t('chatCommands.featureUnavailableMessage'));
+            return;
+        }
+
+        if (!canOpenInMarketplace(itemHrid)) {
+            this.showError(t('chatCommands.marketplaceOpenFailedMessage'));
             return;
         }
 
