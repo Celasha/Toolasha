@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.25.3](https://github.com/Celasha/Toolasha/compare/v3.25.2...v3.25.3) (2026-10-30)
+
+
+### Bug Fixes
+
+* stop opening the Marketplace for untradable items ([8f62639](https://github.com/Celasha/Toolasha/commit/8f626392b79d7291f4afb59aa8883ef48228247b))
+
 ## [3.25.2](https://github.com/Celasha/Toolasha/compare/v3.25.1...v3.25.2) (2026-10-29)
 
 ### Bug Fixes
