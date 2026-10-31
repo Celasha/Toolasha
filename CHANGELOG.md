@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.25.4](https://github.com/Celasha/Toolasha/compare/v3.25.3...v3.25.4) (2026-10-31)
+
+
+### Bug Fixes
+
+* add untradable cloaks, editable item costs and a catalyst choice to the Philo Gamba calculator ([d70765d](https://github.com/Celasha/Toolasha/commit/d70765d20610b1a5753ffd707686a42baa3be3c7))
+* cache untradable cape enhancement values so net worth recalculation stops stuttering ([1eaef35](https://github.com/Celasha/Toolasha/commit/1eaef35aa4adf730de8f66c77a4cef6f72da2917))
+
 ## [3.25.3](https://github.com/Celasha/Toolasha/compare/v3.25.2...v3.25.3) (2026-10-30)
 
 ### Bug Fixes
