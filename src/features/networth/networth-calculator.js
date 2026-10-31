@@ -67,8 +67,8 @@ export async function calculateItemValue(item, priceCache = null) {
     const { itemHrid, enhancementLevel = 0, count = 1 } = item;
 
     // Untradable capes have no market: value them at base value + refinement + the average cost of
-    // enhancing them with the player's own stats. Not cached - it depends on current gear and the
-    // cape setting, neither of which the enhancement cache is invalidated by.
+    // enhancing them with the player's own stats. Not in networthCache - that is only invalidated by
+    // market data, while this depends on current gear too; getUntradableCapeValue keeps its own cache.
     if (isUntradableCape(itemHrid)) {
         return (getUntradableCapeValue(itemHrid, enhancementLevel) ?? 0) * count;
     }

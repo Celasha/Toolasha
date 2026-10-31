@@ -9,9 +9,49 @@
  * what the player has actually invested in a cape they cannot buy.
  */
 
+import marketAPI from '../../api/marketplace.js';
 import { getAutoDetectedParams } from '../../utils/enhancement-config.js';
-import { getCapeBaseValue, isRefinedCape, isUntradableCape } from '../../utils/untradable-cape.js';
+import {
+    getCapeBaseValue,
+    getCapeBaseValueMode,
+    isRefinedCape,
+    isUntradableCape,
+} from '../../utils/untradable-cape.js';
+import { getCustomPriceOverrides } from '../settings/custom-price-overrides.js';
 import { calculateEnhancementPath, getRealisticBaseItemPrice } from './tooltip-enhancement.js';
+
+// The enhancement path is a full simulation and net worth asks for it on every inventory change, so
+// the result is kept. It depends on the player's gear, teas and levels (the auto-detected params),
+// the cape setting and custom prices, which are part of the key, and on market prices, which clear it.
+const _pathCostCache = new Map();
+
+marketAPI.on(() => _pathCostCache.clear());
+
+/**
+ * Drop every remembered cape enhancement cost.
+ */
+export function clearUntradableCapeValueCache() {
+    _pathCostCache.clear();
+}
+
+/**
+ * Average enhancement cost of a cape, or null when the path cannot be worked out.
+ * @param {string} itemHrid
+ * @param {number} enhancementLevel
+ * @returns {number|null}
+ */
+function getEnhancementPathCost(itemHrid, enhancementLevel) {
+    const params = getAutoDetectedParams();
+    const key = `${itemHrid}|${enhancementLevel}|${getCapeBaseValueMode()}|${JSON.stringify(params)}|${JSON.stringify(
+        getCustomPriceOverrides()
+    )}`;
+    if (_pathCostCache.has(key)) return _pathCostCache.get(key);
+
+    const totalCost = calculateEnhancementPath(itemHrid, enhancementLevel, params)?.optimalStrategy?.totalCost;
+    const cost = totalCost > 0 ? totalCost : null;
+    _pathCostCache.set(key, cost);
+    return cost;
+}
 
 /**
  * Value of an untradable cape at an enhancement level.
@@ -30,9 +70,8 @@ export function getUntradableCapeValue(itemHrid, enhancementLevel = 0) {
     }
 
     try {
-        const path = calculateEnhancementPath(itemHrid, enhancementLevel, getAutoDetectedParams());
-        const totalCost = path?.optimalStrategy?.totalCost;
-        if (totalCost > 0) {
+        const totalCost = getEnhancementPathCost(itemHrid, enhancementLevel);
+        if (totalCost !== null) {
             return totalCost;
         }
     } catch (error) {
