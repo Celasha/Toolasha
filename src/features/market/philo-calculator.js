@@ -10,6 +10,7 @@ import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
 import storage from '../../core/storage.js';
 import marketAPI from '../../api/marketplace.js';
+import { getCustomPrice, getCustomPriceOverrides, setCustomPriceOverride } from '../settings/custom-price-overrides.js';
 import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { formatLargeNumber, formatPercentage, timeReadable } from '../../utils/formatters.js';
 import { getEnhancementMultiplier } from '../../utils/enhancement-multipliers.js';
@@ -17,7 +18,12 @@ import { getItemName as getLocalizedItemName } from '../../utils/game-i18n.js';
 
 const PHILO_HRID = '/items/philosophers_stone';
 const PRIME_CATALYST_HRID = '/items/prime_catalyst';
-const PRIME_CATALYST_ADDITIVE_BONUS = 0.25; // 25% additive boost
+// Catalysts that raise transmute success, with their additive success boost
+const CATALYST_BONUSES = {
+    '/items/catalyst_of_transmutation': 0.15,
+    [PRIME_CATALYST_HRID]: 0.25,
+};
+const NO_CATALYST = '';
 const TRANSMUTE_ACTION_TIME_SECONDS = 20;
 const CATALYTIC_TEA_BUFF_TYPE = '/buff_types/alchemy_success';
 
@@ -31,7 +37,7 @@ class PhiloCalculator {
         // User-editable inputs
         this.philoPrice = 0;
         this.catalystPrice = 0;
-        this.useCatalyst = true;
+        this.catalystHrid = PRIME_CATALYST_HRID; // NO_CATALYST for none
         this.useCatalyticTea = false;
         this.catalyticTeaRatioBoost = 0;
         this.drinkConcentrationLevel = 0; // 0-20
@@ -144,7 +150,9 @@ class PhiloCalculator {
         this.philoPrice = philoPriceInfo.value || 0;
         this.philoPriceIsOutlier = philoPriceInfo.value ? philoPriceInfo.isOutlier : false;
 
-        const catalystPriceInfo = getItemPriceOutlierInfo(PRIME_CATALYST_HRID, { mode: 'ask' });
+        const catalystPriceInfo = this.catalystHrid
+            ? getItemPriceOutlierInfo(this.catalystHrid, { mode: 'ask' })
+            : { value: null, isOutlier: false };
         this.catalystPrice = catalystPriceInfo.value || 0;
         this.catalystPriceIsOutlier = catalystPriceInfo.value ? catalystPriceInfo.isOutlier : false;
     }
@@ -182,7 +190,12 @@ class PhiloCalculator {
         try {
             const saved = await storage.getJSON('philoCalculatorSettings', 'settings', null);
             if (saved) {
-                this.useCatalyst = saved.useCatalyst !== false;
+                if (saved.catalystHrid === NO_CATALYST || saved.catalystHrid in CATALYST_BONUSES) {
+                    this.catalystHrid = saved.catalystHrid;
+                } else {
+                    // Older saves only had a Prime Catalyst on/off flag
+                    this.catalystHrid = saved.useCatalyst === false ? NO_CATALYST : PRIME_CATALYST_HRID;
+                }
                 this.useCatalyticTea = saved.useCatalyticTea || false;
                 this.drinkConcentrationLevel = saved.drinkConcentrationLevel || 0;
                 this.hideNegativeProfitItems = saved.hideNegativeProfitItems !== false;
@@ -201,7 +214,7 @@ class PhiloCalculator {
             await storage.setJSON(
                 'philoCalculatorSettings',
                 {
-                    useCatalyst: this.useCatalyst,
+                    catalystHrid: this.catalystHrid,
                     useCatalyticTea: this.useCatalyticTea,
                     drinkConcentrationLevel: this.drinkConcentrationLevel,
                     hideNegativeProfitItems: this.hideNegativeProfitItems,
@@ -294,9 +307,9 @@ class PhiloCalculator {
             totalBonus += this.catalyticTeaRatioBoost * (1 + drinkConcentration);
         }
 
-        // Prime catalyst bonus (additive, not multiplicative)
-        if (this.useCatalyst) {
-            totalBonus += PRIME_CATALYST_ADDITIVE_BONUS;
+        // Catalyst bonus (additive, not multiplicative)
+        if (this.catalystHrid) {
+            totalBonus += CATALYST_BONUSES[this.catalystHrid] || 0;
         }
 
         const successRate = Math.min(1.0, baseTransmuteRate * (1 + totalBonus));
@@ -311,12 +324,18 @@ class PhiloCalculator {
 
         // Get item cost (market ask price)
         const priceInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
-        const itemCost = priceInfo.value;
-        if (itemCost === null || itemCost === undefined) return null;
+        let itemCost = priceInfo.value;
+        // Untradable items (the refined capes) have no market price. Keep them listed so the user
+        // can enter a price; tradable items with no market data stay hidden as before.
+        const needsPrice = itemCost === null || itemCost === undefined;
+        if (needsPrice) {
+            if (itemDetails.isTradable === true) return null;
+            itemCost = 0;
+        }
         const itemCostIsOutlier = priceInfo.isOutlier;
 
         // Catalyst cost per action (consumed only on success)
-        const catalystCostPerAction = this.useCatalyst ? successRate * this.catalystPrice : 0;
+        const catalystCostPerAction = this.catalystHrid ? successRate * this.catalystPrice : 0;
 
         // Transmute coin cost: max(50, sellPrice / 5) × bulkMultiplier per action
         const sellPrice = itemDetails.sellPrice || 0;
@@ -344,7 +363,8 @@ class PhiloCalculator {
             evPerAction += successRate * drop.dropRate * avgCount * dropValue;
         }
 
-        const isOutlier = itemCostIsOutlier || dropsHaveOutlier || (this.useCatalyst && this.catalystPriceIsOutlier);
+        const isOutlier =
+            itemCostIsOutlier || dropsHaveOutlier || (Boolean(this.catalystHrid) && this.catalystPriceIsOutlier);
 
         // Profit per action (EV now includes philo value)
         const profitPerAction = evPerAction - totalCostPerAction;
@@ -379,25 +399,30 @@ class PhiloCalculator {
         const revenuePerHour = evPerAction * actionsPerHour;
         const costPerHour = totalCostPerAction * actionsPerHour;
 
+        // Without a price every cost-derived figure would be misleading, so leave them blank
+        const costDerived = (value) => (needsPrice ? null : value);
+
         return {
             itemHrid,
             name: this.getItemName(itemHrid),
-            cost: itemCost,
+            cost: costDerived(itemCost),
+            needsPrice,
+            hasCustomCost: getCustomPrice(itemHrid, 0, 'sell') !== null,
             philoChance,
             returnChance,
             transmuteChance: baseTransmuteRate,
             effectiveTransmuteChance: successRate,
-            transmuteCost: totalCostPerAction,
+            transmuteCost: costDerived(totalCostPerAction),
             ev: evPerAction,
             itemsPerAction,
             actionsPerPhilo,
             itemsPerPhilo,
-            profitPerPhilo,
-            profitMargin,
+            profitPerPhilo: costDerived(profitPerPhilo),
+            profitMargin: costDerived(profitMargin),
             timePerPhiloSeconds,
-            profitPerHour,
+            profitPerHour: costDerived(profitPerHour),
             revenuePerHour,
-            costPerHour,
+            costPerHour: costDerived(costPerHour),
             isOutlier,
         };
     }
@@ -430,6 +455,10 @@ class PhiloCalculator {
             const aVal = a[col];
             const bVal = b[col];
 
+            // Blank (unpriced) values always sort last
+            if (aVal === null || bVal === null) {
+                return (aVal === null) - (bVal === null);
+            }
             if (typeof aVal === 'string') {
                 return dir * aVal.localeCompare(bVal);
             }
@@ -643,24 +672,43 @@ class PhiloCalculator {
         });
         catLabel.appendChild(catInput);
 
-        // Use catalyst checkbox
-        const checkLabel = document.createElement('label');
-        checkLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = this.useCatalyst;
-        checkbox.style.cursor = 'pointer';
-        checkbox.addEventListener('change', () => {
-            this.useCatalyst = checkbox.checked;
+        // Catalyst dropdown
+        const catalystLabel = document.createElement('label');
+        catalystLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
+        catalystLabel.textContent = t('philoCalculator.catalystLabel');
+        const catalystSelect = document.createElement('select');
+        catalystSelect.className = 'philo-catalyst-select';
+        catalystSelect.style.cssText = `
+            padding: 4px 8px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 13px;
+        `;
+        const catalystOptions = [
+            [NO_CATALYST, t('philoCalculator.noCatalystOption')],
+            ...Object.keys(CATALYST_BONUSES).map((hrid) => [hrid, this.getItemName(hrid)]),
+        ];
+        for (const [value, label] of catalystOptions) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            option.selected = value === this.catalystHrid;
+            catalystSelect.appendChild(option);
+        }
+        catalystSelect.addEventListener('change', () => {
+            this.catalystHrid = catalystSelect.value;
+            this.loadDefaultPrices();
+            catInput.value = this.catalystPrice.toLocaleString();
             this.recalculate();
             this.saveSettings();
         });
-        checkLabel.appendChild(checkbox);
-        checkLabel.appendChild(document.createTextNode(t('philoCalculator.usePrimeCatalystLabel')));
+        catalystLabel.appendChild(catalystSelect);
 
         container.appendChild(philoLabel);
+        container.appendChild(catalystLabel);
         container.appendChild(catLabel);
-        container.appendChild(checkLabel);
 
         // Catalytic Tea checkbox
         const teaCheckLabel = document.createElement('label');
@@ -805,6 +853,59 @@ class PhiloCalculator {
     }
 
     /**
+     * Editable cost cell. A typed price is saved as the item's custom price override (the same
+     * one used by the rest of Toolasha); clearing it falls back to the market price.
+     * @param {Object} row - Row data
+     * @returns {HTMLInputElement}
+     */
+    createCostInput(row) {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'philo-cost-input';
+        input.value = row.needsPrice ? '' : Math.round(row.cost).toLocaleString();
+        input.placeholder = row.needsPrice ? t('philoCalculator.noMarketPricePlaceholder') : '';
+        input.title = row.hasCustomCost ? t('philoCalculator.customCostTooltip') : '';
+        input.style.cssText = `
+            width: 90px;
+            padding: 2px 6px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid ${row.hasCustomCost ? '#4a90e2' : row.needsPrice ? '#f59e0b' : '#555'};
+            border-radius: 4px;
+            font-size: 12px;
+            text-align: right;
+        `;
+        input.addEventListener('change', () => this.setItemCost(row.itemHrid, input.value));
+        return input;
+    }
+
+    /**
+     * Save (or clear) the custom price for an item and recalculate
+     * @param {string} itemHrid - Item HRID
+     * @param {string} rawValue - Text typed into the cost cell
+     */
+    async setItemCost(itemHrid, rawValue) {
+        const trimmed = String(rawValue).trim();
+        let sell = null;
+        if (trimmed !== '') {
+            const parsed = parseInt(trimmed.replaceAll(',', '').replaceAll('.', ''), 10);
+            if (isNaN(parsed) || parsed < 0) {
+                this.renderTable();
+                return;
+            }
+            sell = parsed;
+        }
+
+        try {
+            const existing = getCustomPriceOverrides()[`${itemHrid}:0`];
+            await setCustomPriceOverride(itemHrid, 0, existing?.buy ?? null, sell);
+        } catch (error) {
+            console.error('[PhiloCalculator] Failed to save custom price:', error);
+        }
+        this.recalculate();
+    }
+
+    /**
      * Recalculate all rows and re-render
      */
     recalculate() {
@@ -886,7 +987,8 @@ class PhiloCalculator {
 
         // Apply negative profit filter
         if (this.hideNegativeProfitItems) {
-            filteredRows = filteredRows.filter((row) => row.profitPerPhilo >= 0);
+            // Unpriced rows stay visible so they can be priced
+            filteredRows = filteredRows.filter((row) => row.needsPrice || row.profitPerPhilo >= 0);
         }
 
         for (let i = 0; i < filteredRows.length; i++) {
@@ -904,6 +1006,19 @@ class PhiloCalculator {
                 `;
 
                 const value = row[col.key];
+
+                if (col.key === 'cost') {
+                    td.appendChild(this.createCostInput(row));
+                    tr.appendChild(td);
+                    continue;
+                }
+
+                // Cost-derived figures are blank until an unpriced item gets a price
+                if (value === null || value === undefined) {
+                    td.textContent = '\u2014';
+                    tr.appendChild(td);
+                    continue;
+                }
 
                 // Format based on column type
                 switch (col.key) {
