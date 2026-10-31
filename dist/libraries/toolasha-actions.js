@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.25.3
+ * Version: 3.25.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -30288,6 +30288,42 @@
     const alchemyProfitDisplay = new AlchemyProfitDisplay();
 
     /**
+     * Custom Price Overrides
+     * Manages user-defined buy/sell price overrides for profit calculations.
+     * Overrides are stored in IndexedDB and cached in memory.
+     */
+
+
+    const STORAGE_KEY = 'Toolasha_customPriceOverrides';
+
+    /** @type {Object|null} In-memory cache of overrides */
+    let overridesCache = null;
+
+    /**
+     * Load overrides from storage into cache
+     * @returns {Promise<Object>} The overrides object
+     */
+    async function loadOverrides() {
+        if (overridesCache === null) {
+            overridesCache = (await storage.getJSON(STORAGE_KEY, 'settings', {})) || {};
+        }
+        return overridesCache;
+    }
+
+    /**
+     * Get all custom price overrides
+     * @returns {Object} The overrides object (may be empty if not yet loaded)
+     */
+    function getCustomPriceOverrides() {
+        if (overridesCache === null) {
+            // Trigger async load but return empty for now
+            loadOverrides();
+            return {};
+        }
+        return overridesCache;
+    }
+
+    /**
      * Untradable cape valuation (refined and enhanced)
      *
      * value = base cape value + refinement cost + average enhancement cost
@@ -30298,6 +30334,32 @@
      * what the player has actually invested in a cape they cannot buy.
      */
 
+
+    // The enhancement path is a full simulation and net worth asks for it on every inventory change, so
+    // the result is kept. It depends on the player's gear, teas and levels (the auto-detected params),
+    // the cape setting and custom prices, which are part of the key, and on market prices, which clear it.
+    const _pathCostCache = new Map();
+
+    marketAPI.on(() => _pathCostCache.clear());
+
+    /**
+     * Average enhancement cost of a cape, or null when the path cannot be worked out.
+     * @param {string} itemHrid
+     * @param {number} enhancementLevel
+     * @returns {number|null}
+     */
+    function getEnhancementPathCost(itemHrid, enhancementLevel) {
+        const params = enhancementConfig_js.getAutoDetectedParams();
+        const key = `${itemHrid}|${enhancementLevel}|${getCapeBaseValueMode()}|${JSON.stringify(params)}|${JSON.stringify(
+        getCustomPriceOverrides()
+    )}`;
+        if (_pathCostCache.has(key)) return _pathCostCache.get(key);
+
+        const totalCost = calculateEnhancementPath(itemHrid, enhancementLevel, params)?.optimalStrategy?.totalCost;
+        const cost = totalCost > 0 ? totalCost : null;
+        _pathCostCache.set(key, cost);
+        return cost;
+    }
 
     /**
      * Value of an untradable cape at an enhancement level.
@@ -30316,9 +30378,8 @@
         }
 
         try {
-            const path = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementConfig_js.getAutoDetectedParams());
-            const totalCost = path?.optimalStrategy?.totalCost;
-            if (totalCost > 0) {
+            const totalCost = getEnhancementPathCost(itemHrid, enhancementLevel);
+            if (totalCost !== null) {
                 return totalCost;
             }
         } catch (error) {

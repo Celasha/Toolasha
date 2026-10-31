@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.25.3
+ * Version: 3.25.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2430,7 +2430,10 @@
             panelTitle: "Philosopher's Stone Calculator",
             philoPriceLabel: 'Philo Price: ',
             catalystPriceLabel: 'Catalyst Price: ',
-            usePrimeCatalystLabel: 'Use Prime Catalyst',
+            catalystLabel: 'Catalyst: ',
+            noCatalystOption: 'None',
+            noMarketPricePlaceholder: 'Set price',
+            customCostTooltip: 'Custom price (clear to use the market price)',
             catalyticTeaBoostLabel: (p) => `Catalytic Tea (${p.percent})`,
             catalyticTeaUnavailableLabel: 'Catalytic Tea (unavailable)',
             drinkConcentrationLabel: 'Drink Concentration: ',
@@ -7701,7 +7704,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             panelTitle: '贤者之石计算器',
             philoPriceLabel: '贤者之石价格：',
             catalystPriceLabel: '催化剂价格：',
-            usePrimeCatalystLabel: '使用上等催化剂',
+            catalystLabel: '催化剂：',
+            noCatalystOption: '无',
+            noMarketPricePlaceholder: '设置价格',
+            customCostTooltip: '自定义价格（清空则使用市场价）',
             catalyticTeaBoostLabel: (p) => `催化茶（${p.percent}）`,
             catalyticTeaUnavailableLabel: '催化茶（不可用）',
             drinkConcentrationLabel: '饮品浓度：',

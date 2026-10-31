@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.25.3
+ * Version: 3.25.4
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, profitHelpers_js, warningIcon_js, enhancementConfig_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, dom, marketplaceSession_js, materialCalculator_js, loadoutState, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
+(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, profitHelpers_js, warningIcon_js, enhancementConfig_js, storage, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, dom, marketplaceSession_js, materialCalculator_js, loadoutState, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -2187,6 +2187,93 @@
     const profitCalculator = new ProfitCalculator();
 
     /**
+     * Custom Price Overrides
+     * Manages user-defined buy/sell price overrides for profit calculations.
+     * Overrides are stored in IndexedDB and cached in memory.
+     */
+
+
+    const STORAGE_KEY$1 = 'Toolasha_customPriceOverrides';
+
+    /** @type {Object|null} In-memory cache of overrides */
+    let overridesCache = null;
+
+    /**
+     * Load overrides from storage into cache
+     * @returns {Promise<Object>} The overrides object
+     */
+    async function loadOverrides() {
+        if (overridesCache === null) {
+            overridesCache = (await storage.getJSON(STORAGE_KEY$1, 'settings', {})) || {};
+        }
+        return overridesCache;
+    }
+
+    /**
+     * Get all custom price overrides
+     * @returns {Object} The overrides object (may be empty if not yet loaded)
+     */
+    function getCustomPriceOverrides() {
+        if (overridesCache === null) {
+            // Trigger async load but return empty for now
+            loadOverrides();
+            return {};
+        }
+        return overridesCache;
+    }
+
+    /**
+     * Get a custom price for a specific item, enhancement level, and transaction side.
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level (default 0)
+     * @param {string} side - Transaction side ('buy' or 'sell')
+     * @returns {number|null} Custom price or null if no override exists
+     */
+    function getCustomPrice(itemHrid, enhancementLevel = 0, side = 'sell') {
+        const overrides = getCustomPriceOverrides();
+        const key = `${itemHrid}:${enhancementLevel}`;
+        const override = overrides[key];
+        if (!override) {
+            return null;
+        }
+        const price = override[side];
+        if (price === undefined || price === null || price === '') {
+            return null;
+        }
+        return price;
+    }
+
+    /**
+     * Set a custom price override for an item
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level
+     * @param {number|null} buy - Buy price override (null to clear)
+     * @param {number|null} sell - Sell price override (null to clear)
+     */
+    async function setCustomPriceOverride(itemHrid, enhancementLevel, buy, sell) {
+        const overrides = await loadOverrides();
+        const key = `${itemHrid}:${enhancementLevel}`;
+
+        const entry = {};
+        if (buy !== null && buy !== undefined && buy !== '') {
+            entry.buy = Number(buy);
+        }
+        if (sell !== null && sell !== undefined && sell !== '') {
+            entry.sell = Number(sell);
+        }
+
+        if (Object.keys(entry).length === 0) {
+            // Both empty — remove the override
+            delete overrides[key];
+        } else {
+            overrides[key] = entry;
+        }
+
+        overridesCache = overrides;
+        await storage.setJSON(STORAGE_KEY$1, overrides, 'settings', true);
+    }
+
+    /**
      * Untradable cape valuation (refined and enhanced)
      *
      * value = base cape value + refinement cost + average enhancement cost
@@ -2197,6 +2284,32 @@
      * what the player has actually invested in a cape they cannot buy.
      */
 
+
+    // The enhancement path is a full simulation and net worth asks for it on every inventory change, so
+    // the result is kept. It depends on the player's gear, teas and levels (the auto-detected params),
+    // the cape setting and custom prices, which are part of the key, and on market prices, which clear it.
+    const _pathCostCache = new Map();
+
+    marketAPI.on(() => _pathCostCache.clear());
+
+    /**
+     * Average enhancement cost of a cape, or null when the path cannot be worked out.
+     * @param {string} itemHrid
+     * @param {number} enhancementLevel
+     * @returns {number|null}
+     */
+    function getEnhancementPathCost(itemHrid, enhancementLevel) {
+        const params = enhancementConfig_js.getAutoDetectedParams();
+        const key = `${itemHrid}|${enhancementLevel}|${getCapeBaseValueMode()}|${JSON.stringify(params)}|${JSON.stringify(
+        getCustomPriceOverrides()
+    )}`;
+        if (_pathCostCache.has(key)) return _pathCostCache.get(key);
+
+        const totalCost = calculateEnhancementPath(itemHrid, enhancementLevel, params)?.optimalStrategy?.totalCost;
+        const cost = totalCost > 0 ? totalCost : null;
+        _pathCostCache.set(key, cost);
+        return cost;
+    }
 
     /**
      * Value of an untradable cape at an enhancement level.
@@ -2215,9 +2328,8 @@
         }
 
         try {
-            const path = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementConfig_js.getAutoDetectedParams());
-            const totalCost = path?.optimalStrategy?.totalCost;
-            if (totalCost > 0) {
+            const totalCost = getEnhancementPathCost(itemHrid, enhancementLevel);
+            if (totalCost !== null) {
                 return totalCost;
             }
         } catch (error) {
@@ -2412,63 +2524,6 @@
             tokenCost: purchase.tokenCost,
             outputCount,
         };
-    }
-
-    /**
-     * Custom Price Overrides
-     * Manages user-defined buy/sell price overrides for profit calculations.
-     * Overrides are stored in IndexedDB and cached in memory.
-     */
-
-
-    const STORAGE_KEY$1 = 'Toolasha_customPriceOverrides';
-
-    /** @type {Object|null} In-memory cache of overrides */
-    let overridesCache = null;
-
-    /**
-     * Load overrides from storage into cache
-     * @returns {Promise<Object>} The overrides object
-     */
-    async function loadOverrides() {
-        if (overridesCache === null) {
-            overridesCache = (await storage.getJSON(STORAGE_KEY$1, 'settings', {})) || {};
-        }
-        return overridesCache;
-    }
-
-    /**
-     * Get all custom price overrides
-     * @returns {Object} The overrides object (may be empty if not yet loaded)
-     */
-    function getCustomPriceOverrides() {
-        if (overridesCache === null) {
-            // Trigger async load but return empty for now
-            loadOverrides();
-            return {};
-        }
-        return overridesCache;
-    }
-
-    /**
-     * Get a custom price for a specific item, enhancement level, and transaction side.
-     * @param {string} itemHrid - Item HRID
-     * @param {number} enhancementLevel - Enhancement level (default 0)
-     * @param {string} side - Transaction side ('buy' or 'sell')
-     * @returns {number|null} Custom price or null if no override exists
-     */
-    function getCustomPrice(itemHrid, enhancementLevel = 0, side = 'sell') {
-        const overrides = getCustomPriceOverrides();
-        const key = `${itemHrid}:${enhancementLevel}`;
-        const override = overrides[key];
-        if (!override) {
-            return null;
-        }
-        const price = override[side];
-        if (price === undefined || price === null || price === '') {
-            return null;
-        }
-        return price;
     }
 
     /**
@@ -3413,7 +3468,7 @@ self.onmessage = function (e) {
     };
 
     // Multiplicative success rate bonuses for catalysts (hardcoded — not in game data structures)
-    const CATALYST_BONUSES = {
+    const CATALYST_BONUSES$1 = {
         typeSpecific: 0.15, // 15% multiplicative
         prime: 0.25, // 25% multiplicative
     };
@@ -3715,28 +3770,28 @@ self.onmessage = function (e) {
                 },
                 { catalystBonus: 0, catalystHrid: null, catalystPrice: 0, catalystPriceOutlier: false, teaBonus: 0 },
                 {
-                    catalystBonus: CATALYST_BONUSES.typeSpecific,
+                    catalystBonus: CATALYST_BONUSES$1.typeSpecific,
                     catalystHrid: typeSpecificHrid,
                     catalystPrice: typeSpecificPrice,
                     catalystPriceOutlier: typeSpecificPriceInfo.isOutlier,
                     teaBonus: liveTeaBonus,
                 },
                 {
-                    catalystBonus: CATALYST_BONUSES.typeSpecific,
+                    catalystBonus: CATALYST_BONUSES$1.typeSpecific,
                     catalystHrid: typeSpecificHrid,
                     catalystPrice: typeSpecificPrice,
                     catalystPriceOutlier: typeSpecificPriceInfo.isOutlier,
                     teaBonus: 0,
                 },
                 {
-                    catalystBonus: CATALYST_BONUSES.prime,
+                    catalystBonus: CATALYST_BONUSES$1.prime,
                     catalystHrid: primeCatalystHrid,
                     catalystPrice: primeCatalystPrice,
                     catalystPriceOutlier: primeCatalystPriceInfo.isOutlier,
                     teaBonus: liveTeaBonus,
                 },
                 {
-                    catalystBonus: CATALYST_BONUSES.prime,
+                    catalystBonus: CATALYST_BONUSES$1.prime,
                     catalystHrid: primeCatalystHrid,
                     catalystPrice: primeCatalystPrice,
                     catalystPriceOutlier: primeCatalystPriceInfo.isOutlier,
@@ -3931,10 +3986,10 @@ self.onmessage = function (e) {
             let catalystPriceOutlier = false;
 
             if (liveCatalystHrid === CATALYST_HRIDS.prime) {
-                catalystBonus = CATALYST_BONUSES.prime;
+                catalystBonus = CATALYST_BONUSES$1.prime;
                 catalystHrid = liveCatalystHrid;
             } else if (liveCatalystHrid && Object.values(CATALYST_HRIDS).includes(liveCatalystHrid)) {
-                catalystBonus = CATALYST_BONUSES.typeSpecific;
+                catalystBonus = CATALYST_BONUSES$1.typeSpecific;
                 catalystHrid = liveCatalystHrid;
             }
             if (catalystHrid) {
@@ -4002,10 +4057,10 @@ self.onmessage = function (e) {
             let catalystPriceOutlier = false;
 
             if (catalystChoice === 'typeSpecific') {
-                catalystBonus = CATALYST_BONUSES.typeSpecific;
+                catalystBonus = CATALYST_BONUSES$1.typeSpecific;
                 catalystHrid = CATALYST_HRIDS[actionType];
             } else if (catalystChoice === 'prime') {
-                catalystBonus = CATALYST_BONUSES.prime;
+                catalystBonus = CATALYST_BONUSES$1.prime;
                 catalystHrid = CATALYST_HRIDS.prime;
             }
             if (catalystHrid) {
@@ -17221,7 +17276,12 @@ self.onmessage = function (e) {
 
     const PHILO_HRID = '/items/philosophers_stone';
     const PRIME_CATALYST_HRID = '/items/prime_catalyst';
-    const PRIME_CATALYST_ADDITIVE_BONUS = 0.25; // 25% additive boost
+    // Catalysts that raise transmute success, with their additive success boost
+    const CATALYST_BONUSES = {
+        '/items/catalyst_of_transmutation': 0.15,
+        [PRIME_CATALYST_HRID]: 0.25,
+    };
+    const NO_CATALYST = '';
     const TRANSMUTE_ACTION_TIME_SECONDS = 20;
     const CATALYTIC_TEA_BUFF_TYPE = '/buff_types/alchemy_success';
 
@@ -17235,7 +17295,7 @@ self.onmessage = function (e) {
             // User-editable inputs
             this.philoPrice = 0;
             this.catalystPrice = 0;
-            this.useCatalyst = true;
+            this.catalystHrid = PRIME_CATALYST_HRID; // NO_CATALYST for none
             this.useCatalyticTea = false;
             this.catalyticTeaRatioBoost = 0;
             this.drinkConcentrationLevel = 0; // 0-20
@@ -17348,7 +17408,9 @@ self.onmessage = function (e) {
             this.philoPrice = philoPriceInfo.value || 0;
             this.philoPriceIsOutlier = philoPriceInfo.value ? philoPriceInfo.isOutlier : false;
 
-            const catalystPriceInfo = marketData_js.getItemPriceOutlierInfo(PRIME_CATALYST_HRID, { mode: 'ask' });
+            const catalystPriceInfo = this.catalystHrid
+                ? marketData_js.getItemPriceOutlierInfo(this.catalystHrid, { mode: 'ask' })
+                : { value: null, isOutlier: false };
             this.catalystPrice = catalystPriceInfo.value || 0;
             this.catalystPriceIsOutlier = catalystPriceInfo.value ? catalystPriceInfo.isOutlier : false;
         }
@@ -17386,7 +17448,12 @@ self.onmessage = function (e) {
             try {
                 const saved = await storage.getJSON('philoCalculatorSettings', 'settings', null);
                 if (saved) {
-                    this.useCatalyst = saved.useCatalyst !== false;
+                    if (saved.catalystHrid === NO_CATALYST || saved.catalystHrid in CATALYST_BONUSES) {
+                        this.catalystHrid = saved.catalystHrid;
+                    } else {
+                        // Older saves only had a Prime Catalyst on/off flag
+                        this.catalystHrid = saved.useCatalyst === false ? NO_CATALYST : PRIME_CATALYST_HRID;
+                    }
                     this.useCatalyticTea = saved.useCatalyticTea || false;
                     this.drinkConcentrationLevel = saved.drinkConcentrationLevel || 0;
                     this.hideNegativeProfitItems = saved.hideNegativeProfitItems !== false;
@@ -17405,7 +17472,7 @@ self.onmessage = function (e) {
                 await storage.setJSON(
                     'philoCalculatorSettings',
                     {
-                        useCatalyst: this.useCatalyst,
+                        catalystHrid: this.catalystHrid,
                         useCatalyticTea: this.useCatalyticTea,
                         drinkConcentrationLevel: this.drinkConcentrationLevel,
                         hideNegativeProfitItems: this.hideNegativeProfitItems,
@@ -17498,9 +17565,9 @@ self.onmessage = function (e) {
                 totalBonus += this.catalyticTeaRatioBoost * (1 + drinkConcentration);
             }
 
-            // Prime catalyst bonus (additive, not multiplicative)
-            if (this.useCatalyst) {
-                totalBonus += PRIME_CATALYST_ADDITIVE_BONUS;
+            // Catalyst bonus (additive, not multiplicative)
+            if (this.catalystHrid) {
+                totalBonus += CATALYST_BONUSES[this.catalystHrid] || 0;
             }
 
             const successRate = Math.min(1.0, baseTransmuteRate * (1 + totalBonus));
@@ -17515,12 +17582,18 @@ self.onmessage = function (e) {
 
             // Get item cost (market ask price)
             const priceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
-            const itemCost = priceInfo.value;
-            if (itemCost === null || itemCost === undefined) return null;
+            let itemCost = priceInfo.value;
+            // Untradable items (the refined capes) have no market price. Keep them listed so the user
+            // can enter a price; tradable items with no market data stay hidden as before.
+            const needsPrice = itemCost === null || itemCost === undefined;
+            if (needsPrice) {
+                if (itemDetails.isTradable === true) return null;
+                itemCost = 0;
+            }
             const itemCostIsOutlier = priceInfo.isOutlier;
 
             // Catalyst cost per action (consumed only on success)
-            const catalystCostPerAction = this.useCatalyst ? successRate * this.catalystPrice : 0;
+            const catalystCostPerAction = this.catalystHrid ? successRate * this.catalystPrice : 0;
 
             // Transmute coin cost: max(50, sellPrice / 5) × bulkMultiplier per action
             const sellPrice = itemDetails.sellPrice || 0;
@@ -17548,7 +17621,8 @@ self.onmessage = function (e) {
                 evPerAction += successRate * drop.dropRate * avgCount * dropValue;
             }
 
-            const isOutlier = itemCostIsOutlier || dropsHaveOutlier || (this.useCatalyst && this.catalystPriceIsOutlier);
+            const isOutlier =
+                itemCostIsOutlier || dropsHaveOutlier || (Boolean(this.catalystHrid) && this.catalystPriceIsOutlier);
 
             // Profit per action (EV now includes philo value)
             const profitPerAction = evPerAction - totalCostPerAction;
@@ -17583,25 +17657,30 @@ self.onmessage = function (e) {
             const revenuePerHour = evPerAction * actionsPerHour;
             const costPerHour = totalCostPerAction * actionsPerHour;
 
+            // Without a price every cost-derived figure would be misleading, so leave them blank
+            const costDerived = (value) => (needsPrice ? null : value);
+
             return {
                 itemHrid,
                 name: this.getItemName(itemHrid),
-                cost: itemCost,
+                cost: costDerived(itemCost),
+                needsPrice,
+                hasCustomCost: getCustomPrice(itemHrid, 0, 'sell') !== null,
                 philoChance,
                 returnChance,
                 transmuteChance: baseTransmuteRate,
                 effectiveTransmuteChance: successRate,
-                transmuteCost: totalCostPerAction,
+                transmuteCost: costDerived(totalCostPerAction),
                 ev: evPerAction,
                 itemsPerAction,
                 actionsPerPhilo,
                 itemsPerPhilo,
-                profitPerPhilo,
-                profitMargin,
+                profitPerPhilo: costDerived(profitPerPhilo),
+                profitMargin: costDerived(profitMargin),
                 timePerPhiloSeconds,
-                profitPerHour,
+                profitPerHour: costDerived(profitPerHour),
                 revenuePerHour,
-                costPerHour,
+                costPerHour: costDerived(costPerHour),
                 isOutlier,
             };
         }
@@ -17634,6 +17713,10 @@ self.onmessage = function (e) {
                 const aVal = a[col];
                 const bVal = b[col];
 
+                // Blank (unpriced) values always sort last
+                if (aVal === null || bVal === null) {
+                    return (aVal === null) - (bVal === null);
+                }
                 if (typeof aVal === 'string') {
                     return dir * aVal.localeCompare(bVal);
                 }
@@ -17847,24 +17930,43 @@ self.onmessage = function (e) {
             });
             catLabel.appendChild(catInput);
 
-            // Use catalyst checkbox
-            const checkLabel = document.createElement('label');
-            checkLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;';
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = this.useCatalyst;
-            checkbox.style.cursor = 'pointer';
-            checkbox.addEventListener('change', () => {
-                this.useCatalyst = checkbox.checked;
+            // Catalyst dropdown
+            const catalystLabel = document.createElement('label');
+            catalystLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
+            catalystLabel.textContent = i18n_js.t('philoCalculator.catalystLabel');
+            const catalystSelect = document.createElement('select');
+            catalystSelect.className = 'philo-catalyst-select';
+            catalystSelect.style.cssText = `
+            padding: 4px 8px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 13px;
+        `;
+            const catalystOptions = [
+                [NO_CATALYST, i18n_js.t('philoCalculator.noCatalystOption')],
+                ...Object.keys(CATALYST_BONUSES).map((hrid) => [hrid, this.getItemName(hrid)]),
+            ];
+            for (const [value, label] of catalystOptions) {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                option.selected = value === this.catalystHrid;
+                catalystSelect.appendChild(option);
+            }
+            catalystSelect.addEventListener('change', () => {
+                this.catalystHrid = catalystSelect.value;
+                this.loadDefaultPrices();
+                catInput.value = this.catalystPrice.toLocaleString();
                 this.recalculate();
                 this.saveSettings();
             });
-            checkLabel.appendChild(checkbox);
-            checkLabel.appendChild(document.createTextNode(i18n_js.t('philoCalculator.usePrimeCatalystLabel')));
+            catalystLabel.appendChild(catalystSelect);
 
             container.appendChild(philoLabel);
+            container.appendChild(catalystLabel);
             container.appendChild(catLabel);
-            container.appendChild(checkLabel);
 
             // Catalytic Tea checkbox
             const teaCheckLabel = document.createElement('label');
@@ -18009,6 +18111,59 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Editable cost cell. A typed price is saved as the item's custom price override (the same
+         * one used by the rest of Toolasha); clearing it falls back to the market price.
+         * @param {Object} row - Row data
+         * @returns {HTMLInputElement}
+         */
+        createCostInput(row) {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'philo-cost-input';
+            input.value = row.needsPrice ? '' : Math.round(row.cost).toLocaleString();
+            input.placeholder = row.needsPrice ? i18n_js.t('philoCalculator.noMarketPricePlaceholder') : '';
+            input.title = row.hasCustomCost ? i18n_js.t('philoCalculator.customCostTooltip') : '';
+            input.style.cssText = `
+            width: 90px;
+            padding: 2px 6px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid ${row.hasCustomCost ? '#4a90e2' : row.needsPrice ? '#f59e0b' : '#555'};
+            border-radius: 4px;
+            font-size: 12px;
+            text-align: right;
+        `;
+            input.addEventListener('change', () => this.setItemCost(row.itemHrid, input.value));
+            return input;
+        }
+
+        /**
+         * Save (or clear) the custom price for an item and recalculate
+         * @param {string} itemHrid - Item HRID
+         * @param {string} rawValue - Text typed into the cost cell
+         */
+        async setItemCost(itemHrid, rawValue) {
+            const trimmed = String(rawValue).trim();
+            let sell = null;
+            if (trimmed !== '') {
+                const parsed = parseInt(trimmed.replaceAll(',', '').replaceAll('.', ''), 10);
+                if (isNaN(parsed) || parsed < 0) {
+                    this.renderTable();
+                    return;
+                }
+                sell = parsed;
+            }
+
+            try {
+                const existing = getCustomPriceOverrides()[`${itemHrid}:0`];
+                await setCustomPriceOverride(itemHrid, 0, existing?.buy ?? null, sell);
+            } catch (error) {
+                console.error('[PhiloCalculator] Failed to save custom price:', error);
+            }
+            this.recalculate();
+        }
+
+        /**
          * Recalculate all rows and re-render
          */
         recalculate() {
@@ -18090,7 +18245,8 @@ self.onmessage = function (e) {
 
             // Apply negative profit filter
             if (this.hideNegativeProfitItems) {
-                filteredRows = filteredRows.filter((row) => row.profitPerPhilo >= 0);
+                // Unpriced rows stay visible so they can be priced
+                filteredRows = filteredRows.filter((row) => row.needsPrice || row.profitPerPhilo >= 0);
             }
 
             for (let i = 0; i < filteredRows.length; i++) {
@@ -18108,6 +18264,19 @@ self.onmessage = function (e) {
                 `;
 
                     const value = row[col.key];
+
+                    if (col.key === 'cost') {
+                        td.appendChild(this.createCostInput(row));
+                        tr.appendChild(td);
+                        continue;
+                    }
+
+                    // Cost-derived figures are blank until an unpriced item gets a price
+                    if (value === null || value === undefined) {
+                        td.textContent = '\u2014';
+                        tr.appendChild(td);
+                        continue;
+                    }
 
                     // Format based on column type
                     switch (col.key) {
@@ -21461,8 +21630,8 @@ self.onmessage = function (e) {
         const { itemHrid, enhancementLevel = 0, count = 1 } = item;
 
         // Untradable capes have no market: value them at base value + refinement + the average cost of
-        // enhancing them with the player's own stats. Not cached - it depends on current gear and the
-        // cape setting, neither of which the enhancement cache is invalidated by.
+        // enhancing them with the player's own stats. Not in networthCache - that is only invalidated by
+        // market data, while this depends on current gear too; getUntradableCapeValue keeps its own cache.
         if (isUntradableCape(itemHrid)) {
             return (getUntradableCapeValue(itemHrid, enhancementLevel) ?? 0) * count;
         }
@@ -38636,4 +38805,4 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.warningIcon, Toolasha.Utils.enhancementConfig, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.warningIcon, Toolasha.Utils.enhancementConfig, Toolasha.Core.storage, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);

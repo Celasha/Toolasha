@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.25.3
+ * Version: 3.25.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -37288,6 +37288,25 @@ self.onmessage = function (e) {
         }
         return rows.sort((a, b) => b.goldPerToken - a.goldPerToken);
     }
+
+    /**
+     * Untradable cape valuation (refined and enhanced)
+     *
+     * value = base cape value + refinement cost + average enhancement cost
+     *
+     * The base cape value comes from the cape setting (see utils/untradable-cape.js). Refinement and
+     * enhancement costs come from the existing enhancement path, evaluated with the player's OWN
+     * stats and equipped gear (not the manual enhancing parameters), since the point is to estimate
+     * what the player has actually invested in a cape they cannot buy.
+     */
+
+
+    // The enhancement path is a full simulation and net worth asks for it on every inventory change, so
+    // the result is kept. It depends on the player's gear, teas and levels (the auto-detected params),
+    // the cape setting and custom prices, which are part of the key, and on market prices, which clear it.
+    const _pathCostCache = new Map();
+
+    marketAPI.on(() => _pathCostCache.clear());
 
     /**
      * Task Profit Calculator
