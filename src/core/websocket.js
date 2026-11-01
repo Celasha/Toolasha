@@ -252,6 +252,7 @@ class WebSocketHook {
         const skipDedup =
             messageType === 'quests_updated' ||
             messageType === 'action_completed' ||
+            messageType === 'battle_updated' ||
             messageType === 'actions_updated' ||
             messageType === 'items_updated' ||
             messageType === 'market_item_order_books_updated' ||
@@ -306,7 +307,12 @@ class WebSocketHook {
             if (this.processedMessages.size > 100) {
                 this.cleanupProcessedMessages();
             }
-        } else if (messageType === 'action_completed' || messageType === 'loot_opened' || messageType === 'info') {
+        } else if (
+            messageType === 'action_completed' ||
+            messageType === 'battle_updated' ||
+            messageType === 'loot_opened' ||
+            messageType === 'info'
+        ) {
             // These types bypass the lossy first-100-char dedup (Gabriel's fix, commit 1007215,
             // extended to loot_opened, then info) because two genuine consecutive messages can
             // share the same prefix while differing later. The WebSocket prototype wrapper can still fire

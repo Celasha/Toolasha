@@ -239,6 +239,54 @@ describe('WebSocket hook — loot_opened dedup (OA-1)', () => {
     });
 });
 
+describe('WebSocket hook — battle_updated dedup', () => {
+    let webSocketHook;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        const mod = await import('./websocket.js');
+        webSocketHook = mod.default;
+    });
+
+    // Combat tracking diffs each battle_updated against the previous one, so a dropped message
+    // loses damage. Two genuine ticks can share their first 100 raw characters.
+    function battleUpdatedMessage(hp) {
+        return JSON.stringify({
+            type: 'battle_updated',
+            battleId: 123456789,
+            pMap: { 0: { cHP: 1000, mHP: 1000, cMP: 500, mMP: 500, atkCounter: 4, isAutoAtk: true, int: 3000000000 } },
+            mMap: { 0: { cHP: hp, mHP: 300000 } },
+        });
+    }
+
+    test('two ticks sharing the first 100 chars but differing later both dispatch', () => {
+        const handler = vi.fn();
+        webSocketHook.on('battle_updated', handler);
+        const socket = makeFakeWebSocket();
+        const first = battleUpdatedMessage(250000);
+        const second = battleUpdatedMessage(200000);
+        expect(first.substring(0, 100)).toBe(second.substring(0, 100));
+
+        webSocketHook.processMessage(first, socket);
+        webSocketHook.processMessage(second, socket);
+
+        expect(handler).toHaveBeenCalledTimes(2);
+        expect(handler.mock.calls[1][0].mMap[0].cHP).toBe(200000);
+    });
+
+    test('an exact duplicate interception of the same physical message collapses to one dispatch', () => {
+        const handler = vi.fn();
+        webSocketHook.on('battle_updated', handler);
+        const socket = makeFakeWebSocket();
+        const message = battleUpdatedMessage(250000);
+
+        webSocketHook.processMessage(message, socket);
+        webSocketHook.processMessage(message, socket);
+
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('WebSocket hook — info notification dedup', () => {
     let webSocketHook;
 
