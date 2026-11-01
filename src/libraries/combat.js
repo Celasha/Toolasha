@@ -37,6 +37,7 @@ import labSim from '../features/combat-sim/lab-sim.js';
 
 // Combat stats
 import combatStats from '../features/combat-stats/combat-stats.js';
+import combatLive from '../features/combat-live/combat-live.js';
 import combatConsumableTimer from '../features/combat/combat-consumable-timer.js';
 
 // Abilities
@@ -86,6 +87,7 @@ toolashaRoot.Combat = {
         applyLoadoutOverrideToMetzCharacter,
     },
     combatStats,
+    combatLive,
     combatConsumableTimer,
     abilityBookCalculator,
     abilityTooltipTiming,

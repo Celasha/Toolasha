@@ -2115,6 +2115,33 @@ export const settingsGroups = {
                 default: true,
                 help: 'Shows the Actual vs Expected drop-rate/profit comparison and Loot Luck delta in the Statistics panel.',
             },
+            combatLive: {
+                id: 'combatLive',
+                label: 'Combat Live: Show live damage, damage taken and mana panel during combat',
+                type: 'checkbox',
+                default: false,
+                help:
+                    'Floating panel with party DPS (and true DPS from kills), damage taken and deaths, and mana spent per ability. ' +
+                    'The game does not report who landed each hit, so damage is shown for the whole party, or for you when you fight alone.',
+            },
+            combatLive_estimateParty: {
+                id: 'combatLive_estimateParty',
+                label: "Combat Live: Estimate each party member's damage (experimental)",
+                type: 'checkbox',
+                default: false,
+                help:
+                    'In a party, credits a hit to a player only when exactly one player started an attack in the same game message. ' +
+                    'Every other hit stays unattributed and is shown as a percentage. Not validated against real fights yet; numbers marked ~ are estimates.',
+            },
+            combatLive_record: {
+                id: 'combatLive_record',
+                label: 'Combat Live: Record battle ticks for debugging',
+                type: 'checkbox',
+                default: false,
+                help:
+                    'Keeps the most recent combat messages in memory so attribution rules can be checked against real fights. ' +
+                    'Adds a copy button to the panel. The recording contains party member names; review it before sharing.',
+            },
             combatConsumableTimer: {
                 id: 'combatConsumableTimer',
                 label: 'Combat consumable timer: Show remaining food/drink time during battle',

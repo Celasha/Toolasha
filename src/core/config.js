@@ -268,6 +268,13 @@ class Config {
                 description: 'Tracks combat data and consumable usage; shows Statistics tab in Combat panel',
                 settingKey: 'combatStats',
             },
+            combatLive: {
+                enabled: false,
+                name: 'Combat Live',
+                category: 'Combat',
+                description: 'Floating panel with live party damage, damage taken and mana during combat',
+                settingKey: 'combatLive',
+            },
             combatSimIntegration: {
                 enabled: true,
                 name: 'Combat Simulator Integration',
