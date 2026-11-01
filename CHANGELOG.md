@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.26.0](https://github.com/Celasha/Toolasha/compare/v3.25.4...v3.26.0) (2026-11-01)
+
+
+### Features
+
+* add Combat Live panel with party damage, damage taken and mana meters ([71f9dd0](https://github.com/Celasha/Toolasha/commit/71f9dd071bf5ce614ef72078e486aafe263015fa))
+
+
+### Bug Fixes
+
+* move Combat Live into the UI2 bundle to keep the Combat library under the [@require](https://github.com/require) cap ([2cae696](https://github.com/Celasha/Toolasha/commit/2cae6967970746fd1b0844d5388b875b527c6438))
+* split the combat simulator into its own library to keep bundles under the [@require](https://github.com/require) cap ([2df46c0](https://github.com/Celasha/Toolasha/commit/2df46c09a2cbacecde3f828811d6c2bc04618e7a))
+* stop dropping battle_updated messages in the WebSocket dedup ([f1706bb](https://github.com/Celasha/Toolasha/commit/f1706bb21181362c16dff109f475e856b432f78d))
+
+
+### Code Refactoring
+
+* move shared dungeon key and shrine tables out of the combat sim adapter ([3e3faee](https://github.com/Celasha/Toolasha/commit/3e3faee1bcb67f73fe571bcdc1ab1142a8cd2ca1))
+
 ## [3.25.4](https://github.com/Celasha/Toolasha/compare/v3.25.3...v3.25.4) (2026-10-31)
 
 ### Bug Fixes
