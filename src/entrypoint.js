@@ -480,7 +480,7 @@ function registerFeatures() {
             async: false,
         },
         { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: false },
-        { key: 'combatLive', name: 'Combat Live', category: 'Combat', module: Combat.combatLive, async: false },
+        { key: 'combatLive', name: 'Combat Live', category: 'Combat', module: UI.combatLive, async: false },
         {
             key: 'combatConsumableTimer',
             name: 'Combat Consumable Timer',

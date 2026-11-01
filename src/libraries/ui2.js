@@ -13,6 +13,7 @@
 import equipmentLevelDisplay from '../features/ui/equipment-level-display.js';
 import alchemyItemDimming from '../features/ui/alchemy-item-dimming.js';
 import combatLevelProgress from '../features/ui/combat-level-progress.js';
+import combatLive from '../features/combat-live/combat-live.js';
 import externalLinks from '../features/ui/external-links.js';
 import hideLabyrinthBadge from '../features/ui/hide-labyrinth-badge.js';
 import hideNavBarGlow from '../features/ui/hide-nav-bar-glow.js';
@@ -76,6 +77,7 @@ toolashaRoot.UI = Object.assign(toolashaRoot.UI || {}, {
     equipmentLevelDisplay,
     alchemyItemDimming,
     combatLevelProgress,
+    combatLive,
     externalLinks,
     hideLabyrinthBadge,
     hideNavBarGlow,
