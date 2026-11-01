@@ -6,6 +6,7 @@
  * - Core (core modules, API)
  * - Utils (all utilities)
  * - Market (market, inventory, economy)
+ * - Sim (headless combat simulator: engine, adapter, runners; loaded before the libraries that use it)
  * - Actions (production, gathering, alchemy)
  * - Combat (combat, stats, abilities)
  * - UI (tasks, skills, settings, misc)

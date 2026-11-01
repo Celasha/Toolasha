@@ -29,6 +29,7 @@
 // @require      https://UPDATE-THIS-URL/toolasha-core.js
 // @require      https://UPDATE-THIS-URL/toolasha-utils.js
 // @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-sim.js
 // @require      https://UPDATE-THIS-URL/toolasha-actions.js
 // @require      https://UPDATE-THIS-URL/toolasha-combat.js
 // @require      https://UPDATE-THIS-URL/toolasha-ui.js

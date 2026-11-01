@@ -32,7 +32,7 @@ import { debugEquipmentSpeedBonuses, parseEquipmentSpeedBonuses } from '../../ut
 import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
 import { getActionName, getItemName, getMonsterName } from '../../utils/game-i18n.js';
 import { getQuestFromTaskCard, matchDefeatDescription } from '../../utils/game-lookups.js';
-import { runSimulation } from '../combat-sim/combat-sim-runner.js';
+import { runSimulation, CHANNEL_TASKS } from '../combat-sim/combat-sim-runner.js';
 import {
     buildAllPlayerDTOs,
     buildGameDataPayload,
@@ -1184,14 +1184,19 @@ class TaskProfitDisplay {
             }
 
             const SIM_HOURS = 2;
-            const simResult = await runSimulation({
-                gameData: simGameData,
-                playerDTOs: players,
-                zoneHrid,
-                difficultyTier: 0,
-                hours: SIM_HOURS,
-                communityBuffs: getCommunityBuffs(),
-            });
+            const simResult = await runSimulation(
+                {
+                    gameData: simGameData,
+                    playerDTOs: players,
+                    zoneHrid,
+                    difficultyTier: 0,
+                    hours: SIM_HOURS,
+                    communityBuffs: getCommunityBuffs(),
+                },
+                undefined,
+                // Own channel: a task estimate must not cancel (or be cancelled by) a Combat Sim run
+                { channel: CHANNEL_TASKS }
+            );
 
             const kills = simResult.deaths?.[monsterHrid] ?? 0;
             const killsPerHour = Math.round(kills / SIM_HOURS);

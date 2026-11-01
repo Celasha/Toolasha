@@ -11,7 +11,7 @@
  */
 
 const BANNER_ID = 'mwi-libraries-warning';
-const REQUIRED_LIBRARIES = ['Core', 'Utils', 'Market', 'Actions', 'Combat', 'UI'];
+const REQUIRED_LIBRARIES = ['Core', 'Utils', 'Market', 'Sim', 'Actions', 'Combat', 'UI'];
 
 const MESSAGES = {
     en: {

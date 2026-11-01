@@ -99,6 +99,7 @@ const combatSim = vi.hoisted(() => ({
 
 vi.mock('../combat-sim/combat-sim-runner.js', () => ({
     runSimulation: combatSim.runSimulation,
+    CHANNEL_TASKS: 'tasks',
 }));
 
 vi.mock('../combat-sim/combat-sim-adapter.js', () => ({
@@ -176,6 +177,13 @@ describe('TaskProfitDisplay combat estimate (#750 review follow-up)', () => {
 
         expect(container.innerHTML).toContain('monsterName=苍蝇');
         expect(container.innerHTML).not.toContain('monsterName=null');
+    });
+
+    test('runs its simulation on the tasks channel so it never cancels a Combat Sim run', async () => {
+        const container = document.createElement('div');
+        await feature._runCombatSimEstimate(container, TASK_DATA, '');
+
+        expect(combatSim.runSimulation).toHaveBeenCalledWith(expect.any(Object), undefined, { channel: 'tasks' });
     });
 
     test("combat result path renders the localized Purple's Gift name", async () => {

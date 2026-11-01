@@ -12,9 +12,29 @@
 import WORKER_SCRIPT from './combat-sim-worker-entry.js?worker';
 
 let workerBlobURL = null;
-let activeWorkers = [];
 let taskIdCounter = 0;
-let pendingRejects = []; // Track reject functions to abort on cancel
+
+// Checked against the production bundles by scripts/check-combat-sim-singleton.js: this worker state
+// must exist in exactly one library (toolasha-sim.js).
+export const RUNNER_STATE_IMPLEMENTATION_ID = 'toolasha-sim-runner-state-v1';
+
+// Worker slots are scoped by channel. Starting a run cancels whatever is in flight on ITS channel
+// only, so independent features never abort each other's simulations. The Combat Sim UIs and the
+// labyrinth tools share the default channel (as they always have); the task estimates use their own.
+// This runner is now a single shared copy, so the isolation the task features used to get by
+// bundling their own copy of it has to be explicit.
+export const CHANNEL_DEFAULT = 'default';
+export const CHANNEL_TASKS = 'tasks';
+const slots = new Map(); // channel -> { workers: Worker[], rejects: Function[] }
+
+function getSlot(channel = CHANNEL_DEFAULT) {
+    let slot = slots.get(channel);
+    if (!slot) {
+        slot = { workers: [], rejects: [] };
+        slots.set(channel, slot);
+    }
+    return slot;
+}
 
 /**
  * Get or create the worker Blob URL (created once, reused).
@@ -103,17 +123,19 @@ export function buildExtraBuffsByPlayer(playerDTOs, communityBuffs) {
  * Run a single simulation chunk in a Worker.
  * @param {Object} message - Worker message payload
  * @param {Function} [onProgress] - Progress callback (0-100 for this chunk)
+ * @param {string} [channel] - Worker slot to register on (see CHANNEL_DEFAULT)
  * @returns {Promise<Object>} SimResult
  */
-export function runWorkerChunk(message, onProgress) {
+export function runWorkerChunk(message, onProgress, channel = CHANNEL_DEFAULT) {
     return new Promise((resolve, reject) => {
         const worker = new Worker(getWorkerURL());
-        activeWorkers.push(worker);
-        pendingRejects.push(reject);
+        const slot = getSlot(channel);
+        slot.workers.push(worker);
+        slot.rejects.push(reject);
 
         const cleanup = () => {
-            activeWorkers = activeWorkers.filter((w) => w !== worker);
-            pendingRejects = pendingRejects.filter((r) => r !== reject);
+            slot.workers = slot.workers.filter((w) => w !== worker);
+            slot.rejects = slot.rejects.filter((r) => r !== reject);
         };
 
         worker.onmessage = (event) => {
@@ -155,16 +177,19 @@ export function runWorkerChunk(message, onProgress) {
  * @param {number} params.hours - Hours to simulate
  * @param {Object} params.communityBuffs - { comExp, comDrop }
  * @param {Function} [onProgress] - Called with (percent: 0-100)
+ * @param {Object} [options]
+ * @param {string} [options.channel] - Worker slot; a new run only cancels runs on the same channel
  * @returns {Promise<Object>} SimResult
  */
-export async function runSimulation(params, onProgress) {
+export async function runSimulation(params, onProgress, options = {}) {
     const { gameData, playerDTOs, zoneHrid, difficultyTier, hours, communityBuffs } = params;
+    const channel = options.channel ?? CHANNEL_DEFAULT;
 
     const extraBuffsByPlayer = buildExtraBuffsByPlayer(playerDTOs, communityBuffs);
     const ONE_HOUR_NS = 3600 * 1e9;
 
     // Cancel any previous run
-    cancelSimulation();
+    cancelSimulation(channel);
 
     const taskId = ++taskIdCounter;
     const message = {
@@ -180,7 +205,7 @@ export async function runSimulation(params, onProgress) {
         extraBuffsByPlayer,
     };
 
-    const result = await runWorkerChunk(message, onProgress);
+    const result = await runWorkerChunk(message, onProgress, channel);
 
     if (onProgress) onProgress(100);
 
@@ -364,16 +389,18 @@ export async function runLabyrinthAttempts(params) {
 }
 
 /**
- * Terminate all active simulation workers and reject pending promises.
+ * Terminate all active simulation workers on a channel and reject their pending promises.
+ * @param {string} [channel] - Worker slot to cancel (default: the shared default channel)
  */
-export function cancelSimulation() {
-    for (const worker of activeWorkers) {
+export function cancelSimulation(channel = CHANNEL_DEFAULT) {
+    const slot = getSlot(channel);
+    for (const worker of slot.workers) {
         worker.terminate();
     }
-    activeWorkers = [];
+    slot.workers = [];
 
-    const rejects = pendingRejects.slice();
-    pendingRejects = [];
+    const rejects = slot.rejects.slice();
+    slot.rejects = [];
     for (const reject of rejects) {
         reject(new Error('Cancelled'));
     }

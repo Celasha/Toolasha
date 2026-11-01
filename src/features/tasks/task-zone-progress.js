@@ -11,6 +11,7 @@
 import dataManager from '../../core/data-manager.js';
 import { buildAllPlayerDTOs, buildGameDataPayload, getCommunityBuffs } from '../combat-sim/combat-sim-adapter.js';
 import { runAllZonesSimulation } from '../combat-sim/all-zones-runner.js';
+import { CHANNEL_TASKS } from '../combat-sim/combat-sim-runner.js';
 import { getActionName, getMonsterName } from '../../utils/game-i18n.js';
 import { computeZoneBottleneck } from './task-zone-bottleneck.js';
 import { getZoneEstimatePercentile } from './task-zone-estimate-percentile.js';
@@ -160,14 +161,19 @@ export async function computeAllZoneProgress() {
     const communityBuffs = getCommunityBuffs();
     const monsterDetailMap = gameData.combatMonsterDetailMap || {};
 
-    const simResults = await runAllZonesSimulation({
-        gameData,
-        playerDTOs: players,
-        zones: zoneHrids.map((zoneHrid) => ({ zoneHrid, difficultyTier: 0 })),
-        hours: SIM_HOURS,
-        communityBuffs,
-        useEarlyExit: false,
-    });
+    const simResults = await runAllZonesSimulation(
+        {
+            gameData,
+            playerDTOs: players,
+            zones: zoneHrids.map((zoneHrid) => ({ zoneHrid, difficultyTier: 0 })),
+            hours: SIM_HOURS,
+            communityBuffs,
+            useEarlyExit: false,
+        },
+        undefined,
+        // Own channel: a task estimate must not cancel (or be cancelled by) a Combat Sim run
+        { channel: CHANNEL_TASKS }
+    );
 
     const percentile = getZoneEstimatePercentile();
     const results = [];

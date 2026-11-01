@@ -190,6 +190,9 @@ jobs:
             - name: Verify loadout state integrity
               run: npm run check:loadout-state
 
+            - name: Verify combat sim singleton integrity
+              run: npm run check:combat-sim
+
             - name: Verify bundle sizes
               run: |
                   limit=2097152

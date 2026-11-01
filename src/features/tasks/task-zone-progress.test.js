@@ -123,7 +123,10 @@ describe('computeAllZoneProgress', () => {
                     { zoneHrid: '/actions/combat/zone_b', difficultyTier: 0 },
                 ],
                 hours: 2,
-            })
+            }),
+            undefined,
+            // Task estimates run on their own channel so they never cancel a Combat Sim run
+            { channel: 'tasks' }
         );
 
         expect(result).toHaveLength(2);
@@ -206,7 +209,10 @@ describe('computeAllZoneProgress', () => {
             expect.objectContaining({
                 zones: [{ zoneHrid: '/actions/combat/eye_planet', difficultyTier: 0 }],
                 hours: 2,
-            })
+            }),
+            undefined,
+            // Task estimates run on their own channel so they never cancel a Combat Sim run
+            { channel: 'tasks' }
         );
         expect(result).toHaveLength(1);
         expect(result[0].zoneHrid).toBe('/actions/combat/eye_planet');

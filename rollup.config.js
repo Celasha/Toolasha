@@ -17,6 +17,7 @@ const libraryHeaderActions = readFileSync(join(__dirname, 'library-headers/actio
 const libraryHeaderCombat = readFileSync(join(__dirname, 'library-headers/combat.txt'), 'utf-8');
 const libraryHeaderUI = readFileSync(join(__dirname, 'library-headers/ui.txt'), 'utf-8');
 const libraryHeaderUI2 = readFileSync(join(__dirname, 'library-headers/ui2.txt'), 'utf-8');
+const libraryHeaderSim = readFileSync(join(__dirname, 'library-headers/sim.txt'), 'utf-8');
 const entrypointHeader = readFileSync(join(__dirname, 'library-headers/entrypoint.txt'), 'utf-8');
 
 const normalizeModuleId = (id) => (id ? normalize(id.split('?')[0]) : id);
@@ -80,6 +81,23 @@ const utilsExternalGlobals = new Map([
 const combatFeatureExternals = new Map([
     // loadout-snapshot is accessed lazily at runtime via window.Toolasha.Combat.loadoutSnapshot
     // No entries needed here; kept as a hook for future cross-bundle combat singletons
+]);
+
+// Simulator modules imported cross-library (by combat, ui, ui2). The Sim library owns the one copy
+// (the runners keep module-level worker state; the engine keeps the game-data singleton), so every
+// other library must reference it instead of bundling a private duplicate.
+// Default-exported modules (engine/player.js) are exposed as the value itself, not a namespace.
+const simExternalGlobals = new Map([
+    [normalize(join(__dirname, 'src/features/combat-sim/combat-sim-adapter.js')), 'Toolasha.Sim.combatSimAdapter'],
+    [normalize(join(__dirname, 'src/features/combat-sim/combat-sim-runner.js')), 'Toolasha.Sim.combatSimRunner'],
+    [normalize(join(__dirname, 'src/features/combat-sim/all-zones-runner.js')), 'Toolasha.Sim.allZonesRunner'],
+    [
+        normalize(join(__dirname, 'src/features/combat-sim/ability-timing-calculator.js')),
+        'Toolasha.Sim.abilityTimingCalculator',
+    ],
+    [normalize(join(__dirname, 'src/features/combat-sim/skilling-sim-helpers.js')), 'Toolasha.Sim.skillingSimHelpers'],
+    [normalize(join(__dirname, 'src/features/combat-sim/engine/game-data.js')), 'Toolasha.Sim.engineGameData'],
+    [normalize(join(__dirname, 'src/features/combat-sim/engine/player.js')), 'Toolasha.Sim.enginePlayer'],
 ]);
 
 // Market modules imported cross-library (by combat, actions, ui)
@@ -249,6 +267,16 @@ const prodLibraries = [
         },
     },
     {
+        key: 'sim',
+        input: 'src/libraries/sim.js',
+        output: {
+            file: 'dist/libraries/toolasha-sim.js',
+            format: 'iife',
+            name: 'ToolashaSim',
+            banner: libraryHeaderSim,
+        },
+    },
+    {
         key: 'actions',
         input: 'src/libraries/actions.js',
         output: {
@@ -318,8 +346,12 @@ const prodConfig = [
             external = buildExternal(new Map([...coreExternalGlobals, ...utilsExternalGlobals]));
             globals = sharedFeatureGlobals;
         } else if (key !== 'core') {
-            // actions, combat, ui — need core + utils + market externals
+            // sim, actions, combat, ui, ui2 — need core + utils + market externals
             const allExternals = new Map([...coreExternalGlobals, ...utilsExternalGlobals, ...marketExternalGlobals]);
+            // everything except the Sim library itself reaches the simulator through Toolasha.Sim
+            if (key !== 'sim') {
+                for (const [k, v] of simExternalGlobals) allExternals.set(k, v);
+            }
             // ui and actions also treat combat feature singletons as externals to avoid duplicate instances
             if (key === 'ui' || key === 'ui2' || key === 'actions') {
                 for (const [k, v] of combatFeatureExternals) allExternals.set(k, v);

@@ -3,16 +3,17 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { assertLibrariesLoaded, findMissingLibraries, showLibrariesWarning } from './entrypoint-guard.js';
 
-const allLibraries = { Core: {}, Utils: {}, Market: {}, Actions: {}, Combat: {}, UI: {} };
+const allLibraries = { Core: {}, Utils: {}, Market: {}, Sim: {}, Actions: {}, Combat: {}, UI: {} };
 
 describe('findMissingLibraries', () => {
     test('reports everything when the namespace is absent', () => {
-        expect(findMissingLibraries(undefined)).toEqual(['Core', 'Utils', 'Market', 'Actions', 'Combat', 'UI']);
+        expect(findMissingLibraries(undefined)).toEqual(['Core', 'Utils', 'Market', 'Sim', 'Actions', 'Combat', 'UI']);
     });
 
     test('reports only the libraries that are missing', () => {
         expect(findMissingLibraries({ ...allLibraries, Combat: undefined, UI: undefined })).toEqual(['Combat', 'UI']);
         expect(findMissingLibraries(allLibraries)).toEqual([]);
+        expect(findMissingLibraries({ ...allLibraries, Sim: undefined })).toEqual(['Sim']);
     });
 });
 

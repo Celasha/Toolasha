@@ -1,5 +1,15 @@
-import { describe, expect, test } from 'vitest';
-import { buildExtraBuffs, buildExtraBuffsByPlayer, splitAttempts, mergeLabyrinthResults } from './combat-sim-runner.js';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import {
+    buildExtraBuffs,
+    buildExtraBuffsByPlayer,
+    splitAttempts,
+    mergeLabyrinthResults,
+    runSimulation,
+    runWorkerChunk,
+    cancelSimulation,
+    CHANNEL_DEFAULT,
+    CHANNEL_TASKS,
+} from './combat-sim-runner.js';
 
 describe('buildExtraBuffs (CSIM-AUD-019/021) - no longer carries guild/Shrine buffs', () => {
     test('hasMooPass=true contributes the MooPass wisdom buff', () => {
@@ -105,5 +115,82 @@ describe('labyrinth attempt batching', () => {
             simulatedTime: 0,
             experienceGained: {},
         });
+    });
+});
+
+describe('worker channels - independent features never cancel each other', () => {
+    let workers;
+
+    beforeEach(() => {
+        workers = [];
+        class FakeWorker {
+            constructor() {
+                this.terminated = false;
+                workers.push(this);
+            }
+            postMessage() {}
+            terminate() {
+                this.terminated = true;
+            }
+        }
+        vi.stubGlobal('Worker', FakeWorker);
+        vi.stubGlobal('URL', { ...URL, createObjectURL: () => 'blob:fake', revokeObjectURL: () => {} });
+    });
+
+    afterEach(() => {
+        cancelSimulation(CHANNEL_DEFAULT);
+        cancelSimulation(CHANNEL_TASKS);
+        vi.unstubAllGlobals();
+    });
+
+    const params = {
+        gameData: {},
+        playerDTOs: [],
+        zoneHrid: '/actions/combat/fly',
+        difficultyTier: 0,
+        hours: 1,
+        communityBuffs: {},
+    };
+    const settled = (promise) =>
+        promise.then(
+            () => 'resolved',
+            (error) => error.message
+        );
+
+    test('cancelling the default channel leaves a run on another channel alone', async () => {
+        const task = runWorkerChunk({ taskId: 1 }, undefined, CHANNEL_TASKS);
+        const sim = runWorkerChunk({ taskId: 2 }, undefined, CHANNEL_DEFAULT);
+
+        cancelSimulation(CHANNEL_DEFAULT);
+
+        await expect(sim).rejects.toThrow('Cancelled');
+        expect(workers[0].terminated).toBe(false);
+        expect(workers[1].terminated).toBe(true);
+        cancelSimulation(CHANNEL_TASKS);
+        await expect(task).rejects.toThrow('Cancelled');
+    });
+
+    test('starting a run cancels an earlier run on the same channel only', async () => {
+        const taskRun = settled(runSimulation(params, undefined, { channel: CHANNEL_TASKS }));
+        const firstSim = settled(runSimulation(params));
+        const secondSim = runSimulation(params);
+
+        expect(await firstSim).toBe('Cancelled');
+        expect(workers.map((worker) => worker.terminated)).toEqual([false, true, false]);
+
+        cancelSimulation(CHANNEL_DEFAULT);
+        cancelSimulation(CHANNEL_TASKS);
+        await expect(secondSim).rejects.toThrow('Cancelled');
+        expect(await taskRun).toBe('Cancelled');
+    });
+
+    test('runs without a channel share the default one, as before', async () => {
+        const first = settled(runSimulation(params));
+        const second = runSimulation(params);
+
+        expect(await first).toBe('Cancelled');
+
+        cancelSimulation();
+        await expect(second).rejects.toThrow('Cancelled');
     });
 });
