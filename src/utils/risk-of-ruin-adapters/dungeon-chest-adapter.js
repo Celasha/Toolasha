@@ -23,7 +23,7 @@ import dataManager from '../../core/data-manager.js';
 import expectedValueCalculator from '../../features/market/expected-value-calculator.js';
 import { calculatePriceAfterTax } from '../profit-helpers.js';
 import { createSeededRng, drawFromDistribution } from '../risk-of-ruin-engine.js';
-import { DUNGEON_ENTRY_KEYS, DUNGEON_CHEST_KEYS } from '../../features/combat-sim/combat-sim-adapter.js';
+import { DUNGEON_ENTRY_KEYS, DUNGEON_CHEST_KEYS } from '../combat-constants.js';
 import { getKeyPrice, getKeyPriceInfo } from '../dungeon-key-cost.js';
 
 const COIN_HRID = '/items/coin';

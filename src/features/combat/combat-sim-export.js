@@ -7,7 +7,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
-import { COMBAT_SHRINE_HRIDS, getCombatGuildBuffHridForShrine } from '../combat-sim/combat-sim-adapter.js';
+import { COMBAT_SHRINE_HRIDS, getCombatGuildBuffHridForShrine } from '../../utils/combat-constants.js';
 
 /**
  * Build the Shykai/Szerra "guildCombatBuffLevels" object ({force, tempo, spirit, rarity,

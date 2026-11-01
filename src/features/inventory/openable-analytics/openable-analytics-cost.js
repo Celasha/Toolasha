@@ -9,7 +9,7 @@
 
 import dataManager from '../../../core/data-manager.js';
 import expectedValueCalculator from '../../market/expected-value-calculator.js';
-import { DUNGEON_ENTRY_KEYS } from '../../combat-sim/combat-sim-adapter.js';
+import { DUNGEON_ENTRY_KEYS } from '../../../utils/combat-constants.js';
 import { getKeyPriceInfo } from '../../../utils/dungeon-key-cost.js';
 
 /**

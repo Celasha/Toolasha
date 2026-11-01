@@ -14,36 +14,15 @@ import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import { calculateRawCombatLevel } from '../../utils/combat-level-progress-calculator.js';
 import { getItemName } from '../../utils/game-i18n.js';
+import {
+    COMBAT_SHRINE_HRIDS,
+    getCombatGuildBuffHridForShrine,
+    DUNGEON_ENTRY_KEYS,
+    DUNGEON_CHEST_KEYS,
+} from '../../utils/combat-constants.js';
 
-/**
- * The five current combat-relevant guild Shrines (CSIM-AUD-021, UI-002). Effect construction is
- * fully data-driven (see engine/shrine.js) - this list only identifies which shrine hrids the
- * Sim Editor and DTO builders should carry, never their formulas.
- */
-export const COMBAT_SHRINE_HRIDS = [
-    '/guild_shrines/force',
-    '/guild_shrines/tempo',
-    '/guild_shrines/spirit',
-    '/guild_shrines/rarity',
-    '/guild_shrines/scholar',
-];
-
-/**
- * Resolve a shrine's own combat guild-buff hrid (e.g. "/guild_shrines/force" ->
- * "/guild_buffs/force_combat"). Shrine level evidence (purchased/active level, as opposed to the
- * shrine building's unlocked cap) is only ever exposed keyed by guild-buff hrid - never by shrine
- * hrid - in both `characterGuildBuffMap`/`getCharacterGuildBuffLevel` (self) and a shared
- * profile's `guildBuffLevelMap` (party members), so every caller needs this same resolution first.
- * @param {string} shrineHrid
- * @param {Object} guildBuffDetailMap
- * @returns {string|null}
- */
-export function getCombatGuildBuffHridForShrine(shrineHrid, guildBuffDetailMap) {
-    for (const [buffHrid, buff] of Object.entries(guildBuffDetailMap || {})) {
-        if (buff.shrineHrid === shrineHrid && buff.isCombat) return buffHrid;
-    }
-    return null;
-}
+// Re-exported so the sim's own files keep importing these from the adapter
+export { COMBAT_SHRINE_HRIDS, getCombatGuildBuffHridForShrine, DUNGEON_ENTRY_KEYS, DUNGEON_CHEST_KEYS };
 
 /**
  * Extract all required game data maps from initClientData for the sim engine.
@@ -1280,26 +1259,6 @@ export function calculateExpectedDrops(simResult, gameData, playerHrid = 'player
 
     return totalDropMap;
 }
-
-// Maps dungeon chest HRIDs to their required entry key HRIDs
-export const DUNGEON_ENTRY_KEYS = {
-    '/items/chimerical_chest': '/items/chimerical_entry_key',
-    '/items/sinister_chest': '/items/sinister_entry_key',
-    '/items/enchanted_chest': '/items/enchanted_entry_key',
-    '/items/pirate_chest': '/items/pirate_entry_key',
-};
-
-// Maps dungeon chest HRIDs (regular + refinement) to their chest key HRIDs
-export const DUNGEON_CHEST_KEYS = {
-    '/items/chimerical_chest': '/items/chimerical_chest_key',
-    '/items/sinister_chest': '/items/sinister_chest_key',
-    '/items/enchanted_chest': '/items/enchanted_chest_key',
-    '/items/pirate_chest': '/items/pirate_chest_key',
-    '/items/chimerical_refinement_chest': '/items/chimerical_chest_key',
-    '/items/sinister_refinement_chest': '/items/sinister_chest_key',
-    '/items/enchanted_refinement_chest': '/items/enchanted_chest_key',
-    '/items/pirate_refinement_chest': '/items/pirate_chest_key',
-};
 
 /**
  * Calculate dungeon key costs from a drop map.

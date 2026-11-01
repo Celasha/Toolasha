@@ -6,11 +6,6 @@ vi.mock('../../../core/data-manager.js', () => ({
 vi.mock('../../market/expected-value-calculator.js', () => ({
     default: { resolveBuySideValue: vi.fn() },
 }));
-vi.mock('../../combat-sim/combat-sim-adapter.js', () => ({
-    DUNGEON_ENTRY_KEYS: {
-        '/items/chimerical_chest': '/items/chimerical_entry_key',
-    },
-}));
 vi.mock('../../../utils/dungeon-key-cost.js', () => ({
     getKeyPriceInfo: vi.fn(),
 }));

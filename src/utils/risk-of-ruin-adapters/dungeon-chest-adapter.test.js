@@ -26,14 +26,6 @@ vi.mock('../../features/market/expected-value-calculator.js', () => ({
     default: { getDropPrice: (itemHrid) => (itemHrid in dropPrices ? dropPrices[itemHrid] : null) },
 }));
 
-vi.mock('../../features/combat-sim/combat-sim-adapter.js', () => ({
-    DUNGEON_ENTRY_KEYS: { '/items/chimerical_chest': '/items/chimerical_entry_key' },
-    DUNGEON_CHEST_KEYS: {
-        '/items/chimerical_chest': '/items/chimerical_chest_key',
-        '/items/chimerical_refinement_chest': '/items/chimerical_chest_key',
-    },
-}));
-
 const { getChestOpenCost, getChestCostBreakdown, getMinimumGuaranteedPayout, drawChestPayout, buildDungeonChestModel } =
     await import('./dungeon-chest-adapter.js');
 const { createSeededRng } = await import('../risk-of-ruin-engine.js');
