@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.28.1
+ * Version: 3.28.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2466,6 +2466,9 @@
             unattributed: 'Not assigned to a player',
             colShare: 'Share',
             colHits: 'Hits',
+            colDps: 'DPS',
+            colKillTime: 'Kill time',
+            seconds: (p) => `${p.value}s`,
             sectionChart: 'DPS chart',
             sectionTotals: 'Totals',
             sectionEnemies: 'Enemies',
@@ -7822,6 +7825,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             unattributed: '未分配给玩家',
             colShare: '占比',
             colHits: '命中',
+            colDps: 'DPS',
+            colKillTime: '击杀用时',
+            seconds: (p) => `${p.value}秒`,
             sectionChart: 'DPS 图表',
             sectionTotals: '汇总',
             sectionEnemies: '敌人',
