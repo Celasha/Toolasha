@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.26.1
+ * Version: 3.27.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2466,6 +2466,11 @@
             unattributed: 'Not assigned to a player',
             colShare: 'Share',
             colHits: 'Hits',
+            dpsNow: (p) => `DPS ${p.dps}`,
+            paceVsAverage: (p) => `${p.arrow} ${p.percent}% vs avg`,
+            bestDps: (p) => `best ${p.dps}`,
+            otherAbilities: 'Other',
+            tapeTooltip: 'Your last minute of hits: height = damage, gold = crit, hollow = miss, gaps = between waves',
             copyRecordingTooltip: 'Copy the recorded battle ticks',
         },
         philoCalculator: {
@@ -4536,6 +4541,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: "Combat Live: Show each party member's damage",
                     help: "In a party, splits damage per player and per ability using each player's action counter in the game's combat messages. Damage over time and reflected damage has no attacker in the message, so it is listed separately.",
                 },
+                combatLive_showChart: {
+                    label: 'Combat Live: Show the DPS chart on the Damage tab',
+                    help: 'A strip showing your last minute of hits (height = damage, gold = crit, hollow = miss), your current DPS against your average, and a bar of damage by ability.',
+                },
                 combatLive_record: {
                     label: 'Combat Live: Record battle ticks for debugging',
                     help: 'Keeps the most recent combat messages in memory so attribution rules can be checked against real fights. Adds a copy button to the panel. The recording contains party member names; review it before sharing.',
@@ -5828,6 +5837,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 combatLive_estimateParty: {
                     label: '战斗实时面板：显示每位队友的伤害',
                     help: '在队伍中，根据游戏战斗消息里每位玩家的行动计数，按玩家和技能拆分伤害。持续伤害和反弹伤害在消息中没有攻击者，因此单独列出。',
+                },
+                combatLive_showChart: {
+                    label: '战斗实时面板：在伤害页显示 DPS 图表',
+                    help: '显示你最近一分钟的每次攻击（高度 = 伤害，金色 = 暴击，空心 = 未命中）、当前 DPS 与平均值的对比，以及按技能划分的伤害条。',
                 },
                 combatLive_record: {
                     label: '战斗实时面板：记录战斗数据用于调试',
@@ -7806,6 +7819,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             unattributed: '未分配给玩家',
             colShare: '占比',
             colHits: '命中',
+            dpsNow: (p) => `DPS ${p.dps}`,
+            paceVsAverage: (p) => `${p.arrow} ${p.percent}% 对比平均`,
+            bestDps: (p) => `最高 ${p.dps}`,
+            otherAbilities: '其他',
+            tapeTooltip: '你最近一分钟的每次攻击：高度 = 伤害，金色 = 暴击，空心 = 未命中，空档 = 波次之间',
             copyRecordingTooltip: '复制已记录的战斗数据',
         },
         philoCalculator: {
@@ -11155,6 +11173,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     help:
                         "In a party, splits damage per player and per ability using each player's action counter in the game's combat messages. " +
                         'Damage over time and reflected damage has no attacker in the message, so it is listed separately.',
+                },
+                combatLive_showChart: {
+                    id: 'combatLive_showChart',
+                    label: 'Combat Live: Show the DPS chart on the Damage tab',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'A strip showing your last minute of hits (height = damage, gold = crit, hollow = miss), your current DPS against your average, and a bar of damage by ability.',
                 },
                 combatLive_record: {
                     id: 'combatLive_record',

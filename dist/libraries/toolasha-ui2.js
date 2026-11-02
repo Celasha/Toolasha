@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.26.1
+ * Version: 3.27.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -968,6 +968,14 @@
 
     const SESSION_GAP_MS = 5000;
 
+    // Recent credited hits are kept for the DPS visual: bounded by age and by count
+    const RECENT_HIT_MS = 65000;
+    // How much of that the hit tape draws
+    const TAPE_WINDOW_MS = 60000;
+    const RECENT_HIT_MAX = 600;
+    // "Current DPS" is the damage dealt in this trailing window
+    const PACE_WINDOW_MS = 10000;
+
     // Keys for the damage "source" rows besides real ability hrids
     const SOURCE_AUTO = 'auto';
     const SOURCE_REFLECT = 'reflect';
@@ -1009,6 +1017,9 @@
             this.players = new Map();
             this.playerNames = [];
             this.playerCount = 0;
+            this.selfName = null;
+            this.recentHits = [];
+            this.bestDps = 0;
             this.dealt = new Map();
             this.unattributed = {
                 [SOURCE_OVER_TIME]: emptyBucket(),
@@ -1025,6 +1036,14 @@
         setPlayers(names) {
             this.playerNames = names;
             this.playerCount = names.length;
+        }
+
+        /**
+         * The player whose own damage the DPS visual follows.
+         * @param {?string} name
+         */
+        setSelf(name) {
+            this.selfName = name || null;
         }
 
         /**
@@ -1046,7 +1065,7 @@
                     this.recordPlayer(event);
                 }
             }
-            this.attributeHits(events);
+            this.attributeHits(events, at);
         }
 
         /**
@@ -1073,8 +1092,9 @@
         /**
          * Credit this message's monster hits to a player's ability, or to an unattributed bucket.
          * @param {Object[]} events - Events from one message
+         * @param {number} at - Message timestamp in ms
          */
-        attributeHits(events) {
+        attributeHits(events, at = Date.now()) {
             const hits = events.filter((event) => event.side === SIDE_MONSTER && event.type === 'damage');
             if (!hits.length) return;
 
@@ -1092,7 +1112,58 @@
                 addDamage(ability, hit);
                 row.abilities.set(source.key, ability);
                 this.dealt.set(source.player, row);
+                this.recentHits.push({
+                    t: at,
+                    player: source.player,
+                    key: source.key,
+                    amount: hit.amount,
+                    crit: Boolean(hit.crit) && !hit.miss,
+                    miss: Boolean(hit.miss),
+                });
             }
+            this.pruneRecentHits(at);
+            this.trackBestDps(at);
+        }
+
+        pruneRecentHits(now) {
+            const cutoff = now - RECENT_HIT_MS;
+            let drop = 0;
+            while (drop < this.recentHits.length && this.recentHits[drop].t < cutoff) drop++;
+            const excess = Math.max(0, this.recentHits.length - drop - RECENT_HIT_MAX);
+            if (drop + excess > 0) this.recentHits.splice(0, drop + excess);
+        }
+
+        /**
+         * The player the DPS visual follows: you when known, the only player when alone, else nobody.
+         * @returns {?string}
+         */
+        chartSubject() {
+            if (this.selfName && this.playerNames.includes(this.selfName)) return this.selfName;
+            return this.playerNames.length === 1 ? this.playerNames[0] : null;
+        }
+
+        /**
+         * Damage per second over the trailing pace window.
+         * @param {?string} player - Whose hits to count
+         * @param {number} now - Window end in ms
+         * @returns {number}
+         */
+        windowDps(player, now) {
+            const start = now - PACE_WINDOW_MS;
+            let total = 0;
+            for (const hit of this.recentHits) {
+                if (hit.player === player && hit.t > start && hit.t <= now) total += hit.amount;
+            }
+            // A fight that has only just started has less than a full window behind it
+            const seconds = Math.min(PACE_WINDOW_MS / 1000, Math.max(1, this.getActiveSeconds()));
+            return total / seconds;
+        }
+
+        trackBestDps(at) {
+            const subject = this.chartSubject();
+            // Not until there is a full window of combat behind it, so one early big hit is not a "best"
+            if (!subject || this.activeMs < PACE_WINDOW_MS) return;
+            this.bestDps = Math.max(this.bestDps, this.windowDps(subject, at));
         }
 
         recordMonster(event) {
@@ -1165,6 +1236,25 @@
         }
 
         /**
+         * @param {number} now - Window end in ms
+         * @param {function(number): number} rate - Damage to per-second over the whole session
+         * @returns {?Object} Recent hits and pace for the followed player, or null when there is none
+         */
+        getChartData(now, rate) {
+            const player = this.chartSubject();
+            if (!player) return null;
+            const start = now - TAPE_WINDOW_MS;
+            return {
+                player,
+                now,
+                hits: this.recentHits.filter((hit) => hit.player === player && hit.t >= start && hit.t <= now),
+                currentDps: this.windowDps(player, now),
+                bestDps: this.bestDps,
+                averageDps: rate((this.dealt.get(player) || emptyDealt()).damage),
+            };
+        }
+
+        /**
          * @returns {number} Seconds of combat counted so far
          */
         getActiveSeconds() {
@@ -1172,9 +1262,10 @@
         }
 
         /**
+         * @param {number} [now] - Time the summary is for, in ms (the trailing windows end here)
          * @returns {Object} Plain summary for the panels
          */
-        getSummary() {
+        getSummary(now = Date.now()) {
             const seconds = this.getActiveSeconds();
             const rate = (value) => (seconds > 0 ? value / seconds : 0);
             const kills = [...this.kills.values()].reduce((sum, count) => sum + count, 0);
@@ -1195,6 +1286,8 @@
                 },
                 // Alone, every hit is yours and nothing is left unattributed
                 attributionExact: this.playerCount === 1,
+                // What the DPS visual draws: the followed player's recent hits and pace
+                chart: this.getChartData(now, rate),
                 dealt: this.playerNames.map((name) => {
                     const row = this.dealt.get(name) || emptyDealt();
                     return {
@@ -1419,6 +1512,149 @@
             el.style.zIndex = String(i);
         } else {
             el.style.zIndex = String(next);
+        }
+    }
+
+    /**
+     * Combat Live DPS visual
+     *
+     * A "hit tape" (one bar per hit over the last minute: height is damage, gold is a crit, hollow is a
+     * miss, gaps are the time between waves) and a one-line bar of damage by ability. The builders are pure
+     * so they can be tested without a canvas; only drawHitTape touches the DOM.
+     */
+
+
+    const TAPE_WIDTH = 296;
+    const TAPE_HEIGHT = 44;
+    const OTHER_KEY = '__other';
+
+    const PALETTE = ['#4fc3ff', '#7dff8a', '#ff9f4a', '#c78bff', '#ff6a8a', '#7ff6ff', '#ffe27a', '#8fa8ff'];
+    const FIXED_COLORS = {
+        auto: '#9aa4b2',
+        'over-time': '#b86bff',
+        reflect: '#ff9a3c',
+        '': '#6b7280',
+        [OTHER_KEY]: '#4b5563',
+    };
+    const CRIT_COLOR = '#ffd24a';
+    const MISS_COLOR = '#8b93a1';
+    // A tiny hit still gets a visible bar, as a fraction of the tape height
+    const MIN_BAR = 0.08;
+    const MISS_BAR = 0.12;
+    // Within this much of the average, the pace counts as steady
+    const STEADY_PERCENT = 3;
+
+    /**
+     * A stable color per ability: the same ability keeps its color from one redraw to the next.
+     * @param {string} key - Ability hrid or a special source key
+     * @returns {string} CSS color
+     */
+    function abilityColor(key) {
+        if (key in FIXED_COLORS) return FIXED_COLORS[key];
+        let hash = 0;
+        for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+        return PALETTE[hash % PALETTE.length];
+    }
+
+    /**
+     * How current DPS compares with the session average.
+     * @param {{currentDps: number, averageDps: number}} pace
+     * @returns {{direction: 'up'|'down'|'flat', arrow: string, percent: number}}
+     */
+    function buildPaceModel({ currentDps, averageDps }) {
+        if (!(averageDps > 0)) return { direction: 'flat', arrow: '•', percent: 0 };
+        const percent = Math.round(((currentDps - averageDps) / averageDps) * 100);
+        if (Math.abs(percent) < STEADY_PERCENT) return { direction: 'flat', arrow: '•', percent: Math.abs(percent) };
+        return percent > 0
+            ? { direction: 'up', arrow: '▲', percent }
+            : { direction: 'down', arrow: '▼', percent: Math.abs(percent) };
+    }
+
+    /**
+     * Turn recent hits into bars on a tape of a given width. The newest hit is at the right edge.
+     * @param {Array<{t: number, amount: number, crit: boolean, miss: boolean, key: string}>} hits
+     * @param {number} now - Right edge of the tape, in ms
+     * @param {number} [width] - Tape width in px
+     * @param {number} [windowMs] - Time the tape covers
+     * @returns {{bars: Array<{x: number, height: number, kind: 'hit'|'crit'|'miss', key: string}>, max: number}}
+     */
+    function buildTapeModel(hits, now, width = TAPE_WIDTH, windowMs = TAPE_WINDOW_MS) {
+        const start = now - windowMs;
+        const visible = hits.filter((hit) => hit.t > start && hit.t <= now);
+        const max = visible.reduce((largest, hit) => (hit.miss ? largest : Math.max(largest, hit.amount)), 1);
+
+        const bars = visible.map((hit) => {
+            const x = Math.min(width - 1, Math.max(0, Math.floor(((hit.t - start) / windowMs) * width)));
+            if (hit.miss) return { x, height: MISS_BAR, kind: 'miss', key: hit.key };
+            return {
+                x,
+                height: Math.min(1, Math.max(MIN_BAR, hit.amount / max)),
+                kind: hit.crit ? 'crit' : 'hit',
+                key: hit.key,
+            };
+        });
+        return { bars, max };
+    }
+
+    /**
+     * Segments for a one-line "damage by ability" bar. Abilities under minShare are folded into "other".
+     * @param {Array<{key: string, damage: number}>} abilities
+     * @param {number} [minShare] - Smallest share that gets its own segment
+     * @returns {Array<{key: string, share: number}>} Largest first, shares summing to 1
+     */
+    function buildAbilityBar(abilities, minShare = 0.03) {
+        const total = abilities.reduce((sum, ability) => sum + ability.damage, 0);
+        if (!(total > 0)) return [];
+
+        const segments = [];
+        let other = 0;
+        for (const ability of [...abilities].sort((a, b) => b.damage - a.damage)) {
+            const share = ability.damage / total;
+            if (share < minShare) other += share;
+            else segments.push({ key: ability.key, share });
+        }
+        if (other > 0) segments.push({ key: OTHER_KEY, share: other });
+        return segments;
+    }
+
+    /**
+     * Draw the hit tape. Does nothing where there is no canvas support (tests, odd embeds).
+     * @param {HTMLCanvasElement} canvas
+     * @param {{bars: Array}} model - From buildTapeModel
+     * @param {number} [width]
+     * @param {number} [height]
+     */
+    function drawHitTape(canvas, model, width = TAPE_WIDTH, height = TAPE_HEIGHT) {
+        const context = canvas.getContext?.('2d');
+        if (!context) return;
+
+        const ratio = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+        // Resizing the canvas also clears it
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+        context.scale(ratio, ratio);
+
+        context.fillStyle = 'rgba(255, 255, 255, 0.04)';
+        context.fillRect(0, 0, width, height);
+        context.fillStyle = 'rgba(255, 255, 255, 0.12)';
+        context.fillRect(0, height - 1, width, 1);
+
+        const usable = height - 3;
+        for (const bar of model.bars) {
+            const barHeight = Math.max(2, Math.round(bar.height * usable));
+            const top = height - 1 - barHeight;
+            if (bar.kind === 'miss') {
+                context.strokeStyle = MISS_COLOR;
+                context.lineWidth = 1;
+                context.strokeRect(bar.x + 0.5, top + 0.5, 2, barHeight - 1);
+            } else {
+                context.fillStyle = abilityColor(bar.key);
+                context.fillRect(bar.x, top, 2, barHeight);
+                if (bar.kind === 'crit') {
+                    context.fillStyle = CRIT_COLOR;
+                    context.fillRect(bar.x - 1, top - 1, 4, 3);
+                }
+            }
         }
     }
 
@@ -1675,18 +1911,54 @@
                 tabBar.appendChild(button);
             }
 
+            const chart = this.buildChartBlock();
+
             const body = document.createElement('div');
             body.style.cssText = 'overflow-y:auto; padding:6px 10px;';
 
-            panel.append(header, tabBar, body);
+            panel.append(header, tabBar, chart.block, body);
             document.body.appendChild(panel);
             registerFloatingPanel(panel);
             panel.addEventListener('mousedown', () => bringPanelToFront(panel));
             this.setupDrag(header, panel);
 
             this.panel = panel;
-            this.elements = { summary, copyButton, collapseButton, tabBar, tabButtons, body };
+            this.elements = { summary, copyButton, collapseButton, tabBar, tabButtons, body, chart };
             this.applyChrome();
+        }
+
+        /**
+         * The DPS visual: pace line, hit tape, damage-by-ability bar and its legend. Built once and updated
+         * in place, because the tape moves every tick.
+         * @returns {Object} The block and the parts that get updated
+         */
+        buildChartBlock() {
+            const block = document.createElement('div');
+            block.style.cssText = 'display:none; padding:6px 10px 0;';
+
+            const paceLine = document.createElement('div');
+            paceLine.style.cssText =
+                'display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;';
+            const paceNow = this.textEl('span', '', 'font-weight:700; font-size:13px;');
+            const paceTrend = this.textEl('span', '', 'font-weight:600;');
+            const paceBest = this.textEl('span', '', 'color:#888;');
+            paceLine.append(paceNow, paceTrend, paceBest);
+
+            const canvas = document.createElement('canvas');
+            canvas.style.cssText = `display:block; width:${TAPE_WIDTH}px; max-width:100%; height:${TAPE_HEIGHT}px;`;
+            canvas.title = i18n_js.t('combatLive.tapeTooltip');
+
+            const abilityBar = document.createElement('div');
+            abilityBar.style.cssText =
+                'display:flex; height:8px; margin-top:4px; border-radius:2px; overflow:hidden; background:rgba(255,255,255,0.06);';
+            const legend = this.textEl(
+                'div',
+                '',
+                'margin-top:3px; color:#9aa4b2; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'
+            );
+
+            block.append(paceLine, canvas, abilityBar, legend);
+            return { block, paceNow, paceTrend, paceBest, canvas, abilityBar, legend, barSignature: '' };
         }
 
         textEl(tag, text, css) {
@@ -1804,6 +2076,7 @@
             this.elements.copyButton.style.display = this.deps.isRecording() ? '' : 'none';
             const summary = this.deps.getSummary();
             this.elements.summary.textContent = i18n_js.t('combatLive.headerSummary', { dps: rate(summary.party.dps) });
+            this.updateChart(summary);
             if (this.collapsed) return;
 
             const model = buildTabModel(summary, this.tab, {
@@ -1813,6 +2086,53 @@
             if (signature === this.lastSignature) return;
             this.lastSignature = signature;
             this.renderModel(model);
+        }
+
+        /**
+         * Redraw the DPS visual, or hide it when it does not apply (other tab, collapsed, setting off, or
+         * no player to follow).
+         * @param {Object} summary - BattleStats.getSummary()
+         */
+        updateChart(summary) {
+            const chart = this.elements.chart;
+            const visible =
+                this.tab === 'damage' &&
+                !this.collapsed &&
+                config.getSetting('combatLive_showChart') !== false &&
+                Boolean(summary.chart);
+            chart.block.style.display = visible ? 'block' : 'none';
+            if (!visible) return;
+
+            const data = summary.chart;
+            const pace = buildPaceModel(data);
+            const trendColor = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
+            chart.paceNow.textContent = i18n_js.t('combatLive.dpsNow', { dps: rate(data.currentDps) });
+            chart.paceTrend.textContent = i18n_js.t('combatLive.paceVsAverage', { arrow: pace.arrow, percent: pace.percent });
+            chart.paceTrend.style.color = trendColor;
+            chart.paceBest.textContent = data.bestDps > 0 ? i18n_js.t('combatLive.bestDps', { dps: rate(data.bestDps) }) : '';
+
+            drawHitTape(chart.canvas, buildTapeModel(data.hits, data.now));
+
+            const player = summary.dealt.find((row) => row.name === data.player);
+            const segments = buildAbilityBar(player?.abilities || []);
+            const signature = JSON.stringify(segments);
+            if (signature === chart.barSignature) return;
+            chart.barSignature = signature;
+
+            const label = (key) => (key === OTHER_KEY ? i18n_js.t('combatLive.otherAbilities') : sourceName(key));
+            chart.abilityBar.replaceChildren(
+                ...segments.map((segment) => {
+                    const part = document.createElement('div');
+                    part.style.cssText = `flex:${segment.share} 1 0; background:${abilityColor(segment.key)};`;
+                    part.title = `${label(segment.key)} ${percent(segment.share)}`;
+                    return part;
+                })
+            );
+            chart.legend.textContent = segments
+                .filter((segment) => segment.key !== OTHER_KEY)
+                .slice(0, 3)
+                .map((segment) => `${label(segment.key)} ${percent(segment.share)}`)
+                .join(' · ');
         }
 
         buildTable(headers, rows) {
@@ -1932,6 +2252,9 @@
             const now = Date.now();
             this.tracker.handleNewBattle(data);
             this.stats.setPlayers(this.tracker.players.map((player) => player.name));
+            const selfId = String(dataManager.getCurrentCharacterId() ?? '');
+            const self = this.tracker.players.find((player) => selfId && String(player.id) === selfId);
+            this.stats.setSelf(self?.name ?? null);
             if (this.isRecording()) {
                 this.recorder.recordNewBattle(data, now, dataManager.getCurrentCharacterId());
             }
