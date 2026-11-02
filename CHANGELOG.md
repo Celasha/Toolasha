@@ -2,10 +2,9 @@
 
 ## [3.26.1](https://github.com/Celasha/Toolasha/compare/v3.26.0...v3.26.1) (2026-11-02)
 
-
 ### Bug Fixes
 
-* record new_battle baselines and label an unknown prepared ability as unknown ([d11b8dd](https://github.com/Celasha/Toolasha/commit/d11b8dd3d36cd358e705d27638bd62215bb56292))
+- record new_battle baselines and label an unknown prepared ability as unknown ([d11b8dd](https://github.com/Celasha/Toolasha/commit/d11b8dd3d36cd358e705d27638bd62215bb56292))
 
 ## [3.26.0](https://github.com/Celasha/Toolasha/compare/v3.25.4...v3.26.0) (2026-11-02)
 
