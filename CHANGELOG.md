@@ -2,10 +2,9 @@
 
 ## [3.28.1](https://github.com/Celasha/Toolasha/compare/v3.28.0...v3.28.1) (2026-11-02)
 
-
 ### Bug Fixes
 
-* make the Combat Live hit tape bars thicker so they read at a glance ([6b03fcc](https://github.com/Celasha/Toolasha/commit/6b03fcccba1feea36917e0a436292cbfed47cbcb))
+- make the Combat Live hit tape bars thicker so they read at a glance ([6b03fcc](https://github.com/Celasha/Toolasha/commit/6b03fcccba1feea36917e0a436292cbfed47cbcb))
 
 ## [3.28.0](https://github.com/Celasha/Toolasha/compare/v3.27.0...v3.28.0) (2026-11-02)
 
