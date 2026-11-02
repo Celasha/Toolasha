@@ -1759,7 +1759,7 @@ export default {
         totalDamage: 'Total damage',
         hitsCritsMisses: 'Hits / crits / misses',
         kills: 'Kills',
-        time: 'Combat time',
+        time: 'Session time',
         colEnemy: 'Enemy',
         colDamage: 'Damage',
         colKills: 'Kills',

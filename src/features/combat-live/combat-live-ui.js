@@ -69,6 +69,24 @@ function sourceName(key) {
 const percent = (value) => `${Math.round(value * 100)}%`;
 
 /**
+ * Leave out a column until some row has something to show in it, so a table starts narrow and grows as
+ * data arrives (no DPS or kill time before the first kill, no death columns before the first death).
+ * The first column names the row and always stays. Rows without `blank` flags count as having data.
+ * @param {string[]} headers
+ * @param {Array<{kind: string, cells: string[], blank?: boolean[]}>} rows
+ * @returns {{headers: string[], rows: Array<{kind: string, cells: string[]}>}} Nothing at all when no
+ *     data column is left, because a table of names alone says nothing
+ */
+export function pruneEmptyColumns(headers, rows) {
+    const keep = headers.map((_, index) => index === 0 || rows.some((row) => !row.blank?.[index]));
+    if (!keep.some((kept, index) => index > 0 && kept)) return { headers: [], rows: [] };
+    return {
+        headers: headers.filter((_, index) => keep[index]),
+        rows: rows.map((row) => ({ kind: row.kind, cells: row.cells.filter((_, index) => keep[index]) })),
+    };
+}
+
+/**
  * Build what a tab shows from a BattleStats summary.
  * @param {Object} summary - BattleStats.getSummary()
  * @param {string} tab - 'damage' | 'taken' | 'mana'
@@ -107,6 +125,13 @@ export function buildTabModel(summary, tab, options = {}) {
                     ? t('combatLive.seconds', { value: monster.killTime.toFixed(1) })
                     : '–',
                 String(monster.kills),
+            ],
+            blank: [
+                false,
+                !(monster.damage > 0),
+                !(monster.dps > 0),
+                !Number.isFinite(monster.killTime),
+                !(monster.kills > 0),
             ],
         }));
 
@@ -182,6 +207,14 @@ export function buildTabModel(summary, tab, options = {}) {
                 String(player.deaths),
                 rate(player.deathsPerHour),
             ],
+            blank: [
+                false,
+                !(player.damage > 0),
+                !(player.damageTakenPerSecond > 0),
+                !(player.healed > 0),
+                !(player.deaths > 0),
+                !(player.deathsPerHour > 0),
+            ],
         }));
     } else {
         model.headers = [t('combatLive.colAbility'), t('combatLive.colMana'), t('combatLive.colPerSecond')];
@@ -212,6 +245,7 @@ export function buildTabModel(summary, tab, options = {}) {
         }
     }
 
+    ({ headers: model.headers, rows: model.rows } = pruneEmptyColumns(model.headers, model.rows));
     return model;
 }
 

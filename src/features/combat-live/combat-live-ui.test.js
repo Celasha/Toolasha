@@ -20,7 +20,7 @@ vi.mock('../../utils/game-i18n.js', () => ({
     getAbilityName: (hrid, fallback) => fallback,
 }));
 
-const { buildTabModel, default: combatLiveUI, CHART_SECTION } = await import('./combat-live-ui.js');
+const { buildTabModel, pruneEmptyColumns, default: combatLiveUI, CHART_SECTION } = await import('./combat-live-ui.js');
 const { default: storage } = await import('../../core/storage.js');
 
 const summary = (overrides = {}) => ({
@@ -90,13 +90,101 @@ describe('buildTabModel', () => {
         expect(model.rows[0].cells).toEqual(['Giant Fly', '1500', '120.0', 'combatLive.seconds:{"value":"6.5"}', '3']);
     });
 
-    test('an enemy with no kill yet shows dashes for DPS and kill time', () => {
-        const base = summary();
-        base.monsters = [{ hrid: '/monsters/giant_fly', damage: 300, kills: 0, dps: 0, killTime: null }];
+    describe('columns appear as data arrives', () => {
+        const fly = (overrides = {}) => ({
+            hrid: '/monsters/giant_fly',
+            damage: 300,
+            kills: 0,
+            dps: 0,
+            killTime: null,
+            ...overrides,
+        });
 
-        const model = buildTabModel(base, 'damage');
+        test('the enemy table is just damage until something has been killed', () => {
+            const base = summary();
+            base.monsters = [fly()];
 
-        expect(model.rows[0].cells).toEqual(['Giant Fly', '300', '–', '–', '0']);
+            const model = buildTabModel(base, 'damage');
+
+            expect(model.headers).toEqual(['combatLive.colEnemy', 'combatLive.colDamage']);
+            expect(model.rows).toEqual([{ kind: 'row', cells: ['Giant Fly', '300'] }]);
+        });
+
+        test('DPS, kill time and kills all appear with the first kill', () => {
+            const base = summary();
+            base.monsters = [fly({ kills: 1, dps: 75, killTime: 4 })];
+
+            const model = buildTabModel(base, 'damage');
+
+            expect(model.headers).toHaveLength(5);
+            expect(model.rows[0].cells).toEqual([
+                'Giant Fly',
+                '300',
+                '75.0',
+                'combatLive.seconds:{"value":"4.0"}',
+                '1',
+            ]);
+        });
+
+        test('a column stays for every row once any row has data, with a dash where one has none', () => {
+            const base = summary();
+            base.monsters = [fly({ kills: 1, dps: 75, killTime: 4 }), fly({ hrid: '/monsters/giant_bee' })];
+
+            const model = buildTabModel(base, 'damage');
+
+            expect(model.headers).toHaveLength(5);
+            expect(model.rows[1].cells).toEqual(['Giant Bee', '300', '–', '–', '0']);
+        });
+
+        test('damage taken has no death or healing columns until there has been a death or a heal', () => {
+            const base = summary();
+            base.players = [{ ...base.players[0], healed: 0, deaths: 0, deathsPerHour: 0 }];
+
+            const model = buildTabModel(base, 'taken');
+
+            expect(model.headers).toEqual(['combatLive.colPlayer', 'combatLive.colTaken', 'combatLive.colPerSecond']);
+            expect(model.rows[0].cells).toEqual(['Alice', '400', '40.0']);
+        });
+
+        test('the death columns come in with the first death', () => {
+            const base = summary();
+            base.players = [{ ...base.players[0], healed: 0, deaths: 1, deathsPerHour: 360 }];
+
+            const model = buildTabModel(base, 'taken');
+
+            expect(model.headers).toEqual([
+                'combatLive.colPlayer',
+                'combatLive.colTaken',
+                'combatLive.colPerSecond',
+                'combatLive.colDeaths',
+                'combatLive.colDeathsPerHour',
+            ]);
+        });
+
+        test('no table at all when nothing but names would be left', () => {
+            const base = summary();
+            base.players = [
+                { ...base.players[0], damage: 0, damageTakenPerSecond: 0, healed: 0, deaths: 0, deathsPerHour: 0 },
+            ];
+
+            const model = buildTabModel(base, 'taken');
+
+            expect(model.headers).toEqual([]);
+            expect(model.rows).toEqual([]);
+        });
+
+        test('pruneEmptyColumns always keeps the name column and treats rows without flags as data', () => {
+            const result = pruneEmptyColumns(
+                ['name', 'a', 'b'],
+                [
+                    { kind: 'row', cells: ['x', '1', '2'], blank: [true, true, false] },
+                    { kind: 'row', cells: ['y', '3', '4'] },
+                ]
+            );
+
+            expect(result.headers).toEqual(['name', 'a', 'b']);
+            expect(result.rows[1].cells).toEqual(['y', '3', '4']);
+        });
     });
 
     test('damage taken tab has one row per player', () => {

@@ -223,7 +223,7 @@ export default {
         totalDamage: '总伤害',
         hitsCritsMisses: '命中 / 暴击 / 未命中',
         kills: '击杀',
-        time: '战斗时间',
+        time: '统计时长',
         colEnemy: '敌人',
         colDamage: '伤害',
         colKills: '击杀',
