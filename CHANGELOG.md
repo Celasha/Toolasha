@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.28.3](https://github.com/Celasha/Toolasha/compare/v3.28.2...v3.28.3) (2026-11-02)
+
+### Bug Fixes
+
+- hide empty Combat Live table columns until data arrives and call it session time ([54bdcf4](https://github.com/Celasha/Toolasha/commit/54bdcf480e1973fdabf4c5095e280f6647f7005d))
+
 ## [3.28.2](https://github.com/Celasha/Toolasha/compare/v3.28.1...v3.28.2) (2026-11-02)
 
 ### Bug Fixes
