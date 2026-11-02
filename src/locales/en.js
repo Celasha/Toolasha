@@ -1772,7 +1772,7 @@ export default {
         colAbility: 'Ability',
         colMana: 'Mana',
         manaSpentGained: (p) => `${p.spent} spent / ${p.gained} gained`,
-        noAbility: 'No ability',
+        unknownAbility: 'Unknown ability',
         partyNote: 'Party total. Turn on "Show each party member\'s damage" in settings to split it.',
         attributionNote:
             'Credited to the player whose attack counter rose in the same game message, under the ability they had prepared. Damage over time and reflected damage has no attacker in the message, so it is not assigned to anyone.',

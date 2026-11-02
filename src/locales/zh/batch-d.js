@@ -236,7 +236,7 @@ export default {
         colAbility: '技能',
         colMana: '魔力',
         manaSpentGained: (p) => `消耗 ${p.spent} / 获得 ${p.gained}`,
-        noAbility: '无技能',
+        unknownAbility: '未知技能',
         partyNote: '队伍总计。在设置中开启“显示每位队友的伤害”可按玩家拆分。',
         attributionNote:
             '记给同一条游戏消息里攻击计数增加的玩家，并按其事先准备的技能统计。持续伤害和反弹伤害在消息中没有攻击者，因此不分配给任何人。',

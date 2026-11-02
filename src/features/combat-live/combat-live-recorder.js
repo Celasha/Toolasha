@@ -11,7 +11,7 @@
 
 const MAX_ENTRIES = 5000;
 const FORMAT = 'toolasha-combat-live-recording';
-const FORMAT_VERSION = 1;
+const FORMAT_VERSION = 2;
 
 /**
  * @param {Object} entry - Raw pMap/mMap entry from battle_updated
@@ -55,17 +55,35 @@ export class CombatLiveRecorder {
             id: data?.battleId ?? null,
             w: data?.wave ?? null,
             self: selfCharacterId,
+            // Every unit's starting point: the first action of a battle is judged against what it
+            // was already preparing and its counters when the battle began.
             p: (data?.players || []).map((unit) => ({
                 n: unit?.name ?? unit?.character?.name ?? null,
                 c: unit?.character?.id ?? null,
                 hp: unit?.currentHitpoints ?? null,
                 mp: unit?.currentManapoints ?? null,
                 atk: unit?.attackAttemptCounter ?? null,
+                ab: unit?.preparingAbilityHrid || '',
+                auto: unit?.isPreparingAutoAttack ? 1 : 0,
+                dmg: unit?.damageSplatCounter ?? null,
+                crit: unit?.criticalDamageSplatCounter ?? null,
             })),
             m: (data?.monsters || []).map((unit) => ({
                 h: unit?.hrid ?? null,
                 hp: unit?.currentHitpoints ?? null,
+                maxHp: unit?.maxHitpoints ?? null,
+                mp: unit?.currentManapoints ?? null,
+                atk: unit?.attackAttemptCounter ?? null,
+                ab: unit?.preparingAbilityHrid || '',
+                auto: unit?.isPreparingAutoAttack ? 1 : 0,
+                dmg: unit?.damageSplatCounter ?? null,
+                crit: unit?.criticalDamageSplatCounter ?? null,
             })),
+            // Which fields a new_battle unit really carries (the names the game uses)
+            fields: {
+                p: Object.keys(data?.players?.[0] || {}),
+                m: Object.keys(data?.monsters?.[0] || {}),
+            },
         });
     }
 

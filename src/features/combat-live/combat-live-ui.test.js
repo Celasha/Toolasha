@@ -107,7 +107,7 @@ describe('buildTabModel', () => {
 
         const model = buildTabModel(base, 'mana');
 
-        expect(model.rows[1].cells[0]).toBe('combatLive.noAbility');
+        expect(model.rows[1].cells[0]).toBe('combatLive.unknownAbility');
     });
 
     test('alone, the damage tab lists your damage by ability, with auto attack and over-time labelled', () => {

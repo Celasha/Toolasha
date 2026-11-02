@@ -172,6 +172,16 @@ describe('BattleEventTracker', () => {
         expect(event).toEqual(expect.objectContaining({ type: 'attack', auto: true, abilityHrid: '' }));
     });
 
+    test('an action with nothing known prepared is unknown, not an auto attack', () => {
+        const tracker = startBattle([player({ attackAttemptCounter: 1 })]);
+
+        const [event] = tracker.handleBattleUpdated(
+            update({ 0: { cHP: 1000, mHP: 1000, cMP: 500, mMP: 500, atkCounter: 2, abilityHrid: '/abilities/poke' } })
+        );
+
+        expect(event).toEqual(expect.objectContaining({ type: 'attack', auto: false, abilityHrid: '' }));
+    });
+
     test('a counter that only repeats its value is not an action', () => {
         const tracker = startBattle([player({ attackAttemptCounter: 5 })]);
 
@@ -462,19 +472,26 @@ describe('BattleStats', () => {
 
         test("a party member's hit is credited to the ability that member had prepared", () => {
             const mage = player({ preparingAbilityHrid: '/abilities/fireball' });
+            const archer = { ...bob(), isPreparingAutoAttack: true };
 
             const summary = run(
                 [
                     [0, strike(1, 250, 1)],
                     [1000, strike(0, 200, 2)],
                 ],
-                [mage, bob()]
+                [mage, archer]
             );
 
             const alice = summary.dealt.find((row) => row.name === 'Alice');
             const robert = summary.dealt.find((row) => row.name === 'Bob');
             expect(alice.abilities).toEqual([expect.objectContaining({ key: '/abilities/fireball', damage: 50 })]);
             expect(robert.abilities).toEqual([expect.objectContaining({ key: 'auto', damage: 50 })]);
+        });
+
+        test('a hit by a unit with nothing known prepared is credited as unknown, never as auto attack', () => {
+            const summary = run([[0, strike(0, 250, 1)]], [player()]);
+
+            expect(summary.dealt[0].abilities).toEqual([expect.objectContaining({ key: '', damage: 50 })]);
         });
 
         test('in a party, damage nobody acted for is over time, and it is not given to anyone', () => {

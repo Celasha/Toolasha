@@ -2,15 +2,34 @@ import { describe, expect, test } from 'vitest';
 import { CombatLiveRecorder } from './combat-live-recorder.js';
 
 describe('CombatLiveRecorder', () => {
-    test('records a new battle with who is in it and which character is recording', () => {
+    test("records a new battle with who is in it, which character is recording, and every unit's starting point", () => {
         const recorder = new CombatLiveRecorder();
 
         recorder.recordNewBattle(
             {
                 battleId: 7,
                 wave: 2,
-                players: [{ character: { id: 1, name: 'Alice' }, currentHitpoints: 900, currentManapoints: 50 }],
-                monsters: [{ hrid: '/monsters/fly', currentHitpoints: 300 }],
+                players: [
+                    {
+                        character: { id: 1, name: 'Alice' },
+                        currentHitpoints: 900,
+                        currentManapoints: 50,
+                        attackAttemptCounter: 3,
+                        preparingAbilityHrid: '/abilities/fireball',
+                        isPreparingAutoAttack: false,
+                        damageSplatCounter: 12,
+                        criticalDamageSplatCounter: 4,
+                    },
+                ],
+                monsters: [
+                    {
+                        hrid: '/monsters/fly',
+                        currentHitpoints: 300,
+                        maxHitpoints: 400,
+                        currentManapoints: 0,
+                        isPreparingAutoAttack: true,
+                    },
+                ],
             },
             1000,
             1
@@ -22,8 +41,33 @@ describe('CombatLiveRecorder', () => {
             id: 7,
             w: 2,
             self: 1,
-            p: [{ n: 'Alice', c: 1, hp: 900, mp: 50, atk: null }],
-            m: [{ h: '/monsters/fly', hp: 300 }],
+            p: [
+                {
+                    n: 'Alice',
+                    c: 1,
+                    hp: 900,
+                    mp: 50,
+                    atk: 3,
+                    ab: '/abilities/fireball',
+                    auto: 0,
+                    dmg: 12,
+                    crit: 4,
+                },
+            ],
+            m: [{ h: '/monsters/fly', hp: 300, maxHp: 400, mp: 0, atk: null, ab: '', auto: 1, dmg: null, crit: null }],
+            fields: {
+                p: [
+                    'character',
+                    'currentHitpoints',
+                    'currentManapoints',
+                    'attackAttemptCounter',
+                    'preparingAbilityHrid',
+                    'isPreparingAutoAttack',
+                    'damageSplatCounter',
+                    'criticalDamageSplatCounter',
+                ],
+                m: ['hrid', 'currentHitpoints', 'maxHitpoints', 'currentManapoints', 'isPreparingAutoAttack'],
+            },
         });
     });
 
@@ -66,7 +110,7 @@ describe('CombatLiveRecorder', () => {
         expect(exported).toEqual(
             expect.objectContaining({
                 format: 'toolasha-combat-live-recording',
-                version: 1,
+                version: 2,
                 recordedAt: '1970-01-01T00:00:00.000Z',
             })
         );

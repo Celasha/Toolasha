@@ -51,7 +51,7 @@ const SOURCE_LABELS = {
 function sourceName(key) {
     const special = SOURCE_LABELS[key];
     if (special) return special();
-    return key ? getAbilityName(key, prettyHrid(key)) : t('combatLive.noAbility');
+    return key ? getAbilityName(key, prettyHrid(key)) : t('combatLive.unknownAbility');
 }
 
 const percent = (value) => `${Math.round(value * 100)}%`;
@@ -181,7 +181,7 @@ export function buildTabModel(summary, tab, options = {}) {
                     cells: [
                         ability.abilityHrid
                             ? getAbilityName(ability.abilityHrid, prettyHrid(ability.abilityHrid))
-                            : t('combatLive.noAbility'),
+                            : t('combatLive.unknownAbility'),
                         number(ability.mana),
                         rate(ability.perSecond),
                     ],

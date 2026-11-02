@@ -15,7 +15,9 @@
  * battle_updated is one combat event with one attacker. A unit acted when its `atkCounter` rose. The
  * `abilityHrid` / `isAutoAtk` on an entry describe the NEXT action the unit is winding up, so the
  * action that just happened is the ability the unit had prepared BEFORE this update. That is also the
- * ability any mana spent in this update belongs to.
+ * ability any mana spent in this update belongs to. The first action of a battle is judged against what
+ * the unit was preparing in `new_battle`; with no known preparation the ability is unknown, never
+ * assumed to be an auto attack.
  *
  * Counters have no value until a unit's first baseline is seen: until then a counter tick is not
  * treated as an action or a hit, so the first update of a battle cannot produce a phantom event.
@@ -134,7 +136,8 @@ function applyUpdate(prev, entry) {
             ...base,
             type: 'attack',
             // What just ran (prepared before this update)...
-            auto: prev.isAutoAtk || !prev.abilityHrid,
+            // Only a known auto attack is auto; a unit with nothing known prepared is just unknown
+            auto: prev.isAutoAtk,
             abilityHrid: prev.isAutoAtk ? '' : prev.abilityHrid,
             // ...and what the unit is now winding up
             nextAbilityHrid: next.isAutoAtk ? '' : next.abilityHrid,
