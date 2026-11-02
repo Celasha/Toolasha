@@ -1,6 +1,7 @@
-import { describe, expect, test, vi } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
-vi.mock('../../core/config.js', () => ({ default: { Z_FLOATING_PANEL: 1000 } }));
+vi.mock('../../core/config.js', () => ({ default: { Z_FLOATING_PANEL: 1000, getSetting: vi.fn() } }));
 vi.mock('../../core/storage.js', () => ({ default: { get: vi.fn(), set: vi.fn() } }));
 vi.mock('../../core/i18n.js', () => ({
     t: (key, params) => (params ? `${key}:${JSON.stringify(params)}` : key),
@@ -19,7 +20,8 @@ vi.mock('../../utils/game-i18n.js', () => ({
     getAbilityName: (hrid, fallback) => fallback,
 }));
 
-const { buildTabModel } = await import('./combat-live-ui.js');
+const { buildTabModel, default: combatLiveUI, CHART_SECTION } = await import('./combat-live-ui.js');
+const { default: storage } = await import('../../core/storage.js');
 
 const summary = (overrides = {}) => ({
     seconds: 10,
@@ -212,5 +214,117 @@ describe('buildTabModel', () => {
             expect(model.secondary.title).toBe('combatLive.byAbilityTitle');
             expect(model.note).toBe('');
         });
+    });
+});
+
+describe('foldable sections', () => {
+    const SECTIONS_KEY = 'combatLive_collapsedSections';
+
+    async function openPanel(saved = []) {
+        HTMLCanvasElement.prototype.getContext = () => null;
+        storage.get.mockImplementation(async (key, _store, fallback) => (key === SECTIONS_KEY ? saved : fallback));
+        storage.set.mockClear();
+        const chart = { player: 'Alice', now: 1_000_000, hits: [], currentDps: 100, bestDps: 150, averageDps: 120 };
+        await combatLiveUI.initialize({
+            getSummary: () => summary({ chart }),
+            getLastMessageAt: () => Date.now(),
+            onReset: vi.fn(),
+            isRecording: () => false,
+            getRecording: () => null,
+        });
+        combatLiveUI.refresh();
+        return document.getElementById('toolasha-combat-live');
+    }
+
+    const header = (panel, id) => panel.querySelector(`[data-section="${id}"]`);
+    const open = (headerEl) => headerEl.getAttribute('aria-expanded') === 'true';
+
+    afterEach(() => {
+        combatLiveUI.cleanup();
+        document.body.innerHTML = '';
+    });
+
+    test('every part of the damage tab is a section with its own title', () => {
+        return openPanel().then((panel) => {
+            const ids = [...panel.querySelectorAll('[data-section]')].map((el) => el.dataset.section);
+
+            expect(ids).toEqual([CHART_SECTION, 'damage.totals', 'damage.secondary', 'damage.main']);
+        });
+    });
+
+    test('clicking a title folds that section away and remembers it', async () => {
+        const panel = await openPanel();
+        const title = header(panel, 'damage.main');
+        const section = title.parentElement;
+        expect(section.children).toHaveLength(2);
+
+        title.click();
+
+        const folded = header(panel, 'damage.main');
+        expect(open(folded)).toBe(false);
+        expect(folded.parentElement.children).toHaveLength(1);
+        expect(storage.set).toHaveBeenCalledWith(SECTIONS_KEY, ['damage.main'], 'settings');
+    });
+
+    test('folding one section leaves the others open', async () => {
+        const panel = await openPanel();
+
+        header(panel, 'damage.totals').click();
+
+        expect(open(header(panel, 'damage.totals'))).toBe(false);
+        expect(open(header(panel, 'damage.secondary'))).toBe(true);
+        expect(open(header(panel, 'damage.main'))).toBe(true);
+    });
+
+    test('clicking a folded title opens it again', async () => {
+        const panel = await openPanel();
+        header(panel, 'damage.main').click();
+
+        header(panel, 'damage.main').click();
+
+        expect(open(header(panel, 'damage.main'))).toBe(true);
+        expect(header(panel, 'damage.main').parentElement.children).toHaveLength(2);
+        expect(storage.set).toHaveBeenLastCalledWith(SECTIONS_KEY, [], 'settings');
+    });
+
+    test('a section folded earlier is still folded when the panel opens', async () => {
+        const panel = await openPanel(['damage.secondary']);
+
+        expect(open(header(panel, 'damage.secondary'))).toBe(false);
+        expect(header(panel, 'damage.secondary').parentElement.children).toHaveLength(1);
+        expect(open(header(panel, 'damage.totals'))).toBe(true);
+    });
+
+    test('folding the chart hides its content but keeps its title', async () => {
+        const panel = await openPanel();
+        const chartHeader = header(panel, CHART_SECTION);
+        const content = chartHeader.nextElementSibling;
+        expect(content.style.display).toBe('block');
+
+        chartHeader.click();
+
+        expect(content.style.display).toBe('none');
+        expect(open(chartHeader)).toBe(false);
+        expect(storage.set).toHaveBeenCalledWith(SECTIONS_KEY, [CHART_SECTION], 'settings');
+    });
+
+    test('Enter and Space fold a section from the keyboard', async () => {
+        const panel = await openPanel();
+        const title = header(panel, 'damage.main');
+
+        title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        expect(open(header(panel, 'damage.main'))).toBe(false);
+
+        header(panel, 'damage.main').dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+        expect(open(header(panel, 'damage.main'))).toBe(true);
+    });
+
+    test('the other tabs are foldable too', async () => {
+        const panel = await openPanel();
+        [...panel.querySelectorAll('button')].find((button) => button.textContent === 'combatLive.tab_taken').click();
+
+        expect(header(panel, 'taken.main')).not.toBeNull();
+        [...panel.querySelectorAll('button')].find((button) => button.textContent === 'combatLive.tab_mana').click();
+        expect(header(panel, 'mana.main')).not.toBeNull();
     });
 });
