@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.27.0](https://github.com/Celasha/Toolasha/compare/v3.26.1...v3.27.0) (2026-11-02)
+
+
+### Features
+
+* add a hit tape and ability bar DPS chart to the Combat Live damage tab ([9d6bc7c](https://github.com/Celasha/Toolasha/commit/9d6bc7ca030b451427cfecd07bde51507d5608c8))
+
 ## [3.26.1](https://github.com/Celasha/Toolasha/compare/v3.26.0...v3.26.1) (2026-11-02)
 
 ### Bug Fixes
