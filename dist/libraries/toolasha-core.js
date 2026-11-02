@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.28.2
+ * Version: 3.28.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2439,7 +2439,7 @@
             totalDamage: 'Total damage',
             hitsCritsMisses: 'Hits / crits / misses',
             kills: 'Kills',
-            time: 'Combat time',
+            time: 'Session time',
             colEnemy: 'Enemy',
             colDamage: 'Damage',
             colKills: 'Kills',
@@ -7799,7 +7799,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             totalDamage: '总伤害',
             hitsCritsMisses: '命中 / 暴击 / 未命中',
             kills: '击杀',
-            time: '战斗时间',
+            time: '统计时长',
             colEnemy: '敌人',
             colDamage: '伤害',
             colKills: '击杀',
