@@ -22,6 +22,8 @@ const FIXED_COLORS = {
 };
 const CRIT_COLOR = '#ffd24a';
 const MISS_COLOR = '#8b93a1';
+// Width of a hit bar in px; a crit cap overhangs it by one px each side
+const BAR_WIDTH = 3;
 // A tiny hit still gets a visible bar, as a fraction of the tape height
 const MIN_BAR = 0.08;
 const MISS_BAR = 0.12;
@@ -127,16 +129,18 @@ export function drawHitTape(canvas, model, width = TAPE_WIDTH, height = TAPE_HEI
     for (const bar of model.bars) {
         const barHeight = Math.max(2, Math.round(bar.height * usable));
         const top = height - 1 - barHeight;
+        // Centre the bar on its time, and keep it inside the tape at either edge
+        const left = Math.min(Math.max(0, bar.x - 1), width - BAR_WIDTH);
         if (bar.kind === 'miss') {
             context.strokeStyle = MISS_COLOR;
             context.lineWidth = 1;
-            context.strokeRect(bar.x + 0.5, top + 0.5, 2, barHeight - 1);
+            context.strokeRect(left + 0.5, top + 0.5, BAR_WIDTH - 1, barHeight - 1);
         } else {
             context.fillStyle = abilityColor(bar.key);
-            context.fillRect(bar.x, top, 2, barHeight);
+            context.fillRect(left, top, BAR_WIDTH, barHeight);
             if (bar.kind === 'crit') {
                 context.fillStyle = CRIT_COLOR;
-                context.fillRect(bar.x - 1, top - 1, 4, 3);
+                context.fillRect(left - 1, top - 1, BAR_WIDTH + 2, 3);
             }
         }
     }

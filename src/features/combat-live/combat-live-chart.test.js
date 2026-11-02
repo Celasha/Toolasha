@@ -145,4 +145,37 @@ describe('drawHitTape', () => {
         expect(context.strokeRect).toHaveBeenCalledTimes(1);
         expect(canvas.width).toBeGreaterThan(0);
     });
+
+    test('bars are 3 px wide, centred on their time, and never run off the edge of the tape', () => {
+        const context = {
+            scale: vi.fn(),
+            fillRect: vi.fn(),
+            strokeRect: vi.fn(),
+            fillStyle: '',
+            strokeStyle: '',
+            lineWidth: 1,
+        };
+        const canvas = { getContext: () => context, width: 0, height: 0 };
+
+        drawHitTape(
+            canvas,
+            {
+                bars: [
+                    { x: 100, height: 0.5, kind: 'hit', key: 'auto' },
+                    { x: 0, height: 0.5, kind: 'hit', key: 'auto' },
+                    { x: 295, height: 0.5, kind: 'hit', key: 'auto' },
+                ],
+            },
+            296,
+            44
+        );
+
+        // calls 0 and 1 are the background and baseline; then one bar each
+        const bars = context.fillRect.mock.calls.slice(2);
+        expect(bars.map(([x, , w]) => [x, w])).toEqual([
+            [99, 3],
+            [0, 3],
+            [293, 3],
+        ]);
+    });
 });
