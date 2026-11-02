@@ -24,6 +24,14 @@ import { SIDE_MONSTER, SIDE_PLAYER } from './battle-event-tracker.js';
 
 const SESSION_GAP_MS = 5000;
 
+// Recent credited hits are kept for the DPS visual: bounded by age and by count
+const RECENT_HIT_MS = 65000;
+// How much of that the hit tape draws
+export const TAPE_WINDOW_MS = 60000;
+const RECENT_HIT_MAX = 600;
+// "Current DPS" is the damage dealt in this trailing window
+export const PACE_WINDOW_MS = 10000;
+
 // Keys for the damage "source" rows besides real ability hrids
 export const SOURCE_AUTO = 'auto';
 export const SOURCE_REFLECT = 'reflect';
@@ -65,6 +73,9 @@ export class BattleStats {
         this.players = new Map();
         this.playerNames = [];
         this.playerCount = 0;
+        this.selfName = null;
+        this.recentHits = [];
+        this.bestDps = 0;
         this.dealt = new Map();
         this.unattributed = {
             [SOURCE_OVER_TIME]: emptyBucket(),
@@ -81,6 +92,14 @@ export class BattleStats {
     setPlayers(names) {
         this.playerNames = names;
         this.playerCount = names.length;
+    }
+
+    /**
+     * The player whose own damage the DPS visual follows.
+     * @param {?string} name
+     */
+    setSelf(name) {
+        this.selfName = name || null;
     }
 
     /**
@@ -102,7 +121,7 @@ export class BattleStats {
                 this.recordPlayer(event);
             }
         }
-        this.attributeHits(events);
+        this.attributeHits(events, at);
     }
 
     /**
@@ -129,8 +148,9 @@ export class BattleStats {
     /**
      * Credit this message's monster hits to a player's ability, or to an unattributed bucket.
      * @param {Object[]} events - Events from one message
+     * @param {number} at - Message timestamp in ms
      */
-    attributeHits(events) {
+    attributeHits(events, at = Date.now()) {
         const hits = events.filter((event) => event.side === SIDE_MONSTER && event.type === 'damage');
         if (!hits.length) return;
 
@@ -148,7 +168,58 @@ export class BattleStats {
             addDamage(ability, hit);
             row.abilities.set(source.key, ability);
             this.dealt.set(source.player, row);
+            this.recentHits.push({
+                t: at,
+                player: source.player,
+                key: source.key,
+                amount: hit.amount,
+                crit: Boolean(hit.crit) && !hit.miss,
+                miss: Boolean(hit.miss),
+            });
         }
+        this.pruneRecentHits(at);
+        this.trackBestDps(at);
+    }
+
+    pruneRecentHits(now) {
+        const cutoff = now - RECENT_HIT_MS;
+        let drop = 0;
+        while (drop < this.recentHits.length && this.recentHits[drop].t < cutoff) drop++;
+        const excess = Math.max(0, this.recentHits.length - drop - RECENT_HIT_MAX);
+        if (drop + excess > 0) this.recentHits.splice(0, drop + excess);
+    }
+
+    /**
+     * The player the DPS visual follows: you when known, the only player when alone, else nobody.
+     * @returns {?string}
+     */
+    chartSubject() {
+        if (this.selfName && this.playerNames.includes(this.selfName)) return this.selfName;
+        return this.playerNames.length === 1 ? this.playerNames[0] : null;
+    }
+
+    /**
+     * Damage per second over the trailing pace window.
+     * @param {?string} player - Whose hits to count
+     * @param {number} now - Window end in ms
+     * @returns {number}
+     */
+    windowDps(player, now) {
+        const start = now - PACE_WINDOW_MS;
+        let total = 0;
+        for (const hit of this.recentHits) {
+            if (hit.player === player && hit.t > start && hit.t <= now) total += hit.amount;
+        }
+        // A fight that has only just started has less than a full window behind it
+        const seconds = Math.min(PACE_WINDOW_MS / 1000, Math.max(1, this.getActiveSeconds()));
+        return total / seconds;
+    }
+
+    trackBestDps(at) {
+        const subject = this.chartSubject();
+        // Not until there is a full window of combat behind it, so one early big hit is not a "best"
+        if (!subject || this.activeMs < PACE_WINDOW_MS) return;
+        this.bestDps = Math.max(this.bestDps, this.windowDps(subject, at));
     }
 
     recordMonster(event) {
@@ -223,6 +294,25 @@ export class BattleStats {
     }
 
     /**
+     * @param {number} now - Window end in ms
+     * @param {function(number): number} rate - Damage to per-second over the whole session
+     * @returns {?Object} Recent hits and pace for the followed player, or null when there is none
+     */
+    getChartData(now, rate) {
+        const player = this.chartSubject();
+        if (!player) return null;
+        const start = now - TAPE_WINDOW_MS;
+        return {
+            player,
+            now,
+            hits: this.recentHits.filter((hit) => hit.player === player && hit.t >= start && hit.t <= now),
+            currentDps: this.windowDps(player, now),
+            bestDps: this.bestDps,
+            averageDps: rate((this.dealt.get(player) || emptyDealt()).damage),
+        };
+    }
+
+    /**
      * @returns {number} Seconds of combat counted so far
      */
     getActiveSeconds() {
@@ -230,9 +320,10 @@ export class BattleStats {
     }
 
     /**
+     * @param {number} [now] - Time the summary is for, in ms (the trailing windows end here)
      * @returns {Object} Plain summary for the panels
      */
-    getSummary() {
+    getSummary(now = Date.now()) {
         const seconds = this.getActiveSeconds();
         const rate = (value) => (seconds > 0 ? value / seconds : 0);
         const kills = [...this.kills.values()].reduce((sum, count) => sum + count, 0);
@@ -253,6 +344,8 @@ export class BattleStats {
             },
             // Alone, every hit is yours and nothing is left unattributed
             attributionExact: this.playerCount === 1,
+            // What the DPS visual draws: the followed player's recent hits and pace
+            chart: this.getChartData(now, rate),
             dealt: this.playerNames.map((name) => {
                 const row = this.dealt.get(name) || emptyDealt();
                 return {

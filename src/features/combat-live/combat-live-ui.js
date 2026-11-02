@@ -14,6 +14,16 @@ import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } fro
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { formatLargeNumber, timeReadable } from '../../utils/formatters.js';
 import { getAbilityName, getMonsterName } from '../../utils/game-i18n.js';
+import {
+    OTHER_KEY,
+    TAPE_HEIGHT,
+    TAPE_WIDTH,
+    abilityColor,
+    buildAbilityBar,
+    buildPaceModel,
+    buildTapeModel,
+    drawHitTape,
+} from './combat-live-chart.js';
 
 const PANEL_ID = 'toolasha-combat-live';
 const STORAGE_STORE = 'settings';
@@ -258,18 +268,54 @@ class CombatLiveUI {
             tabBar.appendChild(button);
         }
 
+        const chart = this.buildChartBlock();
+
         const body = document.createElement('div');
         body.style.cssText = 'overflow-y:auto; padding:6px 10px;';
 
-        panel.append(header, tabBar, body);
+        panel.append(header, tabBar, chart.block, body);
         document.body.appendChild(panel);
         registerFloatingPanel(panel);
         panel.addEventListener('mousedown', () => bringPanelToFront(panel));
         this.setupDrag(header, panel);
 
         this.panel = panel;
-        this.elements = { summary, copyButton, collapseButton, tabBar, tabButtons, body };
+        this.elements = { summary, copyButton, collapseButton, tabBar, tabButtons, body, chart };
         this.applyChrome();
+    }
+
+    /**
+     * The DPS visual: pace line, hit tape, damage-by-ability bar and its legend. Built once and updated
+     * in place, because the tape moves every tick.
+     * @returns {Object} The block and the parts that get updated
+     */
+    buildChartBlock() {
+        const block = document.createElement('div');
+        block.style.cssText = 'display:none; padding:6px 10px 0;';
+
+        const paceLine = document.createElement('div');
+        paceLine.style.cssText =
+            'display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;';
+        const paceNow = this.textEl('span', '', 'font-weight:700; font-size:13px;');
+        const paceTrend = this.textEl('span', '', 'font-weight:600;');
+        const paceBest = this.textEl('span', '', 'color:#888;');
+        paceLine.append(paceNow, paceTrend, paceBest);
+
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = `display:block; width:${TAPE_WIDTH}px; max-width:100%; height:${TAPE_HEIGHT}px;`;
+        canvas.title = t('combatLive.tapeTooltip');
+
+        const abilityBar = document.createElement('div');
+        abilityBar.style.cssText =
+            'display:flex; height:8px; margin-top:4px; border-radius:2px; overflow:hidden; background:rgba(255,255,255,0.06);';
+        const legend = this.textEl(
+            'div',
+            '',
+            'margin-top:3px; color:#9aa4b2; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'
+        );
+
+        block.append(paceLine, canvas, abilityBar, legend);
+        return { block, paceNow, paceTrend, paceBest, canvas, abilityBar, legend, barSignature: '' };
     }
 
     textEl(tag, text, css) {
@@ -387,6 +433,7 @@ class CombatLiveUI {
         this.elements.copyButton.style.display = this.deps.isRecording() ? '' : 'none';
         const summary = this.deps.getSummary();
         this.elements.summary.textContent = t('combatLive.headerSummary', { dps: rate(summary.party.dps) });
+        this.updateChart(summary);
         if (this.collapsed) return;
 
         const model = buildTabModel(summary, this.tab, {
@@ -396,6 +443,53 @@ class CombatLiveUI {
         if (signature === this.lastSignature) return;
         this.lastSignature = signature;
         this.renderModel(model);
+    }
+
+    /**
+     * Redraw the DPS visual, or hide it when it does not apply (other tab, collapsed, setting off, or
+     * no player to follow).
+     * @param {Object} summary - BattleStats.getSummary()
+     */
+    updateChart(summary) {
+        const chart = this.elements.chart;
+        const visible =
+            this.tab === 'damage' &&
+            !this.collapsed &&
+            config.getSetting('combatLive_showChart') !== false &&
+            Boolean(summary.chart);
+        chart.block.style.display = visible ? 'block' : 'none';
+        if (!visible) return;
+
+        const data = summary.chart;
+        const pace = buildPaceModel(data);
+        const trendColor = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
+        chart.paceNow.textContent = t('combatLive.dpsNow', { dps: rate(data.currentDps) });
+        chart.paceTrend.textContent = t('combatLive.paceVsAverage', { arrow: pace.arrow, percent: pace.percent });
+        chart.paceTrend.style.color = trendColor;
+        chart.paceBest.textContent = data.bestDps > 0 ? t('combatLive.bestDps', { dps: rate(data.bestDps) }) : '';
+
+        drawHitTape(chart.canvas, buildTapeModel(data.hits, data.now));
+
+        const player = summary.dealt.find((row) => row.name === data.player);
+        const segments = buildAbilityBar(player?.abilities || []);
+        const signature = JSON.stringify(segments);
+        if (signature === chart.barSignature) return;
+        chart.barSignature = signature;
+
+        const label = (key) => (key === OTHER_KEY ? t('combatLive.otherAbilities') : sourceName(key));
+        chart.abilityBar.replaceChildren(
+            ...segments.map((segment) => {
+                const part = document.createElement('div');
+                part.style.cssText = `flex:${segment.share} 1 0; background:${abilityColor(segment.key)};`;
+                part.title = `${label(segment.key)} ${percent(segment.share)}`;
+                return part;
+            })
+        );
+        chart.legend.textContent = segments
+            .filter((segment) => segment.key !== OTHER_KEY)
+            .slice(0, 3)
+            .map((segment) => `${label(segment.key)} ${percent(segment.share)}`)
+            .join(' · ');
     }
 
     buildTable(headers, rows) {

@@ -55,6 +55,9 @@ class CombatLive {
         const now = Date.now();
         this.tracker.handleNewBattle(data);
         this.stats.setPlayers(this.tracker.players.map((player) => player.name));
+        const selfId = String(dataManager.getCurrentCharacterId() ?? '');
+        const self = this.tracker.players.find((player) => selfId && String(player.id) === selfId);
+        this.stats.setSelf(self?.name ?? null);
         if (this.isRecording()) {
             this.recorder.recordNewBattle(data, now, dataManager.getCurrentCharacterId());
         }

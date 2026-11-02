@@ -249,6 +249,11 @@ export default {
         unattributed: '未分配给玩家',
         colShare: '占比',
         colHits: '命中',
+        dpsNow: (p) => `DPS ${p.dps}`,
+        paceVsAverage: (p) => `${p.arrow} ${p.percent}% 对比平均`,
+        bestDps: (p) => `最高 ${p.dps}`,
+        otherAbilities: '其他',
+        tapeTooltip: '你最近一分钟的每次攻击：高度 = 伤害，金色 = 暴击，空心 = 未命中，空档 = 波次之间',
         copyRecordingTooltip: '复制已记录的战斗数据',
     },
     philoCalculator: {

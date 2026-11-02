@@ -2131,6 +2131,13 @@ export const settingsGroups = {
                     "In a party, splits damage per player and per ability using each player's action counter in the game's combat messages. " +
                     'Damage over time and reflected damage has no attacker in the message, so it is listed separately.',
             },
+            combatLive_showChart: {
+                id: 'combatLive_showChart',
+                label: 'Combat Live: Show the DPS chart on the Damage tab',
+                type: 'checkbox',
+                default: true,
+                help: 'A strip showing your last minute of hits (height = damage, gold = crit, hollow = miss), your current DPS against your average, and a bar of damage by ability.',
+            },
             combatLive_record: {
                 id: 'combatLive_record',
                 label: 'Combat Live: Record battle ticks for debugging',

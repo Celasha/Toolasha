@@ -535,3 +535,130 @@ describe('BattleStats', () => {
         });
     });
 });
+
+describe('DPS chart data', () => {
+    const bob = () => player({ character: { id: 2, name: 'Bob' } });
+    const tick = (n, entry = {}) =>
+        update({ 0: { atkCounter: n, ...entry } }, { 0: { cHP: 300 - 10 * n, mHP: 300, dmgCounter: n } });
+
+    function fight(steps, players = [player()], self = null) {
+        const tracker = startBattle(players);
+        const stats = new BattleStats();
+        stats.setPlayers(players.map((unit) => unit.character.name));
+        stats.setSelf(self);
+        for (const [at, message] of steps) stats.record(tracker.handleBattleUpdated(message), at);
+        return stats;
+    }
+
+    test('alone, the chart follows you and counts every hit with its ability', () => {
+        const stats = fight([
+            [1000, tick(1)],
+            [2000, tick(2)],
+        ]);
+
+        const chart = stats.getSummary(2000).chart;
+
+        expect(chart.player).toBe('Alice');
+        expect(chart.hits.map((hit) => hit.amount)).toEqual([10, 10]);
+    });
+
+    test("in a party it follows you, and never shows a teammate's hits", () => {
+        const mage = player({ preparingAbilityHrid: '/abilities/fireball' });
+        const stats = fight(
+            [
+                [1000, update({ 1: { atkCounter: 1 } }, { 0: { cHP: 290, mHP: 300, dmgCounter: 1 } })],
+                [2000, update({ 0: { atkCounter: 1 } }, { 0: { cHP: 270, mHP: 300, dmgCounter: 2 } })],
+            ],
+            [mage, bob()],
+            'Alice'
+        );
+
+        const chart = stats.getSummary(2000).chart;
+
+        expect(chart.player).toBe('Alice');
+        expect(chart.hits).toEqual([expect.objectContaining({ amount: 20, key: '/abilities/fireball' })]);
+    });
+
+    test('in a party with nobody to follow there is no chart', () => {
+        const stats = fight([[1000, tick(1)]], [player(), bob()], null);
+
+        expect(stats.getSummary(1000).chart).toBeNull();
+    });
+
+    test('a crit and a miss are flagged on the hit, not mixed up', () => {
+        const stats = fight([
+            [1000, update({ 0: { atkCounter: 1 } }, { 0: { cHP: 290, mHP: 300, dmgCounter: 1, critCounter: 1 } })],
+            [2000, update({ 0: { atkCounter: 2 } }, { 0: { cHP: 290, mHP: 300, dmgCounter: 2 } })],
+        ]);
+
+        const [crit, miss] = stats.getSummary(2000).chart.hits;
+
+        expect(crit).toEqual(expect.objectContaining({ crit: true, miss: false }));
+        expect(miss).toEqual(expect.objectContaining({ crit: false, miss: true }));
+    });
+
+    test('current DPS is the damage of the trailing window, and falls when the hitting stops', () => {
+        const stats = fight([
+            [0, tick(0)],
+            [1000, tick(1)],
+            [2000, tick(2)],
+            [3000, tick(3)],
+        ]);
+
+        expect(stats.getSummary(3000).chart.currentDps).toBeCloseTo(10, 5);
+        expect(stats.getSummary(13000).chart.currentDps).toBe(0);
+    });
+
+    test('the tape only holds the last minute', () => {
+        const stats = fight([
+            [1000, tick(1)],
+            [4000, tick(2)],
+            [8000, tick(3)],
+        ]);
+
+        expect(stats.getSummary(8000).chart.hits).toHaveLength(3);
+        expect(stats.getSummary(65000).chart.hits.map((hit) => hit.t)).toEqual([8000]);
+    });
+
+    test('best DPS is not set by an early big hit and keeps its peak afterwards', () => {
+        const hit = (n, amount) =>
+            update({ 0: { atkCounter: n } }, { 0: { cHP: 300 - amount * n, mHP: 300, dmgCounter: n } });
+        const early = fight([
+            [0, hit(0, 1)],
+            [1000, hit(1, 1)],
+        ]);
+        expect(early.getSummary(1000).chart.bestDps).toBe(0);
+
+        const steps = [];
+        for (let n = 0; n <= 14; n++) steps.push([n * 1000, hit(n, 1)]);
+        const long = fight(steps);
+        const best = long.getSummary(14000).chart.bestDps;
+        expect(best).toBeGreaterThan(0);
+        expect(long.getSummary(60000).chart.bestDps).toBe(best);
+    });
+
+    test('average DPS matches the damage dealt over the combat time', () => {
+        const stats = fight([
+            [0, tick(0)],
+            [1000, tick(1)],
+            [2000, tick(2)],
+        ]);
+
+        expect(stats.getSummary(2000).chart.averageDps).toBeCloseTo(stats.getSummary(2000).dealt[0].dps, 5);
+    });
+
+    test('keeps a bounded number of recent hits however long the fight runs', () => {
+        const stats = new BattleStats();
+        stats.setPlayers(['Alice']);
+        const hits = Array.from({ length: 1000 }, () => ({
+            side: 'm',
+            type: 'damage',
+            hrid: '/monsters/fly',
+            amount: 1,
+            hits: 1,
+        }));
+        for (let i = 0; i < 1000; i++) stats.record([hits[i]], 1000 + i);
+
+        expect(stats.recentHits.length).toBeLessThanOrEqual(600);
+    });
+});

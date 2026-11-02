@@ -51,6 +51,14 @@ describe('Combat Live feature', () => {
         mockConfig.getSetting.mockReturnValue(false);
     });
 
+    test("follows the viewer's own character for the DPS chart", () => {
+        feature.initialize();
+
+        handlers.get('new_battle')(newBattle);
+
+        expect(combatLive.stats.selfName).toBe('Alice');
+    });
+
     test('subscribes to the battle messages and the socket close event when initialized', () => {
         feature.initialize();
 

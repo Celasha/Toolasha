@@ -1786,6 +1786,11 @@ export default {
         unattributed: 'Not assigned to a player',
         colShare: 'Share',
         colHits: 'Hits',
+        dpsNow: (p) => `DPS ${p.dps}`,
+        paceVsAverage: (p) => `${p.arrow} ${p.percent}% vs avg`,
+        bestDps: (p) => `best ${p.dps}`,
+        otherAbilities: 'Other',
+        tapeTooltip: 'Your last minute of hits: height = damage, gold = crit, hollow = miss, gaps = between waves',
         copyRecordingTooltip: 'Copy the recorded battle ticks',
     },
     philoCalculator: {
@@ -3855,6 +3860,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             combatLive_estimateParty: {
                 label: "Combat Live: Show each party member's damage",
                 help: "In a party, splits damage per player and per ability using each player's action counter in the game's combat messages. Damage over time and reflected damage has no attacker in the message, so it is listed separately.",
+            },
+            combatLive_showChart: {
+                label: 'Combat Live: Show the DPS chart on the Damage tab',
+                help: 'A strip showing your last minute of hits (height = damage, gold = crit, hollow = miss), your current DPS against your average, and a bar of damage by ability.',
             },
             combatLive_record: {
                 label: 'Combat Live: Record battle ticks for debugging',
