@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.25.4
+ * Version: 3.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2425,6 +2425,49 @@
             clipboardAccessDeniedAlert: 'Clipboard access denied. Please allow clipboard permissions for this site.',
             exportFailedAlert: (p) => `Export failed: ${p.error}`,
         },
+        combatLive: {
+            panelTitle: 'Combat Live',
+            headerSummary: (p) => `${p.dps} DPS`,
+            resetTooltip: 'Reset the live combat numbers',
+            collapseTooltip: 'Collapse or expand',
+            tab_damage: 'Damage',
+            tab_taken: 'Damage taken',
+            tab_mana: 'Mana',
+            partyDps: 'Party DPS',
+            dpsFor: (p) => `DPS (${p.name})`,
+            trueDps: 'True DPS (kills × max HP)',
+            totalDamage: 'Total damage',
+            hitsCritsMisses: 'Hits / crits / misses',
+            kills: 'Kills',
+            time: 'Combat time',
+            colEnemy: 'Enemy',
+            colDamage: 'Damage',
+            colKills: 'Kills',
+            colPlayer: 'Player',
+            colTaken: 'Taken',
+            colPerSecond: '/s',
+            colHealed: 'Healed',
+            colDeaths: 'Deaths',
+            colDeathsPerHour: 'Deaths/h',
+            colAbility: 'Ability',
+            colMana: 'Mana',
+            manaSpentGained: (p) => `${p.spent} spent / ${p.gained} gained`,
+            noAbility: 'No ability',
+            partyNote: 'Party total. Turn on "Show each party member\'s damage" in settings to split it.',
+            attributionNote:
+                'Credited to the player whose attack counter rose in the same game message, under the ability they had prepared. Damage over time and reflected damage has no attacker in the message, so it is not assigned to anyone.',
+            byAbilityTitle: 'Damage by ability',
+            byPlayerTitle: 'Damage by player',
+            autoAttack: 'Auto attack',
+            reflected: 'Reflected',
+            overTime: 'Over time',
+            unattributedBreakdown: (p) =>
+                `Not assigned: ${p.overTime} over time, ${p.reflected} reflected, ${p.unclear} unclear.`,
+            unattributed: 'Not assigned to a player',
+            colShare: 'Share',
+            colHits: 'Hits',
+            copyRecordingTooltip: 'Copy the recorded battle ticks',
+        },
         philoCalculator: {
             launcherButtonLabel: 'Philo Gamba',
             panelTitle: "Philosopher's Stone Calculator",
@@ -4485,6 +4528,18 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Combat Statistics: Show Loot Luck comparison',
                     help: 'Shows the Actual vs Expected drop-rate/profit comparison and Loot Luck delta in the Statistics panel.',
                 },
+                combatLive: {
+                    label: 'Combat Live: Show live damage, damage taken and mana panel during combat',
+                    help: 'Floating panel with DPS (and true DPS from kills) by ability and by party member, damage taken and deaths, and mana spent per ability.',
+                },
+                combatLive_estimateParty: {
+                    label: "Combat Live: Show each party member's damage",
+                    help: "In a party, splits damage per player and per ability using each player's action counter in the game's combat messages. Damage over time and reflected damage has no attacker in the message, so it is listed separately.",
+                },
+                combatLive_record: {
+                    label: 'Combat Live: Record battle ticks for debugging',
+                    help: 'Keeps the most recent combat messages in memory so attribution rules can be checked against real fights. Adds a copy button to the panel. The recording contains party member names; review it before sharing.',
+                },
                 combatConsumableTimer: {
                     label: 'Combat consumable timer: Show remaining food/drink time during battle',
                     help: 'Shows each active combat food/drink\'s estimated remaining runway below its icon in the Consumables list during battle. Requires "Combat Statistics" to be enabled - the estimate comes from its consumption tracker.',
@@ -5765,6 +5820,18 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 combatStats_showLootLuck: {
                     label: '战斗统计：显示战利品幸运值对比',
                     help: '在统计面板中显示实际与预期掉落率/利润的对比，以及战利品幸运值差值。',
+                },
+                combatLive: {
+                    label: '战斗实时面板：战斗中显示实时伤害、承受伤害和魔力面板',
+                    help: '浮动面板，按技能和队友显示 DPS（以及按击杀计算的真实 DPS）、承受伤害与死亡次数，以及每个技能消耗的魔力。',
+                },
+                combatLive_estimateParty: {
+                    label: '战斗实时面板：显示每位队友的伤害',
+                    help: '在队伍中，根据游戏战斗消息里每位玩家的行动计数，按玩家和技能拆分伤害。持续伤害和反弹伤害在消息中没有攻击者，因此单独列出。',
+                },
+                combatLive_record: {
+                    label: '战斗实时面板：记录战斗数据用于调试',
+                    help: '在内存中保留最近的战斗消息，以便用真实战斗检验归属规则。面板上会出现复制按钮。记录包含队友名称，分享前请先检查。',
                 },
                 combatConsumableTimer: {
                     label: '战斗消耗品计时器：战斗中显示食物/饮品剩余时间',
@@ -7698,6 +7765,48 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             unlearnedLabel: '⚠ 未学习',
             xpToNextLine: (p) => `距下一级还需经验：${p.xp}`,
             zoneActionLine: (p) => `• ${p.actionName}：${p.itemsDisplay}（${p.dropRate}% 掉落）`,
+        },
+        combatLive: {
+            panelTitle: '战斗实时面板',
+            headerSummary: (p) => `${p.dps} DPS`,
+            resetTooltip: '重置实时战斗数据',
+            collapseTooltip: '折叠或展开',
+            tab_damage: '伤害',
+            tab_taken: '承受伤害',
+            tab_mana: '魔力',
+            partyDps: '队伍 DPS',
+            dpsFor: (p) => `DPS（${p.name}）`,
+            trueDps: '真实 DPS（击杀数 × 最大生命）',
+            totalDamage: '总伤害',
+            hitsCritsMisses: '命中 / 暴击 / 未命中',
+            kills: '击杀',
+            time: '战斗时间',
+            colEnemy: '敌人',
+            colDamage: '伤害',
+            colKills: '击杀',
+            colPlayer: '玩家',
+            colTaken: '承受',
+            colPerSecond: '/秒',
+            colHealed: '治疗',
+            colDeaths: '死亡',
+            colDeathsPerHour: '死亡/时',
+            colAbility: '技能',
+            colMana: '魔力',
+            manaSpentGained: (p) => `消耗 ${p.spent} / 获得 ${p.gained}`,
+            noAbility: '无技能',
+            partyNote: '队伍总计。在设置中开启“显示每位队友的伤害”可按玩家拆分。',
+            attributionNote:
+                '记给同一条游戏消息里攻击计数增加的玩家，并按其事先准备的技能统计。持续伤害和反弹伤害在消息中没有攻击者，因此不分配给任何人。',
+            byAbilityTitle: '按技能统计伤害',
+            byPlayerTitle: '按玩家统计伤害',
+            autoAttack: '普通攻击',
+            reflected: '反弹',
+            overTime: '持续伤害',
+            unattributedBreakdown: (p) => `未分配：持续伤害 ${p.overTime}，反弹 ${p.reflected}，不明 ${p.unclear}。`,
+            unattributed: '未分配给玩家',
+            colShare: '占比',
+            colHits: '命中',
+            copyRecordingTooltip: '复制已记录的战斗数据',
         },
         philoCalculator: {
             launcherButtonLabel: 'Philo Gamba',
@@ -11031,6 +11140,31 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     default: true,
                     help: 'Shows the Actual vs Expected drop-rate/profit comparison and Loot Luck delta in the Statistics panel.',
                 },
+                combatLive: {
+                    id: 'combatLive',
+                    label: 'Combat Live: Show live damage, damage taken and mana panel during combat',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Floating panel with DPS (and true DPS from kills) by ability and by party member, damage taken and deaths, and mana spent per ability.',
+                },
+                combatLive_estimateParty: {
+                    id: 'combatLive_estimateParty',
+                    label: "Combat Live: Show each party member's damage",
+                    type: 'checkbox',
+                    default: true,
+                    help:
+                        "In a party, splits damage per player and per ability using each player's action counter in the game's combat messages. " +
+                        'Damage over time and reflected damage has no attacker in the message, so it is listed separately.',
+                },
+                combatLive_record: {
+                    id: 'combatLive_record',
+                    label: 'Combat Live: Record battle ticks for debugging',
+                    type: 'checkbox',
+                    default: false,
+                    help:
+                        'Keeps the most recent combat messages in memory so attribution rules can be checked against real fights. ' +
+                        'Adds a copy button to the panel. The recording contains party member names; review it before sharing.',
+                },
                 combatConsumableTimer: {
                     id: 'combatConsumableTimer',
                     label: 'Combat consumable timer: Show remaining food/drink time during battle',
@@ -12587,6 +12721,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             const skipDedup =
                 messageType === 'quests_updated' ||
                 messageType === 'action_completed' ||
+                messageType === 'battle_updated' ||
                 messageType === 'actions_updated' ||
                 messageType === 'items_updated' ||
                 messageType === 'market_item_order_books_updated' ||
@@ -12641,7 +12776,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 if (this.processedMessages.size > 100) {
                     this.cleanupProcessedMessages();
                 }
-            } else if (messageType === 'action_completed' || messageType === 'loot_opened' || messageType === 'info') {
+            } else if (
+                messageType === 'action_completed' ||
+                messageType === 'battle_updated' ||
+                messageType === 'loot_opened' ||
+                messageType === 'info'
+            ) {
                 // These types bypass the lossy first-100-char dedup (Gabriel's fix, commit 1007215,
                 // extended to loot_opened, then info) because two genuine consecutive messages can
                 // share the same prefix while differing later. The WebSocket prototype wrapper can still fire
@@ -15431,6 +15571,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     category: 'Combat',
                     description: 'Tracks combat data and consumable usage; shows Statistics tab in Combat panel',
                     settingKey: 'combatStats',
+                },
+                combatLive: {
+                    enabled: false,
+                    name: 'Combat Live',
+                    category: 'Combat',
+                    description: 'Floating panel with live party damage, damage taken and mana during combat',
+                    settingKey: 'combatLive',
                 },
                 combatSimIntegration: {
                     enabled: true,

@@ -2,11 +2,11 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.25.4
+ * Version: 3.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, i18n_js, dom_js, storage, marketplaceSession_js, timerRegistry_js, webSocketHook, marketData_js, formatters_js, expectedValueCalculator, marketAPI, warningIcon_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, profitHelpers_js, loadoutState, actionCalculator_js, efficiency_js, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, buffParser_js) {
+(function (config, dataManager, domObserver, i18n_js, webSocketHook, storage, timerRegistry_js, formatters_js, dom_js, marketplaceSession_js, marketData_js, expectedValueCalculator, marketAPI, warningIcon_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, profitHelpers_js, actionCalculator_js, efficiency_js, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, loadoutState, buffParser_js) {
     'use strict';
 
     /**
@@ -338,7 +338,9 @@
     const getItemName = (hrid, fallback = '') => translateGameName('itemNames', hrid, fallback);
     const getActionName = (hrid, fallback = '') => translateGameName('actionNames', hrid, fallback);
     const getActionCategoryName = (hrid, fallback = '') => translateGameName('actionCategoryNames', hrid, fallback);
+    const getMonsterName = (hrid, fallback = '') => translateGameName('monsterNames', hrid, fallback);
     const getSkillName = (hrid, fallback = '') => translateGameName('skillNames', hrid, fallback);
+    const getAbilityName = (hrid, fallback = '') => translateGameName('abilityNames', hrid, fallback);
     const getItemCategoryName = (hrid, fallback = '') => translateGameName('itemCategoryNames', hrid, fallback);
     const getHouseRoomName = (hrid, fallback = '') => translateGameName('houseRoomNames', hrid, fallback);
     const getGuildShrineName = (hrid, fallback = '') => translateGameName('guildShrineNames', hrid, fallback);
@@ -720,6 +722,1251 @@
     const combatLevelProgress = new CombatLevelProgress();
 
     combatLevelProgress.setupSettingListener();
+
+    /**
+     * Battle Event Tracker
+     *
+     * Turns the game's `new_battle` / `battle_updated` messages into discrete combat events by diffing
+     * each unit against its previous state.
+     *
+     * Receiving side (the rules the game client uses to draw its own damage splats; see
+     * GamePage.updateCombatUnit / CombatUnit.componentDidUpdate in the client):
+     *   - HP went up                      -> heal of that amount (a respawn if it was at 0)
+     *   - else dmgCounter changed         -> damage equal to the HP lost; critical when dmgCounter equals
+     *                                        critCounter; an amount of 0 is a miss
+     *   - MP went up                      -> mana gain
+     *
+     * Acting side (confirmed by the game's developer, and what the Animation Extension relies on): one
+     * battle_updated is one combat event with one attacker. A unit acted when its `atkCounter` rose. The
+     * `abilityHrid` / `isAutoAtk` on an entry describe the NEXT action the unit is winding up, so the
+     * action that just happened is the ability the unit had prepared BEFORE this update. That is also the
+     * ability any mana spent in this update belongs to.
+     *
+     * Counters have no value until a unit's first baseline is seen: until then a counter tick is not
+     * treated as an action or a hit, so the first update of a battle cannot produce a phantom event.
+     *
+     * Pure logic: no DOM, no WebSocket. Feed it payloads with handleNewBattle / handleBattleUpdated.
+     */
+
+    const SIDE_PLAYER = 'p';
+    const SIDE_MONSTER = 'm';
+
+    /**
+     * Normalise a unit from `new_battle` (full field names) into tracked state.
+     * Counters stay null when the message does not carry them, meaning "no baseline yet".
+     * @param {Object} unit - Raw unit from new_battle
+     * @param {string} side - 'p' or 'm'
+     * @param {number} index - Index within its side
+     * @returns {Object} Tracked unit state
+     */
+    function unitFromNewBattle(unit, side, index) {
+        return {
+            side,
+            index,
+            id: unit?.character?.id ?? null,
+            name: unit?.name ?? unit?.character?.name ?? null,
+            hrid: unit?.hrid ?? null,
+            hp: unit?.currentHitpoints ?? 0,
+            maxHp: unit?.maxHitpoints ?? 0,
+            mp: unit?.currentManapoints ?? 0,
+            maxMp: unit?.maxManapoints ?? 0,
+            dmgCounter: unit?.damageSplatCounter ?? null,
+            critCounter: unit?.criticalDamageSplatCounter ?? null,
+            atkCounter: unit?.attackAttemptCounter ?? null,
+            isAutoAtk: Boolean(unit?.isPreparingAutoAttack),
+            abilityHrid: unit?.preparingAbilityHrid || '',
+            intervalNs: unit?.attackOrCastInterval ?? 0,
+        };
+    }
+
+    /**
+     * Apply a `battle_updated` entry (short field names) to a tracked unit and describe what changed.
+     * @param {Object} prev - Previous tracked unit
+     * @param {Object} entry - Raw pMap/mMap entry
+     * @returns {{next: Object, events: Object[]}}
+     */
+    function applyUpdate(prev, entry) {
+        const next = {
+            ...prev,
+            hp: entry.cHP ?? prev.hp,
+            maxHp: entry.mHP ?? prev.maxHp,
+            mp: entry.cMP ?? prev.mp,
+            maxMp: entry.mMP ?? prev.maxMp,
+            dmgCounter: entry.dmgCounter ?? prev.dmgCounter,
+            critCounter: entry.critCounter ?? prev.critCounter,
+            atkCounter: entry.atkCounter ?? prev.atkCounter,
+            isAutoAtk: Boolean(entry.isAutoAtk),
+            abilityHrid: entry.abilityHrid || '',
+            intervalNs: entry.int ?? prev.intervalNs,
+        };
+        const base = {
+            side: prev.side,
+            index: prev.index,
+            id: prev.id,
+            name: prev.name,
+            hrid: prev.hrid,
+            maxHp: next.maxHp,
+        };
+        const events = [];
+
+        // A counter only means something once there is a previous value to compare it with
+        const acted = prev.atkCounter !== null && next.atkCounter !== null && next.atkCounter > prev.atkCounter;
+        const hpDelta = next.hp - prev.hp;
+
+        if (hpDelta > 0) {
+            // Coming back from 0 HP is a respawn, not healing
+            events.push(
+                prev.hp <= 0 ? { ...base, type: 'revive', hp: next.hp } : { ...base, type: 'heal', amount: hpDelta }
+            );
+        } else {
+            // The counter can move by more than one in a single update (several hits on one target)
+            const counterHits =
+                prev.dmgCounter !== null && next.dmgCounter !== null ? Math.max(0, next.dmgCounter - prev.dmgCounter) : 0;
+            const struck = counterHits > 0 || (prev.dmgCounter === null && hpDelta < 0);
+            if (struck) {
+                // Max with 0 so a miss is 0 rather than -0
+                const amount = Math.max(0, -hpDelta);
+                events.push({
+                    ...base,
+                    type: 'damage',
+                    amount,
+                    hits: Math.max(1, counterHits),
+                    crit: next.critCounter !== null && next.dmgCounter === next.critCounter,
+                    miss: amount === 0,
+                });
+            }
+            if (prev.hp > 0 && next.hp <= 0 && hpDelta < 0) {
+                events.push({ ...base, type: 'death' });
+            }
+        }
+
+        const mpDelta = next.mp - prev.mp;
+        if (mpDelta > 0) {
+            events.push({ ...base, type: 'mana-gain', amount: mpDelta });
+        } else if (mpDelta < 0) {
+            // The mana was paid by the action that just ran: the ability prepared before this update
+            // (an auto attack costs nothing). With no action in this update the spend has no known ability.
+            events.push({
+                ...base,
+                type: 'mana-spend',
+                amount: -mpDelta,
+                abilityHrid: acted && !prev.isAutoAtk ? prev.abilityHrid : '',
+            });
+        }
+
+        if (acted) {
+            events.push({
+                ...base,
+                type: 'attack',
+                // What just ran (prepared before this update)...
+                auto: prev.isAutoAtk || !prev.abilityHrid,
+                abilityHrid: prev.isAutoAtk ? '' : prev.abilityHrid,
+                // ...and what the unit is now winding up
+                nextAbilityHrid: next.isAutoAtk ? '' : next.abilityHrid,
+                intervalMs: next.intervalNs / 1e6,
+            });
+        }
+
+        return { next, events };
+    }
+
+    class BattleEventTracker {
+        constructor() {
+            this.reset();
+        }
+
+        /**
+         * Forget everything (battle ended, character switched, socket closed).
+         */
+        reset() {
+            this.battleId = null;
+            this.wave = null;
+            this.combatStartTime = null;
+            this.players = [];
+            this.monsters = [];
+        }
+
+        /**
+         * Start tracking a battle from a `new_battle` message.
+         * @param {Object} data - new_battle payload
+         */
+        handleNewBattle(data) {
+            this.battleId = data?.battleId ?? null;
+            this.wave = data?.wave ?? null;
+            this.combatStartTime = data?.combatStartTime ?? null;
+            this.players = (data?.players || []).map((unit, index) => unitFromNewBattle(unit, SIDE_PLAYER, index));
+            this.monsters = (data?.monsters || []).map((unit, index) => unitFromNewBattle(unit, SIDE_MONSTER, index));
+        }
+
+        /**
+         * Diff a `battle_updated` message against the tracked units.
+         * Like the client, ignores updates for any other battle and for units it has never seen.
+         * @param {Object} data - battle_updated payload
+         * @returns {Object[]} Events produced, in unit order (players first)
+         */
+        handleBattleUpdated(data) {
+            if (!data || data.battleId !== this.battleId) {
+                return [];
+            }
+            const events = [];
+            this.applyMap(data.pMap, this.players, events);
+            this.applyMap(data.mMap, this.monsters, events);
+            return events;
+        }
+
+        /**
+         * @param {Object} map - pMap or mMap (sparse, keyed by unit index)
+         * @param {Object[]} units - Tracked units for that side (mutated in place)
+         * @param {Object[]} events - Output list
+         */
+        applyMap(map, units, events) {
+            for (const [key, entry] of Object.entries(map || {})) {
+                const index = Number(key);
+                const prev = units[index];
+                if (!prev || !entry) continue;
+                const { next, events: unitEvents } = applyUpdate(prev, entry);
+                units[index] = next;
+                events.push(...unitEvents);
+            }
+        }
+
+        /**
+         * @param {string} side - 'p' or 'm'
+         * @param {number} index
+         * @returns {Object|null} Current tracked unit
+         */
+        getUnit(side, index) {
+            return (side === SIDE_PLAYER ? this.players : this.monsters)[index] || null;
+        }
+    }
+
+    /**
+     * Battle Stats
+     *
+     * Aggregates BattleEventTracker events into the numbers the live combat panels show.
+     *
+     * Received by a unit (read straight off that unit): damage taken, hits, crits, misses, healing,
+     * deaths and mana gained. Party damage is therefore the damage received by monsters.
+     *
+     * Who dealt it: the game's developer confirmed one battle_updated is one combat event with one
+     * attacker, and the attacker is the unit whose attack counter rose. So every monster hit in a
+     * message is credited to the one player who acted in it, under the ability that player had prepared
+     * beforehand (or auto attack). When nobody acted the damage has no attacker in the message:
+     *   - a monster acted in the same message  -> reflected (thorns, retribution)
+     *   - nobody acted                          -> damage over time
+     * Alone, those two are still yours (nobody else can have caused them), so they are credited to you
+     * under their own labels. In a party they stay unattributed rather than being pinned on someone.
+     * A message where several players acted at once is unclear and is also left unattributed.
+     *
+     * Time base: seconds with combat messages flowing. A gap longer than SESSION_GAP_MS (tab asleep,
+     * disconnect, between runs) is not counted, so rates are not diluted by idle time.
+     */
+
+
+    const SESSION_GAP_MS = 5000;
+
+    // Keys for the damage "source" rows besides real ability hrids
+    const SOURCE_AUTO = 'auto';
+    const SOURCE_REFLECT = 'reflect';
+    const SOURCE_OVER_TIME = 'over-time';
+    const SOURCE_AMBIGUOUS = 'ambiguous';
+
+    const emptyReceived = () => ({ damage: 0, hits: 0, crits: 0, misses: 0, healed: 0 });
+    const emptyDealt = () => ({ damage: 0, hits: 0, crits: 0, misses: 0, abilities: new Map() });
+    const emptyBucket = () => ({ damage: 0, hits: 0 });
+
+    /**
+     * Count one damage event into a running tally (hits include crits and misses).
+     * @param {{damage: number, hits: number, crits: number, misses: number}} tally
+     * @param {Object} event - A 'damage' event
+     */
+    function addDamage(tally, event) {
+        const hits = event.hits ?? 1;
+        tally.damage += event.amount;
+        tally.hits += hits;
+        if (event.miss) tally.misses += hits;
+        else if (event.crit) tally.crits += 1;
+    }
+
+    class BattleStats {
+        constructor() {
+            this.reset();
+        }
+
+        reset() {
+            this.activeMs = 0;
+            this.lastAt = null;
+            this.partyDamage = 0;
+            this.partyHits = 0;
+            this.partyCrits = 0;
+            this.partyMisses = 0;
+            this.kills = new Map();
+            this.killedMaxHp = 0;
+            this.monsters = new Map();
+            this.players = new Map();
+            this.playerNames = [];
+            this.playerCount = 0;
+            this.dealt = new Map();
+            this.unattributed = {
+                [SOURCE_OVER_TIME]: emptyBucket(),
+                [SOURCE_REFLECT]: emptyBucket(),
+                [SOURCE_AMBIGUOUS]: emptyBucket(),
+            };
+        }
+
+        /**
+         * Players currently in the battle. Alone, every monster hit is yours; in a party a hit is only
+         * credited when one player's action counter identifies them.
+         * @param {string[]} names - Player names in battle order
+         */
+        setPlayers(names) {
+            this.playerNames = names;
+            this.playerCount = names.length;
+        }
+
+        /**
+         * Fold events from one message into the totals.
+         * @param {Object[]} events - Events from BattleEventTracker
+         * @param {number} [at] - Message timestamp in ms
+         */
+        record(events, at = Date.now()) {
+            if (this.lastAt !== null) {
+                const gap = at - this.lastAt;
+                if (gap > 0 && gap <= SESSION_GAP_MS) this.activeMs += gap;
+            }
+            this.lastAt = at;
+
+            for (const event of events) {
+                if (event.side === SIDE_MONSTER) {
+                    this.recordMonster(event);
+                } else if (event.side === SIDE_PLAYER) {
+                    this.recordPlayer(event);
+                }
+            }
+            this.attributeHits(events);
+        }
+
+        /**
+         * Decide who dealt the monster hits in one message.
+         * @param {Object[]} events - Events from one message
+         * @returns {{player: ?string, key: string, bucket: ?string}} player + key to credit, or a bucket
+         */
+        resolveSource(events) {
+            const attacks = events.filter((event) => event.side === SIDE_PLAYER && event.type === 'attack');
+            const solo = this.playerNames.length === 1 ? this.playerNames[0] : null;
+
+            if (attacks.length === 1) {
+                const attack = attacks[0];
+                return { player: attack.name, key: attack.auto ? SOURCE_AUTO : attack.abilityHrid, bucket: null };
+            }
+            if (attacks.length === 0) {
+                const reflected = events.some((event) => event.side === SIDE_MONSTER && event.type === 'attack');
+                const key = reflected ? SOURCE_REFLECT : SOURCE_OVER_TIME;
+                return solo ? { player: solo, key, bucket: null } : { player: null, key, bucket: key };
+            }
+            return { player: null, key: SOURCE_AMBIGUOUS, bucket: SOURCE_AMBIGUOUS };
+        }
+
+        /**
+         * Credit this message's monster hits to a player's ability, or to an unattributed bucket.
+         * @param {Object[]} events - Events from one message
+         */
+        attributeHits(events) {
+            const hits = events.filter((event) => event.side === SIDE_MONSTER && event.type === 'damage');
+            if (!hits.length) return;
+
+            const source = this.resolveSource(events);
+            for (const hit of hits) {
+                if (source.bucket) {
+                    const bucket = this.unattributed[source.bucket];
+                    bucket.damage += hit.amount;
+                    bucket.hits += hit.hits ?? 1;
+                    continue;
+                }
+                const row = this.dealt.get(source.player) || emptyDealt();
+                addDamage(row, hit);
+                const ability = row.abilities.get(source.key) || { damage: 0, hits: 0, crits: 0, misses: 0 };
+                addDamage(ability, hit);
+                row.abilities.set(source.key, ability);
+                this.dealt.set(source.player, row);
+            }
+        }
+
+        recordMonster(event) {
+            const key = event.hrid || `monster-${event.index}`;
+            const monster = this.monsters.get(key) || { hrid: event.hrid, ...emptyReceived(), kills: 0 };
+            this.monsters.set(key, monster);
+
+            if (event.type === 'damage') {
+                const hits = event.hits ?? 1;
+                monster.damage += event.amount;
+                monster.hits += hits;
+                this.partyDamage += event.amount;
+                this.partyHits += hits;
+                if (event.miss) {
+                    monster.misses += hits;
+                    this.partyMisses += hits;
+                } else if (event.crit) {
+                    monster.crits += 1;
+                    this.partyCrits += 1;
+                }
+            } else if (event.type === 'heal') {
+                monster.healed += event.amount;
+            } else if (event.type === 'death') {
+                monster.kills += 1;
+                this.kills.set(key, (this.kills.get(key) || 0) + 1);
+                this.killedMaxHp += event.maxHp || 0;
+            }
+        }
+
+        recordPlayer(event) {
+            const key = event.name || `player-${event.index}`;
+            const player = this.players.get(key) || {
+                name: event.name,
+                ...emptyReceived(),
+                deaths: 0,
+                manaGained: 0,
+                manaSpent: 0,
+                abilityMana: new Map(),
+            };
+            this.players.set(key, player);
+
+            switch (event.type) {
+                case 'damage': {
+                    const hits = event.hits ?? 1;
+                    player.damage += event.amount;
+                    player.hits += hits;
+                    if (event.miss) player.misses += hits;
+                    else if (event.crit) player.crits += 1;
+                    break;
+                }
+                case 'heal':
+                    player.healed += event.amount;
+                    break;
+                case 'death':
+                    player.deaths += 1;
+                    break;
+                case 'mana-gain':
+                    player.manaGained += event.amount;
+                    break;
+                case 'mana-spend': {
+                    player.manaSpent += event.amount;
+                    const ability = event.abilityHrid || '';
+                    const row = player.abilityMana.get(ability) || { mana: 0, events: 0 };
+                    row.mana += event.amount;
+                    row.events += 1;
+                    player.abilityMana.set(ability, row);
+                    break;
+                }
+            }
+        }
+
+        /**
+         * @returns {number} Seconds of combat counted so far
+         */
+        getActiveSeconds() {
+            return this.activeMs / 1000;
+        }
+
+        /**
+         * @returns {Object} Plain summary for the panels
+         */
+        getSummary() {
+            const seconds = this.getActiveSeconds();
+            const rate = (value) => (seconds > 0 ? value / seconds : 0);
+            const kills = [...this.kills.values()].reduce((sum, count) => sum + count, 0);
+            const unattributedDamage = Object.values(this.unattributed).reduce((sum, bucket) => sum + bucket.damage, 0);
+            const unattributedHits = Object.values(this.unattributed).reduce((sum, bucket) => sum + bucket.hits, 0);
+
+            return {
+                seconds,
+                party: {
+                    damage: this.partyDamage,
+                    dps: rate(this.partyDamage),
+                    hits: this.partyHits,
+                    crits: this.partyCrits,
+                    misses: this.partyMisses,
+                    kills,
+                    // Kills x max HP: unaffected by overkill and enemy healing
+                    trueDps: rate(this.killedMaxHp),
+                },
+                // Alone, every hit is yours and nothing is left unattributed
+                attributionExact: this.playerCount === 1,
+                dealt: this.playerNames.map((name) => {
+                    const row = this.dealt.get(name) || emptyDealt();
+                    return {
+                        name,
+                        damage: row.damage,
+                        hits: row.hits,
+                        crits: row.crits,
+                        misses: row.misses,
+                        dps: rate(row.damage),
+                        share: this.partyDamage > 0 ? row.damage / this.partyDamage : 0,
+                        abilities: [...row.abilities.entries()]
+                            .map(([key, ability]) => ({
+                                key,
+                                ...ability,
+                                dps: rate(ability.damage),
+                                share: row.damage > 0 ? ability.damage / row.damage : 0,
+                            }))
+                            .sort((a, b) => b.damage - a.damage),
+                    };
+                }),
+                unattributed: {
+                    damage: unattributedDamage,
+                    hits: unattributedHits,
+                    share: this.partyDamage > 0 ? unattributedDamage / this.partyDamage : 0,
+                    overTime: this.unattributed[SOURCE_OVER_TIME].damage,
+                    reflected: this.unattributed[SOURCE_REFLECT].damage,
+                    unclear: this.unattributed[SOURCE_AMBIGUOUS].damage,
+                },
+                monsters: [...this.monsters.values()].sort((a, b) => b.damage - a.damage),
+                players: [...this.players.values()].map((player) => ({
+                    ...player,
+                    damageTakenPerSecond: rate(player.damage),
+                    deathsPerHour: seconds > 0 ? (player.deaths / seconds) * 3600 : 0,
+                    manaSpentPerSecond: rate(player.manaSpent),
+                    manaGainedPerSecond: rate(player.manaGained),
+                    abilityMana: [...player.abilityMana.entries()]
+                        .map(([abilityHrid, row]) => ({ abilityHrid, ...row, perSecond: rate(row.mana) }))
+                        .sort((a, b) => b.mana - a.mana),
+                })),
+            };
+        }
+    }
+
+    /**
+     * Combat Live Recorder
+     *
+     * Optional diagnostic: keeps the most recent battle messages in a compact form so who-hit-whom
+     * rules can be tested offline against real fights (the game never says which attacker landed a
+     * hit, so any rule for it is a guess until it has been checked against recordings).
+     *
+     * Bounded (MAX_ENTRIES, oldest dropped first). A recording contains player names and character ids
+     * from the battle, so look it over before sharing it.
+     */
+
+    const MAX_ENTRIES$1 = 5000;
+    const FORMAT = 'toolasha-combat-live-recording';
+    const FORMAT_VERSION = 1;
+
+    /**
+     * @param {Object} entry - Raw pMap/mMap entry from battle_updated
+     * @returns {Array} [cHP, cMP, atkCounter, isAutoAtk, abilityHrid, dmgCounter, critCounter]
+     */
+    function compactUnit(entry) {
+        return [
+            entry?.cHP ?? null,
+            entry?.cMP ?? null,
+            entry?.atkCounter ?? null,
+            entry?.isAutoAtk ? 1 : 0,
+            entry?.abilityHrid || '',
+            entry?.dmgCounter ?? null,
+            entry?.critCounter ?? null,
+        ];
+    }
+
+    function compactMap(map) {
+        const out = {};
+        for (const [index, entry] of Object.entries(map || {})) {
+            out[index] = compactUnit(entry);
+        }
+        return out;
+    }
+
+    class CombatLiveRecorder {
+        constructor(maxEntries = MAX_ENTRIES$1) {
+            this.maxEntries = maxEntries;
+            this.entries = [];
+        }
+
+        /**
+         * @param {Object} data - new_battle payload
+         * @param {number} at - Timestamp in ms
+         * @param {string|number|null} selfCharacterId - The recording player's character id
+         */
+        recordNewBattle(data, at, selfCharacterId = null) {
+            this.push({
+                k: 'nb',
+                t: at,
+                id: data?.battleId ?? null,
+                w: data?.wave ?? null,
+                self: selfCharacterId,
+                p: (data?.players || []).map((unit) => ({
+                    n: unit?.name ?? unit?.character?.name ?? null,
+                    c: unit?.character?.id ?? null,
+                    hp: unit?.currentHitpoints ?? null,
+                    mp: unit?.currentManapoints ?? null,
+                    atk: unit?.attackAttemptCounter ?? null,
+                })),
+                m: (data?.monsters || []).map((unit) => ({
+                    h: unit?.hrid ?? null,
+                    hp: unit?.currentHitpoints ?? null,
+                })),
+            });
+        }
+
+        /**
+         * @param {Object} data - battle_updated payload
+         * @param {number} at - Timestamp in ms
+         */
+        recordBattleUpdated(data, at) {
+            this.push({
+                k: 'bu',
+                t: at,
+                id: data?.battleId ?? null,
+                p: compactMap(data?.pMap),
+                m: compactMap(data?.mMap),
+            });
+        }
+
+        push(entry) {
+            this.entries.push(entry);
+            if (this.entries.length > this.maxEntries) {
+                this.entries.splice(0, this.entries.length - this.maxEntries);
+            }
+        }
+
+        clear() {
+            this.entries = [];
+        }
+
+        /**
+         * @param {number} [now] - Timestamp in ms for the header
+         * @returns {string} JSON text of everything recorded so far
+         */
+        exportJSON(now = Date.now()) {
+            return JSON.stringify({
+                format: FORMAT,
+                version: FORMAT_VERSION,
+                recordedAt: new Date(now).toISOString(),
+                // Order of each [..] row in `p` / `m` entries of a 'bu' record
+                unitFields: ['cHP', 'cMP', 'atkCounter', 'isAutoAtk', 'abilityHrid', 'dmgCounter', 'critCounter'],
+                entries: this.entries,
+            });
+        }
+    }
+
+    /**
+     * Floating Panel Z-Index Manager
+     * Manages bring-to-front ordering for persistent floating panels.
+     * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
+     * so they never cross the game's MUI modal layer (~1300).
+     */
+
+
+    const panels = new Set();
+
+    /**
+     * Register a floating panel element for z-index management
+     * @param {HTMLElement} el - The panel element
+     */
+    function registerFloatingPanel(el) {
+        panels.add(el);
+    }
+
+    /**
+     * Unregister a floating panel element
+     * @param {HTMLElement} el - The panel element
+     */
+    function unregisterFloatingPanel(el) {
+        panels.delete(el);
+    }
+
+    /**
+     * Bring a panel to the front among all registered panels,
+     * without exceeding config.Z_FLOATING_PANEL + 99.
+     * @param {HTMLElement} el - The panel to bring forward
+     */
+    function bringPanelToFront(el) {
+        const base = config.Z_FLOATING_PANEL;
+        const cap = base + 99;
+
+        let maxZ = base;
+        for (const p of panels) {
+            const z = parseInt(p.style.zIndex) || base;
+            if (z > maxZ) maxZ = z;
+        }
+
+        const next = maxZ + 1;
+        if (next > cap) {
+            // Overflow — reassign all from base upward, put el last
+            let i = base;
+            for (const p of panels) {
+                if (p !== el) p.style.zIndex = String(i++);
+            }
+            el.style.zIndex = String(i);
+        } else {
+            el.style.zIndex = String(next);
+        }
+    }
+
+    /**
+     * Combat Live UI
+     *
+     * One draggable floating panel with three tabs (Damage, Damage taken, Mana). The display logic is a
+     * pure model builder (`buildTabModel`) so it can be tested without a DOM; the panel only turns that
+     * model into elements. Text is always set with textContent: player and monster names come from the
+     * game and are never interpolated into HTML.
+     */
+
+
+    const PANEL_ID$3 = 'toolasha-combat-live';
+    const STORAGE_STORE$4 = 'settings';
+    const POSITION_KEY = 'combatLive_position';
+    const COLLAPSED_KEY = 'combatLive_collapsed';
+    const TAB_KEY = 'combatLive_tab';
+    const REFRESH_MS = 500;
+    // The panel hides when no combat message has arrived for this long
+    const IDLE_HIDE_MS = 60000;
+
+    const TABS = ['damage', 'taken', 'mana'];
+
+    const number = (value) => formatters_js.formatLargeNumber(Math.round(value));
+    const rate = (value) => formatters_js.formatLargeNumber(value, 1);
+
+    function prettyHrid(hrid) {
+        return String(hrid || '')
+            .split('/')
+            .pop()
+            .split('_')
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    }
+
+    const SOURCE_LABELS = {
+        auto: () => i18n_js.t('combatLive.autoAttack'),
+        reflect: () => i18n_js.t('combatLive.reflected'),
+        'over-time': () => i18n_js.t('combatLive.overTime'),
+    };
+
+    /**
+     * @param {string} key - Ability hrid or one of the special damage sources (auto, reflect, over-time)
+     * @returns {string} Display name
+     */
+    function sourceName(key) {
+        const special = SOURCE_LABELS[key];
+        if (special) return special();
+        return key ? getAbilityName(key, prettyHrid(key)) : i18n_js.t('combatLive.noAbility');
+    }
+
+    const percent = (value) => `${Math.round(value * 100)}%`;
+
+    /**
+     * Build what a tab shows from a BattleStats summary.
+     * @param {Object} summary - BattleStats.getSummary()
+     * @param {string} tab - 'damage' | 'taken' | 'mana'
+     * @param {{showPartyDamage?: boolean}} [options] - showPartyDamage: split damage per party member in a party
+     * @returns {{stats: Array<[string, string]>, secondary: ?{title: string, headers: string[], rows: Array<{kind: string, cells: string[]}>}, headers: string[], rows: Array<{kind: string, cells: string[]}>, note: string}}
+     */
+    function buildTabModel(summary, tab, options = {}) {
+        const { party, players, monsters } = summary;
+        const model = { stats: [], secondary: null, headers: [], rows: [], note: '' };
+
+        if (tab === 'damage') {
+            const solo = summary.attributionExact && summary.dealt.length > 0 ? summary.dealt[0] : null;
+            const splitParty = Boolean(options.showPartyDamage) && !solo;
+            model.stats = [
+                [solo ? i18n_js.t('combatLive.dpsFor', { name: solo.name }) : i18n_js.t('combatLive.partyDps'), rate(party.dps)],
+                [i18n_js.t('combatLive.trueDps'), rate(party.trueDps)],
+                [i18n_js.t('combatLive.totalDamage'), number(party.damage)],
+                [i18n_js.t('combatLive.hitsCritsMisses'), `${party.hits} / ${party.crits} / ${party.misses}`],
+                [i18n_js.t('combatLive.kills'), String(party.kills)],
+                [i18n_js.t('combatLive.time'), formatters_js.timeReadable(summary.seconds)],
+            ];
+            model.headers = [i18n_js.t('combatLive.colEnemy'), i18n_js.t('combatLive.colDamage'), i18n_js.t('combatLive.colKills')];
+            model.rows = monsters.map((monster) => ({
+                kind: 'row',
+                cells: [
+                    getMonsterName(monster.hrid, prettyHrid(monster.hrid)),
+                    number(monster.damage),
+                    String(monster.kills),
+                ],
+            }));
+
+            const abilityRows = (player) =>
+                player.abilities.map((ability) => ({
+                    kind: 'ability',
+                    cells: [sourceName(ability.key), number(ability.damage), percent(ability.share), String(ability.hits)],
+                }));
+            const damageHeaders = [
+                i18n_js.t('combatLive.colAbility'),
+                i18n_js.t('combatLive.colDamage'),
+                i18n_js.t('combatLive.colShare'),
+                i18n_js.t('combatLive.colHits'),
+            ];
+
+            if (solo) {
+                model.secondary = {
+                    title: i18n_js.t('combatLive.byAbilityTitle'),
+                    headers: damageHeaders,
+                    rows: abilityRows(solo),
+                };
+            } else if (splitParty) {
+                model.secondary = {
+                    title: i18n_js.t('combatLive.byPlayerTitle'),
+                    headers: damageHeaders,
+                    rows: summary.dealt.flatMap((player) => [
+                        {
+                            kind: 'player',
+                            cells: [
+                                player.name || '?',
+                                number(player.damage),
+                                party.damage > 0 ? percent(player.damage / party.damage) : '0%',
+                                String(player.hits),
+                            ],
+                        },
+                        ...abilityRows(player),
+                    ]),
+                };
+                model.stats.push([i18n_js.t('combatLive.unattributed'), percent(summary.unattributed.share)]);
+            }
+
+            if (solo) {
+                model.note = '';
+            } else if (splitParty) {
+                const { overTime, reflected, unclear } = summary.unattributed;
+                model.note = i18n_js.t('combatLive.attributionNote');
+                if (summary.unattributed.damage > 0) {
+                    model.note += ` ${i18n_js.t('combatLive.unattributedBreakdown', {
+                    overTime: number(overTime),
+                    reflected: number(reflected),
+                    unclear: number(unclear),
+                })}`;
+                }
+            } else {
+                model.note = i18n_js.t('combatLive.partyNote');
+            }
+        } else if (tab === 'taken') {
+            model.headers = [
+                i18n_js.t('combatLive.colPlayer'),
+                i18n_js.t('combatLive.colTaken'),
+                i18n_js.t('combatLive.colPerSecond'),
+                i18n_js.t('combatLive.colHealed'),
+                i18n_js.t('combatLive.colDeaths'),
+                i18n_js.t('combatLive.colDeathsPerHour'),
+            ];
+            model.rows = players.map((player) => ({
+                kind: 'row',
+                cells: [
+                    player.name || '?',
+                    number(player.damage),
+                    rate(player.damageTakenPerSecond),
+                    number(player.healed),
+                    String(player.deaths),
+                    rate(player.deathsPerHour),
+                ],
+            }));
+        } else {
+            model.headers = [i18n_js.t('combatLive.colAbility'), i18n_js.t('combatLive.colMana'), i18n_js.t('combatLive.colPerSecond')];
+            for (const player of players) {
+                model.rows.push({
+                    kind: 'player',
+                    cells: [
+                        player.name || '?',
+                        i18n_js.t('combatLive.manaSpentGained', {
+                            spent: number(player.manaSpent),
+                            gained: number(player.manaGained),
+                        }),
+                        rate(player.manaSpentPerSecond),
+                    ],
+                });
+                for (const ability of player.abilityMana) {
+                    model.rows.push({
+                        kind: 'ability',
+                        cells: [
+                            ability.abilityHrid
+                                ? getAbilityName(ability.abilityHrid, prettyHrid(ability.abilityHrid))
+                                : i18n_js.t('combatLive.noAbility'),
+                            number(ability.mana),
+                            rate(ability.perSecond),
+                        ],
+                    });
+                }
+            }
+        }
+
+        return model;
+    }
+
+    class CombatLiveUI {
+        constructor() {
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.panel = null;
+            this.deps = null;
+            this.tab = 'damage';
+            this.collapsed = false;
+            this.lastSignature = '';
+            this.elements = {};
+        }
+
+        async initialize(deps) {
+            if (this.panel) return;
+            this.deps = deps;
+
+            this.tab = await storage.get(TAB_KEY, STORAGE_STORE$4, 'damage');
+            if (!TABS.includes(this.tab)) this.tab = 'damage';
+            this.collapsed = Boolean(await storage.get(COLLAPSED_KEY, STORAGE_STORE$4, false));
+            // cleanup() may have run while the saved state was loading
+            if (!this.deps) return;
+
+            this.buildPanel();
+            const savedPosition = await storage.get(POSITION_KEY, STORAGE_STORE$4, null);
+            if (this.panel && savedPosition) this.applyPosition(savedPosition.left, savedPosition.top);
+
+            this.timerRegistry.registerInterval(setInterval(() => this.refresh(), REFRESH_MS));
+        }
+
+        buildPanel() {
+            const panel = document.createElement('div');
+            panel.id = PANEL_ID$3;
+            panel.style.cssText = `
+            position: fixed; top: 120px; right: 20px; z-index: ${config.Z_FLOATING_PANEL};
+            display: none; flex-direction: column; width: 320px; max-height: 70vh;
+            background: rgba(10, 10, 20, 0.95); border: 1px solid rgba(0, 200, 150, 0.45);
+            border-radius: 8px; color: #e0e0e0; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.55);
+        `;
+
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: grab;
+            background: rgba(0, 200, 150, 0.12); border-radius: 7px 7px 0 0; user-select: none;
+        `;
+            const title = this.textEl('span', i18n_js.t('combatLive.panelTitle'), 'font-weight:700; color:#00c896;');
+            const summary = this.textEl('span', '', 'margin-left:auto; color:#aaa;');
+            const resetButton = this.buttonEl('↺', i18n_js.t('combatLive.resetTooltip'), () => {
+                this.deps.onReset();
+                this.lastSignature = '';
+                this.refresh();
+            });
+            const copyButton = this.buttonEl('⧉', i18n_js.t('combatLive.copyRecordingTooltip'), () => this.copyRecording());
+            copyButton.style.display = 'none';
+            const collapseButton = this.buttonEl('', i18n_js.t('combatLive.collapseTooltip'), () => this.toggleCollapsed());
+            header.append(title, summary, copyButton, resetButton, collapseButton);
+
+            const tabBar = document.createElement('div');
+            tabBar.style.cssText = 'display:flex; border-bottom:1px solid #222;';
+            const tabButtons = {};
+            for (const tab of TABS) {
+                const button = this.textEl('button', i18n_js.t(`combatLive.tab_${tab}`), '');
+                button.addEventListener('click', () => this.selectTab(tab));
+                tabButtons[tab] = button;
+                tabBar.appendChild(button);
+            }
+
+            const body = document.createElement('div');
+            body.style.cssText = 'overflow-y:auto; padding:6px 10px;';
+
+            panel.append(header, tabBar, body);
+            document.body.appendChild(panel);
+            registerFloatingPanel(panel);
+            panel.addEventListener('mousedown', () => bringPanelToFront(panel));
+            this.setupDrag(header, panel);
+
+            this.panel = panel;
+            this.elements = { summary, copyButton, collapseButton, tabBar, tabButtons, body };
+            this.applyChrome();
+        }
+
+        textEl(tag, text, css) {
+            const element = document.createElement(tag);
+            element.textContent = text;
+            if (css) element.style.cssText = css;
+            return element;
+        }
+
+        buttonEl(label, tooltip, onClick) {
+            const button = this.textEl(
+                'button',
+                label,
+                'background:none; border:none; color:#aaa; cursor:pointer; font-size:14px; padding:0 2px;'
+            );
+            button.title = tooltip;
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                onClick();
+            });
+            button.addEventListener('mousedown', (event) => event.stopPropagation());
+            return button;
+        }
+
+        async copyRecording() {
+            const recording = this.deps?.getRecording();
+            if (!recording) return;
+            const button = this.elements.copyButton;
+            try {
+                await navigator.clipboard.writeText(recording);
+                button.textContent = '✓';
+            } catch (error) {
+                console.error('[CombatLive] Failed to copy recording:', error);
+                button.textContent = '✗';
+            }
+            this.timerRegistry.registerTimeout(
+                setTimeout(() => {
+                    button.textContent = '⧉';
+                }, 1500)
+            );
+        }
+
+        selectTab(tab) {
+            this.tab = tab;
+            storage.set(TAB_KEY, tab, STORAGE_STORE$4);
+            this.lastSignature = '';
+            this.applyChrome();
+            this.refresh();
+        }
+
+        toggleCollapsed() {
+            this.collapsed = !this.collapsed;
+            storage.set(COLLAPSED_KEY, this.collapsed, STORAGE_STORE$4);
+            this.applyChrome();
+            this.refresh();
+        }
+
+        applyChrome() {
+            const { collapseButton, tabBar, tabButtons, body } = this.elements;
+            collapseButton.textContent = this.collapsed ? '▸' : '▾';
+            tabBar.style.display = this.collapsed ? 'none' : 'flex';
+            body.style.display = this.collapsed ? 'none' : 'block';
+            for (const tab of TABS) {
+                const active = tab === this.tab;
+                tabButtons[tab].style.cssText = `
+                flex:1; padding:5px 0; cursor:pointer; background:none; border:none;
+                border-bottom:2px solid ${active ? '#00c896' : 'transparent'};
+                color:${active ? '#00c896' : '#888'}; font-size:12px; font-weight:600;
+            `;
+            }
+        }
+
+        setupDrag(header, panel) {
+            header.addEventListener('mousedown', (event) => {
+                const rect = panel.getBoundingClientRect();
+                const offsetX = event.clientX - rect.left;
+                const offsetY = event.clientY - rect.top;
+                header.style.cursor = 'grabbing';
+
+                const onMove = (moveEvent) => this.applyPosition(moveEvent.clientX - offsetX, moveEvent.clientY - offsetY);
+                const onUp = () => {
+                    header.style.cursor = 'grab';
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    const finalRect = panel.getBoundingClientRect();
+                    storage.set(POSITION_KEY, { left: finalRect.left, top: finalRect.top }, STORAGE_STORE$4);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        }
+
+        /**
+         * Place the panel, keeping its header inside the window.
+         * @param {number} left
+         * @param {number} top
+         */
+        applyPosition(left, top) {
+            if (!this.panel) return;
+            const maxLeft = Math.max(0, window.innerWidth - 80);
+            const maxTop = Math.max(0, window.innerHeight - 40);
+            this.panel.style.left = `${Math.min(Math.max(0, left), maxLeft)}px`;
+            this.panel.style.top = `${Math.min(Math.max(0, top), maxTop)}px`;
+            this.panel.style.right = 'auto';
+        }
+
+        refresh() {
+            if (!this.panel || !this.deps) return;
+
+            const lastMessageAt = this.deps.getLastMessageAt();
+            const active = lastMessageAt > 0 && Date.now() - lastMessageAt <= IDLE_HIDE_MS;
+            this.panel.style.display = active ? 'flex' : 'none';
+            if (!active || document.hidden) return;
+
+            this.elements.copyButton.style.display = this.deps.isRecording() ? '' : 'none';
+            const summary = this.deps.getSummary();
+            this.elements.summary.textContent = i18n_js.t('combatLive.headerSummary', { dps: rate(summary.party.dps) });
+            if (this.collapsed) return;
+
+            const model = buildTabModel(summary, this.tab, {
+                showPartyDamage: Boolean(config.getSetting('combatLive_estimateParty')),
+            });
+            const signature = JSON.stringify([this.tab, model]);
+            if (signature === this.lastSignature) return;
+            this.lastSignature = signature;
+            this.renderModel(model);
+        }
+
+        buildTable(headers, rows) {
+            const table = document.createElement('div');
+            table.style.cssText = 'margin-bottom:6px;';
+            const columns = `grid-template-columns: 1.6fr repeat(${headers.length - 1}, 1fr);`;
+            const headerRow = document.createElement('div');
+            headerRow.style.cssText = `display:grid; ${columns} gap:4px; color:#888; font-size:11px; border-bottom:1px solid #222;`;
+            headers.forEach((heading, index) =>
+                headerRow.appendChild(this.textEl('span', heading, index ? 'text-align:right;' : ''))
+            );
+            table.appendChild(headerRow);
+
+            for (const row of rows) {
+                const rowEl = document.createElement('div');
+                const weight = row.kind === 'player' ? 'font-weight:700; color:#00c896;' : '';
+                const indent = row.kind === 'ability' ? 'padding-left:10px; color:#bbb;' : '';
+                rowEl.style.cssText = `display:grid; ${columns} gap:4px; padding:1px 0; ${weight}`;
+                row.cells.forEach((cell, index) =>
+                    rowEl.appendChild(this.textEl('span', cell, index ? 'text-align:right;' : indent))
+                );
+                table.appendChild(rowEl);
+            }
+            return table;
+        }
+
+        renderModel(model) {
+            const children = [];
+
+            if (model.stats.length) {
+                const list = document.createElement('div');
+                list.style.cssText = 'display:grid; grid-template-columns:1fr auto; gap:2px 12px; margin-bottom:6px;';
+                for (const [label, value] of model.stats) {
+                    list.appendChild(this.textEl('span', label, 'color:#888;'));
+                    list.appendChild(this.textEl('span', value, 'text-align:right; font-weight:600;'));
+                }
+                children.push(list);
+            }
+
+            if (model.secondary?.rows.length) {
+                children.push(this.textEl('div', model.secondary.title, 'font-weight:700; color:#00c896; margin-top:4px;'));
+                children.push(this.buildTable(model.secondary.headers, model.secondary.rows));
+            }
+            if (model.rows.length) {
+                children.push(this.buildTable(model.headers, model.rows));
+            }
+
+            if (model.note) {
+                children.push(this.textEl('div', model.note, 'margin-top:6px; color:#777; font-size:11px;'));
+            }
+
+            this.elements.body.replaceChildren(...children);
+        }
+
+        cleanup() {
+            this.timerRegistry.clearAll();
+            if (this.panel) {
+                unregisterFloatingPanel(this.panel);
+                this.panel.remove();
+            }
+            this.panel = null;
+            this.deps = null;
+            this.elements = {};
+            this.lastSignature = '';
+        }
+    }
+
+    const combatLiveUI = new CombatLiveUI();
+
+    /**
+     * Combat Live
+     *
+     * Live combat meters fed by the game's own battle messages: party damage (DPS and true DPS),
+     * damage taken, and mana. All state lives in BattleEventTracker / BattleStats (pure logic); this
+     * module only owns the WebSocket subscriptions and the panel lifecycle.
+     */
+
+
+    class CombatLive {
+        constructor() {
+            this.isInitialized = false;
+            this.tracker = new BattleEventTracker();
+            this.stats = new BattleStats();
+            this.recorder = new CombatLiveRecorder();
+            this.lastMessageAt = 0;
+            this.newBattleHandler = null;
+            this.battleUpdatedHandler = null;
+            this.socketCloseHandler = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            this.isInitialized = true;
+
+            this.newBattleHandler = (data) => this.onNewBattle(data);
+            this.battleUpdatedHandler = (data) => this.onBattleUpdated(data);
+            // A dropped connection can lose ticks, so start the next battle's numbers from scratch
+            this.socketCloseHandler = () => this.reset();
+
+            webSocketHook.on('new_battle', this.newBattleHandler);
+            webSocketHook.on('battle_updated', this.battleUpdatedHandler);
+            webSocketHook.onSocketEvent('close', this.socketCloseHandler);
+
+            combatLiveUI.initialize({
+                getSummary: () => this.stats.getSummary(),
+                getLastMessageAt: () => this.lastMessageAt,
+                onReset: () => {
+                    this.stats.reset();
+                    this.recorder.clear();
+                },
+                isRecording: () => this.isRecording(),
+                getRecording: () => (this.recorder.entries.length ? this.recorder.exportJSON() : null),
+            });
+        }
+
+        onNewBattle(data) {
+            const now = Date.now();
+            this.tracker.handleNewBattle(data);
+            this.stats.setPlayers(this.tracker.players.map((player) => player.name));
+            if (this.isRecording()) {
+                this.recorder.recordNewBattle(data, now, dataManager.getCurrentCharacterId());
+            }
+            this.lastMessageAt = now;
+        }
+
+        /**
+         * @returns {boolean} Whether raw battle ticks are being kept for attribution debugging
+         */
+        isRecording() {
+            return Boolean(config.getSetting('combatLive_record'));
+        }
+
+        onBattleUpdated(data) {
+            if (!data || data.battleId !== this.tracker.battleId) return;
+            const now = Date.now();
+            if (this.isRecording()) {
+                this.recorder.recordBattleUpdated(data, now);
+            }
+            this.stats.record(this.tracker.handleBattleUpdated(data), now);
+            this.lastMessageAt = now;
+        }
+
+        reset() {
+            this.tracker.reset();
+            this.stats.reset();
+            this.lastMessageAt = 0;
+        }
+
+        cleanup() {
+            if (!this.isInitialized) return;
+            this.isInitialized = false;
+
+            if (this.newBattleHandler) webSocketHook.off('new_battle', this.newBattleHandler);
+            if (this.battleUpdatedHandler) webSocketHook.off('battle_updated', this.battleUpdatedHandler);
+            if (this.socketCloseHandler) webSocketHook.offSocketEvent('close', this.socketCloseHandler);
+            this.newBattleHandler = null;
+            this.battleUpdatedHandler = null;
+            this.socketCloseHandler = null;
+
+            combatLiveUI.cleanup();
+            this.reset();
+            // A recording holds party names, so it never outlives the character session
+            this.recorder.clear();
+        }
+    }
+
+    const combatLive = new CombatLive();
+
+    var combatLive$1 = {
+        name: 'Combat Live',
+        initialize: () => combatLive.initialize(),
+        cleanup: () => combatLive.cleanup(),
+        // Exposed for tests
+        instance: combatLive,
+    };
 
     /**
      * External Links
@@ -12823,60 +14070,6 @@
     const enhancementTracker = new EnhancementTracker();
 
     /**
-     * Floating Panel Z-Index Manager
-     * Manages bring-to-front ordering for persistent floating panels.
-     * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
-     * so they never cross the game's MUI modal layer (~1300).
-     */
-
-
-    const panels = new Set();
-
-    /**
-     * Register a floating panel element for z-index management
-     * @param {HTMLElement} el - The panel element
-     */
-    function registerFloatingPanel(el) {
-        panels.add(el);
-    }
-
-    /**
-     * Unregister a floating panel element
-     * @param {HTMLElement} el - The panel element
-     */
-    function unregisterFloatingPanel(el) {
-        panels.delete(el);
-    }
-
-    /**
-     * Bring a panel to the front among all registered panels,
-     * without exceeding config.Z_FLOATING_PANEL + 99.
-     * @param {HTMLElement} el - The panel to bring forward
-     */
-    function bringPanelToFront(el) {
-        const base = config.Z_FLOATING_PANEL;
-        const cap = base + 99;
-
-        let maxZ = base;
-        for (const p of panels) {
-            const z = parseInt(p.style.zIndex) || base;
-            if (z > maxZ) maxZ = z;
-        }
-
-        const next = maxZ + 1;
-        if (next > cap) {
-            // Overflow — reassign all from base upward, put el last
-            let i = base;
-            for (const p of panels) {
-                if (p !== el) p.style.zIndex = String(i++);
-            }
-            el.style.zIndex = String(i);
-        } else {
-            el.style.zIndex = String(next);
-        }
-    }
-
-    /**
      * Enhancement Tracker Floating UI
      * Displays enhancement session statistics in a draggable panel
      * Based on Ultimate Enhancement Tracker v3.7.9
@@ -16113,11 +17306,11 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Combat Simulator Adapter
-     * Bridges Toolasha's live data to the combat sim engine.
+     * Combat constants shared across bundles
      *
-     * Extracts game data maps, builds player DTOs, and provides
-     * combat zone metadata for the simulation UI.
+     * Stateless game-data tables that features outside the combat simulator also need (key costs for
+     * chest analytics and risk of ruin, shrine hrids for the sim export). They live here, not in the
+     * simulator adapter, so importing them never pulls the adapter and its dependencies into a bundle.
      */
 
 
@@ -27820,6 +29013,7 @@ self.onmessage = function (e) {
         equipmentLevelDisplay,
         alchemyItemDimming,
         combatLevelProgress,
+        combatLive: combatLive$1,
         externalLinks,
         hideLabyrinthBadge,
         hideNavBarGlow,
@@ -27856,4 +29050,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] UI library 2 loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core, Toolasha.Utils.timerRegistry, Toolasha.Core.webSocketHook, Toolasha.Utils.marketData, Toolasha.Utils.formatters, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Core.loadoutState, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Utils.buffParser);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.timerRegistry, Toolasha.Utils.formatters, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.marketData, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.buffParser);

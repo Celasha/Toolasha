@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.25.4
+ * Version: 3.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6709,11 +6709,11 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Combat Simulator Adapter
-     * Bridges Toolasha's live data to the combat sim engine.
+     * Combat constants shared across bundles
      *
-     * Extracts game data maps, builds player DTOs, and provides
-     * combat zone metadata for the simulation UI.
+     * Stateless game-data tables that features outside the combat simulator also need (key costs for
+     * chest analytics and risk of ruin, shrine hrids for the sim export). They live here, not in the
+     * simulator adapter, so importing them never pulls the adapter and its dependencies into a bundle.
      */
 
 
