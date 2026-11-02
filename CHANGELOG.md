@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.28.4](https://github.com/Celasha/Toolasha/compare/v3.28.3...v3.28.4) (2026-11-02)
+
+### Bug Fixes
+
+- show DPS per player and per ability in the Combat Live damage tables ([b3a8060](https://github.com/Celasha/Toolasha/commit/b3a8060a3480d271d9042978027bad54a1e18f4f))
+
 ## [3.28.3](https://github.com/Celasha/Toolasha/compare/v3.28.2...v3.28.3) (2026-11-02)
 
 ### Bug Fixes
