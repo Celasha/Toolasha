@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.28.5](https://github.com/Celasha/Toolasha/compare/v3.28.4...v3.28.5) (2026-11-02)
+
+
+### Bug Fixes
+
+* show party members on the Combat Live chart, with foldable players and hideable columns ([63c5387](https://github.com/Celasha/Toolasha/commit/63c5387c2c9d7104c7c1bb8d7da9a6c636c5403a))
+
 ## [3.28.4](https://github.com/Celasha/Toolasha/compare/v3.28.3...v3.28.4) (2026-11-02)
 
 ### Bug Fixes
