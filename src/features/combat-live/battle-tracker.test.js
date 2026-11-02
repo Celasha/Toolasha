@@ -94,16 +94,36 @@ describe('BattleEventTracker', () => {
         expect(events.map((event) => event.type)).toEqual(['damage', 'death']);
     });
 
-    test('mana spent is tied to the ability the same unit is preparing', () => {
-        const tracker = startBattle();
+    test('mana spent belongs to the ability prepared before the update, not the one being wound up now', () => {
+        const tracker = startBattle([player({ preparingAbilityHrid: '/abilities/fireball', attackAttemptCounter: 3 })]);
 
         const events = tracker.handleBattleUpdated(
+            update({ 0: { cHP: 1000, mHP: 1000, cMP: 440, mMP: 500, atkCounter: 4, abilityHrid: '/abilities/poke' } })
+        );
+
+        expect(events).toContainEqual(
+            expect.objectContaining({ type: 'mana-spend', amount: 60, abilityHrid: '/abilities/fireball' })
+        );
+    });
+
+    test('a mana drop in an update where the unit did not act has no known ability', () => {
+        const tracker = startBattle([player({ preparingAbilityHrid: '/abilities/fireball' })]);
+
+        const [event] = tracker.handleBattleUpdated(
             update({ 0: { cHP: 1000, mHP: 1000, cMP: 440, mMP: 500, abilityHrid: '/abilities/fireball' } })
         );
 
-        expect(events).toEqual([
-            expect.objectContaining({ type: 'mana-spend', amount: 60, abilityHrid: '/abilities/fireball' }),
-        ]);
+        expect(event).toEqual(expect.objectContaining({ type: 'mana-spend', abilityHrid: '' }));
+    });
+
+    test('mana spent during an auto attack is not charged to an ability', () => {
+        const tracker = startBattle([player({ isPreparingAutoAttack: true, attackAttemptCounter: 1 })]);
+
+        const events = tracker.handleBattleUpdated(
+            update({ 0: { cHP: 1000, mHP: 1000, cMP: 495, mMP: 500, atkCounter: 2, abilityHrid: '/abilities/poke' } })
+        );
+
+        expect(events).toContainEqual(expect.objectContaining({ type: 'mana-spend', abilityHrid: '' }));
     });
 
     test('mana going up is a gain', () => {
@@ -114,14 +134,98 @@ describe('BattleEventTracker', () => {
         expect(event).toEqual(expect.objectContaining({ type: 'mana-gain', amount: 5 }));
     });
 
-    test('a new attack attempt reports what the unit started preparing', () => {
-        const tracker = startBattle();
+    test('an attack reports the ability that just ran and the one now being wound up', () => {
+        const tracker = startBattle([player({ preparingAbilityHrid: '/abilities/fireball', attackAttemptCounter: 3 })]);
 
         const [event] = tracker.handleBattleUpdated(
-            update({ 0: { cHP: 1000, mHP: 1000, cMP: 500, mMP: 500, atkCounter: 1, isAutoAtk: true, int: 3e9 } })
+            update({
+                0: {
+                    cHP: 1000,
+                    mHP: 1000,
+                    cMP: 500,
+                    mMP: 500,
+                    atkCounter: 4,
+                    abilityHrid: '/abilities/poke',
+                    int: 3e9,
+                },
+            })
         );
 
-        expect(event).toEqual(expect.objectContaining({ type: 'attack', auto: true, intervalMs: 3000 }));
+        expect(event).toEqual(
+            expect.objectContaining({
+                type: 'attack',
+                auto: false,
+                abilityHrid: '/abilities/fireball',
+                nextAbilityHrid: '/abilities/poke',
+                intervalMs: 3000,
+            })
+        );
+    });
+
+    test('an auto attack is reported as auto with no ability', () => {
+        const tracker = startBattle([player({ isPreparingAutoAttack: true, attackAttemptCounter: 1 })]);
+
+        const [event] = tracker.handleBattleUpdated(
+            update({ 0: { cHP: 1000, mHP: 1000, cMP: 500, mMP: 500, atkCounter: 2, isAutoAtk: true } })
+        );
+
+        expect(event).toEqual(expect.objectContaining({ type: 'attack', auto: true, abilityHrid: '' }));
+    });
+
+    test('a counter that only repeats its value is not an action', () => {
+        const tracker = startBattle([player({ attackAttemptCounter: 5 })]);
+
+        const events = tracker.handleBattleUpdated(
+            update({ 0: { cHP: 1000, mHP: 1000, cMP: 500, mMP: 500, atkCounter: 5 } })
+        );
+
+        expect(events).toEqual([]);
+    });
+
+    test('a counter tick with no baseline yet is not an action or a hit, so a battle starts clean', () => {
+        const noCounters = {
+            character: { id: 1, name: 'Alice' },
+            currentHitpoints: 1000,
+            maxHitpoints: 1000,
+            currentManapoints: 500,
+            maxManapoints: 500,
+        };
+        const tracker = startBattle(
+            [noCounters],
+            [{ hrid: '/monsters/fly', currentHitpoints: 300, maxHitpoints: 300 }]
+        );
+
+        const first = tracker.handleBattleUpdated(
+            update(
+                { 0: { cHP: 1000, mHP: 1000, cMP: 500, mMP: 500, atkCounter: 37 } },
+                { 0: { cHP: 300, mHP: 300, dmgCounter: 12 } }
+            )
+        );
+        const second = tracker.handleBattleUpdated(
+            update(
+                { 0: { cHP: 1000, mHP: 1000, cMP: 500, mMP: 500, atkCounter: 38 } },
+                { 0: { cHP: 250, mHP: 300, dmgCounter: 13 } }
+            )
+        );
+
+        expect(first).toEqual([]);
+        expect(second.map((event) => event.type)).toEqual(['attack', 'damage']);
+    });
+
+    test('with no baseline a damaging update still counts as a hit', () => {
+        const tracker = startBattle([player()], [{ hrid: '/monsters/fly', currentHitpoints: 300, maxHitpoints: 300 }]);
+
+        const [event] = tracker.handleBattleUpdated(update({}, { 0: { cHP: 250, mHP: 300, dmgCounter: 5 } }));
+
+        expect(event).toEqual(expect.objectContaining({ type: 'damage', amount: 50, hits: 1 }));
+    });
+
+    test('several hits on one target in a single update are counted', () => {
+        const tracker = startBattle();
+
+        const [event] = tracker.handleBattleUpdated(update({}, { 0: { cHP: 100, mHP: 300, dmgCounter: 3 } }));
+
+        expect(event).toEqual(expect.objectContaining({ type: 'damage', amount: 200, hits: 3 }));
     });
 
     test('updates only touch the units they mention (maps are sparse)', () => {
@@ -217,18 +321,25 @@ describe('BattleStats', () => {
         );
     });
 
-    test('mana spent is grouped by ability', () => {
-        const spend = (mp, ability) => update({ 0: { cHP: 1000, mHP: 1000, cMP: mp, mMP: 500, abilityHrid: ability } });
-        const summary = run([
-            [0, spend(440, '/abilities/fireball')],
-            [1000, spend(380, '/abilities/fireball')],
-            [2000, spend(370, '/abilities/poke')],
-        ]);
+    test('mana spent is grouped by the ability that was cast', () => {
+        const cast = (counter, mp, nextAbility) =>
+            update({ 0: { cHP: 1000, mHP: 1000, cMP: mp, mMP: 500, atkCounter: counter, abilityHrid: nextAbility } });
+        const caster = player({ preparingAbilityHrid: '/abilities/fireball' });
+
+        const summary = run(
+            [
+                [0, cast(1, 440, '/abilities/fireball')],
+                [1000, cast(2, 380, '/abilities/poke')],
+                [2000, cast(3, 370, '')],
+            ],
+            [caster]
+        );
 
         expect(summary.players[0].manaSpent).toBe(130);
-        expect(summary.players[0].abilityMana[0]).toEqual(
-            expect.objectContaining({ abilityHrid: '/abilities/fireball', mana: 120, events: 2 })
-        );
+        expect(summary.players[0].abilityMana).toEqual([
+            expect.objectContaining({ abilityHrid: '/abilities/fireball', mana: 120, events: 2 }),
+            expect.objectContaining({ abilityHrid: '/abilities/poke', mana: 10, events: 1 }),
+        ]);
     });
 
     test('per-player damage is only exact when one player is in the battle', () => {
@@ -316,6 +427,94 @@ describe('BattleStats', () => {
             );
 
             expect(summary.dealt[0]).toEqual(expect.objectContaining({ name: 'Alice', hits: 2, crits: 1, misses: 1 }));
+        });
+
+        test('a hit counts every counter step, so several hits in one update are all counted', () => {
+            const summary = run([[0, update({}, { 0: { cHP: 200, mHP: 300, dmgCounter: 3 } })]]);
+
+            expect(summary.party.hits).toBe(3);
+            expect(summary.dealt[0]).toEqual(expect.objectContaining({ damage: 100, hits: 3 }));
+        });
+    });
+
+    describe('damage by ability', () => {
+        const bob = () => player({ character: { id: 2, name: 'Bob' } });
+        const strike = (index, hp, dmgCounter, entry = {}) =>
+            update({ [index]: { atkCounter: dmgCounter, ...entry } }, { 0: { cHP: hp, mHP: 300, dmgCounter } });
+
+        test('each hit goes to the ability the player had prepared, then auto attack, then over time', () => {
+            const caster = player({ preparingAbilityHrid: '/abilities/fireball' });
+
+            const summary = run(
+                [
+                    [0, strike(0, 250, 1, { abilityHrid: '/abilities/poke' })],
+                    [1000, strike(0, 200, 2, { isAutoAtk: true })],
+                    [2000, strike(0, 150, 3)],
+                    [3000, update({}, { 0: { cHP: 100, mHP: 300, dmgCounter: 4 } })],
+                ],
+                [caster]
+            );
+
+            const byKey = Object.fromEntries(summary.dealt[0].abilities.map((row) => [row.key, row.damage]));
+            expect(byKey).toEqual({ '/abilities/fireball': 50, '/abilities/poke': 50, auto: 50, 'over-time': 50 });
+            expect(summary.dealt[0].damage).toBe(200);
+        });
+
+        test("a party member's hit is credited to the ability that member had prepared", () => {
+            const mage = player({ preparingAbilityHrid: '/abilities/fireball' });
+
+            const summary = run(
+                [
+                    [0, strike(1, 250, 1)],
+                    [1000, strike(0, 200, 2)],
+                ],
+                [mage, bob()]
+            );
+
+            const alice = summary.dealt.find((row) => row.name === 'Alice');
+            const robert = summary.dealt.find((row) => row.name === 'Bob');
+            expect(alice.abilities).toEqual([expect.objectContaining({ key: '/abilities/fireball', damage: 50 })]);
+            expect(robert.abilities).toEqual([expect.objectContaining({ key: 'auto', damage: 50 })]);
+        });
+
+        test('in a party, damage nobody acted for is over time, and it is not given to anyone', () => {
+            const summary = run([[0, update({}, { 0: { cHP: 250, mHP: 300, dmgCounter: 1 } })]], [player(), bob()]);
+
+            expect(summary.unattributed).toEqual(expect.objectContaining({ damage: 50, overTime: 50, reflected: 0 }));
+            expect(summary.dealt.map((row) => row.damage)).toEqual([0, 0]);
+        });
+
+        test('in a party, damage to a monster that attacked in the same update is reflected', () => {
+            const reflected = update({}, { 0: { cHP: 250, mHP: 300, dmgCounter: 1, atkCounter: 1 } });
+
+            const summary = run([[0, reflected]], [player(), bob()]);
+
+            expect(summary.unattributed).toEqual(expect.objectContaining({ damage: 50, reflected: 50, overTime: 0 }));
+        });
+
+        test('alone, over-time and reflected damage are still yours, under their own labels', () => {
+            const reflected = update({}, { 0: { cHP: 250, mHP: 300, dmgCounter: 1, atkCounter: 1 } });
+            const overTime = update({}, { 0: { cHP: 200, mHP: 300, dmgCounter: 2, atkCounter: 1 } });
+
+            const summary = run([
+                [0, reflected],
+                [1000, overTime],
+            ]);
+
+            const byKey = Object.fromEntries(summary.dealt[0].abilities.map((row) => [row.key, row.damage]));
+            expect(byKey).toEqual({ reflect: 50, 'over-time': 50 });
+            expect(summary.unattributed.damage).toBe(0);
+        });
+
+        test('an unclear update where several players acted is not given to anyone', () => {
+            const both = update(
+                { 0: { atkCounter: 1 }, 1: { atkCounter: 1 } },
+                { 0: { cHP: 250, mHP: 300, dmgCounter: 1 } }
+            );
+
+            const summary = run([[0, both]], [player(), bob()]);
+
+            expect(summary.unattributed).toEqual(expect.objectContaining({ damage: 50, unclear: 50 }));
         });
     });
 });

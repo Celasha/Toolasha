@@ -38,11 +38,29 @@ function prettyHrid(hrid) {
         .join(' ');
 }
 
+const SOURCE_LABELS = {
+    auto: () => t('combatLive.autoAttack'),
+    reflect: () => t('combatLive.reflected'),
+    'over-time': () => t('combatLive.overTime'),
+};
+
+/**
+ * @param {string} key - Ability hrid or one of the special damage sources (auto, reflect, over-time)
+ * @returns {string} Display name
+ */
+function sourceName(key) {
+    const special = SOURCE_LABELS[key];
+    if (special) return special();
+    return key ? getAbilityName(key, prettyHrid(key)) : t('combatLive.noAbility');
+}
+
+const percent = (value) => `${Math.round(value * 100)}%`;
+
 /**
  * Build what a tab shows from a BattleStats summary.
  * @param {Object} summary - BattleStats.getSummary()
  * @param {string} tab - 'damage' | 'taken' | 'mana'
- * @param {{estimateParty?: boolean}} [options] - estimateParty: show the per-player damage estimate in a party
+ * @param {{showPartyDamage?: boolean}} [options] - showPartyDamage: split damage per party member in a party
  * @returns {{stats: Array<[string, string]>, secondary: ?{title: string, headers: string[], rows: Array<{kind: string, cells: string[]}>}, headers: string[], rows: Array<{kind: string, cells: string[]}>, note: string}}
  */
 export function buildTabModel(summary, tab, options = {}) {
@@ -50,10 +68,10 @@ export function buildTabModel(summary, tab, options = {}) {
     const model = { stats: [], secondary: null, headers: [], rows: [], note: '' };
 
     if (tab === 'damage') {
-        const solo = summary.attributionExact && summary.dealt.length > 0 ? summary.dealt[0].name : null;
-        const estimating = Boolean(options.estimateParty) && !summary.attributionExact;
+        const solo = summary.attributionExact && summary.dealt.length > 0 ? summary.dealt[0] : null;
+        const splitParty = Boolean(options.showPartyDamage) && !solo;
         model.stats = [
-            [solo ? t('combatLive.dpsFor', { name: solo }) : t('combatLive.partyDps'), rate(party.dps)],
+            [solo ? t('combatLive.dpsFor', { name: solo.name }) : t('combatLive.partyDps'), rate(party.dps)],
             [t('combatLive.trueDps'), rate(party.trueDps)],
             [t('combatLive.totalDamage'), number(party.damage)],
             [t('combatLive.hitsCritsMisses'), `${party.hits} / ${party.crits} / ${party.misses}`],
@@ -69,29 +87,60 @@ export function buildTabModel(summary, tab, options = {}) {
                 String(monster.kills),
             ],
         }));
-        if (estimating) {
-            const share = (value) => `${Math.round(value * 100)}%`;
-            model.stats.push([t('combatLive.unattributed'), share(summary.unattributed.share)]);
+
+        const abilityRows = (player) =>
+            player.abilities.map((ability) => ({
+                kind: 'ability',
+                cells: [sourceName(ability.key), number(ability.damage), percent(ability.share), String(ability.hits)],
+            }));
+        const damageHeaders = [
+            t('combatLive.colAbility'),
+            t('combatLive.colDamage'),
+            t('combatLive.colShare'),
+            t('combatLive.colHits'),
+        ];
+
+        if (solo) {
             model.secondary = {
-                title: t('combatLive.estimateTitle'),
-                headers: [
-                    t('combatLive.colPlayer'),
-                    t('combatLive.colDamage'),
-                    t('combatLive.colDps'),
-                    t('combatLive.colShare'),
-                ],
-                rows: summary.dealt.map((player) => ({
-                    kind: 'row',
-                    cells: [
-                        player.name || '?',
-                        `~${number(player.damage)}`,
-                        `~${rate(player.dps)}`,
-                        party.damage > 0 ? `~${share(player.damage / party.damage)}` : '~0%',
-                    ],
-                })),
+                title: t('combatLive.byAbilityTitle'),
+                headers: damageHeaders,
+                rows: abilityRows(solo),
             };
+        } else if (splitParty) {
+            model.secondary = {
+                title: t('combatLive.byPlayerTitle'),
+                headers: damageHeaders,
+                rows: summary.dealt.flatMap((player) => [
+                    {
+                        kind: 'player',
+                        cells: [
+                            player.name || '?',
+                            number(player.damage),
+                            party.damage > 0 ? percent(player.damage / party.damage) : '0%',
+                            String(player.hits),
+                        ],
+                    },
+                    ...abilityRows(player),
+                ]),
+            };
+            model.stats.push([t('combatLive.unattributed'), percent(summary.unattributed.share)]);
         }
-        model.note = solo ? '' : estimating ? t('combatLive.estimateNote') : t('combatLive.partyNote');
+
+        if (solo) {
+            model.note = '';
+        } else if (splitParty) {
+            const { overTime, reflected, unclear } = summary.unattributed;
+            model.note = t('combatLive.attributionNote');
+            if (summary.unattributed.damage > 0) {
+                model.note += ` ${t('combatLive.unattributedBreakdown', {
+                    overTime: number(overTime),
+                    reflected: number(reflected),
+                    unclear: number(unclear),
+                })}`;
+            }
+        } else {
+            model.note = t('combatLive.partyNote');
+        }
     } else if (tab === 'taken') {
         model.headers = [
             t('combatLive.colPlayer'),
@@ -341,7 +390,7 @@ class CombatLiveUI {
         if (this.collapsed) return;
 
         const model = buildTabModel(summary, this.tab, {
-            estimateParty: Boolean(config.getSetting('combatLive_estimateParty')),
+            showPartyDamage: Boolean(config.getSetting('combatLive_estimateParty')),
         });
         const signature = JSON.stringify([this.tab, model]);
         if (signature === this.lastSignature) return;

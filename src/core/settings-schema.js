@@ -2120,18 +2120,16 @@ export const settingsGroups = {
                 label: 'Combat Live: Show live damage, damage taken and mana panel during combat',
                 type: 'checkbox',
                 default: false,
-                help:
-                    'Floating panel with party DPS (and true DPS from kills), damage taken and deaths, and mana spent per ability. ' +
-                    'The game does not report who landed each hit, so damage is shown for the whole party, or for you when you fight alone.',
+                help: 'Floating panel with DPS (and true DPS from kills) by ability and by party member, damage taken and deaths, and mana spent per ability.',
             },
             combatLive_estimateParty: {
                 id: 'combatLive_estimateParty',
-                label: "Combat Live: Estimate each party member's damage (experimental)",
+                label: "Combat Live: Show each party member's damage",
                 type: 'checkbox',
-                default: false,
+                default: true,
                 help:
-                    'In a party, credits a hit to a player only when exactly one player started an attack in the same game message. ' +
-                    'Every other hit stays unattributed and is shown as a percentage. Not validated against real fights yet; numbers marked ~ are estimates.',
+                    "In a party, splits damage per player and per ability using each player's action counter in the game's combat messages. " +
+                    'Damage over time and reflected damage has no attacker in the message, so it is listed separately.',
             },
             combatLive_record: {
                 id: 'combatLive_record',

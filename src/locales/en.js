@@ -1773,13 +1773,19 @@ export default {
         colMana: 'Mana',
         manaSpentGained: (p) => `${p.spent} spent / ${p.gained} gained`,
         noAbility: 'No ability',
-        partyNote: 'Party total. The game does not report who landed each hit.',
-        estimateNote:
-            'Estimates (~): a hit is credited only when exactly one player started an attack in the same message.',
-        estimateTitle: 'Damage per player (estimate)',
-        unattributed: 'Unattributed damage',
-        colDps: 'DPS',
+        partyNote: 'Party total. Turn on "Show each party member\'s damage" in settings to split it.',
+        attributionNote:
+            'Credited to the player whose attack counter rose in the same game message, under the ability they had prepared. Damage over time and reflected damage has no attacker in the message, so it is not assigned to anyone.',
+        byAbilityTitle: 'Damage by ability',
+        byPlayerTitle: 'Damage by player',
+        autoAttack: 'Auto attack',
+        reflected: 'Reflected',
+        overTime: 'Over time',
+        unattributedBreakdown: (p) =>
+            `Not assigned: ${p.overTime} over time, ${p.reflected} reflected, ${p.unclear} unclear.`,
+        unattributed: 'Not assigned to a player',
         colShare: 'Share',
+        colHits: 'Hits',
         copyRecordingTooltip: 'Copy the recorded battle ticks',
     },
     philoCalculator: {
@@ -3844,11 +3850,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             combatLive: {
                 label: 'Combat Live: Show live damage, damage taken and mana panel during combat',
-                help: 'Floating panel with party DPS (and true DPS from kills), damage taken and deaths, and mana spent per ability. The game does not report who landed each hit, so damage is shown for the whole party, or for you when you fight alone.',
+                help: 'Floating panel with DPS (and true DPS from kills) by ability and by party member, damage taken and deaths, and mana spent per ability.',
             },
             combatLive_estimateParty: {
-                label: "Combat Live: Estimate each party member's damage (experimental)",
-                help: 'In a party, credits a hit to a player only when exactly one player started an attack in the same game message. Every other hit stays unattributed and is shown as a percentage. Not validated against real fights yet; numbers marked ~ are estimates.',
+                label: "Combat Live: Show each party member's damage",
+                help: "In a party, splits damage per player and per ability using each player's action counter in the game's combat messages. Damage over time and reflected damage has no attacker in the message, so it is listed separately.",
             },
             combatLive_record: {
                 label: 'Combat Live: Record battle ticks for debugging',

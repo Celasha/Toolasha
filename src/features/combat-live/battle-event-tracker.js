@@ -2,17 +2,23 @@
  * Battle Event Tracker
  *
  * Turns the game's `new_battle` / `battle_updated` messages into discrete combat events by diffing
- * each unit against its previous state, using the same rules the game client uses to draw its own
- * damage splats (see GamePage.updateCombatUnit / CombatUnit.componentDidUpdate in the client):
+ * each unit against its previous state.
  *
- *   - HP went up                      -> heal of that amount
+ * Receiving side (the rules the game client uses to draw its own damage splats; see
+ * GamePage.updateCombatUnit / CombatUnit.componentDidUpdate in the client):
+ *   - HP went up                      -> heal of that amount (a respawn if it was at 0)
  *   - else dmgCounter changed         -> damage equal to the HP lost; critical when dmgCounter equals
  *                                        critCounter; an amount of 0 is a miss
  *   - MP went up                      -> mana gain
  *
- * Everything here describes the unit that RECEIVED the change, so it is exact. The client never links
- * an attacker to a target, so this module does not either: each unit only reports its own wind-up
- * (`attack` events carry the ability the unit started preparing).
+ * Acting side (confirmed by the game's developer, and what the Animation Extension relies on): one
+ * battle_updated is one combat event with one attacker. A unit acted when its `atkCounter` rose. The
+ * `abilityHrid` / `isAutoAtk` on an entry describe the NEXT action the unit is winding up, so the
+ * action that just happened is the ability the unit had prepared BEFORE this update. That is also the
+ * ability any mana spent in this update belongs to.
+ *
+ * Counters have no value until a unit's first baseline is seen: until then a counter tick is not
+ * treated as an action or a hit, so the first update of a battle cannot produce a phantom event.
  *
  * Pure logic: no DOM, no WebSocket. Feed it payloads with handleNewBattle / handleBattleUpdated.
  */
@@ -22,6 +28,7 @@ const SIDE_MONSTER = 'm';
 
 /**
  * Normalise a unit from `new_battle` (full field names) into tracked state.
+ * Counters stay null when the message does not carry them, meaning "no baseline yet".
  * @param {Object} unit - Raw unit from new_battle
  * @param {string} side - 'p' or 'm'
  * @param {number} index - Index within its side
@@ -38,9 +45,9 @@ function unitFromNewBattle(unit, side, index) {
         maxHp: unit?.maxHitpoints ?? 0,
         mp: unit?.currentManapoints ?? 0,
         maxMp: unit?.maxManapoints ?? 0,
-        dmgCounter: unit?.damageSplatCounter ?? 0,
-        critCounter: unit?.criticalDamageSplatCounter ?? 0,
-        atkCounter: unit?.attackAttemptCounter ?? 0,
+        dmgCounter: unit?.damageSplatCounter ?? null,
+        critCounter: unit?.criticalDamageSplatCounter ?? null,
+        atkCounter: unit?.attackAttemptCounter ?? null,
         isAutoAtk: Boolean(unit?.isPreparingAutoAttack),
         abilityHrid: unit?.preparingAbilityHrid || '',
         intervalNs: unit?.attackOrCastInterval ?? 0,
@@ -77,28 +84,33 @@ function applyUpdate(prev, entry) {
     };
     const events = [];
 
+    // A counter only means something once there is a previous value to compare it with
+    const acted = prev.atkCounter !== null && next.atkCounter !== null && next.atkCounter > prev.atkCounter;
     const hpDelta = next.hp - prev.hp;
+
     if (hpDelta > 0) {
         // Coming back from 0 HP is a respawn, not healing
         events.push(
             prev.hp <= 0 ? { ...base, type: 'revive', hp: next.hp } : { ...base, type: 'heal', amount: hpDelta }
         );
-    } else if (next.dmgCounter !== prev.dmgCounter) {
-        // Max with 0 so a miss is 0 rather than -0
-        const amount = Math.max(0, -hpDelta);
-        events.push({
-            ...base,
-            type: 'damage',
-            amount,
-            crit: next.dmgCounter === next.critCounter,
-            miss: amount === 0,
-        });
-        if (prev.hp > 0 && next.hp <= 0) {
-            events.push({ ...base, type: 'death' });
+    } else {
+        // The counter can move by more than one in a single update (several hits on one target)
+        const counterHits =
+            prev.dmgCounter !== null && next.dmgCounter !== null ? Math.max(0, next.dmgCounter - prev.dmgCounter) : 0;
+        const struck = counterHits > 0 || (prev.dmgCounter === null && hpDelta < 0);
+        if (struck) {
+            // Max with 0 so a miss is 0 rather than -0
+            const amount = Math.max(0, -hpDelta);
+            events.push({
+                ...base,
+                type: 'damage',
+                amount,
+                hits: Math.max(1, counterHits),
+                crit: next.critCounter !== null && next.dmgCounter === next.critCounter,
+                miss: amount === 0,
+            });
         }
-    } else if (hpDelta < 0) {
-        // HP fell without a damage splat (e.g. a cost or drain): still a death if it hit 0
-        if (prev.hp > 0 && next.hp <= 0) {
+        if (prev.hp > 0 && next.hp <= 0 && hpDelta < 0) {
             events.push({ ...base, type: 'death' });
         }
     }
@@ -107,21 +119,25 @@ function applyUpdate(prev, entry) {
     if (mpDelta > 0) {
         events.push({ ...base, type: 'mana-gain', amount: mpDelta });
     } else if (mpDelta < 0) {
-        // The unit's own prepared ability is on the same entry, so the spend can be tied to it
+        // The mana was paid by the action that just ran: the ability prepared before this update
+        // (an auto attack costs nothing). With no action in this update the spend has no known ability.
         events.push({
             ...base,
             type: 'mana-spend',
             amount: -mpDelta,
-            abilityHrid: next.abilityHrid || prev.abilityHrid,
+            abilityHrid: acted && !prev.isAutoAtk ? prev.abilityHrid : '',
         });
     }
 
-    if (next.atkCounter !== prev.atkCounter) {
+    if (acted) {
         events.push({
             ...base,
             type: 'attack',
-            auto: next.isAutoAtk,
-            abilityHrid: next.abilityHrid,
+            // What just ran (prepared before this update)...
+            auto: prev.isAutoAtk || !prev.abilityHrid,
+            abilityHrid: prev.isAutoAtk ? '' : prev.abilityHrid,
+            // ...and what the unit is now winding up
+            nextAbilityHrid: next.isAutoAtk ? '' : next.abilityHrid,
             intervalMs: next.intervalNs / 1e6,
         });
     }
