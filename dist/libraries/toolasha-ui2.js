@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.27.0
+ * Version: 3.28.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1673,6 +1673,8 @@
     const POSITION_KEY = 'combatLive_position';
     const COLLAPSED_KEY = 'combatLive_collapsed';
     const TAB_KEY = 'combatLive_tab';
+    const SECTIONS_KEY = 'combatLive_collapsedSections';
+    const CHART_SECTION = 'damage.chart';
     const REFRESH_MS = 500;
     // The panel hides when no combat message has arrived for this long
     const IDLE_HIDE_MS = 60000;
@@ -1853,6 +1855,8 @@
             this.deps = null;
             this.tab = 'damage';
             this.collapsed = false;
+            // Sections the user folded away, as `<tab>.<section>` ids (the chart is 'damage.chart')
+            this.collapsedSections = new Set();
             this.lastSignature = '';
             this.elements = {};
         }
@@ -1864,6 +1868,8 @@
             this.tab = await storage.get(TAB_KEY, STORAGE_STORE$4, 'damage');
             if (!TABS.includes(this.tab)) this.tab = 'damage';
             this.collapsed = Boolean(await storage.get(COLLAPSED_KEY, STORAGE_STORE$4, false));
+            const savedSections = await storage.get(SECTIONS_KEY, STORAGE_STORE$4, []);
+            this.collapsedSections = new Set(Array.isArray(savedSections) ? savedSections : []);
             // cleanup() may have run while the saved state was loading
             if (!this.deps) return;
 
@@ -1957,8 +1963,61 @@
                 'margin-top:3px; color:#9aa4b2; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'
             );
 
-            block.append(paceLine, canvas, abilityBar, legend);
-            return { block, paceNow, paceTrend, paceBest, canvas, abilityBar, legend, barSignature: '' };
+            const content = document.createElement('div');
+            content.append(paceLine, canvas, abilityBar, legend);
+            const header = this.sectionHeader(CHART_SECTION, i18n_js.t('combatLive.sectionChart'));
+            block.append(header, content);
+            return { block, header, content, paceNow, paceTrend, paceBest, canvas, abilityBar, legend, barSignature: '' };
+        }
+
+        /**
+         * A clickable section title with a fold arrow.
+         * @param {string} id - Section id (`<tab>.<section>`)
+         * @param {string} title
+         * @returns {HTMLElement}
+         */
+        sectionHeader(id, title) {
+            const header = document.createElement('div');
+            header.setAttribute('role', 'button');
+            header.tabIndex = 0;
+            header.dataset.section = id;
+            header.style.cssText =
+                'display:flex; align-items:center; gap:6px; margin-top:6px; padding:2px 0; cursor:pointer; user-select:none; font-weight:700; color:#00c896;';
+            header.append(
+                this.textEl('span', '', 'color:#888; width:10px; font-size:11px;'),
+                this.textEl('span', title, '')
+            );
+            const toggle = () => this.toggleSection(id);
+            header.addEventListener('click', toggle);
+            header.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggle();
+                }
+            });
+            this.applySectionState(header, this.collapsedSections.has(id));
+            return header;
+        }
+
+        applySectionState(header, collapsed) {
+            header.firstChild.textContent = collapsed ? '▸' : '▾';
+            header.setAttribute('aria-expanded', String(!collapsed));
+        }
+
+        toggleSection(id) {
+            if (this.collapsedSections.has(id)) this.collapsedSections.delete(id);
+            else this.collapsedSections.add(id);
+            storage.set(SECTIONS_KEY, [...this.collapsedSections], STORAGE_STORE$4);
+
+            if (id === CHART_SECTION) {
+                const chart = this.elements.chart;
+                const collapsed = this.collapsedSections.has(id);
+                this.applySectionState(chart.header, collapsed);
+                chart.content.style.display = collapsed ? 'none' : 'block';
+            }
+            // Re-render the tab on the next refresh, and redraw the chart now that it is showing again
+            this.lastSignature = '';
+            this.refresh();
         }
 
         textEl(tag, text, css) {
@@ -2102,6 +2161,9 @@
                 Boolean(summary.chart);
             chart.block.style.display = visible ? 'block' : 'none';
             if (!visible) return;
+            const folded = this.collapsedSections.has(CHART_SECTION);
+            chart.content.style.display = folded ? 'none' : 'block';
+            if (folded) return;
 
             const data = summary.chart;
             const pace = buildPaceModel(data);
@@ -2159,32 +2221,81 @@
             return table;
         }
 
+        /**
+         * Wrap one part of a tab in a section the user can fold away. Only an open section builds its
+         * content.
+         * @param {string} id - Section id (`<tab>.<section>`)
+         * @param {string} title
+         * @param {function(): HTMLElement} buildContent
+         * @param {?HTMLElement} note - A footnote that belongs with this section
+         * @returns {HTMLElement}
+         */
+        buildSection(id, title, buildContent, note) {
+            const wrap = document.createElement('div');
+            wrap.append(this.sectionHeader(id, title));
+            if (!this.collapsedSections.has(id)) {
+                wrap.append(buildContent());
+                if (note) wrap.append(note);
+            }
+            return wrap;
+        }
+
         renderModel(model) {
-            const children = [];
+            const sections = [];
+            const hasSecondary = Boolean(model.secondary?.rows.length);
+            // The footnote travels with the part it explains
+            const noteHome = hasSecondary ? 'secondary' : model.stats.length ? 'totals' : 'main';
+            const noteFor = (home) =>
+                model.note && noteHome === home
+                    ? this.textEl('div', model.note, 'margin-top:6px; color:#777; font-size:11px;')
+                    : null;
+            const mainTitle = {
+                damage: i18n_js.t('combatLive.sectionEnemies'),
+                taken: i18n_js.t('combatLive.tab_taken'),
+                mana: i18n_js.t('combatLive.tab_mana'),
+            }[this.tab];
 
             if (model.stats.length) {
-                const list = document.createElement('div');
-                list.style.cssText = 'display:grid; grid-template-columns:1fr auto; gap:2px 12px; margin-bottom:6px;';
-                for (const [label, value] of model.stats) {
-                    list.appendChild(this.textEl('span', label, 'color:#888;'));
-                    list.appendChild(this.textEl('span', value, 'text-align:right; font-weight:600;'));
-                }
-                children.push(list);
+                sections.push(
+                    this.buildSection(
+                        `${this.tab}.totals`,
+                        i18n_js.t('combatLive.sectionTotals'),
+                        () => {
+                            const list = document.createElement('div');
+                            list.style.cssText =
+                                'display:grid; grid-template-columns:1fr auto; gap:2px 12px; margin-bottom:6px;';
+                            for (const [label, value] of model.stats) {
+                                list.appendChild(this.textEl('span', label, 'color:#888;'));
+                                list.appendChild(this.textEl('span', value, 'text-align:right; font-weight:600;'));
+                            }
+                            return list;
+                        },
+                        noteFor('totals')
+                    )
+                );
             }
-
-            if (model.secondary?.rows.length) {
-                children.push(this.textEl('div', model.secondary.title, 'font-weight:700; color:#00c896; margin-top:4px;'));
-                children.push(this.buildTable(model.secondary.headers, model.secondary.rows));
+            if (hasSecondary) {
+                sections.push(
+                    this.buildSection(
+                        `${this.tab}.secondary`,
+                        model.secondary.title,
+                        () => this.buildTable(model.secondary.headers, model.secondary.rows),
+                        noteFor('secondary')
+                    )
+                );
             }
             if (model.rows.length) {
-                children.push(this.buildTable(model.headers, model.rows));
+                sections.push(
+                    this.buildSection(
+                        `${this.tab}.main`,
+                        mainTitle,
+                        () => this.buildTable(model.headers, model.rows),
+                        noteFor('main')
+                    )
+                );
             }
 
-            if (model.note) {
-                children.push(this.textEl('div', model.note, 'margin-top:6px; color:#777; font-size:11px;'));
-            }
-
-            this.elements.body.replaceChildren(...children);
+            this.elements.body.replaceChildren(...sections);
         }
 
         cleanup() {

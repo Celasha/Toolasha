@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.27.0
+ * Version: 3.28.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2466,6 +2466,9 @@
             unattributed: 'Not assigned to a player',
             colShare: 'Share',
             colHits: 'Hits',
+            sectionChart: 'DPS chart',
+            sectionTotals: 'Totals',
+            sectionEnemies: 'Enemies',
             dpsNow: (p) => `DPS ${p.dps}`,
             paceVsAverage: (p) => `${p.arrow} ${p.percent}% vs avg`,
             bestDps: (p) => `best ${p.dps}`,
@@ -7819,6 +7822,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             unattributed: '未分配给玩家',
             colShare: '占比',
             colHits: '命中',
+            sectionChart: 'DPS 图表',
+            sectionTotals: '汇总',
+            sectionEnemies: '敌人',
             dpsNow: (p) => `DPS ${p.dps}`,
             paceVsAverage: (p) => `${p.arrow} ${p.percent}% 对比平均`,
             bestDps: (p) => `最高 ${p.dps}`,
