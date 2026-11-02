@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.28.3
+ * Version: 3.28.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1819,11 +1819,18 @@
             const abilityRows = (player) =>
                 player.abilities.map((ability) => ({
                     kind: 'ability',
-                    cells: [sourceName(ability.key), number(ability.damage), percent(ability.share), String(ability.hits)],
+                    cells: [
+                        sourceName(ability.key),
+                        number(ability.damage),
+                        rate(ability.dps),
+                        percent(ability.share),
+                        String(ability.hits),
+                    ],
                 }));
             const damageHeaders = [
                 i18n_js.t('combatLive.colAbility'),
                 i18n_js.t('combatLive.colDamage'),
+                i18n_js.t('combatLive.colDps'),
                 i18n_js.t('combatLive.colShare'),
                 i18n_js.t('combatLive.colHits'),
             ];
@@ -1844,6 +1851,7 @@
                             cells: [
                                 player.name || '?',
                                 number(player.damage),
+                                rate(player.dps),
                                 party.damage > 0 ? percent(player.damage / party.damage) : '0%',
                                 String(player.hits),
                             ],
