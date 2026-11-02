@@ -138,11 +138,18 @@ export function buildTabModel(summary, tab, options = {}) {
         const abilityRows = (player) =>
             player.abilities.map((ability) => ({
                 kind: 'ability',
-                cells: [sourceName(ability.key), number(ability.damage), percent(ability.share), String(ability.hits)],
+                cells: [
+                    sourceName(ability.key),
+                    number(ability.damage),
+                    rate(ability.dps),
+                    percent(ability.share),
+                    String(ability.hits),
+                ],
             }));
         const damageHeaders = [
             t('combatLive.colAbility'),
             t('combatLive.colDamage'),
+            t('combatLive.colDps'),
             t('combatLive.colShare'),
             t('combatLive.colHits'),
         ];
@@ -163,6 +170,7 @@ export function buildTabModel(summary, tab, options = {}) {
                         cells: [
                             player.name || '?',
                             number(player.damage),
+                            rate(player.dps),
                             party.damage > 0 ? percent(player.damage / party.damage) : '0%',
                             String(player.hits),
                         ],

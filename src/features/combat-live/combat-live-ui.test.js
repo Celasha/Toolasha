@@ -214,8 +214,8 @@ describe('buildTabModel', () => {
 
         expect(model.secondary.title).toBe('combatLive.byAbilityTitle');
         expect(model.secondary.rows).toEqual([
-            { kind: 'ability', cells: ['Fireball', '1000', '67%', '4'] },
-            { kind: 'ability', cells: ['combatLive.autoAttack', '500', '33%', '4'] },
+            { kind: 'ability', cells: ['Fireball', '1000', '100.0', '67%', '4'] },
+            { kind: 'ability', cells: ['combatLive.autoAttack', '500', '50.0', '33%', '4'] },
         ]);
     });
 
@@ -247,8 +247,16 @@ describe('buildTabModel', () => {
                         dps: 100,
                         share: 1000 / 1500,
                         abilities: [
-                            { key: '/abilities/fireball', damage: 700, hits: 3, crits: 1, misses: 0, share: 0.7 },
-                            { key: 'auto', damage: 300, hits: 2, crits: 0, misses: 0, share: 0.3 },
+                            {
+                                key: '/abilities/fireball',
+                                damage: 700,
+                                hits: 3,
+                                crits: 1,
+                                misses: 0,
+                                dps: 70,
+                                share: 0.7,
+                            },
+                            { key: 'auto', damage: 300, hits: 2, crits: 0, misses: 0, dps: 30, share: 0.3 },
                         ],
                     },
                     {
@@ -259,7 +267,7 @@ describe('buildTabModel', () => {
                         misses: 1,
                         dps: 40,
                         share: 400 / 1500,
-                        abilities: [{ key: 'auto', damage: 400, hits: 3, crits: 0, misses: 1, share: 1 }],
+                        abilities: [{ key: 'auto', damage: 400, hits: 3, crits: 0, misses: 1, dps: 40, share: 1 }],
                     },
                 ],
                 unattributed,
@@ -278,11 +286,11 @@ describe('buildTabModel', () => {
 
             expect(model.secondary.title).toBe('combatLive.byPlayerTitle');
             expect(model.secondary.rows).toEqual([
-                { kind: 'player', cells: ['Alice', '1000', '67%', '5'] },
-                { kind: 'ability', cells: ['Fireball', '700', '70%', '3'] },
-                { kind: 'ability', cells: ['combatLive.autoAttack', '300', '30%', '2'] },
-                { kind: 'player', cells: ['Bob', '400', '27%', '3'] },
-                { kind: 'ability', cells: ['combatLive.autoAttack', '400', '100%', '3'] },
+                { kind: 'player', cells: ['Alice', '1000', '100.0', '67%', '5'] },
+                { kind: 'ability', cells: ['Fireball', '700', '70.0', '70%', '3'] },
+                { kind: 'ability', cells: ['combatLive.autoAttack', '300', '30.0', '30%', '2'] },
+                { kind: 'player', cells: ['Bob', '400', '40.0', '27%', '3'] },
+                { kind: 'ability', cells: ['combatLive.autoAttack', '400', '40.0', '100%', '3'] },
             ]);
         });
 
