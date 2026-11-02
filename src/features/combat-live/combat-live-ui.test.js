@@ -22,6 +22,7 @@ vi.mock('../../utils/game-i18n.js', () => ({
 
 const { buildTabModel, pruneEmptyColumns, default: combatLiveUI, CHART_SECTION } = await import('./combat-live-ui.js');
 const { default: storage } = await import('../../core/storage.js');
+const { default: config } = await import('../../core/config.js');
 
 const summary = (overrides = {}) => ({
     seconds: 10,
@@ -214,8 +215,8 @@ describe('buildTabModel', () => {
 
         expect(model.secondary.title).toBe('combatLive.byAbilityTitle');
         expect(model.secondary.rows).toEqual([
-            { kind: 'ability', cells: ['Fireball', '1000', '100.0', '67%', '4'] },
-            { kind: 'ability', cells: ['combatLive.autoAttack', '500', '50.0', '33%', '4'] },
+            { kind: 'ability', cells: ['Fireball', '1000', '100.0', '67%', '100%'] },
+            { kind: 'ability', cells: ['combatLive.autoAttack', '500', '50.0', '33%', '75%'] },
         ]);
     });
 
@@ -286,11 +287,11 @@ describe('buildTabModel', () => {
 
             expect(model.secondary.title).toBe('combatLive.byPlayerTitle');
             expect(model.secondary.rows).toEqual([
-                { kind: 'player', cells: ['Alice', '1000', '100.0', '67%', '5'] },
-                { kind: 'ability', cells: ['Fireball', '700', '70.0', '70%', '3'] },
-                { kind: 'ability', cells: ['combatLive.autoAttack', '300', '30.0', '30%', '2'] },
-                { kind: 'player', cells: ['Bob', '400', '40.0', '27%', '3'] },
-                { kind: 'ability', cells: ['combatLive.autoAttack', '400', '40.0', '100%', '3'] },
+                { kind: 'player', cells: ['Alice', '1000', '100.0', '67%', '100%'] },
+                { kind: 'ability', cells: ['Fireball', '700', '70.0', '70%', '100%'] },
+                { kind: 'ability', cells: ['combatLive.autoAttack', '300', '30.0', '30%', '100%'] },
+                { kind: 'player', cells: ['Bob', '400', '40.0', '27%', '67%'] },
+                { kind: 'ability', cells: ['combatLive.autoAttack', '400', '40.0', '100%', '67%'] },
             ]);
         });
 
@@ -431,5 +432,88 @@ describe('foldable sections', () => {
         expect(header(panel, 'taken.main')).not.toBeNull();
         [...panel.querySelectorAll('button')].find((button) => button.textContent === 'combatLive.tab_mana').click();
         expect(header(panel, 'mana.main')).not.toBeNull();
+    });
+});
+
+describe('party panel', () => {
+    const SECTIONS_KEY = 'combatLive_collapsedSections';
+    const COLUMNS_KEY = 'combatLive_hiddenColumns';
+
+    async function openParty(saved = {}) {
+        HTMLCanvasElement.prototype.getContext = () => null;
+        config.getSetting.mockImplementation(() => true);
+        storage.get.mockImplementation(async (key, _store, fallback) => saved[key] ?? fallback);
+        storage.set.mockClear();
+        const base = summary();
+        const alice = base.dealt[0];
+        const bob = { ...alice, name: 'Bob', dps: 40, abilities: [alice.abilities[1]] };
+        const chart = { player: 'Alice', now: 1_000_000, hits: [], currentDps: 100, bestDps: 150, averageDps: 120 };
+        await combatLiveUI.initialize({
+            getSummary: () => summary({ attributionExact: false, dealt: [alice, bob], chart }),
+            getLastMessageAt: () => Date.now(),
+            onReset: vi.fn(),
+            isRecording: () => false,
+            getRecording: () => null,
+        });
+        combatLiveUI.refresh();
+        return document.getElementById('toolasha-combat-live');
+    }
+
+    const section = (panel, id) => panel.querySelector(`[data-section="${id}"]`).parentElement;
+    const tableOf = (panel, id) =>
+        [...section(panel, id).children].find((el) => el.style.cssText.includes('margin-bottom: 6px'));
+    const headerCells = (panel, id) => [...tableOf(panel, id).children[0].children].map((el) => el.textContent);
+    const rowNames = (panel, id) => {
+        const table = tableOf(panel, id);
+        return [...table.children].slice(1).map((row) => row.firstChild.textContent);
+    };
+
+    afterEach(() => {
+        combatLiveUI.cleanup();
+        document.body.innerHTML = '';
+    });
+
+    test('the chart shows each party member with their DPS', async () => {
+        const panel = await openParty();
+
+        const rows = [...panel.querySelectorAll('div')].filter(
+            (el) =>
+                el.style.cssText.includes('margin-bottom: 4px') && el.lastChild?.style?.cssText.includes('height: 5px')
+        );
+        expect(rows.map((row) => row.firstChild.textContent)).toEqual(['Alice150.0', 'Bob40.0']);
+    });
+
+    test('clicking a player folds their abilities away and remembers it', async () => {
+        const panel = await openParty();
+        expect(rowNames(panel, 'damage.secondary')).toHaveLength(5);
+
+        const alice = [...section(panel, 'damage.secondary').querySelectorAll('div')].find((el) =>
+            el.textContent.startsWith('▾ Alice')
+        );
+        alice.click();
+
+        expect(rowNames(combatLiveUI.panel, 'damage.secondary')).toEqual(['▸ Alice', '▾ Bob', 'combatLive.autoAttack']);
+        expect(storage.set).toHaveBeenCalledWith(SECTIONS_KEY, ['damage.secondary.player.Alice'], 'settings');
+    });
+
+    test('a column can be hidden from its picker and the choice is remembered', async () => {
+        const panel = await openParty();
+        expect(headerCells(panel, 'damage.secondary')).toContain('combatLive.colAccuracy');
+
+        const picker = section(panel, 'damage.secondary').querySelector('button[title="combatLive.columnsTooltip"]');
+        picker.click();
+        const chip = [...combatLiveUI.panel.querySelectorAll('button')].find(
+            (button) => button.textContent === '✓ combatLive.colAccuracy'
+        );
+        chip.click();
+
+        expect(headerCells(combatLiveUI.panel, 'damage.secondary')).not.toContain('combatLive.colAccuracy');
+        expect(storage.set).toHaveBeenCalledWith(COLUMNS_KEY, ['damage.secondary.accuracy'], 'settings');
+    });
+
+    test('hidden columns stay hidden when the panel opens', async () => {
+        const panel = await openParty({ [COLUMNS_KEY]: ['damage.secondary.dps'] });
+
+        expect(headerCells(panel, 'damage.secondary')).not.toContain('combatLive.colDps');
     });
 });
