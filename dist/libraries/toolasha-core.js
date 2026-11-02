@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.28.4
+ * Version: 3.28.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2465,7 +2465,9 @@
                 `Not assigned: ${p.overTime} over time, ${p.reflected} reflected, ${p.unclear} unclear.`,
             unattributed: 'Not assigned to a player',
             colShare: 'Share',
-            colHits: 'Hits',
+            colAccuracy: 'Accuracy',
+            columnsTooltip: 'Choose columns',
+            playerFoldTooltip: 'Click to show or hide abilities',
             colDps: 'DPS',
             colKillTime: 'Kill time',
             seconds: (p) => `${p.value}s`,
@@ -7824,7 +7826,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             unattributedBreakdown: (p) => `未分配：持续伤害 ${p.overTime}，反弹 ${p.reflected}，不明 ${p.unclear}。`,
             unattributed: '未分配给玩家',
             colShare: '占比',
-            colHits: '命中',
+            colAccuracy: '命中率',
+            columnsTooltip: '选择列',
+            playerFoldTooltip: '点击显示或隐藏技能',
             colDps: 'DPS',
             colKillTime: '击杀用时',
             seconds: (p) => `${p.value}秒`,

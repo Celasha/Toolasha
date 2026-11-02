@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.28.4
+ * Version: 3.28.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1712,6 +1712,7 @@
     const COLLAPSED_KEY = 'combatLive_collapsed';
     const TAB_KEY = 'combatLive_tab';
     const SECTIONS_KEY = 'combatLive_collapsedSections';
+    const HIDDEN_COLUMNS_KEY = 'combatLive_hiddenColumns';
     const CHART_SECTION = 'damage.chart';
     const REFRESH_MS = 500;
     // The panel hides when no combat message has arrived for this long
@@ -1750,20 +1751,28 @@
     const percent = (value) => `${Math.round(value * 100)}%`;
 
     /**
+     * @param {{hits: number, misses: number}} tally - Hits include the misses
+     * @returns {string} Share of hits that landed, or a dash with nothing to measure
+     */
+    const accuracy = ({ hits, misses }) => (hits > 0 ? percent((hits - misses) / hits) : '–');
+
+    /**
      * Leave out a column until some row has something to show in it, so a table starts narrow and grows as
      * data arrives (no DPS or kill time before the first kill, no death columns before the first death).
      * The first column names the row and always stays. Rows without `blank` flags count as having data.
      * @param {string[]} headers
      * @param {Array<{kind: string, cells: string[], blank?: boolean[]}>} rows
-     * @returns {{headers: string[], rows: Array<{kind: string, cells: string[]}>}} Nothing at all when no
-     *     data column is left, because a table of names alone says nothing
+     * @param {string[]} [keys] - Stable column ids, pruned along with the headers
+     * @returns {{headers: string[], rows: Array<{kind: string, cells: string[]}>, keys?: string[]}} Nothing at
+     *     all when no data column is left, because a table of names alone says nothing
      */
-    function pruneEmptyColumns(headers, rows) {
+    function pruneEmptyColumns(headers, rows, keys) {
         const keep = headers.map((_, index) => index === 0 || rows.some((row) => !row.blank?.[index]));
-        if (!keep.some((kept, index) => index > 0 && kept)) return { headers: [], rows: [] };
+        if (!keep.some((kept, index) => index > 0 && kept)) return { headers: [], rows: [], keys: keys && [] };
         return {
             headers: headers.filter((_, index) => keep[index]),
             rows: rows.map((row) => ({ kind: row.kind, cells: row.cells.filter((_, index) => keep[index]) })),
+            keys: keys?.filter((_, index) => keep[index]),
         };
     }
 
@@ -1776,7 +1785,7 @@
      */
     function buildTabModel(summary, tab, options = {}) {
         const { party, players, monsters } = summary;
-        const model = { stats: [], secondary: null, headers: [], rows: [], note: '' };
+        const model = { stats: [], secondary: null, headers: [], keys: [], rows: [], note: '' };
 
         if (tab === 'damage') {
             const solo = summary.attributionExact && summary.dealt.length > 0 ? summary.dealt[0] : null;
@@ -1796,6 +1805,7 @@
                 i18n_js.t('combatLive.colKillTime'),
                 i18n_js.t('combatLive.colKills'),
             ];
+            model.keys = ['enemy', 'damage', 'dps', 'killTime', 'kills'];
             model.rows = monsters.map((monster) => ({
                 kind: 'row',
                 cells: [
@@ -1824,7 +1834,7 @@
                         number(ability.damage),
                         rate(ability.dps),
                         percent(ability.share),
-                        String(ability.hits),
+                        accuracy(ability),
                     ],
                 }));
             const damageHeaders = [
@@ -1832,19 +1842,22 @@
                 i18n_js.t('combatLive.colDamage'),
                 i18n_js.t('combatLive.colDps'),
                 i18n_js.t('combatLive.colShare'),
-                i18n_js.t('combatLive.colHits'),
+                i18n_js.t('combatLive.colAccuracy'),
             ];
+            const damageKeys = ['ability', 'damage', 'dps', 'share', 'accuracy'];
 
             if (solo) {
                 model.secondary = {
                     title: i18n_js.t('combatLive.byAbilityTitle'),
                     headers: damageHeaders,
+                    keys: damageKeys,
                     rows: abilityRows(solo),
                 };
             } else if (splitParty) {
                 model.secondary = {
                     title: i18n_js.t('combatLive.byPlayerTitle'),
                     headers: damageHeaders,
+                    keys: damageKeys,
                     rows: summary.dealt.flatMap((player) => [
                         {
                             kind: 'player',
@@ -1853,7 +1866,7 @@
                                 number(player.damage),
                                 rate(player.dps),
                                 party.damage > 0 ? percent(player.damage / party.damage) : '0%',
-                                String(player.hits),
+                                accuracy(player),
                             ],
                         },
                         ...abilityRows(player),
@@ -1886,6 +1899,7 @@
                 i18n_js.t('combatLive.colDeaths'),
                 i18n_js.t('combatLive.colDeathsPerHour'),
             ];
+            model.keys = ['player', 'taken', 'perSecond', 'healed', 'deaths', 'deathsPerHour'];
             model.rows = players.map((player) => ({
                 kind: 'row',
                 cells: [
@@ -1907,6 +1921,7 @@
             }));
         } else {
             model.headers = [i18n_js.t('combatLive.colAbility'), i18n_js.t('combatLive.colMana'), i18n_js.t('combatLive.colPerSecond')];
+            model.keys = ['ability', 'mana', 'perSecond'];
             for (const player of players) {
                 model.rows.push({
                     kind: 'player',
@@ -1934,7 +1949,11 @@
             }
         }
 
-        ({ headers: model.headers, rows: model.rows } = pruneEmptyColumns(model.headers, model.rows));
+        ({
+            headers: model.headers,
+            rows: model.rows,
+            keys: model.keys,
+        } = pruneEmptyColumns(model.headers, model.rows, model.keys));
         return model;
     }
 
@@ -1947,6 +1966,9 @@
             this.collapsed = false;
             // Sections the user folded away, as `<tab>.<section>` ids (the chart is 'damage.chart')
             this.collapsedSections = new Set();
+            // Columns the user hid, as `<tab>.<section>.<column>` ids, and which column pickers are open
+            this.hiddenColumns = new Set();
+            this.openPickers = new Set();
             this.lastSignature = '';
             this.elements = {};
         }
@@ -1960,6 +1982,8 @@
             this.collapsed = Boolean(await storage.get(COLLAPSED_KEY, STORAGE_STORE$4, false));
             const savedSections = await storage.get(SECTIONS_KEY, STORAGE_STORE$4, []);
             this.collapsedSections = new Set(Array.isArray(savedSections) ? savedSections : []);
+            const savedColumns = await storage.get(HIDDEN_COLUMNS_KEY, STORAGE_STORE$4, []);
+            this.hiddenColumns = new Set(Array.isArray(savedColumns) ? savedColumns : []);
             // cleanup() may have run while the saved state was loading
             if (!this.deps) return;
 
@@ -2054,10 +2078,26 @@
             );
 
             const content = document.createElement('div');
-            content.append(paceLine, canvas, abilityBar, legend);
+            // One thin row per party member, only in a party
+            const players = document.createElement('div');
+            players.style.cssText = 'margin-top:6px;';
+            content.append(paceLine, canvas, abilityBar, legend, players);
             const header = this.sectionHeader(CHART_SECTION, i18n_js.t('combatLive.sectionChart'));
             block.append(header, content);
-            return { block, header, content, paceNow, paceTrend, paceBest, canvas, abilityBar, legend, barSignature: '' };
+            return {
+                block,
+                header,
+                content,
+                paceNow,
+                paceTrend,
+                paceBest,
+                canvas,
+                abilityBar,
+                legend,
+                players,
+                barSignature: '',
+                playersSignature: '',
+            };
         }
 
         /**
@@ -2080,7 +2120,7 @@
             const toggle = () => this.toggleSection(id);
             header.addEventListener('click', toggle);
             header.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
+                if (event.target === header && (event.key === 'Enter' || event.key === ' ')) {
                     event.preventDefault();
                     toggle();
                 }
@@ -2265,21 +2305,24 @@
 
             drawHitTape(chart.canvas, buildTapeModel(data.hits, data.now));
 
+            const label = (key) => (key === OTHER_KEY ? i18n_js.t('combatLive.otherAbilities') : sourceName(key));
+            const segmentEls = (segments) =>
+                segments.map((segment) => {
+                    const part = document.createElement('div');
+                    part.style.cssText = `flex:${segment.share} 1 0; background:${abilityColor(segment.key)};`;
+                    part.title = `${label(segment.key)} ${percent(segment.share)}`;
+                    return part;
+                });
+
+            this.updateChartPlayers(summary, segmentEls);
+
             const player = summary.dealt.find((row) => row.name === data.player);
             const segments = buildAbilityBar(player?.abilities || []);
             const signature = JSON.stringify(segments);
             if (signature === chart.barSignature) return;
             chart.barSignature = signature;
 
-            const label = (key) => (key === OTHER_KEY ? i18n_js.t('combatLive.otherAbilities') : sourceName(key));
-            chart.abilityBar.replaceChildren(
-                ...segments.map((segment) => {
-                    const part = document.createElement('div');
-                    part.style.cssText = `flex:${segment.share} 1 0; background:${abilityColor(segment.key)};`;
-                    part.title = `${label(segment.key)} ${percent(segment.share)}`;
-                    return part;
-                })
-            );
+            chart.abilityBar.replaceChildren(...segmentEls(segments));
             chart.legend.textContent = segments
                 .filter((segment) => segment.key !== OTHER_KEY)
                 .slice(0, 3)
@@ -2287,28 +2330,136 @@
                 .join(' · ');
         }
 
-        buildTable(headers, rows) {
+        /**
+         * @param {string[]} headers
+         * @param {Array<{kind: string, cells: string[]}>} rows - A 'player' row owns the 'ability' rows after it
+         * @param {string[]} keys - Column ids, parallel to headers
+         * @param {string} sectionId - Section the table sits in (ids for folded players and hidden columns)
+         * @returns {HTMLElement}
+         */
+        /**
+         * In a party, one row per member under the chart: name, DPS and their own ability bar.
+         * @param {Object} summary - BattleStats.getSummary()
+         * @param {function(Object[]): HTMLElement[]} segmentEls - Builds the coloured bar parts
+         */
+        updateChartPlayers(summary, segmentEls) {
+            const chart = this.elements.chart;
+            const show =
+                !summary.attributionExact &&
+                summary.dealt.length > 1 &&
+                Boolean(config.getSetting('combatLive_estimateParty'));
+            const rows = show
+                ? summary.dealt.map((player) => ({
+                      name: player.name || '?',
+                      dps: player.dps,
+                      segments: buildAbilityBar(player.abilities),
+                  }))
+                : [];
+            const signature = JSON.stringify(rows);
+            if (signature === chart.playersSignature) return;
+            chart.playersSignature = signature;
+
+            chart.players.replaceChildren(
+                ...rows.map((row) => {
+                    const wrap = document.createElement('div');
+                    wrap.style.cssText = 'margin-bottom:4px;';
+                    const line = document.createElement('div');
+                    line.style.cssText = 'display:flex; justify-content:space-between; font-size:11px;';
+                    line.append(this.textEl('span', row.name, 'color:#00c896;'), this.textEl('span', rate(row.dps), ''));
+                    const bar = document.createElement('div');
+                    bar.style.cssText =
+                        'display:flex; height:5px; border-radius:2px; overflow:hidden; background:rgba(255,255,255,0.06);';
+                    bar.append(...segmentEls(row.segments));
+                    wrap.append(line, bar);
+                    return wrap;
+                })
+            );
+        }
+
+        buildTable(headers, rows, keys, sectionId) {
+            const shown = headers.map((_, index) => index === 0 || !this.hiddenColumns.has(`${sectionId}.${keys[index]}`));
+            const visible = (cells) => cells.filter((_, index) => shown[index]);
+            const shownHeaders = visible(headers);
+
             const table = document.createElement('div');
             table.style.cssText = 'margin-bottom:6px;';
-            const columns = `grid-template-columns: 1.6fr repeat(${headers.length - 1}, 1fr);`;
+            const columns = `grid-template-columns: 1.6fr repeat(${shownHeaders.length - 1}, 1fr);`;
             const headerRow = document.createElement('div');
             headerRow.style.cssText = `display:grid; ${columns} gap:4px; color:#888; font-size:11px; border-bottom:1px solid #222;`;
-            headers.forEach((heading, index) =>
+            shownHeaders.forEach((heading, index) =>
                 headerRow.appendChild(this.textEl('span', heading, index ? 'text-align:right;' : ''))
             );
             table.appendChild(headerRow);
 
-            for (const row of rows) {
+            let foldedPlayer = false;
+            rows.forEach((row, rowIndex) => {
+                if (row.kind === 'ability' && foldedPlayer) return;
+                const hasAbilities = row.kind === 'player' && rows[rowIndex + 1]?.kind === 'ability';
+                const foldId = `${sectionId}.player.${row.cells[0]}`;
+                if (row.kind === 'player') foldedPlayer = hasAbilities && this.collapsedSections.has(foldId);
+
                 const rowEl = document.createElement('div');
                 const weight = row.kind === 'player' ? 'font-weight:700; color:#00c896;' : '';
                 const indent = row.kind === 'ability' ? 'padding-left:10px; color:#bbb;' : '';
                 rowEl.style.cssText = `display:grid; ${columns} gap:4px; padding:1px 0; ${weight}`;
-                row.cells.forEach((cell, index) =>
-                    rowEl.appendChild(this.textEl('span', cell, index ? 'text-align:right;' : indent))
-                );
+                visible(row.cells).forEach((cell, index) => {
+                    const label = index === 0 && hasAbilities ? `${foldedPlayer ? '▸' : '▾'} ${cell}` : cell;
+                    rowEl.appendChild(this.textEl('span', label, index ? 'text-align:right;' : indent));
+                });
+                if (hasAbilities) {
+                    rowEl.style.cursor = 'pointer';
+                    rowEl.title = i18n_js.t('combatLive.playerFoldTooltip');
+                    rowEl.addEventListener('click', () => this.toggleSection(foldId));
+                }
                 table.appendChild(rowEl);
-            }
+            });
             return table;
+        }
+
+        toggleColumn(id) {
+            if (this.hiddenColumns.has(id)) this.hiddenColumns.delete(id);
+            else this.hiddenColumns.add(id);
+            storage.set(HIDDEN_COLUMNS_KEY, [...this.hiddenColumns], STORAGE_STORE$4);
+            this.lastSignature = '';
+            this.refresh();
+        }
+
+        togglePicker(sectionId) {
+            if (this.openPickers.has(sectionId)) this.openPickers.delete(sectionId);
+            else this.openPickers.add(sectionId);
+            this.lastSignature = '';
+            this.refresh();
+        }
+
+        /**
+         * The button that opens a table's column picker, and the picker itself: one chip per column.
+         * @param {string} sectionId
+         * @param {{headers: string[], keys: string[]}} table
+         * @returns {{button: HTMLElement, picker: ?HTMLElement}}
+         */
+        buildColumnPicker(sectionId, table) {
+            const button = this.buttonEl('▦', i18n_js.t('combatLive.columnsTooltip'), () => this.togglePicker(sectionId));
+            button.style.marginLeft = 'auto';
+            button.style.fontSize = '12px';
+            if (!this.openPickers.has(sectionId)) return { button, picker: null };
+
+            const picker = document.createElement('div');
+            picker.style.cssText = 'display:flex; flex-wrap:wrap; gap:4px; margin:2px 0 4px;';
+            table.headers.forEach((heading, index) => {
+                if (index === 0) return;
+                const id = `${sectionId}.${table.keys[index]}`;
+                const hidden = this.hiddenColumns.has(id);
+                const chip = this.textEl(
+                    'button',
+                    `${hidden ? '' : '✓ '}${heading}`,
+                    `cursor:pointer; font-size:11px; padding:1px 6px; border-radius:9px; background:none; border:1px solid ${
+                    hidden ? '#444' : '#00c896'
+                }; color:${hidden ? '#777' : '#00c896'};`
+                );
+                chip.addEventListener('click', () => this.toggleColumn(id));
+                picker.appendChild(chip);
+            });
+            return { button, picker };
         }
 
         /**
@@ -2318,12 +2469,19 @@
          * @param {string} title
          * @param {function(): HTMLElement} buildContent
          * @param {?HTMLElement} note - A footnote that belongs with this section
+         * @param {?{headers: string[], keys: string[]}} table - Set when the section is a table, which adds a
+         *     column picker
          * @returns {HTMLElement}
          */
-        buildSection(id, title, buildContent, note) {
+        buildSection(id, title, buildContent, note, table) {
             const wrap = document.createElement('div');
-            wrap.append(this.sectionHeader(id, title));
-            if (!this.collapsedSections.has(id)) {
+            const header = this.sectionHeader(id, title);
+            const folded = this.collapsedSections.has(id);
+            const { button, picker } = table && !folded ? this.buildColumnPicker(id, table) : {};
+            if (button) header.append(button);
+            wrap.append(header);
+            if (!folded) {
+                if (picker) wrap.append(picker);
                 wrap.append(buildContent());
                 if (note) wrap.append(note);
             }
@@ -2369,8 +2527,15 @@
                     this.buildSection(
                         `${this.tab}.secondary`,
                         model.secondary.title,
-                        () => this.buildTable(model.secondary.headers, model.secondary.rows),
-                        noteFor('secondary')
+                        () =>
+                            this.buildTable(
+                                model.secondary.headers,
+                                model.secondary.rows,
+                                model.secondary.keys,
+                                `${this.tab}.secondary`
+                            ),
+                        noteFor('secondary'),
+                        model.secondary
                     )
                 );
             }
@@ -2379,8 +2544,9 @@
                     this.buildSection(
                         `${this.tab}.main`,
                         mainTitle,
-                        () => this.buildTable(model.headers, model.rows),
-                        noteFor('main')
+                        () => this.buildTable(model.headers, model.rows, model.keys, `${this.tab}.main`),
+                        noteFor('main'),
+                        model
                     )
                 );
             }
