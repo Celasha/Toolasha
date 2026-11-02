@@ -2,10 +2,9 @@
 
 ## [3.28.0](https://github.com/Celasha/Toolasha/compare/v3.27.0...v3.28.0) (2026-11-02)
 
-
 ### Features
 
-* make Combat Live sections collapsible and remember which are folded ([11aa92f](https://github.com/Celasha/Toolasha/commit/11aa92fbe50707c5371acc9221055d676357874b))
+- make Combat Live sections collapsible and remember which are folded ([11aa92f](https://github.com/Celasha/Toolasha/commit/11aa92fbe50707c5371acc9221055d676357874b))
 
 ## [3.27.0](https://github.com/Celasha/Toolasha/compare/v3.26.1...v3.27.0) (2026-11-02)
 
