@@ -27,7 +27,7 @@ const summary = (overrides = {}) => ({
     seconds: 10,
     attributionExact: true,
     party: { damage: 1500, dps: 150, hits: 8, crits: 2, misses: 1, kills: 3, trueDps: 120 },
-    monsters: [{ hrid: '/monsters/giant_fly', damage: 1500, kills: 3 }],
+    monsters: [{ hrid: '/monsters/giant_fly', damage: 1500, kills: 3, dps: 120, killTime: 6.5 }],
     dealt: [
         {
             name: 'Alice',
@@ -87,7 +87,16 @@ describe('buildTabModel', () => {
     test('damage tab lists enemies with a readable name fallback', () => {
         const model = buildTabModel(summary(), 'damage');
 
-        expect(model.rows[0].cells).toEqual(['Giant Fly', '1500', '3']);
+        expect(model.rows[0].cells).toEqual(['Giant Fly', '1500', '120.0', 'combatLive.seconds:{"value":"6.5"}', '3']);
+    });
+
+    test('an enemy with no kill yet shows dashes for DPS and kill time', () => {
+        const base = summary();
+        base.monsters = [{ hrid: '/monsters/giant_fly', damage: 300, kills: 0, dps: 0, killTime: null }];
+
+        const model = buildTabModel(base, 'damage');
+
+        expect(model.rows[0].cells).toEqual(['Giant Fly', '300', '–', '–', '0']);
     });
 
     test('damage taken tab has one row per player', () => {

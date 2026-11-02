@@ -54,6 +54,7 @@ class CombatLive {
     onNewBattle(data) {
         const now = Date.now();
         this.tracker.handleNewBattle(data);
+        this.stats.beginWave(now);
         this.stats.setPlayers(this.tracker.players.map((player) => player.name));
         const selfId = String(dataManager.getCurrentCharacterId() ?? '');
         const self = this.tracker.players.find((player) => selfId && String(player.id) === selfId);

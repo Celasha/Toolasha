@@ -69,6 +69,9 @@ export class BattleStats {
         this.partyMisses = 0;
         this.kills = new Map();
         this.killedMaxHp = 0;
+        // When the current wave's monsters appeared, and the damage each has taken since
+        this.waveStart = null;
+        this.waveDamage = new Map();
         this.monsters = new Map();
         this.players = new Map();
         this.playerNames = [];
@@ -95,6 +98,16 @@ export class BattleStats {
     }
 
     /**
+     * A new battle (wave) started: every monster in it is present from now. Kill times and the damage
+     * per enemy type are measured from here.
+     * @param {number} [at] - Message timestamp in ms
+     */
+    beginWave(at = Date.now()) {
+        this.waveStart = at;
+        this.waveDamage = new Map();
+    }
+
+    /**
      * The player whose own damage the DPS visual follows.
      * @param {?string} name
      */
@@ -116,7 +129,7 @@ export class BattleStats {
 
         for (const event of events) {
             if (event.side === SIDE_MONSTER) {
-                this.recordMonster(event);
+                this.recordMonster(event, at);
             } else if (event.side === SIDE_PLAYER) {
                 this.recordPlayer(event);
             }
@@ -222,14 +235,22 @@ export class BattleStats {
         this.bestDps = Math.max(this.bestDps, this.windowDps(subject, at));
     }
 
-    recordMonster(event) {
+    recordMonster(event, at) {
         const key = event.hrid || `monster-${event.index}`;
-        const monster = this.monsters.get(key) || { hrid: event.hrid, ...emptyReceived(), kills: 0 };
+        const monster = this.monsters.get(key) || {
+            hrid: event.hrid,
+            ...emptyReceived(),
+            kills: 0,
+            // Damage taken by the ones that died, and how long they were alive: enemy DPS and kill time
+            killedDamage: 0,
+            aliveSeconds: 0,
+        };
         this.monsters.set(key, monster);
 
         if (event.type === 'damage') {
             const hits = event.hits ?? 1;
             monster.damage += event.amount;
+            this.waveDamage.set(event.index, (this.waveDamage.get(event.index) || 0) + event.amount);
             monster.hits += hits;
             this.partyDamage += event.amount;
             this.partyHits += hits;
@@ -246,6 +267,11 @@ export class BattleStats {
             monster.kills += 1;
             this.kills.set(key, (this.kills.get(key) || 0) + 1);
             this.killedMaxHp += event.maxHp || 0;
+            // Only a wave whose start we saw can say how long this one was alive
+            if (this.waveStart !== null && at >= this.waveStart) {
+                monster.killedDamage += this.waveDamage.get(event.index) || 0;
+                monster.aliveSeconds += (at - this.waveStart) / 1000;
+            }
         }
     }
 
@@ -374,7 +400,15 @@ export class BattleStats {
                 reflected: this.unattributed[SOURCE_REFLECT].damage,
                 unclear: this.unattributed[SOURCE_AMBIGUOUS].damage,
             },
-            monsters: [...this.monsters.values()].sort((a, b) => b.damage - a.damage),
+            monsters: [...this.monsters.values()]
+                .map((monster) => ({
+                    ...monster,
+                    // Damage per second of the time it was alive, and how long one lasts on average
+                    dps: monster.aliveSeconds > 0 ? monster.killedDamage / monster.aliveSeconds : 0,
+                    killTime:
+                        monster.kills > 0 && monster.aliveSeconds > 0 ? monster.aliveSeconds / monster.kills : null,
+                }))
+                .sort((a, b) => b.damage - a.damage),
             players: [...this.players.values()].map((player) => ({
                 ...player,
                 damageTakenPerSecond: rate(player.damage),

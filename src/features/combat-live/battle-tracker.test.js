@@ -662,3 +662,80 @@ describe('DPS chart data', () => {
         expect(stats.recentHits.length).toBeLessThanOrEqual(600);
     });
 });
+
+describe('DPS and kill time per enemy', () => {
+    const strike = (index, hp, counter) =>
+        update({ 0: { atkCounter: counter } }, { [index]: { cHP: hp, mHP: 300, dmgCounter: counter } });
+
+    function wave(steps, monsters = [monster()]) {
+        const tracker = startBattle([player()], monsters);
+        const stats = new BattleStats();
+        stats.setPlayers(['Alice']);
+        stats.beginWave(0);
+        for (const [at, message] of steps) stats.record(tracker.handleBattleUpdated(message), at);
+        return { tracker, stats };
+    }
+
+    test('DPS is the damage taken by the ones that died over the time they were alive', () => {
+        const { stats } = wave([
+            [2000, strike(0, 200, 1)],
+            [4000, strike(0, 0, 2)],
+        ]);
+
+        const [fly] = stats.getSummary(4000).monsters;
+
+        expect(fly).toEqual(
+            expect.objectContaining({ kills: 1, killedDamage: 300, aliveSeconds: 4, dps: 75, killTime: 4 })
+        );
+    });
+
+    test('kill time is the average over the kills of that type', () => {
+        const first = wave([[2000, strike(0, 0, 1)]]);
+        first.stats.beginWave(10000);
+        first.tracker.handleNewBattle({ battleId: 7, players: [player()], monsters: [monster()] });
+        first.stats.record(first.tracker.handleBattleUpdated(strike(0, 0, 2)), 16000);
+
+        expect(first.stats.getSummary(16000).monsters[0].killTime).toBe(4);
+    });
+
+    test('damage to one that is still alive does not count towards DPS', () => {
+        const { stats } = wave(
+            [
+                [1000, strike(0, 0, 1)],
+                [2000, strike(1, 200, 2)],
+            ],
+            [monster(), monster()]
+        );
+
+        const [fly] = stats.getSummary(2000).monsters;
+
+        expect(fly.damage).toBe(400);
+        expect(fly.killedDamage).toBe(300);
+        expect(fly.kills).toBe(1);
+    });
+
+    test('with no wave start known there is no DPS or kill time to claim', () => {
+        const tracker = startBattle();
+        const stats = new BattleStats();
+        stats.setPlayers(['Alice']);
+
+        stats.record(tracker.handleBattleUpdated(strike(0, 0, 1)), 3000);
+
+        expect(stats.getSummary(3000).monsters[0]).toEqual(
+            expect.objectContaining({ kills: 1, dps: 0, killTime: null })
+        );
+    });
+
+    test('a new wave starts its own clock and damage tally', () => {
+        const { tracker, stats } = wave([[1000, strike(0, 200, 1)]]);
+        stats.beginWave(5000);
+        tracker.handleNewBattle({ battleId: 7, players: [player()], monsters: [monster()] });
+
+        stats.record(tracker.handleBattleUpdated(strike(0, 0, 2)), 7000);
+
+        // 300 in the new wave over its 2 s, not the 100 dealt before it
+        expect(stats.getSummary(7000).monsters[0]).toEqual(
+            expect.objectContaining({ killedDamage: 300, aliveSeconds: 2, dps: 150 })
+        );
+    });
+});

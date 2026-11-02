@@ -77,6 +77,21 @@ describe('Combat Live feature', () => {
         expect(combatLive.stats.getSummary().party.damage).toBe(50);
     });
 
+    test('starts the clock for kill time when a battle begins', () => {
+        const now = vi.spyOn(Date, 'now');
+        feature.initialize();
+
+        now.mockReturnValue(1000);
+        handlers.get('new_battle')(newBattle);
+        now.mockReturnValue(5000);
+        handlers.get('battle_updated')(hit(7, 0));
+        now.mockRestore();
+
+        expect(combatLive.stats.getSummary(5000).monsters[0]).toEqual(
+            expect.objectContaining({ kills: 1, aliveSeconds: 4, killTime: 4 })
+        );
+    });
+
     test('ignores updates for a battle it was not told about', () => {
         feature.initialize();
 

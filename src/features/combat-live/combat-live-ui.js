@@ -90,12 +90,22 @@ export function buildTabModel(summary, tab, options = {}) {
             [t('combatLive.kills'), String(party.kills)],
             [t('combatLive.time'), timeReadable(summary.seconds)],
         ];
-        model.headers = [t('combatLive.colEnemy'), t('combatLive.colDamage'), t('combatLive.colKills')];
+        model.headers = [
+            t('combatLive.colEnemy'),
+            t('combatLive.colDamage'),
+            t('combatLive.colDps'),
+            t('combatLive.colKillTime'),
+            t('combatLive.colKills'),
+        ];
         model.rows = monsters.map((monster) => ({
             kind: 'row',
             cells: [
                 getMonsterName(monster.hrid, prettyHrid(monster.hrid)),
                 number(monster.damage),
+                monster.dps > 0 ? rate(monster.dps) : '–',
+                Number.isFinite(monster.killTime)
+                    ? t('combatLive.seconds', { value: monster.killTime.toFixed(1) })
+                    : '–',
                 String(monster.kills),
             ],
         }));
