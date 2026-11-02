@@ -250,6 +250,7 @@ export default {
         colShare: '占比',
         colAccuracy: '命中率',
         columnsTooltip: '选择列',
+        infoTooltip: '关于这些数字',
         playerFoldTooltip: '点击显示或隐藏技能',
         colDps: 'DPS',
         colKillTime: '击杀用时',

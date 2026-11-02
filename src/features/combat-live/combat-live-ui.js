@@ -104,7 +104,7 @@ export function pruneEmptyColumns(headers, rows, keys) {
  */
 export function buildTabModel(summary, tab, options = {}) {
     const { party, players, monsters } = summary;
-    const model = { stats: [], secondary: null, headers: [], keys: [], rows: [], note: '' };
+    const model = { stats: [], secondary: null, headers: [], keys: [], rows: [], note: '', info: '' };
 
     if (tab === 'damage') {
         const solo = summary.attributionExact && summary.dealt.length > 0 ? summary.dealt[0] : null;
@@ -194,20 +194,19 @@ export function buildTabModel(summary, tab, options = {}) {
             model.stats.push([t('combatLive.unattributed'), percent(summary.unattributed.share)]);
         }
 
-        if (solo) {
-            model.note = '';
-        } else if (splitParty) {
+        // The standing explanation lives behind an info button; the note is only what changes with the data
+        if (splitParty) {
             const { overTime, reflected, unclear } = summary.unattributed;
-            model.note = t('combatLive.attributionNote');
+            model.info = t('combatLive.attributionNote');
             if (summary.unattributed.damage > 0) {
-                model.note += ` ${t('combatLive.unattributedBreakdown', {
+                model.note = t('combatLive.unattributedBreakdown', {
                     overTime: number(overTime),
                     reflected: number(reflected),
                     unclear: number(unclear),
-                })}`;
+                });
             }
-        } else {
-            model.note = t('combatLive.partyNote');
+        } else if (!solo) {
+            model.info = t('combatLive.partyNote');
         }
     } else if (tab === 'taken') {
         model.headers = [
@@ -288,6 +287,7 @@ class CombatLiveUI {
         // Columns the user hid, as `<tab>.<section>.<column>` ids, and which column pickers are open
         this.hiddenColumns = new Set();
         this.openPickers = new Set();
+        this.openInfo = new Set();
         this.lastSignature = '';
         this.elements = {};
     }
@@ -750,6 +750,13 @@ class CombatLiveUI {
         this.refresh();
     }
 
+    toggleInfo(sectionId) {
+        if (this.openInfo.has(sectionId)) this.openInfo.delete(sectionId);
+        else this.openInfo.add(sectionId);
+        this.lastSignature = '';
+        this.refresh();
+    }
+
     /**
      * The button that opens a table's column picker, and the picker itself: one chip per column.
      * @param {string} sectionId
@@ -758,7 +765,6 @@ class CombatLiveUI {
      */
     buildColumnPicker(sectionId, table) {
         const button = this.buttonEl('▦', t('combatLive.columnsTooltip'), () => this.togglePicker(sectionId));
-        button.style.marginLeft = 'auto';
         button.style.fontSize = '12px';
         if (!this.openPickers.has(sectionId)) return { button, picker: null };
 
@@ -790,16 +796,27 @@ class CombatLiveUI {
      * @param {?HTMLElement} note - A footnote that belongs with this section
      * @param {?{headers: string[], keys: string[]}} table - Set when the section is a table, which adds a
      *     column picker
+     * @param {string} [info] - Standing explanation, opened by an info button in the title
      * @returns {HTMLElement}
      */
-    buildSection(id, title, buildContent, note, table) {
+    buildSection(id, title, buildContent, note, table, info) {
         const wrap = document.createElement('div');
         const header = this.sectionHeader(id, title);
         const folded = this.collapsedSections.has(id);
         const { button, picker } = table && !folded ? this.buildColumnPicker(id, table) : {};
-        if (button) header.append(button);
+        const infoButton =
+            info && !folded ? this.buttonEl('ⓘ', t('combatLive.infoTooltip'), () => this.toggleInfo(id)) : null;
+        const actions = [infoButton, button].filter(Boolean);
+        if (actions.length) {
+            const group = this.textEl('span', '', 'margin-left:auto; display:flex; gap:4px;');
+            group.append(...actions);
+            header.append(group);
+        }
         wrap.append(header);
         if (!folded) {
+            if (info && this.openInfo.has(id)) {
+                wrap.append(this.textEl('div', info, 'margin:2px 0 4px; color:#9aa4b2; font-size:11px;'));
+            }
             if (picker) wrap.append(picker);
             wrap.append(buildContent());
             if (note) wrap.append(note);
@@ -812,6 +829,7 @@ class CombatLiveUI {
         const hasSecondary = Boolean(model.secondary?.rows.length);
         // The footnote travels with the part it explains
         const noteHome = hasSecondary ? 'secondary' : model.stats.length ? 'totals' : 'main';
+        const infoFor = (home) => (noteHome === home ? model.info : '');
         const noteFor = (home) =>
             model.note && noteHome === home
                 ? this.textEl('div', model.note, 'margin-top:6px; color:#777; font-size:11px;')
@@ -837,7 +855,9 @@ class CombatLiveUI {
                         }
                         return list;
                     },
-                    noteFor('totals')
+                    noteFor('totals'),
+                    null,
+                    infoFor('totals')
                 )
             );
         }
@@ -854,7 +874,8 @@ class CombatLiveUI {
                             `${this.tab}.secondary`
                         ),
                     noteFor('secondary'),
-                    model.secondary
+                    model.secondary,
+                    infoFor('secondary')
                 )
             );
         }
@@ -865,7 +886,8 @@ class CombatLiveUI {
                     mainTitle,
                     () => this.buildTable(model.headers, model.rows, model.keys, `${this.tab}.main`),
                     noteFor('main'),
-                    model
+                    model,
+                    infoFor('main')
                 )
             );
         }

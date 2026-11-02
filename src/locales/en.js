@@ -1787,6 +1787,7 @@ export default {
         colShare: 'Share',
         colAccuracy: 'Accuracy',
         columnsTooltip: 'Choose columns',
+        infoTooltip: 'About these numbers',
         playerFoldTooltip: 'Click to show or hide abilities',
         colDps: 'DPS',
         colKillTime: 'Kill time',

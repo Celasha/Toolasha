@@ -82,7 +82,7 @@ describe('buildTabModel', () => {
         const model = buildTabModel(summary({ attributionExact: false }), 'damage');
 
         expect(model.stats[0][0]).toBe('combatLive.partyDps');
-        expect(model.note).toBe('combatLive.partyNote');
+        expect(model.info).toBe('combatLive.partyNote');
     });
 
     test('damage tab lists enemies with a readable name fallback', () => {
@@ -279,7 +279,7 @@ describe('buildTabModel', () => {
 
             expect(model.stats[0][0]).toBe('combatLive.partyDps');
             expect(model.secondary).toBeNull();
-            expect(model.note).toBe('combatLive.partyNote');
+            expect(model.info).toBe('combatLive.partyNote');
         });
 
         test('splits damage per player with each ability nested under its player', () => {
@@ -299,8 +299,9 @@ describe('buildTabModel', () => {
             const model = buildTabModel(party(), 'damage', { showPartyDamage: true });
 
             expect(model.stats.at(-1)).toEqual(['combatLive.unattributed', '7%']);
+            expect(model.info).toBe('combatLive.attributionNote');
             expect(model.note).toBe(
-                'combatLive.attributionNote combatLive.unattributedBreakdown:{"overTime":"60","reflected":"30","unclear":"10"}'
+                'combatLive.unattributedBreakdown:{"overTime":"60","reflected":"30","unclear":"10"}'
             );
         });
 
@@ -311,7 +312,8 @@ describe('buildTabModel', () => {
                 { showPartyDamage: true }
             );
 
-            expect(model.note).toBe('combatLive.attributionNote');
+            expect(model.info).toBe('combatLive.attributionNote');
+            expect(model.note).toBe('');
         });
 
         test('is ignored when alone: your own damage is always shown by ability', () => {
@@ -494,6 +496,15 @@ describe('party panel', () => {
 
         expect(rowNames(combatLiveUI.panel, 'damage.secondary')).toEqual(['▸ Alice', '▾ Bob', 'combatLive.autoAttack']);
         expect(storage.set).toHaveBeenCalledWith(SECTIONS_KEY, ['damage.secondary.player.Alice'], 'settings');
+    });
+
+    test('the attribution explanation opens from an info button and is not shown until then', async () => {
+        const panel = await openParty();
+        expect(panel.textContent).not.toContain('combatLive.attributionNote');
+
+        section(panel, 'damage.secondary').querySelector('button[title="combatLive.infoTooltip"]').click();
+
+        expect(combatLiveUI.panel.textContent).toContain('combatLive.attributionNote');
     });
 
     test('a column can be hidden from its picker and the choice is remembered', async () => {
