@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.28.2](https://github.com/Celasha/Toolasha/compare/v3.28.1...v3.28.2) (2026-11-02)
+
+### Bug Fixes
+
+- add DPS and kill time per enemy to the Combat Live enemies table ([598ba7d](https://github.com/Celasha/Toolasha/commit/598ba7d4756c7a73c9fdd5ce306d097acf662a9f))
+
 ## [3.28.1](https://github.com/Celasha/Toolasha/compare/v3.28.0...v3.28.1) (2026-11-02)
 
 ### Bug Fixes
