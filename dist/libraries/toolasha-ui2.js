@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.26.0
+ * Version: 3.26.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -740,7 +740,9 @@
      * battle_updated is one combat event with one attacker. A unit acted when its `atkCounter` rose. The
      * `abilityHrid` / `isAutoAtk` on an entry describe the NEXT action the unit is winding up, so the
      * action that just happened is the ability the unit had prepared BEFORE this update. That is also the
-     * ability any mana spent in this update belongs to.
+     * ability any mana spent in this update belongs to. The first action of a battle is judged against what
+     * the unit was preparing in `new_battle`; with no known preparation the ability is unknown, never
+     * assumed to be an auto attack.
      *
      * Counters have no value until a unit's first baseline is seen: until then a counter tick is not
      * treated as an action or a hit, so the first update of a battle cannot produce a phantom event.
@@ -859,7 +861,8 @@
                 ...base,
                 type: 'attack',
                 // What just ran (prepared before this update)...
-                auto: prev.isAutoAtk || !prev.abilityHrid,
+                // Only a known auto attack is auto; a unit with nothing known prepared is just unknown
+                auto: prev.isAutoAtk,
                 abilityHrid: prev.isAutoAtk ? '' : prev.abilityHrid,
                 // ...and what the unit is now winding up
                 nextAbilityHrid: next.isAutoAtk ? '' : next.abilityHrid,
@@ -1248,7 +1251,7 @@
 
     const MAX_ENTRIES$1 = 5000;
     const FORMAT = 'toolasha-combat-live-recording';
-    const FORMAT_VERSION = 1;
+    const FORMAT_VERSION = 2;
 
     /**
      * @param {Object} entry - Raw pMap/mMap entry from battle_updated
@@ -1292,17 +1295,35 @@
                 id: data?.battleId ?? null,
                 w: data?.wave ?? null,
                 self: selfCharacterId,
+                // Every unit's starting point: the first action of a battle is judged against what it
+                // was already preparing and its counters when the battle began.
                 p: (data?.players || []).map((unit) => ({
                     n: unit?.name ?? unit?.character?.name ?? null,
                     c: unit?.character?.id ?? null,
                     hp: unit?.currentHitpoints ?? null,
                     mp: unit?.currentManapoints ?? null,
                     atk: unit?.attackAttemptCounter ?? null,
+                    ab: unit?.preparingAbilityHrid || '',
+                    auto: unit?.isPreparingAutoAttack ? 1 : 0,
+                    dmg: unit?.damageSplatCounter ?? null,
+                    crit: unit?.criticalDamageSplatCounter ?? null,
                 })),
                 m: (data?.monsters || []).map((unit) => ({
                     h: unit?.hrid ?? null,
                     hp: unit?.currentHitpoints ?? null,
+                    maxHp: unit?.maxHitpoints ?? null,
+                    mp: unit?.currentManapoints ?? null,
+                    atk: unit?.attackAttemptCounter ?? null,
+                    ab: unit?.preparingAbilityHrid || '',
+                    auto: unit?.isPreparingAutoAttack ? 1 : 0,
+                    dmg: unit?.damageSplatCounter ?? null,
+                    crit: unit?.criticalDamageSplatCounter ?? null,
                 })),
+                // Which fields a new_battle unit really carries (the names the game uses)
+                fields: {
+                    p: Object.keys(data?.players?.[0] || {}),
+                    m: Object.keys(data?.monsters?.[0] || {}),
+                },
             });
         }
 
@@ -1447,7 +1468,7 @@
     function sourceName(key) {
         const special = SOURCE_LABELS[key];
         if (special) return special();
-        return key ? getAbilityName(key, prettyHrid(key)) : i18n_js.t('combatLive.noAbility');
+        return key ? getAbilityName(key, prettyHrid(key)) : i18n_js.t('combatLive.unknownAbility');
     }
 
     const percent = (value) => `${Math.round(value * 100)}%`;
@@ -1577,7 +1598,7 @@
                         cells: [
                             ability.abilityHrid
                                 ? getAbilityName(ability.abilityHrid, prettyHrid(ability.abilityHrid))
-                                : i18n_js.t('combatLive.noAbility'),
+                                : i18n_js.t('combatLive.unknownAbility'),
                             number(ability.mana),
                             rate(ability.perSecond),
                         ],

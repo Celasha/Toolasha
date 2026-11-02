@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.26.0
+ * Version: 3.26.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2452,7 +2452,7 @@
             colAbility: 'Ability',
             colMana: 'Mana',
             manaSpentGained: (p) => `${p.spent} spent / ${p.gained} gained`,
-            noAbility: 'No ability',
+            unknownAbility: 'Unknown ability',
             partyNote: 'Party total. Turn on "Show each party member\'s damage" in settings to split it.',
             attributionNote:
                 'Credited to the player whose attack counter rose in the same game message, under the ability they had prepared. Damage over time and reflected damage has no attacker in the message, so it is not assigned to anyone.',
@@ -7793,7 +7793,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             colAbility: '技能',
             colMana: '魔力',
             manaSpentGained: (p) => `消耗 ${p.spent} / 获得 ${p.gained}`,
-            noAbility: '无技能',
+            unknownAbility: '未知技能',
             partyNote: '队伍总计。在设置中开启“显示每位队友的伤害”可按玩家拆分。',
             attributionNote:
                 '记给同一条游戏消息里攻击计数增加的玩家，并按其事先准备的技能统计。持续伤害和反弹伤害在消息中没有攻击者，因此不分配给任何人。',
