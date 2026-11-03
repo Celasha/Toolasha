@@ -11,6 +11,7 @@ import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import BattleEventTracker from './battle-event-tracker.js';
 import BattleStats from './battle-stats.js';
+import { getDotDurationMs } from './ability-effects.js';
 import CombatLiveRecorder from './combat-live-recorder.js';
 import combatLiveUI from './combat-live-ui.js';
 
@@ -19,6 +20,7 @@ class CombatLive {
         this.isInitialized = false;
         this.tracker = new BattleEventTracker();
         this.stats = new BattleStats();
+        this.stats.setDotLookup(getDotDurationMs);
         this.recorder = new CombatLiveRecorder();
         this.lastMessageAt = 0;
         this.newBattleHandler = null;

@@ -494,6 +494,75 @@ describe('BattleStats', () => {
             expect(summary.dealt[0].abilities).toEqual([expect.objectContaining({ key: '', damage: 50 })]);
         });
 
+        describe('damage over time', () => {
+            const DOT = { '/abilities/firestorm': 6000, '/abilities/venom': 4000 };
+            const tick = (hp, dmgCounter) => update({}, { 0: { cHP: hp, mHP: 300, dmgCounter } });
+            const runDots = (steps, players) => {
+                const tracker = startBattle(players);
+                const stats = new BattleStats();
+                stats.setDotLookup((hrid) => DOT[hrid] || 0);
+                stats.setPlayers(players.map((unit) => unit.character.name));
+                for (const [at, message] of steps) stats.record(tracker.handleBattleUpdated(message), at);
+                return stats.getSummary();
+            };
+            const caster = () => player({ preparingAbilityHrid: '/abilities/firestorm' });
+
+            test('ticks while one player has a damage-over-time ability running are theirs, under that ability', () => {
+                const summary = runDots(
+                    [
+                        [0, strike(0, 250, 1)],
+                        [3000, tick(220, 2)],
+                        [6000, tick(190, 3)],
+                    ],
+                    [caster(), bob()]
+                );
+
+                const alice = summary.dealt.find((row) => row.name === 'Alice');
+                expect(alice.abilities).toEqual([
+                    expect.objectContaining({ key: '/abilities/firestorm', damage: 110 }),
+                ]);
+                expect(summary.unattributed.damage).toBe(0);
+            });
+
+            test('a tick after the effect has run out is over time again', () => {
+                const summary = runDots(
+                    [
+                        [0, strike(0, 250, 1)],
+                        [20000, tick(220, 2)],
+                    ],
+                    [caster(), bob()]
+                );
+
+                expect(summary.unattributed).toEqual(expect.objectContaining({ damage: 30, overTime: 30 }));
+            });
+
+            test('with two players running damage over time, a tick is not given to either', () => {
+                const venom = player({ character: { id: 2, name: 'Bob' }, preparingAbilityHrid: '/abilities/venom' });
+                const summary = runDots(
+                    [
+                        [0, strike(0, 250, 1)],
+                        [500, update({ 1: { atkCounter: 1 } }, { 0: { cHP: 230, mHP: 300, dmgCounter: 2 } })],
+                        [3000, tick(200, 3)],
+                    ],
+                    [caster(), venom]
+                );
+
+                expect(summary.unattributed).toEqual(expect.objectContaining({ damage: 30, overTime: 30 }));
+            });
+
+            test('a monster that acted in the same update still makes it reflected, not damage over time', () => {
+                const summary = runDots(
+                    [
+                        [0, strike(0, 250, 1)],
+                        [3000, update({}, { 0: { cHP: 220, mHP: 300, dmgCounter: 2, atkCounter: 1 } })],
+                    ],
+                    [caster(), bob()]
+                );
+
+                expect(summary.unattributed).toEqual(expect.objectContaining({ damage: 30, reflected: 30 }));
+            });
+        });
+
         test('in a party, damage nobody acted for is over time, and it is not given to anyone', () => {
             const summary = run([[0, update({}, { 0: { cHP: 250, mHP: 300, dmgCounter: 1 } })]], [player(), bob()]);
 
