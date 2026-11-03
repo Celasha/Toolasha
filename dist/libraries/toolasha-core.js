@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.28.8
+ * Version: 3.28.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2450,8 +2450,11 @@
             colDeaths: 'Deaths',
             colDeathsPerHour: 'Deaths/h',
             colAbility: 'Ability',
-            colMana: 'Mana',
-            manaSpentGained: (p) => `${p.spent} spent / ${p.gained} gained`,
+            colSpent: 'Spent',
+            colGained: 'Gained',
+            colRefused: 'Refused',
+            refusedInfo:
+                'Refused: auto attacks made while an ability you use was off cooldown but cost more mana than you had. The game does not drop to a cheaper ability, it auto attacks until it can afford the first one that is ready. An estimate: ability triggers are not visible, so only abilities you have cast count.',
             unknownAbility: 'Unknown ability',
             partyNote: 'Party total. Turn on "Show each party member\'s damage" in settings to split it.',
             attributionNote:
@@ -7816,8 +7819,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             colDeaths: '死亡',
             colDeathsPerHour: '死亡/时',
             colAbility: '技能',
-            colMana: '魔力',
-            manaSpentGained: (p) => `消耗 ${p.spent} / 获得 ${p.gained}`,
+            colSpent: '消耗',
+            colGained: '获得',
+            colRefused: '被拒',
+            refusedInfo:
+                '被拒：当你使用过的某个技能已冷却完毕、但所需魔力超过当前魔力时所进行的普通攻击次数。游戏不会改用更便宜的技能，而是普通攻击，直到能够释放第一个就绪的技能。此为估算：技能触发条件不可见，因此只统计你已释放过的技能。',
             unknownAbility: '未知技能',
             partyNote: '队伍总计。在设置中开启“显示每位队友的伤害”可按玩家拆分。',
             attributionNote:

@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.28.8
+ * Version: 3.28.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -783,6 +783,9 @@
             isAutoAtk: Boolean(unit?.isPreparingAutoAttack),
             abilityHrid: unit?.preparingAbilityHrid || '',
             intervalNs: unit?.attackOrCastInterval ?? 0,
+            // The abilities the unit has equipped, and how much faster its abilities come off cooldown
+            abilities: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
+            abilityHaste: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
         };
     }
 
@@ -869,6 +872,8 @@
                 // Only a known auto attack is auto; a unit with nothing known prepared is just unknown
                 auto: prev.isAutoAtk,
                 abilityHrid: prev.isAutoAtk ? '' : prev.abilityHrid,
+                // The mana the unit had when it acted, before paying for the action
+                manaBefore: prev.mp,
                 // ...and what the unit is now winding up
                 nextAbilityHrid: next.isAutoAtk ? '' : next.abilityHrid,
                 intervalMs: next.intervalNs / 1e6,
@@ -1013,6 +1018,10 @@
         constructor() {
             // Looks up how long an ability's damage over time lasts (ms); abilities are unknown until set
             this.dotDurationMs = () => 0;
+            // Looks up an ability's mana cost and base cooldown (ms); null when unknown
+            this.abilityInfo = () => null;
+            // What each player has equipped: name -> {abilities, haste}
+            this.loadouts = new Map();
             this.reset();
         }
 
@@ -1021,6 +1030,23 @@
          */
         setDotLookup(lookup) {
             this.dotDurationMs = lookup;
+        }
+
+        /**
+         * @param {function(string): ?{manaCost: number, cooldownMs: number}} lookup - Ability hrid to its cost
+         *     and base cooldown
+         */
+        setAbilityLookup(lookup) {
+            this.abilityInfo = lookup;
+        }
+
+        /**
+         * @param {Array<{name: string, abilities: string[], abilityHaste: number}>} units - Players of the battle
+         */
+        setLoadouts(units) {
+            this.loadouts = new Map(
+                units.map((unit) => [unit.name, { abilities: unit.abilities || [], haste: unit.abilityHaste || 0 }])
+            );
         }
 
         reset() {
@@ -1043,6 +1069,9 @@
             this.recentHits = [];
             // Damage-over-time effects cast and still running: {player, key, until}
             this.activeDots = [];
+            // Per player: when each ability was last cast, and the casts that were refused for lack of mana
+            this.lastCasts = new Map();
+            this.refusals = new Map();
             // Players seen reflecting damage, learned from updates where only they were struck
             this.reflecters = new Set();
             this.bestDps = 0;
@@ -1095,6 +1124,7 @@
             this.lastAt = at;
 
             this.trackDots(events, at);
+            this.trackRefusals(events, at);
             for (const event of events) {
                 if (event.side === SIDE_MONSTER) {
                     this.recordMonster(event, at);
@@ -1121,6 +1151,46 @@
                     (dot) => !(dot.player === event.name && dot.key === event.abilityHrid)
                 );
                 this.activeDots.push({ player: event.name, key: event.abilityHrid, until: at + duration + DOT_SLACK_MS });
+            }
+        }
+
+        /**
+         * Count the casts a player was refused for lack of mana. A unit that cannot afford the first ability
+         * that is ready does not drop to a cheaper one: it auto attacks until it can. So an auto attack, while
+         * an ability the player has used was off cooldown but cost more than their mana, is a refused cast.
+         * An estimate: the abilities' own triggers are not visible, so only abilities the player has actually
+         * cast count, and cooldowns use the base time sped up by their ability haste.
+         * @param {Object[]} events - Events from one message
+         * @param {number} at - Message timestamp in ms
+         */
+        trackRefusals(events, at) {
+            for (const event of events) {
+                if (event.side !== SIDE_PLAYER || event.type !== 'attack') continue;
+                const casts = this.lastCasts.get(event.name) || new Map();
+                this.lastCasts.set(event.name, casts);
+
+                if (event.abilityHrid) {
+                    casts.set(event.abilityHrid, at);
+                    continue;
+                }
+                if (!event.auto || !(event.manaBefore >= 0)) continue;
+
+                const loadout = this.loadouts.get(event.name);
+                if (!loadout) continue;
+                const refused = [];
+                for (const hrid of loadout.abilities) {
+                    if (!casts.has(hrid)) continue;
+                    const info = this.abilityInfo(hrid);
+                    if (!info || !(info.manaCost > event.manaBefore)) continue;
+                    const cooldown = loadout.haste > 0 ? (info.cooldownMs * 100) / (100 + loadout.haste) : info.cooldownMs;
+                    if (at - casts.get(hrid) >= cooldown) refused.push(hrid);
+                }
+                if (!refused.length) continue;
+
+                const row = this.refusals.get(event.name) || { casts: 0, abilities: new Map() };
+                row.casts += 1;
+                for (const hrid of refused) row.abilities.set(hrid, (row.abilities.get(hrid) || 0) + 1);
+                this.refusals.set(event.name, row);
             }
         }
 
@@ -1209,6 +1279,27 @@
             }
             this.pruneRecentHits(at);
             this.trackBestDps(at);
+        }
+
+        /**
+         * A player's mana per ability, with how often each was refused for lack of mana. An ability that was only
+         * ever refused still gets a row.
+         * @param {Object} player - Tracked player
+         * @returns {Object[]} Largest spender first
+         */
+        abilityManaRows(player) {
+            const rate = (value) => (this.activeMs > 0 ? value / (this.activeMs / 1000) : 0);
+            const refused = this.refusals.get(player.name)?.abilities ?? new Map();
+            const rows = new Map();
+            for (const [abilityHrid, row] of player.abilityMana) {
+                rows.set(abilityHrid, { abilityHrid, ...row, refused: refused.get(abilityHrid) ?? 0 });
+            }
+            for (const [abilityHrid, count] of refused) {
+                if (!rows.has(abilityHrid)) rows.set(abilityHrid, { abilityHrid, mana: 0, events: 0, refused: count });
+            }
+            return [...rows.values()]
+                .map((row) => ({ ...row, perSecond: rate(row.mana) }))
+                .sort((a, b) => b.mana - a.mana || b.refused - a.refused);
         }
 
         pruneRecentHits(now) {
@@ -1438,9 +1529,8 @@
                     deathsPerHour: seconds > 0 ? (player.deaths / seconds) * 3600 : 0,
                     manaSpentPerSecond: rate(player.manaSpent),
                     manaGainedPerSecond: rate(player.manaGained),
-                    abilityMana: [...player.abilityMana.entries()]
-                        .map(([abilityHrid, row]) => ({ abilityHrid, ...row, perSecond: rate(row.mana) }))
-                        .sort((a, b) => b.mana - a.mana),
+                    refusedCasts: this.refusals.get(player.name)?.casts ?? 0,
+                    abilityMana: this.abilityManaRows(player),
                 })),
             };
         }
@@ -1467,6 +1557,17 @@
             }
         }
         return longest / NS_PER_MS;
+    }
+
+    /**
+     * @param {string} abilityHrid
+     * @returns {?{manaCost: number, cooldownMs: number}} What the ability costs and how long before it can be
+     *     cast again, null when the game data does not know it
+     */
+    function getAbilityTiming(abilityHrid) {
+        const detail = dataManager.getInitClientData()?.abilityDetailMap?.[abilityHrid];
+        if (!detail) return null;
+        return { manaCost: detail.manaCost || 0, cooldownMs: (detail.cooldownDuration || 0) / NS_PER_MS };
     }
 
     /**
@@ -1538,6 +1639,9 @@
                     auto: unit?.isPreparingAutoAttack ? 1 : 0,
                     dmg: unit?.damageSplatCounter ?? null,
                     crit: unit?.criticalDamageSplatCounter ?? null,
+                    // What is equipped, and how much faster the abilities come off cooldown: casts refused
+                    la: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
+                    hs: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
                 })),
                 m: (data?.monsters || []).map((unit) => ({
                     h: unit?.hrid ?? null,
@@ -1596,60 +1700,6 @@
                 unitFields: ['cHP', 'cMP', 'atkCounter', 'isAutoAtk', 'abilityHrid', 'dmgCounter', 'critCounter'],
                 entries: this.entries,
             });
-        }
-    }
-
-    /**
-     * Floating Panel Z-Index Manager
-     * Manages bring-to-front ordering for persistent floating panels.
-     * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
-     * so they never cross the game's MUI modal layer (~1300).
-     */
-
-
-    const panels = new Set();
-
-    /**
-     * Register a floating panel element for z-index management
-     * @param {HTMLElement} el - The panel element
-     */
-    function registerFloatingPanel(el) {
-        panels.add(el);
-    }
-
-    /**
-     * Unregister a floating panel element
-     * @param {HTMLElement} el - The panel element
-     */
-    function unregisterFloatingPanel(el) {
-        panels.delete(el);
-    }
-
-    /**
-     * Bring a panel to the front among all registered panels,
-     * without exceeding config.Z_FLOATING_PANEL + 99.
-     * @param {HTMLElement} el - The panel to bring forward
-     */
-    function bringPanelToFront(el) {
-        const base = config.Z_FLOATING_PANEL;
-        const cap = base + 99;
-
-        let maxZ = base;
-        for (const p of panels) {
-            const z = parseInt(p.style.zIndex) || base;
-            if (z > maxZ) maxZ = z;
-        }
-
-        const next = maxZ + 1;
-        if (next > cap) {
-            // Overflow — reassign all from base upward, put el last
-            let i = base;
-            for (const p of panels) {
-                if (p !== el) p.style.zIndex = String(i++);
-            }
-            el.style.zIndex = String(i);
-        } else {
-            el.style.zIndex = String(next);
         }
     }
 
@@ -2027,19 +2077,26 @@
                 ],
             }));
         } else {
-            model.headers = [i18n_js.t('combatLive.colAbility'), i18n_js.t('combatLive.colMana'), i18n_js.t('combatLive.colPerSecond')];
-            model.keys = ['ability', 'mana', 'perSecond'];
+            model.headers = [
+                i18n_js.t('combatLive.colAbility'),
+                i18n_js.t('combatLive.colSpent'),
+                i18n_js.t('combatLive.colGained'),
+                i18n_js.t('combatLive.colPerSecond'),
+                i18n_js.t('combatLive.colRefused'),
+            ];
+            model.keys = ['ability', 'spent', 'gained', 'perSecond', 'refused'];
+            model.info = i18n_js.t('combatLive.refusedInfo');
             for (const player of players) {
                 model.rows.push({
                     kind: 'player',
                     cells: [
                         player.name || '?',
-                        i18n_js.t('combatLive.manaSpentGained', {
-                            spent: number(player.manaSpent),
-                            gained: number(player.manaGained),
-                        }),
+                        number(player.manaSpent),
+                        number(player.manaGained),
                         rate(player.manaSpentPerSecond),
+                        player.refusedCasts > 0 ? number(player.refusedCasts) : '',
                     ],
+                    blank: [false, false, false, false, !(player.refusedCasts > 0)],
                 });
                 for (const ability of player.abilityMana) {
                     model.rows.push({
@@ -2049,8 +2106,12 @@
                                 ? getAbilityName(ability.abilityHrid, prettyHrid(ability.abilityHrid))
                                 : i18n_js.t('combatLive.unknownAbility'),
                             number(ability.mana),
+                            // Mana gained is not tracked per ability
+                            '',
                             rate(ability.perSecond),
+                            ability.refused > 0 ? number(ability.refused) : '',
                         ],
+                        blank: [false, false, false, false, !(ability.refused > 0)],
                     });
                 }
             }
@@ -2108,10 +2169,13 @@
         }
 
         buildPanel() {
+            // A live meter, not a window: it sits above the game's page but under every game popup and modal
+            // (those run from 200 up), and under the toolasha floating panels, so it is not registered for
+            // bring-to-front, which would lift it to their layer.
             const panel = document.createElement('div');
             panel.id = PANEL_ID$3;
             panel.style.cssText = `
-            position: fixed; top: 120px; right: 20px; z-index: ${config.Z_FLOATING_PANEL};
+            position: fixed; top: 120px; right: 20px; z-index: ${config.Z_HUD};
             display: none; flex-direction: column; width: 320px; max-height: 70vh;
             background: rgba(10, 10, 20, 0.95); border: 1px solid rgba(0, 200, 150, 0.45);
             border-radius: 8px; color: #e0e0e0; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.55);
@@ -2151,8 +2215,6 @@
 
             panel.append(header, tabBar, chart.block, body);
             document.body.appendChild(panel);
-            registerFloatingPanel(panel);
-            panel.addEventListener('mousedown', () => bringPanelToFront(panel));
             this.setupDrag(header, panel);
 
             this.panel = panel;
@@ -2726,7 +2788,6 @@
         cleanup() {
             this.timerRegistry.clearAll();
             if (this.panel) {
-                unregisterFloatingPanel(this.panel);
                 this.panel.remove();
             }
             this.panel = null;
@@ -2753,6 +2814,7 @@
             this.tracker = new BattleEventTracker();
             this.stats = new BattleStats();
             this.stats.setDotLookup(getDotDurationMs);
+            this.stats.setAbilityLookup(getAbilityTiming);
             this.recorder = new CombatLiveRecorder();
             this.lastMessageAt = 0;
             this.newBattleHandler = null;
@@ -2793,6 +2855,7 @@
             this.tracker.handleNewBattle(data);
             this.stats.beginWave(now);
             this.stats.setPlayers(this.tracker.players.map((player) => player.name));
+            this.stats.setLoadouts(this.tracker.players);
             const selfId = String(dataManager.getCurrentCharacterId() ?? '');
             const self = this.tracker.players.find((player) => selfId && String(player.id) === selfId);
             this.stats.setSelf(self?.name ?? null);
@@ -14953,6 +15016,60 @@
     }
 
     const enhancementTracker = new EnhancementTracker();
+
+    /**
+     * Floating Panel Z-Index Manager
+     * Manages bring-to-front ordering for persistent floating panels.
+     * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
+     * so they never cross the game's MUI modal layer (~1300).
+     */
+
+
+    const panels = new Set();
+
+    /**
+     * Register a floating panel element for z-index management
+     * @param {HTMLElement} el - The panel element
+     */
+    function registerFloatingPanel(el) {
+        panels.add(el);
+    }
+
+    /**
+     * Unregister a floating panel element
+     * @param {HTMLElement} el - The panel element
+     */
+    function unregisterFloatingPanel(el) {
+        panels.delete(el);
+    }
+
+    /**
+     * Bring a panel to the front among all registered panels,
+     * without exceeding config.Z_FLOATING_PANEL + 99.
+     * @param {HTMLElement} el - The panel to bring forward
+     */
+    function bringPanelToFront(el) {
+        const base = config.Z_FLOATING_PANEL;
+        const cap = base + 99;
+
+        let maxZ = base;
+        for (const p of panels) {
+            const z = parseInt(p.style.zIndex) || base;
+            if (z > maxZ) maxZ = z;
+        }
+
+        const next = maxZ + 1;
+        if (next > cap) {
+            // Overflow — reassign all from base upward, put el last
+            let i = base;
+            for (const p of panels) {
+                if (p !== el) p.style.zIndex = String(i++);
+            }
+            el.style.zIndex = String(i);
+        } else {
+            el.style.zIndex = String(next);
+        }
+    }
 
     /**
      * Enhancement Tracker Floating UI
