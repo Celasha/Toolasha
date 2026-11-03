@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.28.8](https://github.com/Celasha/Toolasha/compare/v3.28.7...v3.28.8) (2026-11-03)
+
+### Bug Fixes
+
+- measure Combat Live message handling and panel refresh in the performance monitor ([fff91d6](https://github.com/Celasha/Toolasha/commit/fff91d6fa7a5934a4d4db482fc5f17245609f0ec))
+- only wake zone indices, loadout and equipment level displays for relevant DOM changes ([4f9bbda](https://github.com/Celasha/Toolasha/commit/4f9bbdae58e1432d2fa4187537a7c71238518890))
+- value unpriced Task shop chests by their expected value in the shop value labels ([45995b8](https://github.com/Celasha/Toolasha/commit/45995b8e4e90cae3b1a7b7308493c9c9d52a1221))
+
 ## [3.28.7](https://github.com/Celasha/Toolasha/compare/v3.28.6...v3.28.7) (2026-11-03)
 
 ### Bug Fixes
