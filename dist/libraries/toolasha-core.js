@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.28.7
+ * Version: 3.28.8
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2545,6 +2545,7 @@
             perToken: (p) => `${p.value} / token`,
             assumedTooltip: (p) => `Untradeable item; Assumed Value: ${p.value}`,
             bestTooltip: 'Best value per token in this shop',
+            containerTooltip: 'No market price; value is the expected value of opening it',
         },
         alchemyBestItems: {
             untradeableTooltip: (p) => `Untradeable item; Assumed Value: ${p.value}`,
@@ -7361,6 +7362,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             perToken: (p) => `${p.value} / 代币`,
             assumedTooltip: (p) => `不可交易物品；假定价值：${p.value}`,
             bestTooltip: '本商店中每代币价值最高',
+            containerTooltip: '无市场价格；价值为开启后的期望价值',
         },
         alchemyBestItems: {
             untradeableTooltip: (p) => `不可交易物品；假定价值：${p.value}`,
@@ -16466,6 +16468,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                             // Dispatch to all registered handlers
                             this.handlers.forEach((handler) => {
                                 try {
+                                    // Before the debounce, so a relevant node is never replaced by a later irrelevant one
+                                    if (handler.filter && !handler.filter(node)) return;
                                     if (handler.debounce) {
                                         this.debouncedCallback(handler, node, mutation);
                                     } else if (performanceMonitor.enabled) {
@@ -16606,12 +16610,15 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
          * @param {Object} options - Optional configuration
          * @param {boolean} options.debounce - Enable debouncing (default: false)
          * @param {number} options.debounceDelay - Debounce delay in ms (default: 50)
+         * @param {function(Element): boolean} [options.filter] - Per added node, run before the debounce; the
+         *     handler only fires for nodes it returns true for
          * @returns {Function} Unregister function
          */
         register(name, callback, options = {}) {
             const handler = {
                 name,
                 callback,
+                filter: options.filter,
                 debounce: options.debounce || false,
                 debounceDelay: options.debounceDelay,
             };

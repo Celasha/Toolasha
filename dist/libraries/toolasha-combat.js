@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.28.7
+ * Version: 3.28.8
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -713,7 +713,12 @@
                         this.addMapIndices();
                     }
                 },
-                { debounce: true, debounceDelay: 100 } // Use centralized debouncing
+                {
+                    debounce: true,
+                    debounceDelay: 100, // Use centralized debouncing
+                    // Task cards and the combat zone list are the only places that get indices
+                    filter: (node) => domObserver.touchesSelector(node, '[class*="RandomTask_"], [class*="CombatPanel_"]'),
+                }
             );
 
             // Process existing elements
@@ -1128,7 +1133,11 @@
                 () => {
                     annotateLoadout();
                 },
-                { debounce: true, debounceDelay: 200 }
+                {
+                    debounce: true,
+                    debounceDelay: 200,
+                    filter: (node) => domObserver.touchesSelector(node, '[class*="LoadoutsPanel_"]'),
+                }
             );
         }
 

@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.28.7
+ * Version: 3.28.8
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketplaceSession_js, reactInput_js, tokenValuation_js, marketData_js, marketAPI, efficiency_js, webSocketHook, selectors_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, combatSimRunner_js, combatSimAdapter_js, loadoutState, allZonesRunner_js, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
+(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketplaceSession_js, reactInput_js, tokenValuation_js, marketData_js, expectedValueCalculator, marketAPI, efficiency_js, webSocketHook, selectors_js, actionPanelHelper_js, bonusRevenueCalculator_js, warningIcon_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, combatSimRunner_js, combatSimAdapter_js, loadoutState, allZonesRunner_js, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
     'use strict';
 
     /**
@@ -1331,12 +1331,24 @@
     const RESPECT_MODE_SETTING = 'expectedValue_respectPricingMode';
 
     /**
+     * @param {string} itemHrid - An openable container
+     * @returns {number} Expected value of opening it, 0 when unknown
+     */
+    function getContainerValue(itemHrid) {
+        return (
+            expectedValueCalculator.getCachedValue(itemHrid) ||
+            expectedValueCalculator.calculateExpectedValue(itemHrid)?.expectedValue ||
+            0
+        );
+    }
+
+    /**
      * Value per currency unit of one shop entry: market price × outputCount ÷ tokenCost, on the same
      * price side as the profit settings. Untradable capes have no market price, so they use the cape
      * base value setting and are flagged `isAssumed`; those are display-only and never win "best".
      * @param {{itemHrid: string, tokenCost: number, outputCount: number}} entry
      * @returns {{perToken: number, isAssumed: boolean, assumedValue: number, isOutlier: boolean}|null}
-     *   null when the item has no price and is not an untradable cape
+     *   null when the item has no price, is not an untradable cape, and is not an openable container
      */
     function getShopRowValue(entry) {
         const outputCount = entry.outputCount || 1;
@@ -1354,7 +1366,18 @@
         const mode = tokenValuation_js.resolvePricingSide(PRICING_MODE_SETTING, RESPECT_MODE_SETTING);
         const priceInfo = marketData_js.getItemPriceOutlierInfo(entry.itemHrid, { mode });
         if (!(priceInfo.value > 0)) {
-            return null;
+            // An openable with no market price (the task shop's chests) is worth what opening it yields
+            const containerValue = entry.isOpenable ? getContainerValue(entry.itemHrid) : 0;
+            if (!(containerValue > 0)) {
+                return null;
+            }
+            return {
+                perToken: (containerValue * outputCount) / entry.tokenCost,
+                isAssumed: false,
+                assumedValue: 0,
+                isOutlier: false,
+                isContainer: true,
+            };
         }
         return {
             perToken: (priceInfo.value * outputCount) / entry.tokenCost,
@@ -1528,9 +1551,11 @@
             element.style.fontWeight = isBest ? '600' : '400';
             element.title = row.isAssumed
                 ? i18n_js.t('shopTokenValue.assumedTooltip', { value: formatters_js.formatKMB(row.assumedValue) })
-                : isBest
-                  ? i18n_js.t('shopTokenValue.bestTooltip')
-                  : '';
+                : row.isContainer
+                  ? i18n_js.t('shopTokenValue.containerTooltip') + (isBest ? `\n${i18n_js.t('shopTokenValue.bestTooltip')}` : '')
+                  : isBest
+                    ? i18n_js.t('shopTokenValue.bestTooltip')
+                    : '';
         }
     }
 
@@ -26056,4 +26081,4 @@ ${starCSS}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Utils.tokenValuation, Toolasha.Utils.marketData, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Sim.combatSimRunner, Toolasha.Sim.combatSimAdapter, Toolasha.Core.loadoutState, Toolasha.Sim.allZonesRunner, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Utils.tokenValuation, Toolasha.Utils.marketData, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.actionPanelHelper, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.warningIcon, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Sim.combatSimRunner, Toolasha.Sim.combatSimAdapter, Toolasha.Core.loadoutState, Toolasha.Sim.allZonesRunner, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);

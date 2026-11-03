@@ -2,11 +2,11 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.28.7
+ * Version: 3.28.8
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, i18n_js, webSocketHook, storage, timerRegistry_js, formatters_js, dom_js, marketplaceSession_js, marketData_js, expectedValueCalculator, marketAPI, warningIcon_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, profitHelpers_js, actionCalculator_js, efficiency_js, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, loadoutState, buffParser_js) {
+(function (config, dataManager, domObserver, i18n_js, webSocketHook, performanceMonitor, storage, timerRegistry_js, formatters_js, dom_js, marketplaceSession_js, marketData_js, expectedValueCalculator, marketAPI, warningIcon_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, profitHelpers_js, actionCalculator_js, efficiency_js, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, loadoutState, buffParser_js) {
     'use strict';
 
     /**
@@ -74,7 +74,12 @@
                 () => {
                     this.addItemLevels();
                 },
-                { debounce: true, debounceDelay: 150 } // 150ms debounce to reduce update frequency
+                {
+                    debounce: true,
+                    debounceDelay: 150, // 150ms debounce to reduce update frequency
+                    // Only when an item was added; other page changes have nothing to annotate
+                    filter: (node) => domObserver.touchesSelector(node, '[class*="Item_item"]'),
+                }
             );
 
             // Process any existing items on page
@@ -2094,7 +2099,12 @@
             const savedPosition = await storage.get(POSITION_KEY, STORAGE_STORE$4, null);
             if (this.panel && savedPosition) this.applyPosition(savedPosition.left, savedPosition.top);
 
-            this.timerRegistry.registerInterval(setInterval(() => this.refresh(), REFRESH_MS));
+            this.timerRegistry.registerInterval(
+                setInterval(
+                    performanceMonitor.wrap('combatLive:refresh', () => this.refresh()),
+                    REFRESH_MS
+                )
+            );
         }
 
         buildPanel() {
@@ -2755,7 +2765,10 @@
             this.isInitialized = true;
 
             this.newBattleHandler = (data) => this.onNewBattle(data);
-            this.battleUpdatedHandler = (data) => this.onBattleUpdated(data);
+            // Measured, because this is the part that runs many times a second in a fight
+            this.battleUpdatedHandler = performanceMonitor.wrap('combatLive:battle_updated', (data) =>
+                this.onBattleUpdated(data)
+            );
             // A dropped connection can lose ticks, so start the next battle's numbers from scratch
             this.socketCloseHandler = () => this.reset();
 
@@ -29922,4 +29935,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] UI library 2 loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.timerRegistry, Toolasha.Utils.formatters, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.marketData, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.buffParser);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Core.performanceMonitor, Toolasha.Core.storage, Toolasha.Utils.timerRegistry, Toolasha.Utils.formatters, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.marketData, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.buffParser);
