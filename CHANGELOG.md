@@ -2,12 +2,11 @@
 
 ## [3.28.7](https://github.com/Celasha/Toolasha/compare/v3.28.6...v3.28.7) (2026-11-03)
 
-
 ### Bug Fixes
 
-* credit ambiguous reflected damage to the only known reflecter, marked as an estimate ([fe52f38](https://github.com/Celasha/Toolasha/commit/fe52f389c11e1e36092e9e3df4e69f0acc9a0ec9))
-* credit Combat Live damage-over-time ticks to the player whose ability is running ([67a2bc8](https://github.com/Celasha/Toolasha/commit/67a2bc85737e12d657196de61604b04ba261f439))
-* credit reflected damage to the player the monster struck in Combat Live ([9ac09f4](https://github.com/Celasha/Toolasha/commit/9ac09f4ed9cfd2ec6d306be4860f01f25a280a94))
+- credit ambiguous reflected damage to the only known reflecter, marked as an estimate ([fe52f38](https://github.com/Celasha/Toolasha/commit/fe52f389c11e1e36092e9e3df4e69f0acc9a0ec9))
+- credit Combat Live damage-over-time ticks to the player whose ability is running ([67a2bc8](https://github.com/Celasha/Toolasha/commit/67a2bc85737e12d657196de61604b04ba261f439))
+- credit reflected damage to the player the monster struck in Combat Live ([9ac09f4](https://github.com/Celasha/Toolasha/commit/9ac09f4ed9cfd2ec6d306be4860f01f25a280a94))
 
 ## [3.28.6](https://github.com/Celasha/Toolasha/compare/v3.28.5...v3.28.6) (2026-11-03)
 
