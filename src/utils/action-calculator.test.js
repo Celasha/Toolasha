@@ -128,3 +128,25 @@ describe('calculateActionStats actionContext atomicity (TLA-027)', () => {
         expect(resolveActionContextMock).not.toHaveBeenCalled();
     });
 });
+
+describe('calculateActionStats for actions that are not tied to a skill', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    test.each(['/action_types/combat', '/action_types/labyrinth', '/action_types/special'])(
+        '%s is calculated without looking for a matching skill or logging an error',
+        (type) => {
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+            const stats = calculateActionStats(
+                { type, baseTimeCost: 3e9, levelRequirement: { level: 1 } },
+                { skills: [], equipment: {}, actionContext: { equipment: {}, drinks: [] }, itemDetailMap: {} }
+            );
+
+            expect(stats).not.toBeNull();
+            expect(errorSpy).not.toHaveBeenCalled();
+            errorSpy.mockRestore();
+        }
+    );
+});
