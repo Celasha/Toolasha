@@ -9,6 +9,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
+import performanceMonitor from '../../utils/performance-monitor.js';
 import BattleEventTracker from './battle-event-tracker.js';
 import BattleStats from './battle-stats.js';
 import { getDotDurationMs } from './ability-effects.js';
@@ -33,7 +34,10 @@ class CombatLive {
         this.isInitialized = true;
 
         this.newBattleHandler = (data) => this.onNewBattle(data);
-        this.battleUpdatedHandler = (data) => this.onBattleUpdated(data);
+        // Measured, because this is the part that runs many times a second in a fight
+        this.battleUpdatedHandler = performanceMonitor.wrap('combatLive:battle_updated', (data) =>
+            this.onBattleUpdated(data)
+        );
         // A dropped connection can lose ticks, so start the next battle's numbers from scratch
         this.socketCloseHandler = () => this.reset();
 

@@ -36,6 +36,7 @@ const coreExternalGlobals = new Map([
     [normalize(join(__dirname, 'src/core/settings-schema.js')), 'Toolasha.Core'],
     [normalize(join(__dirname, 'src/core/marketplace-session.js')), 'Toolasha.Core'],
     [normalize(join(__dirname, 'src/core/profile-manager.js')), 'Toolasha.Core.profileManager'],
+    [normalize(join(__dirname, 'src/utils/performance-monitor.js')), 'Toolasha.Core.performanceMonitor'],
     [normalize(join(__dirname, 'src/api/marketplace.js')), 'Toolasha.Core.marketAPI'],
     [normalize(join(__dirname, 'src/api/market-values.js')), 'Toolasha.Core.marketValuesAPI'],
 ]);

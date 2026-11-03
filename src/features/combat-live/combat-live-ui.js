@@ -12,6 +12,7 @@ import storage from '../../core/storage.js';
 import { t } from '../../core/i18n.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import performanceMonitor from '../../utils/performance-monitor.js';
 import { formatLargeNumber, timeReadable } from '../../utils/formatters.js';
 import { getAbilityName, getMonsterName } from '../../utils/game-i18n.js';
 import {
@@ -313,7 +314,12 @@ class CombatLiveUI {
         const savedPosition = await storage.get(POSITION_KEY, STORAGE_STORE, null);
         if (this.panel && savedPosition) this.applyPosition(savedPosition.left, savedPosition.top);
 
-        this.timerRegistry.registerInterval(setInterval(() => this.refresh(), REFRESH_MS));
+        this.timerRegistry.registerInterval(
+            setInterval(
+                performanceMonitor.wrap('combatLive:refresh', () => this.refresh()),
+                REFRESH_MS
+            )
+        );
     }
 
     buildPanel() {
