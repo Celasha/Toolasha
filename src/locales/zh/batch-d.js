@@ -239,11 +239,12 @@ export default {
         unknownAbility: '未知技能',
         partyNote: '队伍总计。在设置中开启“显示每位队友的伤害”可按玩家拆分。',
         attributionNote:
-            '记给同一条游戏消息里攻击计数增加的玩家，并按其事先准备的技能统计。持续伤害在消息中没有攻击者，因此记给唯一一位持续伤害技能正在生效的玩家；反弹伤害记给被该怪物攻击的唯一玩家。无法确定时不分配给任何人。',
+            '记给同一条游戏消息里攻击计数增加的玩家，并按其事先准备的技能统计。持续伤害在消息中没有攻击者，因此记给唯一一位持续伤害技能正在生效的玩家；反弹伤害记给被该怪物攻击的唯一玩家。若多名玩家被攻击且只有一位已知会反弹伤害的玩家，则估计记给该玩家；否则不分配给任何人。',
         byAbilityTitle: '按技能统计伤害',
         byPlayerTitle: '按玩家统计伤害',
         autoAttack: '普通攻击',
         reflected: '反弹',
+        reflectedGuess: '反弹（估计）',
         overTime: '持续伤害',
         unattributedBreakdown: (p) => `未分配：持续伤害 ${p.overTime}，反弹 ${p.reflected}，不明 ${p.unclear}。`,
         unattributed: '未分配给玩家',

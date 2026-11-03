@@ -17,6 +17,7 @@ const FIXED_COLORS = {
     auto: '#9aa4b2',
     'over-time': '#b86bff',
     reflect: '#ff9a3c',
+    'reflect-guess': '#ff9a3c',
     '': '#6b7280',
     [OTHER_KEY]: '#4b5563',
 };

@@ -56,6 +56,7 @@ function prettyHrid(hrid) {
 const SOURCE_LABELS = {
     auto: () => t('combatLive.autoAttack'),
     reflect: () => t('combatLive.reflected'),
+    'reflect-guess': () => t('combatLive.reflectedGuess'),
     'over-time': () => t('combatLive.overTime'),
 };
 

@@ -598,6 +598,57 @@ describe('BattleStats', () => {
             expect(summary.unattributed.damage).toBe(0);
         });
 
+        test('when several were struck, the only known reflecter is credited, marked as an estimate', () => {
+            const hitBack = (hp, dmgCounter) =>
+                update(
+                    { 1: { cHP: 900, mHP: 1000, dmgCounter } },
+                    { 0: { cHP: hp, mHP: 300, dmgCounter, atkCounter: dmgCounter } }
+                );
+            const everyone = (hp, dmgCounter) =>
+                update(
+                    { 0: { cHP: 900, mHP: 1000, dmgCounter }, 1: { cHP: 900, mHP: 1000, dmgCounter } },
+                    { 0: { cHP: hp, mHP: 300, dmgCounter, atkCounter: dmgCounter } }
+                );
+
+            const summary = run(
+                [
+                    [0, everyone(250, 1)],
+                    [1000, hitBack(200, 2)],
+                    [2000, everyone(150, 3)],
+                ],
+                [player(), bob()]
+            );
+
+            const robert = summary.dealt.find((row) => row.name === 'Bob');
+            const byKey = Object.fromEntries(robert.abilities.map((row) => [row.key, row.damage]));
+            // The first one came before Bob was known to reflect, so it stays unassigned
+            expect(byKey).toEqual({ reflect: 50, 'reflect-guess': 50 });
+            expect(summary.unattributed.reflected).toBe(50);
+        });
+
+        test('with two known reflecters nothing is guessed', () => {
+            const struck = (index, hp, monsterCounter) =>
+                update(
+                    { [index]: { cHP: 900, mHP: 1000, dmgCounter: 1 } },
+                    { 0: { cHP: hp, mHP: 300, dmgCounter: monsterCounter, atkCounter: monsterCounter } }
+                );
+            const everyone = update(
+                { 0: { cHP: 900, mHP: 1000, dmgCounter: 2 }, 1: { cHP: 900, mHP: 1000, dmgCounter: 2 } },
+                { 0: { cHP: 150, mHP: 300, dmgCounter: 3, atkCounter: 3 } }
+            );
+
+            const summary = run(
+                [
+                    [0, struck(0, 250, 1)],
+                    [1000, struck(1, 200, 2)],
+                    [2000, everyone],
+                ],
+                [player(), bob()]
+            );
+
+            expect(summary.unattributed.reflected).toBe(50);
+        });
+
         test('reflected damage stays unassigned when several players were struck', () => {
             const both = update(
                 { 0: { cHP: 900, mHP: 1000, dmgCounter: 1 }, 1: { cHP: 900, mHP: 1000, dmgCounter: 1 } },

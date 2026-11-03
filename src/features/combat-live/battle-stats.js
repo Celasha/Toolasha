@@ -35,6 +35,8 @@ export const PACE_WINDOW_MS = 10000;
 // Keys for the damage "source" rows besides real ability hrids
 export const SOURCE_AUTO = 'auto';
 export const SOURCE_REFLECT = 'reflect';
+// Reflected damage given to the party's only known reflecter when the update does not say whose it was
+export const SOURCE_REFLECT_GUESS = 'reflect-guess';
 export const SOURCE_OVER_TIME = 'over-time';
 const SOURCE_AMBIGUOUS = 'ambiguous';
 
@@ -92,6 +94,8 @@ export class BattleStats {
         this.recentHits = [];
         // Damage-over-time effects cast and still running: {player, key, until}
         this.activeDots = [];
+        // Players seen reflecting damage, learned from updates where only they were struck
+        this.reflecters = new Set();
         this.bestDps = 0;
         this.dealt = new Map();
         this.unattributed = {
@@ -204,7 +208,17 @@ export class BattleStats {
                         .filter((event) => event.side === SIDE_PLAYER && event.type === 'damage')
                         .map((event) => event.name)
                 );
-                if (struck.size === 1) return { player: [...struck][0], key: SOURCE_REFLECT, bucket: null };
+                if (struck.size === 1) {
+                    const [player] = struck;
+                    this.reflecters.add(player);
+                    return { player, key: SOURCE_REFLECT, bucket: null };
+                }
+                // Several were struck. If the party has exactly one known reflecter and they were among
+                // them, it is most likely theirs: credited, but marked as an estimate.
+                const known = this.playerNames.filter((name) => this.reflecters.has(name));
+                if (known.length === 1 && struck.has(known[0])) {
+                    return { player: known[0], key: SOURCE_REFLECT_GUESS, bucket: null };
+                }
             }
             const key = reflected ? SOURCE_REFLECT : SOURCE_OVER_TIME;
             return solo ? { player: solo, key, bucket: null } : { player: null, key, bucket: key };
