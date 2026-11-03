@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.28.10](https://github.com/Celasha/Toolasha/compare/v3.28.9...v3.28.10) (2026-11-03)
+
+### Bug Fixes
+
+- call touchesSelector on the DOM observer so the split libraries can reach it ([9b26995](https://github.com/Celasha/Toolasha/commit/9b269952e11dc90d3c3c35c95f3a4a3a373c15d2))
+- shorten the Combat Live bar sparkline so it fits beside the buttons ([f52f3ed](https://github.com/Celasha/Toolasha/commit/f52f3ed421bacb40523145e9f0309ca6975c4050))
+- show your DPS, its trend and a sparkline in the Combat Live bar instead of the party total ([355606d](https://github.com/Celasha/Toolasha/commit/355606d2538d9621541cf8be992c91ec55ca9efd))
+
 ## [3.28.9](https://github.com/Celasha/Toolasha/compare/v3.28.8...v3.28.9) (2026-11-03)
 
 ### Bug Fixes
