@@ -180,7 +180,7 @@ export const settingsGroups = {
                 label: 'Shop: Show value per token',
                 type: 'checkbox',
                 default: true,
-                help: 'Shows the market value per token of each entry in the Dungeon and Labyrinth shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
+                help: 'Shows the market value per token of each entry in the Dungeon, Labyrinth and Task shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
             },
             notificationLog_maxEntries: {
                 id: 'notificationLog_maxEntries',

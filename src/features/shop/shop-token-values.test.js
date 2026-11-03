@@ -126,6 +126,23 @@ describe('ShopTokenValues rendering', () => {
         expect(rendered[1].title).toContain('assumedTooltip');
     });
 
+    test('renders on Task shop tiles, marks the best one, and leaves upgrade tiles bare', () => {
+        mocks.prices = { '/items/a': { value: 100 }, '/items/b': { value: 900 } };
+        mocks.entries = [entry('/items/a', '/items/task_token', 10), entry('/items/b', '/items/task_token', 30)];
+        const tile = (slug) =>
+            `<div class="TasksPanel_item__x"><svg><use href="/static/items.svg#${slug}"></use></svg></div>`;
+        document.body.innerHTML = `<div class="TasksPanel_buyableGrid__x">${tile('a')}${tile('b')}${tile('cooldown')}</div>`;
+
+        feature.refreshAll();
+
+        const rendered = [...document.querySelectorAll('.mwi-shop-token-value')];
+        expect(rendered).toHaveLength(2);
+        expect(rendered[0].textContent).toContain('"value":"10"');
+        expect(rendered[0].textContent).not.toContain('★');
+        expect(rendered[1].textContent).toContain('★');
+        expect(rendered[1].textContent).toContain('"value":"30"');
+    });
+
     test('is idempotent', () => {
         document.body.innerHTML = `<div class="ShopPanel_shopItems__x">${dungeonTile('chimerical_essence', '1 Chimerical Token')}</div>`;
         feature.refreshAll();

@@ -1,7 +1,7 @@
 /**
  * Shop Token Values
  * Shows each special-currency shop entry's value per token (market price × outputCount ÷ token
- * cost) in the Dungeon shop and the Labyrinth shop, and marks the best-value entry per currency.
+ * cost) in the Dungeon shop, the Labyrinth shop and the Task shop, and marks the best-value entry per currency.
  * Untradable capes show the cape base value setting, flagged as assumed and never marked best.
  */
 
@@ -14,6 +14,7 @@ import { DUNGEON_TOKEN_HRIDS } from '../../utils/token-valuation.js';
 import { getBestEntryByCurrency, getShopRowValue } from './shop-token-values-logic.js';
 
 const LABYRINTH_TOKEN_HRID = '/items/labyrinth_token';
+const TASK_TOKEN_HRID = '/items/task_token';
 const VALUE_CLASS = 'mwi-shop-token-value';
 const OBSERVER_NAME = 'ShopTokenValues';
 const CATCHUP_DELAY_MS = 500;
@@ -21,6 +22,7 @@ const REFRESH_DEBOUNCE_MS = 100;
 
 const DUNGEON_TILE_SELECTOR = '[class*="ShopPanel_shopItems"] [class*="ShopPanel_shopItem__"]';
 const LABYRINTH_TILE_SELECTOR = '[class*="LabyrinthPanel_buyableGrid"] [class*="LabyrinthPanel_item"]';
+const TASK_TILE_SELECTOR = '[class*="TasksPanel_buyableGrid"] [class*="TasksPanel_item"]';
 
 class ShopTokenValues {
     constructor() {
@@ -35,7 +37,7 @@ class ShopTokenValues {
         }
         this.isInitialized = true;
 
-        for (const className of ['ShopPanel_shopItems', 'LabyrinthPanel_buyableGrid']) {
+        for (const className of ['ShopPanel_shopItems', 'LabyrinthPanel_buyableGrid', 'TasksPanel_buyableGrid']) {
             this.unregisterHandlers.push(
                 domObserver.onClass(`${OBSERVER_NAME}_${className}`, className, () => this.scheduleRefresh())
             );
@@ -87,7 +89,9 @@ class ShopTokenValues {
         if (entries.length === 0) {
             return;
         }
-        const bestByCurrency = getBestEntryByCurrency(new Set([...DUNGEON_TOKEN_HRIDS, LABYRINTH_TOKEN_HRID]));
+        const bestByCurrency = getBestEntryByCurrency(
+            new Set([...DUNGEON_TOKEN_HRIDS, LABYRINTH_TOKEN_HRID, TASK_TOKEN_HRID])
+        );
 
         document.querySelectorAll(DUNGEON_TILE_SELECTOR).forEach((tile) => {
             const itemHrid = this.extractItemHrid(tile);
@@ -102,6 +106,13 @@ class ShopTokenValues {
         document.querySelectorAll(LABYRINTH_TILE_SELECTOR).forEach((tile) => {
             const itemHrid = this.extractItemHrid(tile);
             const entry = entries.find((e) => e.itemHrid === itemHrid && e.currencyHrid === LABYRINTH_TOKEN_HRID);
+            this.renderTile(tile, entry, bestByCurrency);
+        });
+
+        // Upgrade tiles share the grid but have no shop entry, so they match nothing and stay bare
+        document.querySelectorAll(TASK_TILE_SELECTOR).forEach((tile) => {
+            const itemHrid = this.extractItemHrid(tile);
+            const entry = entries.find((e) => e.itemHrid === itemHrid && e.currencyHrid === TASK_TOKEN_HRID);
             this.renderTile(tile, entry, bestByCurrency);
         });
     }
