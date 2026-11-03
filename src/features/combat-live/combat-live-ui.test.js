@@ -451,7 +451,13 @@ describe('party panel', () => {
         const bob = { ...alice, name: 'Bob', dps: 40, abilities: [alice.abilities[1]] };
         const chart = { player: 'Alice', now: 1_000_000, hits: [], currentDps: 100, bestDps: 150, averageDps: 120 };
         await combatLiveUI.initialize({
-            getSummary: () => summary({ attributionExact: false, dealt: [alice, bob], chart }),
+            getSummary: () =>
+                summary({
+                    attributionExact: false,
+                    dealt: [alice, bob],
+                    chart,
+                    charts: [chart, { ...chart, player: 'Bob', bestDps: 0 }],
+                }),
             getLastMessageAt: () => Date.now(),
             onReset: vi.fn(),
             isRecording: () => false,
@@ -461,6 +467,7 @@ describe('party panel', () => {
         return document.getElementById('toolasha-combat-live');
     }
 
+    const header = (panel, id) => panel.querySelector(`[data-section="${id}"]`);
     const section = (panel, id) => panel.querySelector(`[data-section="${id}"]`).parentElement;
     const tableOf = (panel, id) =>
         [...section(panel, id).children].find((el) => el.style.cssText.includes('margin-bottom: 6px'));
@@ -475,14 +482,36 @@ describe('party panel', () => {
         document.body.innerHTML = '';
     });
 
-    test('the chart shows each party member with their DPS', async () => {
+    const chartTitles = (panel) =>
+        [...panel.querySelectorAll('[data-section^="damage.chart.player."]')].map((el) => el.dataset.section);
+
+    test('in a party each member gets their own foldable chart, and the single chart steps aside', async () => {
         const panel = await openParty();
 
-        const rows = [...panel.querySelectorAll('div')].filter(
-            (el) =>
-                el.style.cssText.includes('margin-bottom: 4px') && el.lastChild?.style?.cssText.includes('height: 5px')
-        );
-        expect(rows.map((row) => row.firstChild.textContent)).toEqual(['Alice150.0', 'Bob40.0']);
+        expect(chartTitles(panel)).toEqual(['damage.chart.player.Alice', 'damage.chart.player.Bob']);
+        expect(panel.querySelectorAll('canvas')).toHaveLength(3);
+        expect(header(panel, CHART_SECTION).nextElementSibling.firstChild.style.display).toBe('none');
+    });
+
+    test("folding one member's chart leaves the others and remembers it", async () => {
+        const panel = await openParty();
+
+        header(panel, 'damage.chart.player.Bob').click();
+
+        const bob = header(combatLiveUI.panel, 'damage.chart.player.Bob');
+        expect(bob.getAttribute('aria-expanded')).toBe('false');
+        expect(bob.nextElementSibling.style.display).toBe('none');
+        expect(header(combatLiveUI.panel, 'damage.chart.player.Alice').nextElementSibling.style.display).toBe('block');
+        expect(storage.set).toHaveBeenCalledWith(SECTIONS_KEY, ['damage.chart.player.Bob'], 'settings');
+    });
+
+    test('with per-player damage off, a party gets the single chart', async () => {
+        HTMLCanvasElement.prototype.getContext = () => null;
+        const panel = await openParty();
+        config.getSetting.mockImplementation((key) => key !== 'combatLive_estimateParty');
+        combatLiveUI.refresh();
+
+        expect(header(panel, CHART_SECTION).nextElementSibling.firstChild.style.display).toBe('block');
     });
 
     test('clicking a player folds their abilities away and remembers it', async () => {

@@ -579,6 +579,29 @@ describe('DPS chart data', () => {
         expect(chart.hits).toEqual([expect.objectContaining({ amount: 20, key: '/abilities/fireball' })]);
     });
 
+    test('in a party every member gets their own chart, you first, each with only their own hits', () => {
+        const mage = player({ preparingAbilityHrid: '/abilities/fireball' });
+        const stats = fight(
+            [
+                [1000, update({ 1: { atkCounter: 1 } }, { 0: { cHP: 290, mHP: 300, dmgCounter: 1 } })],
+                [2000, update({ 0: { atkCounter: 1 } }, { 0: { cHP: 270, mHP: 300, dmgCounter: 2 } })],
+            ],
+            [bob(), mage],
+            'Alice'
+        );
+
+        const { charts } = stats.getSummary(2000);
+
+        expect(charts.map((chart) => chart.player)).toEqual(['Alice', 'Bob']);
+        expect(charts[0].hits.map((hit) => hit.amount)).toEqual([10]);
+        expect(charts[1].hits.map((hit) => hit.amount)).toEqual([20]);
+        expect(charts[1].bestDps).toBe(0);
+    });
+
+    test('alone there is just the one chart', () => {
+        expect(fight([[1000, tick(1)]]).getSummary(1000).charts).toEqual([]);
+    });
+
     test('in a party with nobody to follow there is no chart', () => {
         const stats = fight([[1000, tick(1)]], [player(), bob()], null);
 

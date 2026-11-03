@@ -34,6 +34,8 @@ const SECTIONS_KEY = 'combatLive_collapsedSections';
 const HIDDEN_COLUMNS_KEY = 'combatLive_hiddenColumns';
 export const CHART_SECTION = 'damage.chart';
 const REFRESH_MS = 500;
+// Each party member's tape is shorter than the single one, so several fit
+const PLAYER_TAPE_HEIGHT = 30;
 // The panel hides when no combat message has arrived for this long
 const IDLE_HIDE_MS = 60000;
 
@@ -397,10 +399,12 @@ class CombatLiveUI {
         );
 
         const content = document.createElement('div');
-        // One thin row per party member, only in a party
+        // Alone (or with per-player damage off) one chart follows you; in a party each member gets their own
+        const single = document.createElement('div');
+        single.append(paceLine, canvas, abilityBar, legend);
         const players = document.createElement('div');
-        players.style.cssText = 'margin-top:6px;';
-        content.append(paceLine, canvas, abilityBar, legend, players);
+        players.style.display = 'none';
+        content.append(single, players);
         const header = this.sectionHeader(CHART_SECTION, t('combatLive.sectionChart'));
         block.append(header, content);
         return {
@@ -413,9 +417,11 @@ class CombatLiveUI {
             canvas,
             abilityBar,
             legend,
+            single,
             players,
+            playerBlocks: new Map(),
+            playerOrder: '',
             barSignature: '',
-            playersSignature: '',
         };
     }
 
@@ -603,16 +609,33 @@ class CombatLiveUI {
      */
     updateChart(summary) {
         const chart = this.elements.chart;
+        const partyCharts = this.partyCharts(summary);
         const visible =
             this.tab === 'damage' &&
             !this.collapsed &&
             config.getSetting('combatLive_showChart') !== false &&
-            Boolean(summary.chart);
+            Boolean(summary.chart || partyCharts);
         chart.block.style.display = visible ? 'block' : 'none';
         if (!visible) return;
         const folded = this.collapsedSections.has(CHART_SECTION);
         chart.content.style.display = folded ? 'none' : 'block';
         if (folded) return;
+
+        chart.single.style.display = partyCharts ? 'none' : 'block';
+        chart.players.style.display = partyCharts ? 'block' : 'none';
+
+        const label = (key) => (key === OTHER_KEY ? t('combatLive.otherAbilities') : sourceName(key));
+        const segmentEls = (segments) =>
+            segments.map((segment) => {
+                const part = document.createElement('div');
+                part.style.cssText = `flex:${segment.share} 1 0; background:${abilityColor(segment.key)};`;
+                part.title = `${label(segment.key)} ${percent(segment.share)}`;
+                return part;
+            });
+        if (partyCharts) {
+            this.updateChartPlayers(partyCharts, summary, segmentEls);
+            return;
+        }
 
         const data = summary.chart;
         const pace = buildPaceModel(data);
@@ -623,17 +646,6 @@ class CombatLiveUI {
         chart.paceBest.textContent = data.bestDps > 0 ? t('combatLive.bestDps', { dps: rate(data.bestDps) }) : '';
 
         drawHitTape(chart.canvas, buildTapeModel(data.hits, data.now));
-
-        const label = (key) => (key === OTHER_KEY ? t('combatLive.otherAbilities') : sourceName(key));
-        const segmentEls = (segments) =>
-            segments.map((segment) => {
-                const part = document.createElement('div');
-                part.style.cssText = `flex:${segment.share} 1 0; background:${abilityColor(segment.key)};`;
-                part.title = `${label(segment.key)} ${percent(segment.share)}`;
-                return part;
-            });
-
-        this.updateChartPlayers(summary, segmentEls);
 
         const player = summary.dealt.find((row) => row.name === data.player);
         const segments = buildAbilityBar(player?.abilities || []);
@@ -650,49 +662,73 @@ class CombatLiveUI {
     }
 
     /**
-     * @param {string[]} headers
-     * @param {Array<{kind: string, cells: string[]}>} rows - A 'player' row owns the 'ability' rows after it
-     * @param {string[]} keys - Column ids, parallel to headers
-     * @param {string} sectionId - Section the table sits in (ids for folded players and hidden columns)
-     * @returns {HTMLElement}
+     * @param {Object} summary - BattleStats.getSummary()
+     * @returns {?Object[]} One chart per party member (you first) when each should get their own, else null
      */
+    partyCharts(summary) {
+        const charts = summary.charts || [];
+        const wanted = !summary.attributionExact && Boolean(config.getSetting('combatLive_estimateParty'));
+        return wanted && charts.length > 1 ? charts : null;
+    }
+
     /**
-     * In a party, one row per member under the chart: name, DPS and their own ability bar.
+     * Build the pieces of one party member's chart: a foldable title with their pace, a tape and an
+     * ability bar.
+     * @param {string} name
+     * @returns {Object}
+     */
+    buildPlayerChart(name) {
+        const id = `${CHART_SECTION}.player.${name}`;
+        const wrap = document.createElement('div');
+        const header = this.sectionHeader(id, name);
+        const pace = this.textEl('span', '', 'margin-left:auto; font-weight:600; font-size:11px;');
+        header.append(pace);
+        const content = document.createElement('div');
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = `display:block; width:${TAPE_WIDTH}px; max-width:100%; height:${PLAYER_TAPE_HEIGHT}px;`;
+        canvas.title = t('combatLive.tapeTooltip');
+        const bar = document.createElement('div');
+        bar.style.cssText =
+            'display:flex; height:6px; margin-top:3px; border-radius:2px; overflow:hidden; background:rgba(255,255,255,0.06);';
+        content.append(canvas, bar);
+        wrap.append(header, content);
+        return { id, wrap, header, pace, content, canvas, bar, barSignature: '' };
+    }
+
+    /**
+     * In a party, one chart per member. Blocks are built when the party changes and updated in place.
+     * @param {Object[]} charts - summary.charts
      * @param {Object} summary - BattleStats.getSummary()
      * @param {function(Object[]): HTMLElement[]} segmentEls - Builds the coloured bar parts
      */
-    updateChartPlayers(summary, segmentEls) {
+    updateChartPlayers(charts, summary, segmentEls) {
         const chart = this.elements.chart;
-        const show =
-            !summary.attributionExact &&
-            summary.dealt.length > 1 &&
-            Boolean(config.getSetting('combatLive_estimateParty'));
-        const rows = show
-            ? summary.dealt.map((player) => ({
-                  name: player.name || '?',
-                  dps: player.dps,
-                  segments: buildAbilityBar(player.abilities),
-              }))
-            : [];
-        const signature = JSON.stringify(rows);
-        if (signature === chart.playersSignature) return;
-        chart.playersSignature = signature;
+        const order = JSON.stringify(charts.map((data) => data.player));
+        if (order !== chart.playerOrder) {
+            chart.playerOrder = order;
+            chart.playerBlocks = new Map(charts.map((data) => [data.player, this.buildPlayerChart(data.player)]));
+            chart.players.replaceChildren(...[...chart.playerBlocks.values()].map((block) => block.wrap));
+        }
 
-        chart.players.replaceChildren(
-            ...rows.map((row) => {
-                const wrap = document.createElement('div');
-                wrap.style.cssText = 'margin-bottom:4px;';
-                const line = document.createElement('div');
-                line.style.cssText = 'display:flex; justify-content:space-between; font-size:11px;';
-                line.append(this.textEl('span', row.name, 'color:#00c896;'), this.textEl('span', rate(row.dps), ''));
-                const bar = document.createElement('div');
-                bar.style.cssText =
-                    'display:flex; height:5px; border-radius:2px; overflow:hidden; background:rgba(255,255,255,0.06);';
-                bar.append(...segmentEls(row.segments));
-                wrap.append(line, bar);
-                return wrap;
-            })
-        );
+        for (const data of charts) {
+            const block = chart.playerBlocks.get(data.player);
+            const folded = this.collapsedSections.has(block.id);
+            this.applySectionState(block.header, folded);
+            block.content.style.display = folded ? 'none' : 'block';
+
+            const pace = buildPaceModel(data);
+            block.pace.textContent = `${t('combatLive.dpsNow', { dps: rate(data.currentDps) })} ${pace.arrow} ${pace.percent}%`;
+            block.pace.style.color = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
+            if (folded) continue;
+
+            drawHitTape(block.canvas, buildTapeModel(data.hits, data.now), TAPE_WIDTH, PLAYER_TAPE_HEIGHT);
+            const player = summary.dealt.find((row) => row.name === data.player);
+            const segments = buildAbilityBar(player?.abilities || []);
+            const signature = JSON.stringify(segments);
+            if (signature === block.barSignature) continue;
+            block.barSignature = signature;
+            block.bar.replaceChildren(...segmentEls(segments));
+        }
     }
 
     buildTable(headers, rows, keys, sectionId) {

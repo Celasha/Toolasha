@@ -322,10 +322,10 @@ export class BattleStats {
     /**
      * @param {number} now - Window end in ms
      * @param {function(number): number} rate - Damage to per-second over the whole session
-     * @returns {?Object} Recent hits and pace for the followed player, or null when there is none
+     * @param {?string} [player] - Whose chart; the followed player by default
+     * @returns {?Object} Recent hits and pace for that player, or null when there is none
      */
-    getChartData(now, rate) {
-        const player = this.chartSubject();
+    getChartData(now, rate, player = this.chartSubject()) {
         if (!player) return null;
         const start = now - TAPE_WINDOW_MS;
         return {
@@ -333,7 +333,8 @@ export class BattleStats {
             now,
             hits: this.recentHits.filter((hit) => hit.player === player && hit.t >= start && hit.t <= now),
             currentDps: this.windowDps(player, now),
-            bestDps: this.bestDps,
+            // Only the followed player's best is tracked
+            bestDps: player === this.chartSubject() ? this.bestDps : 0,
             averageDps: rate((this.dealt.get(player) || emptyDealt()).damage),
         };
     }
@@ -372,6 +373,13 @@ export class BattleStats {
             attributionExact: this.playerCount === 1,
             // What the DPS visual draws: the followed player's recent hits and pace
             chart: this.getChartData(now, rate),
+            // In a party, a chart for every member, the followed player first
+            charts:
+                this.playerNames.length > 1
+                    ? [...this.playerNames]
+                          .sort((a, b) => Number(b === this.chartSubject()) - Number(a === this.chartSubject()))
+                          .map((name) => this.getChartData(now, rate, name))
+                    : [],
             dealt: this.playerNames.map((name) => {
                 const row = this.dealt.get(name) || emptyDealt();
                 return {
