@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.28.9](https://github.com/Celasha/Toolasha/compare/v3.28.8...v3.28.9) (2026-11-03)
+
+
+### Bug Fixes
+
+* count casts refused for lack of mana per player and ability on the Combat Live mana tab ([b549b46](https://github.com/Celasha/Toolasha/commit/b549b467682544ec80e933b1d9fc5f33ad1f7e68))
+* put the Combat Live panel on the HUD layer so it stays under game popups ([12345f7](https://github.com/Celasha/Toolasha/commit/12345f7cf9f1c9baae7fd5b9743734c37139a6b4))
+* split the Combat Live mana column into spent and gained so it stops wrapping ([e3da8d0](https://github.com/Celasha/Toolasha/commit/e3da8d0b297e250a1d91e228799e55509239f029))
+
 ## [3.28.8](https://github.com/Celasha/Toolasha/compare/v3.28.7...v3.28.8) (2026-11-03)
 
 ### Bug Fixes
