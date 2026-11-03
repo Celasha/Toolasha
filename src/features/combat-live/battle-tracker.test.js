@@ -578,6 +578,37 @@ describe('BattleStats', () => {
             expect(summary.unattributed).toEqual(expect.objectContaining({ damage: 50, reflected: 50, overTime: 0 }));
         });
 
+        test('reflected damage goes to the one player the monster struck, a miss included', () => {
+            const hitBack = (counter, hp, dmgCounter, playerHp) =>
+                update(
+                    { 1: { cHP: playerHp, mHP: 1000, dmgCounter: counter } },
+                    { 0: { cHP: hp, mHP: 300, dmgCounter, atkCounter: dmgCounter } }
+                );
+
+            const summary = run(
+                [
+                    [0, hitBack(1, 250, 1, 900)],
+                    [1000, hitBack(2, 200, 2, 900)],
+                ],
+                [player(), bob()]
+            );
+
+            const robert = summary.dealt.find((row) => row.name === 'Bob');
+            expect(robert.abilities).toEqual([expect.objectContaining({ key: 'reflect', damage: 100 })]);
+            expect(summary.unattributed.damage).toBe(0);
+        });
+
+        test('reflected damage stays unassigned when several players were struck', () => {
+            const both = update(
+                { 0: { cHP: 900, mHP: 1000, dmgCounter: 1 }, 1: { cHP: 900, mHP: 1000, dmgCounter: 1 } },
+                { 0: { cHP: 250, mHP: 300, dmgCounter: 1, atkCounter: 1 } }
+            );
+
+            const summary = run([[0, both]], [player(), bob()]);
+
+            expect(summary.unattributed).toEqual(expect.objectContaining({ damage: 50, reflected: 50 }));
+        });
+
         test('alone, over-time and reflected damage are still yours, under their own labels', () => {
             const reflected = update({}, { 0: { cHP: 250, mHP: 300, dmgCounter: 1, atkCounter: 1 } });
             const overTime = update({}, { 0: { cHP: 200, mHP: 300, dmgCounter: 2, atkCounter: 1 } });

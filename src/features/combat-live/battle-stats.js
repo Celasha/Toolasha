@@ -196,6 +196,16 @@ export class BattleStats {
                     return { player: latest.player, key: latest.key, bucket: null };
                 }
             }
+            // A monster that acted and lost HP in the same update was hit back by whoever it struck, a miss
+            // included. When exactly one player was struck, the reflected damage is theirs.
+            if (reflected) {
+                const struck = new Set(
+                    events
+                        .filter((event) => event.side === SIDE_PLAYER && event.type === 'damage')
+                        .map((event) => event.name)
+                );
+                if (struck.size === 1) return { player: [...struck][0], key: SOURCE_REFLECT, bucket: null };
+            }
             const key = reflected ? SOURCE_REFLECT : SOURCE_OVER_TIME;
             return solo ? { player: solo, key, bucket: null } : { player: null, key, bucket: key };
         }

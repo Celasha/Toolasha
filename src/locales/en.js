@@ -1775,7 +1775,7 @@ export default {
         unknownAbility: 'Unknown ability',
         partyNote: 'Party total. Turn on "Show each party member\'s damage" in settings to split it.',
         attributionNote:
-            'Credited to the player whose attack counter rose in the same game message, under the ability they had prepared. Damage over time and reflected damage has no attacker in the message, so it is not assigned to anyone.',
+            'Credited to the player whose attack counter rose in the same game message, under the ability they had prepared. Damage over time has no attacker in the message, so it goes to the one player whose damage-over-time ability is running. Reflected damage goes to the one player the monster struck. When that is not clear, it is not assigned to anyone.',
         byAbilityTitle: 'Damage by ability',
         byPlayerTitle: 'Damage by player',
         autoAttack: 'Auto attack',
