@@ -147,7 +147,7 @@ export function drawHitTape(canvas, model, width = TAPE_WIDTH, height = TAPE_HEI
     }
 }
 
-export const SPARK_BUCKETS = 12;
+export const SPARK_BUCKETS = 10;
 export const SPARK_BUCKET_WIDTH = 5;
 export const SPARK_HEIGHT = 16;
 
