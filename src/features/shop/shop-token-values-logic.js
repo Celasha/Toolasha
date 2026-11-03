@@ -5,6 +5,7 @@
 
 import { getAllSpecialCurrencyShopEntries } from '../../utils/special-currency-shop.js';
 import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { resolvePricingSide } from '../../utils/token-valuation.js';
 import { getCapeBaseValue, isUntradableCape } from '../../utils/untradable-cape.js';
 
@@ -12,12 +13,24 @@ const PRICING_MODE_SETTING = 'profitCalc_pricingMode';
 const RESPECT_MODE_SETTING = 'expectedValue_respectPricingMode';
 
 /**
+ * @param {string} itemHrid - An openable container
+ * @returns {number} Expected value of opening it, 0 when unknown
+ */
+function getContainerValue(itemHrid) {
+    return (
+        expectedValueCalculator.getCachedValue(itemHrid) ||
+        expectedValueCalculator.calculateExpectedValue(itemHrid)?.expectedValue ||
+        0
+    );
+}
+
+/**
  * Value per currency unit of one shop entry: market price × outputCount ÷ tokenCost, on the same
  * price side as the profit settings. Untradable capes have no market price, so they use the cape
  * base value setting and are flagged `isAssumed`; those are display-only and never win "best".
  * @param {{itemHrid: string, tokenCost: number, outputCount: number}} entry
  * @returns {{perToken: number, isAssumed: boolean, assumedValue: number, isOutlier: boolean}|null}
- *   null when the item has no price and is not an untradable cape
+ *   null when the item has no price, is not an untradable cape, and is not an openable container
  */
 export function getShopRowValue(entry) {
     const outputCount = entry.outputCount || 1;
@@ -35,7 +48,18 @@ export function getShopRowValue(entry) {
     const mode = resolvePricingSide(PRICING_MODE_SETTING, RESPECT_MODE_SETTING);
     const priceInfo = getItemPriceOutlierInfo(entry.itemHrid, { mode });
     if (!(priceInfo.value > 0)) {
-        return null;
+        // An openable with no market price (the task shop's chests) is worth what opening it yields
+        const containerValue = entry.isOpenable ? getContainerValue(entry.itemHrid) : 0;
+        if (!(containerValue > 0)) {
+            return null;
+        }
+        return {
+            perToken: (containerValue * outputCount) / entry.tokenCost,
+            isAssumed: false,
+            assumedValue: 0,
+            isOutlier: false,
+            isContainer: true,
+        };
     }
     return {
         perToken: (priceInfo.value * outputCount) / entry.tokenCost,

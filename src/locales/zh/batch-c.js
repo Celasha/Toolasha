@@ -449,6 +449,7 @@ export default {
         perToken: (p) => `${p.value} / 代币`,
         assumedTooltip: (p) => `不可交易物品；假定价值：${p.value}`,
         bestTooltip: '本商店中每代币价值最高',
+        containerTooltip: '无市场价格；价值为开启后的期望价值',
     },
     alchemyBestItems: {
         untradeableTooltip: (p) => `不可交易物品；假定价值：${p.value}`,

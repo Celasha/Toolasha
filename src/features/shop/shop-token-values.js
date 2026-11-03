@@ -144,9 +144,11 @@ class ShopTokenValues {
         element.style.fontWeight = isBest ? '600' : '400';
         element.title = row.isAssumed
             ? t('shopTokenValue.assumedTooltip', { value: formatKMB(row.assumedValue) })
-            : isBest
-              ? t('shopTokenValue.bestTooltip')
-              : '';
+            : row.isContainer
+              ? t('shopTokenValue.containerTooltip') + (isBest ? `\n${t('shopTokenValue.bestTooltip')}` : '')
+              : isBest
+                ? t('shopTokenValue.bestTooltip')
+                : '';
     }
 }
 

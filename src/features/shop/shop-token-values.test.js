@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     entries: [],
     prices: {},
     capeBase: 0,
+    containers: {},
     getSetting: vi.fn(() => true),
     onClass: vi.fn(() => () => {}),
 }));
@@ -25,6 +26,12 @@ vi.mock('../../utils/market-data.js', () => ({
 vi.mock('../../utils/token-valuation.js', () => ({
     DUNGEON_TOKEN_HRIDS: new Set(['/items/chimerical_token']),
     resolvePricingSide: () => 'bid',
+}));
+vi.mock('../market/expected-value-calculator.js', () => ({
+    default: {
+        getCachedValue: (hrid) => mocks.containers[hrid] ?? null,
+        calculateExpectedValue: () => null,
+    },
 }));
 vi.mock('../../utils/untradable-cape.js', () => ({
     isUntradableCape: (hrid) => hrid.endsWith('_cape') || hrid.endsWith('_quiver'),
@@ -78,6 +85,42 @@ describe('getShopRowValue', () => {
             perToken: 0,
             isAssumed: true,
         });
+    });
+});
+
+describe('openable containers with no market price', () => {
+    beforeEach(() => {
+        mocks.prices = {};
+        mocks.containers = {};
+    });
+
+    const chest = (itemHrid, tokenCost) => ({ ...entry(itemHrid, '/items/task_token', tokenCost), isOpenable: true });
+
+    test('are worth the expected value of opening them', () => {
+        mocks.containers['/items/large_treasure_chest'] = 30_000;
+        expect(getShopRowValue(chest('/items/large_treasure_chest', 30))).toMatchObject({
+            perToken: 1000,
+            isAssumed: false,
+            isContainer: true,
+        });
+    });
+
+    test('a market price wins over the expected value', () => {
+        mocks.prices['/items/large_treasure_chest'] = { value: 60_000, isOutlier: false };
+        mocks.containers['/items/large_treasure_chest'] = 30_000;
+        expect(getShopRowValue(chest('/items/large_treasure_chest', 30))).toMatchObject({ perToken: 2000 });
+    });
+
+    test('stay null with no expected value, and a non-openable item never uses one', () => {
+        expect(getShopRowValue(chest('/items/large_treasure_chest', 30))).toBeNull();
+        mocks.containers['/items/task_crystal'] = 5000;
+        expect(getShopRowValue(entry('/items/task_crystal', '/items/task_token', 50))).toBeNull();
+    });
+
+    test('can be the best entry for the currency', () => {
+        mocks.containers = { '/items/a': 30_000, '/items/b': 90_000 };
+        mocks.entries = [chest('/items/a', 30), chest('/items/b', 30)];
+        expect(getBestEntryByCurrency().get('/items/task_token')).toBe('/items/b');
     });
 });
 

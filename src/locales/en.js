@@ -1865,6 +1865,7 @@ export default {
         perToken: (p) => `${p.value} / token`,
         assumedTooltip: (p) => `Untradeable item; Assumed Value: ${p.value}`,
         bestTooltip: 'Best value per token in this shop',
+        containerTooltip: 'No market price; value is the expected value of opening it',
     },
     alchemyBestItems: {
         untradeableTooltip: (p) => `Untradeable item; Assumed Value: ${p.value}`,
