@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.28.5
+ * Version: 3.28.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2467,6 +2467,7 @@
             colShare: 'Share',
             colAccuracy: 'Accuracy',
             columnsTooltip: 'Choose columns',
+            infoTooltip: 'About these numbers',
             playerFoldTooltip: 'Click to show or hide abilities',
             colDps: 'DPS',
             colKillTime: 'Kill time',
@@ -4438,7 +4439,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 shopTokenValues: {
                     label: 'Shop: Show value per token',
-                    help: 'Shows the market value per token of each entry in the Dungeon and Labyrinth shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
+                    help: 'Shows the market value per token of each entry in the Dungeon, Labyrinth and Task shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
                 },
                 labyrinthShopPrices: {
                     label: 'Labyrinth Shop: Show market prices',
@@ -5747,7 +5748,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 shopTokenValues: {
                     label: '商店：显示每代币价值',
-                    help: '在地下城商店和迷宫商店中显示每个商品的每代币市场价值，并标出各代币的最佳选择。不可交易的披风按披风基础价值设置显示并以星号标记，且不会被标为最佳。',
+                    help: '在地下城商店、迷宫商店和任务商店中显示每个商品的每代币市场价值，并标出各代币的最佳选择。不可交易的披风按披风基础价值设置显示并以星号标记，且不会被标为最佳。',
                 },
                 labyrinthShopPrices: {
                     label: '迷宫商店：显示市场价格',
@@ -7828,6 +7829,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             colShare: '占比',
             colAccuracy: '命中率',
             columnsTooltip: '选择列',
+            infoTooltip: '关于这些数字',
             playerFoldTooltip: '点击显示或隐藏技能',
             colDps: 'DPS',
             colKillTime: '击杀用时',
@@ -9239,7 +9241,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Shop: Show value per token',
                     type: 'checkbox',
                     default: true,
-                    help: 'Shows the market value per token of each entry in the Dungeon and Labyrinth shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
+                    help: 'Shows the market value per token of each entry in the Dungeon, Labyrinth and Task shops and marks the best value for each token. Untradable capes show the cape base value setting, marked with an asterisk, and are never marked best.',
                 },
                 notificationLog_maxEntries: {
                     id: 'notificationLog_maxEntries',

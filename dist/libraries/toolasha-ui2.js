@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.28.5
+ * Version: 3.28.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1264,10 +1264,10 @@
         /**
          * @param {number} now - Window end in ms
          * @param {function(number): number} rate - Damage to per-second over the whole session
-         * @returns {?Object} Recent hits and pace for the followed player, or null when there is none
+         * @param {?string} [player] - Whose chart; the followed player by default
+         * @returns {?Object} Recent hits and pace for that player, or null when there is none
          */
-        getChartData(now, rate) {
-            const player = this.chartSubject();
+        getChartData(now, rate, player = this.chartSubject()) {
             if (!player) return null;
             const start = now - TAPE_WINDOW_MS;
             return {
@@ -1275,7 +1275,8 @@
                 now,
                 hits: this.recentHits.filter((hit) => hit.player === player && hit.t >= start && hit.t <= now),
                 currentDps: this.windowDps(player, now),
-                bestDps: this.bestDps,
+                // Only the followed player's best is tracked
+                bestDps: player === this.chartSubject() ? this.bestDps : 0,
                 averageDps: rate((this.dealt.get(player) || emptyDealt()).damage),
             };
         }
@@ -1314,6 +1315,13 @@
                 attributionExact: this.playerCount === 1,
                 // What the DPS visual draws: the followed player's recent hits and pace
                 chart: this.getChartData(now, rate),
+                // In a party, a chart for every member, the followed player first
+                charts:
+                    this.playerNames.length > 1
+                        ? [...this.playerNames]
+                              .sort((a, b) => Number(b === this.chartSubject()) - Number(a === this.chartSubject()))
+                              .map((name) => this.getChartData(now, rate, name))
+                        : [],
                 dealt: this.playerNames.map((name) => {
                     const row = this.dealt.get(name) || emptyDealt();
                     return {
@@ -1715,6 +1723,8 @@
     const HIDDEN_COLUMNS_KEY = 'combatLive_hiddenColumns';
     const CHART_SECTION = 'damage.chart';
     const REFRESH_MS = 500;
+    // Each party member's tape is shorter than the single one, so several fit
+    const PLAYER_TAPE_HEIGHT = 30;
     // The panel hides when no combat message has arrived for this long
     const IDLE_HIDE_MS = 60000;
 
@@ -1785,7 +1795,7 @@
      */
     function buildTabModel(summary, tab, options = {}) {
         const { party, players, monsters } = summary;
-        const model = { stats: [], secondary: null, headers: [], keys: [], rows: [], note: '' };
+        const model = { stats: [], secondary: null, headers: [], keys: [], rows: [], note: '', info: '' };
 
         if (tab === 'damage') {
             const solo = summary.attributionExact && summary.dealt.length > 0 ? summary.dealt[0] : null;
@@ -1875,20 +1885,19 @@
                 model.stats.push([i18n_js.t('combatLive.unattributed'), percent(summary.unattributed.share)]);
             }
 
-            if (solo) {
-                model.note = '';
-            } else if (splitParty) {
+            // The standing explanation lives behind an info button; the note is only what changes with the data
+            if (splitParty) {
                 const { overTime, reflected, unclear } = summary.unattributed;
-                model.note = i18n_js.t('combatLive.attributionNote');
+                model.info = i18n_js.t('combatLive.attributionNote');
                 if (summary.unattributed.damage > 0) {
-                    model.note += ` ${i18n_js.t('combatLive.unattributedBreakdown', {
-                    overTime: number(overTime),
-                    reflected: number(reflected),
-                    unclear: number(unclear),
-                })}`;
+                    model.note = i18n_js.t('combatLive.unattributedBreakdown', {
+                        overTime: number(overTime),
+                        reflected: number(reflected),
+                        unclear: number(unclear),
+                    });
                 }
-            } else {
-                model.note = i18n_js.t('combatLive.partyNote');
+            } else if (!solo) {
+                model.info = i18n_js.t('combatLive.partyNote');
             }
         } else if (tab === 'taken') {
             model.headers = [
@@ -1969,6 +1978,7 @@
             // Columns the user hid, as `<tab>.<section>.<column>` ids, and which column pickers are open
             this.hiddenColumns = new Set();
             this.openPickers = new Set();
+            this.openInfo = new Set();
             this.lastSignature = '';
             this.elements = {};
         }
@@ -2078,10 +2088,12 @@
             );
 
             const content = document.createElement('div');
-            // One thin row per party member, only in a party
+            // Alone (or with per-player damage off) one chart follows you; in a party each member gets their own
+            const single = document.createElement('div');
+            single.append(paceLine, canvas, abilityBar, legend);
             const players = document.createElement('div');
-            players.style.cssText = 'margin-top:6px;';
-            content.append(paceLine, canvas, abilityBar, legend, players);
+            players.style.display = 'none';
+            content.append(single, players);
             const header = this.sectionHeader(CHART_SECTION, i18n_js.t('combatLive.sectionChart'));
             block.append(header, content);
             return {
@@ -2094,9 +2106,11 @@
                 canvas,
                 abilityBar,
                 legend,
+                single,
                 players,
+                playerBlocks: new Map(),
+                playerOrder: '',
                 barSignature: '',
-                playersSignature: '',
             };
         }
 
@@ -2284,16 +2298,33 @@
          */
         updateChart(summary) {
             const chart = this.elements.chart;
+            const partyCharts = this.partyCharts(summary);
             const visible =
                 this.tab === 'damage' &&
                 !this.collapsed &&
                 config.getSetting('combatLive_showChart') !== false &&
-                Boolean(summary.chart);
+                Boolean(summary.chart || partyCharts);
             chart.block.style.display = visible ? 'block' : 'none';
             if (!visible) return;
             const folded = this.collapsedSections.has(CHART_SECTION);
             chart.content.style.display = folded ? 'none' : 'block';
             if (folded) return;
+
+            chart.single.style.display = partyCharts ? 'none' : 'block';
+            chart.players.style.display = partyCharts ? 'block' : 'none';
+
+            const label = (key) => (key === OTHER_KEY ? i18n_js.t('combatLive.otherAbilities') : sourceName(key));
+            const segmentEls = (segments) =>
+                segments.map((segment) => {
+                    const part = document.createElement('div');
+                    part.style.cssText = `flex:${segment.share} 1 0; background:${abilityColor(segment.key)};`;
+                    part.title = `${label(segment.key)} ${percent(segment.share)}`;
+                    return part;
+                });
+            if (partyCharts) {
+                this.updateChartPlayers(partyCharts, summary, segmentEls);
+                return;
+            }
 
             const data = summary.chart;
             const pace = buildPaceModel(data);
@@ -2304,17 +2335,6 @@
             chart.paceBest.textContent = data.bestDps > 0 ? i18n_js.t('combatLive.bestDps', { dps: rate(data.bestDps) }) : '';
 
             drawHitTape(chart.canvas, buildTapeModel(data.hits, data.now));
-
-            const label = (key) => (key === OTHER_KEY ? i18n_js.t('combatLive.otherAbilities') : sourceName(key));
-            const segmentEls = (segments) =>
-                segments.map((segment) => {
-                    const part = document.createElement('div');
-                    part.style.cssText = `flex:${segment.share} 1 0; background:${abilityColor(segment.key)};`;
-                    part.title = `${label(segment.key)} ${percent(segment.share)}`;
-                    return part;
-                });
-
-            this.updateChartPlayers(summary, segmentEls);
 
             const player = summary.dealt.find((row) => row.name === data.player);
             const segments = buildAbilityBar(player?.abilities || []);
@@ -2331,49 +2351,73 @@
         }
 
         /**
-         * @param {string[]} headers
-         * @param {Array<{kind: string, cells: string[]}>} rows - A 'player' row owns the 'ability' rows after it
-         * @param {string[]} keys - Column ids, parallel to headers
-         * @param {string} sectionId - Section the table sits in (ids for folded players and hidden columns)
-         * @returns {HTMLElement}
+         * @param {Object} summary - BattleStats.getSummary()
+         * @returns {?Object[]} One chart per party member (you first) when each should get their own, else null
          */
+        partyCharts(summary) {
+            const charts = summary.charts || [];
+            const wanted = !summary.attributionExact && Boolean(config.getSetting('combatLive_estimateParty'));
+            return wanted && charts.length > 1 ? charts : null;
+        }
+
         /**
-         * In a party, one row per member under the chart: name, DPS and their own ability bar.
+         * Build the pieces of one party member's chart: a foldable title with their pace, a tape and an
+         * ability bar.
+         * @param {string} name
+         * @returns {Object}
+         */
+        buildPlayerChart(name) {
+            const id = `${CHART_SECTION}.player.${name}`;
+            const wrap = document.createElement('div');
+            const header = this.sectionHeader(id, name);
+            const pace = this.textEl('span', '', 'margin-left:auto; font-weight:600; font-size:11px;');
+            header.append(pace);
+            const content = document.createElement('div');
+            const canvas = document.createElement('canvas');
+            canvas.style.cssText = `display:block; width:${TAPE_WIDTH}px; max-width:100%; height:${PLAYER_TAPE_HEIGHT}px;`;
+            canvas.title = i18n_js.t('combatLive.tapeTooltip');
+            const bar = document.createElement('div');
+            bar.style.cssText =
+                'display:flex; height:6px; margin-top:3px; border-radius:2px; overflow:hidden; background:rgba(255,255,255,0.06);';
+            content.append(canvas, bar);
+            wrap.append(header, content);
+            return { id, wrap, header, pace, content, canvas, bar, barSignature: '' };
+        }
+
+        /**
+         * In a party, one chart per member. Blocks are built when the party changes and updated in place.
+         * @param {Object[]} charts - summary.charts
          * @param {Object} summary - BattleStats.getSummary()
          * @param {function(Object[]): HTMLElement[]} segmentEls - Builds the coloured bar parts
          */
-        updateChartPlayers(summary, segmentEls) {
+        updateChartPlayers(charts, summary, segmentEls) {
             const chart = this.elements.chart;
-            const show =
-                !summary.attributionExact &&
-                summary.dealt.length > 1 &&
-                Boolean(config.getSetting('combatLive_estimateParty'));
-            const rows = show
-                ? summary.dealt.map((player) => ({
-                      name: player.name || '?',
-                      dps: player.dps,
-                      segments: buildAbilityBar(player.abilities),
-                  }))
-                : [];
-            const signature = JSON.stringify(rows);
-            if (signature === chart.playersSignature) return;
-            chart.playersSignature = signature;
+            const order = JSON.stringify(charts.map((data) => data.player));
+            if (order !== chart.playerOrder) {
+                chart.playerOrder = order;
+                chart.playerBlocks = new Map(charts.map((data) => [data.player, this.buildPlayerChart(data.player)]));
+                chart.players.replaceChildren(...[...chart.playerBlocks.values()].map((block) => block.wrap));
+            }
 
-            chart.players.replaceChildren(
-                ...rows.map((row) => {
-                    const wrap = document.createElement('div');
-                    wrap.style.cssText = 'margin-bottom:4px;';
-                    const line = document.createElement('div');
-                    line.style.cssText = 'display:flex; justify-content:space-between; font-size:11px;';
-                    line.append(this.textEl('span', row.name, 'color:#00c896;'), this.textEl('span', rate(row.dps), ''));
-                    const bar = document.createElement('div');
-                    bar.style.cssText =
-                        'display:flex; height:5px; border-radius:2px; overflow:hidden; background:rgba(255,255,255,0.06);';
-                    bar.append(...segmentEls(row.segments));
-                    wrap.append(line, bar);
-                    return wrap;
-                })
-            );
+            for (const data of charts) {
+                const block = chart.playerBlocks.get(data.player);
+                const folded = this.collapsedSections.has(block.id);
+                this.applySectionState(block.header, folded);
+                block.content.style.display = folded ? 'none' : 'block';
+
+                const pace = buildPaceModel(data);
+                block.pace.textContent = `${i18n_js.t('combatLive.dpsNow', { dps: rate(data.currentDps) })} ${pace.arrow} ${pace.percent}%`;
+                block.pace.style.color = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
+                if (folded) continue;
+
+                drawHitTape(block.canvas, buildTapeModel(data.hits, data.now), TAPE_WIDTH, PLAYER_TAPE_HEIGHT);
+                const player = summary.dealt.find((row) => row.name === data.player);
+                const segments = buildAbilityBar(player?.abilities || []);
+                const signature = JSON.stringify(segments);
+                if (signature === block.barSignature) continue;
+                block.barSignature = signature;
+                block.bar.replaceChildren(...segmentEls(segments));
+            }
         }
 
         buildTable(headers, rows, keys, sectionId) {
@@ -2431,6 +2475,13 @@
             this.refresh();
         }
 
+        toggleInfo(sectionId) {
+            if (this.openInfo.has(sectionId)) this.openInfo.delete(sectionId);
+            else this.openInfo.add(sectionId);
+            this.lastSignature = '';
+            this.refresh();
+        }
+
         /**
          * The button that opens a table's column picker, and the picker itself: one chip per column.
          * @param {string} sectionId
@@ -2439,7 +2490,6 @@
          */
         buildColumnPicker(sectionId, table) {
             const button = this.buttonEl('▦', i18n_js.t('combatLive.columnsTooltip'), () => this.togglePicker(sectionId));
-            button.style.marginLeft = 'auto';
             button.style.fontSize = '12px';
             if (!this.openPickers.has(sectionId)) return { button, picker: null };
 
@@ -2471,16 +2521,27 @@
          * @param {?HTMLElement} note - A footnote that belongs with this section
          * @param {?{headers: string[], keys: string[]}} table - Set when the section is a table, which adds a
          *     column picker
+         * @param {string} [info] - Standing explanation, opened by an info button in the title
          * @returns {HTMLElement}
          */
-        buildSection(id, title, buildContent, note, table) {
+        buildSection(id, title, buildContent, note, table, info) {
             const wrap = document.createElement('div');
             const header = this.sectionHeader(id, title);
             const folded = this.collapsedSections.has(id);
             const { button, picker } = table && !folded ? this.buildColumnPicker(id, table) : {};
-            if (button) header.append(button);
+            const infoButton =
+                info && !folded ? this.buttonEl('ⓘ', i18n_js.t('combatLive.infoTooltip'), () => this.toggleInfo(id)) : null;
+            const actions = [infoButton, button].filter(Boolean);
+            if (actions.length) {
+                const group = this.textEl('span', '', 'margin-left:auto; display:flex; gap:4px;');
+                group.append(...actions);
+                header.append(group);
+            }
             wrap.append(header);
             if (!folded) {
+                if (info && this.openInfo.has(id)) {
+                    wrap.append(this.textEl('div', info, 'margin:2px 0 4px; color:#9aa4b2; font-size:11px;'));
+                }
                 if (picker) wrap.append(picker);
                 wrap.append(buildContent());
                 if (note) wrap.append(note);
@@ -2493,6 +2554,7 @@
             const hasSecondary = Boolean(model.secondary?.rows.length);
             // The footnote travels with the part it explains
             const noteHome = hasSecondary ? 'secondary' : model.stats.length ? 'totals' : 'main';
+            const infoFor = (home) => (noteHome === home ? model.info : '');
             const noteFor = (home) =>
                 model.note && noteHome === home
                     ? this.textEl('div', model.note, 'margin-top:6px; color:#777; font-size:11px;')
@@ -2518,7 +2580,9 @@
                             }
                             return list;
                         },
-                        noteFor('totals')
+                        noteFor('totals'),
+                        null,
+                        infoFor('totals')
                     )
                 );
             }
@@ -2535,7 +2599,8 @@
                                 `${this.tab}.secondary`
                             ),
                         noteFor('secondary'),
-                        model.secondary
+                        model.secondary,
+                        infoFor('secondary')
                     )
                 );
             }
@@ -2546,7 +2611,8 @@
                         mainTitle,
                         () => this.buildTable(model.headers, model.rows, model.keys, `${this.tab}.main`),
                         noteFor('main'),
-                        model
+                        model,
+                        infoFor('main')
                     )
                 );
             }
