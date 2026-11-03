@@ -6,7 +6,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import domObserver from '../../core/dom-observer.js';
+import domObserver, { touchesSelector } from '../../core/dom-observer.js';
 
 /**
  * EquipmentLevelDisplay class adds level overlays to equipment icons
@@ -66,7 +66,12 @@ class EquipmentLevelDisplay {
             () => {
                 this.addItemLevels();
             },
-            { debounce: true, debounceDelay: 150 } // 150ms debounce to reduce update frequency
+            {
+                debounce: true,
+                debounceDelay: 150, // 150ms debounce to reduce update frequency
+                // Only when an item was added; other page changes have nothing to annotate
+                filter: (node) => touchesSelector(node, '[class*="Item_item"]'),
+            }
         );
 
         // Process any existing items on page

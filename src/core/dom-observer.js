@@ -7,6 +7,17 @@
 
 import performanceMonitor from '../utils/performance-monitor.js';
 
+/**
+ * Whether an added node is, sits inside, or contains an element matching a selector. A cheap check for
+ * a handler `filter`, so it only wakes for changes in the part of the page it cares about.
+ * @param {Element} node
+ * @param {string} selector
+ * @returns {boolean}
+ */
+export function touchesSelector(node, selector) {
+    return Boolean(node.closest?.(selector) || node.querySelector?.(selector));
+}
+
 class DOMObserver {
     constructor() {
         this.observer = null;
@@ -40,6 +51,8 @@ class DOMObserver {
                         // Dispatch to all registered handlers
                         this.handlers.forEach((handler) => {
                             try {
+                                // Before the debounce, so a relevant node is never replaced by a later irrelevant one
+                                if (handler.filter && !handler.filter(node)) return;
                                 if (handler.debounce) {
                                     this.debouncedCallback(handler, node, mutation);
                                 } else if (performanceMonitor.enabled) {
@@ -180,12 +193,15 @@ class DOMObserver {
      * @param {Object} options - Optional configuration
      * @param {boolean} options.debounce - Enable debouncing (default: false)
      * @param {number} options.debounceDelay - Debounce delay in ms (default: 50)
+     * @param {function(Element): boolean} [options.filter] - Per added node, run before the debounce; the
+     *     handler only fires for nodes it returns true for
      * @returns {Function} Unregister function
      */
     register(name, callback, options = {}) {
         const handler = {
             name,
             callback,
+            filter: options.filter,
             debounce: options.debounce || false,
             debounceDelay: options.debounceDelay,
         };

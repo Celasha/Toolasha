@@ -5,7 +5,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import domObserver from '../../core/dom-observer.js';
+import domObserver, { touchesSelector } from '../../core/dom-observer.js';
 import { getQuestFromTaskCard } from '../../utils/game-lookups.js';
 
 // Compiled regex pattern (created once, reused for performance)
@@ -87,7 +87,12 @@ class ZoneIndices {
                     this.addMapIndices();
                 }
             },
-            { debounce: true, debounceDelay: 100 } // Use centralized debouncing
+            {
+                debounce: true,
+                debounceDelay: 100, // Use centralized debouncing
+                // Task cards and the combat zone list are the only places that get indices
+                filter: (node) => touchesSelector(node, '[class*="RandomTask_"], [class*="CombatPanel_"]'),
+            }
         );
 
         // Process existing elements

@@ -165,3 +165,69 @@ describe('DOMObserver readiness lifecycle (TLA-025 reopen)', () => {
         expect(domObserver.getStats().readyHandlerCount).toBe(0);
     });
 });
+
+describe('DOMObserver handler filter', () => {
+    let domObserver;
+    let touchesSelector;
+
+    beforeEach(async () => {
+        vi.useFakeTimers();
+        vi.resetModules();
+        const mod = await import('./dom-observer.js');
+        domObserver = mod.default;
+        touchesSelector = mod.touchesSelector;
+        document.body.innerHTML = '';
+    });
+
+    afterEach(() => {
+        domObserver.stop();
+        vi.useRealTimers();
+    });
+
+    const flush = async () => {
+        await Promise.resolve();
+        vi.runAllTimers();
+    };
+
+    test('touchesSelector matches the node, its ancestors and its descendants', () => {
+        document.body.innerHTML = '<div class="Outer_x"><p><span class="Inner_y"></span></p></div>';
+        const outer = document.querySelector('.Outer_x');
+        const inner = document.querySelector('.Inner_y');
+
+        expect(touchesSelector(outer, '[class*="Inner_"]')).toBe(true);
+        expect(touchesSelector(inner, '[class*="Outer_"]')).toBe(true);
+        expect(touchesSelector(inner, '[class*="Inner_"]')).toBe(true);
+        expect(touchesSelector(outer, '[class*="Other_"]')).toBe(false);
+    });
+
+    test('a filtered handler only fires for relevant nodes, even when an irrelevant one follows in the burst', async () => {
+        const callback = vi.fn();
+        domObserver.register('filtered', callback, {
+            debounce: true,
+            debounceDelay: 50,
+            filter: (node) => node.classList.contains('wanted'),
+        });
+        domObserver.start();
+
+        const wanted = document.createElement('div');
+        wanted.className = 'wanted';
+        const other = document.createElement('div');
+        document.body.append(wanted, other);
+        await flush();
+        await flush();
+
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(callback.mock.calls[0][0]).toBe(wanted);
+    });
+
+    test('a handler with no filter still gets every added node', async () => {
+        const callback = vi.fn();
+        domObserver.register('open', callback);
+        domObserver.start();
+
+        document.body.append(document.createElement('div'), document.createElement('div'));
+        await flush();
+
+        expect(callback).toHaveBeenCalledTimes(2);
+    });
+});
