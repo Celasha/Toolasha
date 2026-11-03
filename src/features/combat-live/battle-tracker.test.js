@@ -913,3 +913,102 @@ describe('DPS and kill time per enemy', () => {
         );
     });
 });
+
+describe('casts refused for lack of mana', () => {
+    const COSTS = {
+        '/abilities/big': { manaCost: 80, cooldownMs: 10000 },
+        '/abilities/small': { manaCost: 35, cooldownMs: 5000 },
+        '/abilities/free': { manaCost: 0, cooldownMs: 5000 },
+    };
+    const caster = (overrides = {}) =>
+        player({
+            currentManapoints: 200,
+            maxManapoints: 500,
+            attackAttemptCounter: 1,
+            isPreparingAutoAttack: false,
+            preparingAbilityHrid: '/abilities/big',
+            combatAbilities: [
+                { abilityHrid: '/abilities/big' },
+                { abilityHrid: '/abilities/small' },
+                { abilityHrid: '/abilities/free' },
+            ],
+            ...overrides,
+        });
+
+    function run(steps, unit = caster()) {
+        const tracker = startBattle([unit]);
+        const stats = new BattleStats();
+        stats.setAbilityLookup((hrid) => COSTS[hrid] || null);
+        stats.setPlayers([unit.character.name]);
+        stats.setLoadouts(tracker.players);
+        for (const [at, message] of steps) stats.record(tracker.handleBattleUpdated(message), at);
+        return stats.getSummary(steps[steps.length - 1][0]);
+    }
+
+    // The unit acts (counter up) and now prepares what the entry says; mp is its mana after the action
+    const act = (counter, mp, prepared = {}) => update({ 0: { atkCounter: counter, cMP: mp, ...prepared } });
+    const auto = { isAutoAtk: true };
+
+    test('the tracker reads the loadout, the haste and the mana the unit had when it acted', () => {
+        const tracker = startBattle([caster({ combatDetails: { combatStats: { abilityHaste: 30 } } })]);
+        const [unit] = tracker.players;
+        expect(unit.abilities).toEqual(['/abilities/big', '/abilities/small', '/abilities/free']);
+        expect(unit.abilityHaste).toBe(30);
+
+        const attack = tracker.handleBattleUpdated(act(2, 120, auto)).find((event) => event.type === 'attack');
+        expect(attack.manaBefore).toBe(200);
+    });
+
+    test('an auto attack while a ready ability costs more than the mana is a refused cast, for that ability', () => {
+        const summary = run([
+            // Casts the big ability (cost 80), paying for it, and is left on 20 mana preparing an auto attack
+            [0, act(2, 20, { ...auto })],
+            // Auto attacks 20s later on 20 mana: the big ability is off cooldown and costs 80
+            [20000, act(3, 20, { ...auto })],
+            [23000, act(4, 23, { ...auto })],
+        ]);
+
+        const row = summary.players.find((p) => p.name === 'Alice');
+        expect(row.refusedCasts).toBe(2);
+        expect(row.abilityMana.find((a) => a.abilityHrid === '/abilities/big').refused).toBe(2);
+    });
+
+    test('nothing is refused while the ability is still on cooldown, or when the mana covers it', () => {
+        const summary = run([
+            [0, act(2, 20, { ...auto })],
+            // 2s later the big ability is still cooling down
+            [2000, act(3, 20, { ...auto })],
+        ]);
+        expect(summary.players.find((p) => p.name === 'Alice').refusedCasts).toBe(0);
+
+        const rich = run([
+            [0, act(2, 150, { ...auto })],
+            // Off cooldown, but 150 mana covers it: an auto attack here is a trigger or priority matter
+            [30000, act(3, 150, { ...auto })],
+        ]);
+        expect(rich.players.find((p) => p.name === 'Alice').refusedCasts).toBe(0);
+    });
+
+    test('only abilities the player has cast count, and a free ability can never be refused', () => {
+        const summary = run([
+            // The only cast was the big ability; the small one was never used, so it is never counted
+            [0, act(2, 20, { ...auto })],
+            [20000, act(3, 20, { ...auto })],
+        ]);
+
+        const row = summary.players.find((p) => p.name === 'Alice');
+        expect(row.abilityMana.map((a) => a.abilityHrid)).toEqual(['/abilities/big']);
+    });
+
+    test('haste shortens the cooldown, so an ability is ready sooner', () => {
+        const hasted = caster({ combatDetails: { combatStats: { abilityHaste: 100 } } });
+        const steps = [
+            [0, act(2, 20, { ...auto })],
+            // 6s: base cooldown 10s is still running, but with 100 haste it is 5s and already over
+            [6000, act(3, 20, { ...auto })],
+        ];
+
+        expect(run(steps, hasted).players.find((p) => p.name === 'Alice').refusedCasts).toBe(1);
+        expect(run(steps).players.find((p) => p.name === 'Alice').refusedCasts).toBe(0);
+    });
+});

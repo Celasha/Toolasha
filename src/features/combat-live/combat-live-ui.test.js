@@ -203,6 +203,20 @@ describe('buildTabModel', () => {
         expect(model.rows[1].cells).toEqual(['Fireball', '120', '', '12.0']);
     });
 
+    test('the refused column and its explanation appear once a cast has been refused', () => {
+        const base = summary();
+        expect(buildTabModel(base, 'mana').headers).not.toContain('combatLive.colRefused');
+
+        base.players[0].refusedCasts = 7;
+        base.players[0].abilityMana[0].refused = 4;
+        const model = buildTabModel(base, 'mana');
+
+        expect(model.headers[model.headers.length - 1]).toBe('combatLive.colRefused');
+        expect(model.rows[0].cells[model.rows[0].cells.length - 1]).toBe('7');
+        expect(model.rows[1].cells[model.rows[1].cells.length - 1]).toBe('4');
+        expect(model.info).toBe('combatLive.refusedInfo');
+    });
+
     test('an unnamed spend is labelled rather than shown blank', () => {
         const base = summary();
         base.players[0].abilityMana = [{ abilityHrid: '', mana: 5, events: 1, perSecond: 0.5 }];

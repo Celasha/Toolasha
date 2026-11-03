@@ -67,6 +67,9 @@ export class CombatLiveRecorder {
                 auto: unit?.isPreparingAutoAttack ? 1 : 0,
                 dmg: unit?.damageSplatCounter ?? null,
                 crit: unit?.criticalDamageSplatCounter ?? null,
+                // What is equipped, and how much faster the abilities come off cooldown: casts refused
+                la: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
+                hs: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
             })),
             m: (data?.monsters || []).map((unit) => ({
                 h: unit?.hrid ?? null,

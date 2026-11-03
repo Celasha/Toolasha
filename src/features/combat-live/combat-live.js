@@ -12,7 +12,7 @@ import webSocketHook from '../../core/websocket.js';
 import performanceMonitor from '../../utils/performance-monitor.js';
 import BattleEventTracker from './battle-event-tracker.js';
 import BattleStats from './battle-stats.js';
-import { getDotDurationMs } from './ability-effects.js';
+import { getAbilityTiming, getDotDurationMs } from './ability-effects.js';
 import CombatLiveRecorder from './combat-live-recorder.js';
 import combatLiveUI from './combat-live-ui.js';
 
@@ -22,6 +22,7 @@ class CombatLive {
         this.tracker = new BattleEventTracker();
         this.stats = new BattleStats();
         this.stats.setDotLookup(getDotDurationMs);
+        this.stats.setAbilityLookup(getAbilityTiming);
         this.recorder = new CombatLiveRecorder();
         this.lastMessageAt = 0;
         this.newBattleHandler = null;
@@ -62,6 +63,7 @@ class CombatLive {
         this.tracker.handleNewBattle(data);
         this.stats.beginWave(now);
         this.stats.setPlayers(this.tracker.players.map((player) => player.name));
+        this.stats.setLoadouts(this.tracker.players);
         const selfId = String(dataManager.getCurrentCharacterId() ?? '');
         const self = this.tracker.players.find((player) => selfId && String(player.id) === selfId);
         this.stats.setSelf(self?.name ?? null);

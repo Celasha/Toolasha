@@ -64,6 +64,10 @@ export class BattleStats {
     constructor() {
         // Looks up how long an ability's damage over time lasts (ms); abilities are unknown until set
         this.dotDurationMs = () => 0;
+        // Looks up an ability's mana cost and base cooldown (ms); null when unknown
+        this.abilityInfo = () => null;
+        // What each player has equipped: name -> {abilities, haste}
+        this.loadouts = new Map();
         this.reset();
     }
 
@@ -72,6 +76,23 @@ export class BattleStats {
      */
     setDotLookup(lookup) {
         this.dotDurationMs = lookup;
+    }
+
+    /**
+     * @param {function(string): ?{manaCost: number, cooldownMs: number}} lookup - Ability hrid to its cost
+     *     and base cooldown
+     */
+    setAbilityLookup(lookup) {
+        this.abilityInfo = lookup;
+    }
+
+    /**
+     * @param {Array<{name: string, abilities: string[], abilityHaste: number}>} units - Players of the battle
+     */
+    setLoadouts(units) {
+        this.loadouts = new Map(
+            units.map((unit) => [unit.name, { abilities: unit.abilities || [], haste: unit.abilityHaste || 0 }])
+        );
     }
 
     reset() {
@@ -94,6 +115,9 @@ export class BattleStats {
         this.recentHits = [];
         // Damage-over-time effects cast and still running: {player, key, until}
         this.activeDots = [];
+        // Per player: when each ability was last cast, and the casts that were refused for lack of mana
+        this.lastCasts = new Map();
+        this.refusals = new Map();
         // Players seen reflecting damage, learned from updates where only they were struck
         this.reflecters = new Set();
         this.bestDps = 0;
@@ -146,6 +170,7 @@ export class BattleStats {
         this.lastAt = at;
 
         this.trackDots(events, at);
+        this.trackRefusals(events, at);
         for (const event of events) {
             if (event.side === SIDE_MONSTER) {
                 this.recordMonster(event, at);
@@ -172,6 +197,46 @@ export class BattleStats {
                 (dot) => !(dot.player === event.name && dot.key === event.abilityHrid)
             );
             this.activeDots.push({ player: event.name, key: event.abilityHrid, until: at + duration + DOT_SLACK_MS });
+        }
+    }
+
+    /**
+     * Count the casts a player was refused for lack of mana. A unit that cannot afford the first ability
+     * that is ready does not drop to a cheaper one: it auto attacks until it can. So an auto attack, while
+     * an ability the player has used was off cooldown but cost more than their mana, is a refused cast.
+     * An estimate: the abilities' own triggers are not visible, so only abilities the player has actually
+     * cast count, and cooldowns use the base time sped up by their ability haste.
+     * @param {Object[]} events - Events from one message
+     * @param {number} at - Message timestamp in ms
+     */
+    trackRefusals(events, at) {
+        for (const event of events) {
+            if (event.side !== SIDE_PLAYER || event.type !== 'attack') continue;
+            const casts = this.lastCasts.get(event.name) || new Map();
+            this.lastCasts.set(event.name, casts);
+
+            if (event.abilityHrid) {
+                casts.set(event.abilityHrid, at);
+                continue;
+            }
+            if (!event.auto || !(event.manaBefore >= 0)) continue;
+
+            const loadout = this.loadouts.get(event.name);
+            if (!loadout) continue;
+            const refused = [];
+            for (const hrid of loadout.abilities) {
+                if (!casts.has(hrid)) continue;
+                const info = this.abilityInfo(hrid);
+                if (!info || !(info.manaCost > event.manaBefore)) continue;
+                const cooldown = loadout.haste > 0 ? (info.cooldownMs * 100) / (100 + loadout.haste) : info.cooldownMs;
+                if (at - casts.get(hrid) >= cooldown) refused.push(hrid);
+            }
+            if (!refused.length) continue;
+
+            const row = this.refusals.get(event.name) || { casts: 0, abilities: new Map() };
+            row.casts += 1;
+            for (const hrid of refused) row.abilities.set(hrid, (row.abilities.get(hrid) || 0) + 1);
+            this.refusals.set(event.name, row);
         }
     }
 
@@ -260,6 +325,27 @@ export class BattleStats {
         }
         this.pruneRecentHits(at);
         this.trackBestDps(at);
+    }
+
+    /**
+     * A player's mana per ability, with how often each was refused for lack of mana. An ability that was only
+     * ever refused still gets a row.
+     * @param {Object} player - Tracked player
+     * @returns {Object[]} Largest spender first
+     */
+    abilityManaRows(player) {
+        const rate = (value) => (this.activeMs > 0 ? value / (this.activeMs / 1000) : 0);
+        const refused = this.refusals.get(player.name)?.abilities ?? new Map();
+        const rows = new Map();
+        for (const [abilityHrid, row] of player.abilityMana) {
+            rows.set(abilityHrid, { abilityHrid, ...row, refused: refused.get(abilityHrid) ?? 0 });
+        }
+        for (const [abilityHrid, count] of refused) {
+            if (!rows.has(abilityHrid)) rows.set(abilityHrid, { abilityHrid, mana: 0, events: 0, refused: count });
+        }
+        return [...rows.values()]
+            .map((row) => ({ ...row, perSecond: rate(row.mana) }))
+            .sort((a, b) => b.mana - a.mana || b.refused - a.refused);
     }
 
     pruneRecentHits(now) {
@@ -491,9 +577,8 @@ export class BattleStats {
                 deathsPerHour: seconds > 0 ? (player.deaths / seconds) * 3600 : 0,
                 manaSpentPerSecond: rate(player.manaSpent),
                 manaGainedPerSecond: rate(player.manaGained),
-                abilityMana: [...player.abilityMana.entries()]
-                    .map(([abilityHrid, row]) => ({ abilityHrid, ...row, perSecond: rate(row.mana) }))
-                    .sort((a, b) => b.mana - a.mana),
+                refusedCasts: this.refusals.get(player.name)?.casts ?? 0,
+                abilityMana: this.abilityManaRows(player),
             })),
         };
     }

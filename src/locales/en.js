@@ -1772,6 +1772,9 @@ export default {
         colAbility: 'Ability',
         colSpent: 'Spent',
         colGained: 'Gained',
+        colRefused: 'Refused',
+        refusedInfo:
+            'Refused: auto attacks made while an ability you use was off cooldown but cost more mana than you had. The game does not drop to a cheaper ability, it auto attacks until it can afford the first one that is ready. An estimate: ability triggers are not visible, so only abilities you have cast count.',
         unknownAbility: 'Unknown ability',
         partyNote: 'Party total. Turn on "Show each party member\'s damage" in settings to split it.',
         attributionNote:

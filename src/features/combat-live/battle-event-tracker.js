@@ -53,6 +53,9 @@ function unitFromNewBattle(unit, side, index) {
         isAutoAtk: Boolean(unit?.isPreparingAutoAttack),
         abilityHrid: unit?.preparingAbilityHrid || '',
         intervalNs: unit?.attackOrCastInterval ?? 0,
+        // The abilities the unit has equipped, and how much faster its abilities come off cooldown
+        abilities: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
+        abilityHaste: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
     };
 }
 
@@ -139,6 +142,8 @@ function applyUpdate(prev, entry) {
             // Only a known auto attack is auto; a unit with nothing known prepared is just unknown
             auto: prev.isAutoAtk,
             abilityHrid: prev.isAutoAtk ? '' : prev.abilityHrid,
+            // The mana the unit had when it acted, before paying for the action
+            manaBefore: prev.mp,
             // ...and what the unit is now winding up
             nextAbilityHrid: next.isAutoAtk ? '' : next.abilityHrid,
             intervalMs: next.intervalNs / 1e6,

@@ -236,6 +236,9 @@ export default {
         colAbility: '技能',
         colSpent: '消耗',
         colGained: '获得',
+        colRefused: '被拒',
+        refusedInfo:
+            '被拒：当你使用过的某个技能已冷却完毕、但所需魔力超过当前魔力时所进行的普通攻击次数。游戏不会改用更便宜的技能，而是普通攻击，直到能够释放第一个就绪的技能。此为估算：技能触发条件不可见，因此只统计你已释放过的技能。',
         unknownAbility: '未知技能',
         partyNote: '队伍总计。在设置中开启“显示每位队友的伤害”可按玩家拆分。',
         attributionNote:

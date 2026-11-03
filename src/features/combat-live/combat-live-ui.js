@@ -246,8 +246,10 @@ export function buildTabModel(summary, tab, options = {}) {
             t('combatLive.colSpent'),
             t('combatLive.colGained'),
             t('combatLive.colPerSecond'),
+            t('combatLive.colRefused'),
         ];
-        model.keys = ['ability', 'spent', 'gained', 'perSecond'];
+        model.keys = ['ability', 'spent', 'gained', 'perSecond', 'refused'];
+        model.info = t('combatLive.refusedInfo');
         for (const player of players) {
             model.rows.push({
                 kind: 'player',
@@ -256,7 +258,9 @@ export function buildTabModel(summary, tab, options = {}) {
                     number(player.manaSpent),
                     number(player.manaGained),
                     rate(player.manaSpentPerSecond),
+                    player.refusedCasts > 0 ? number(player.refusedCasts) : '',
                 ],
+                blank: [false, false, false, false, !(player.refusedCasts > 0)],
             });
             for (const ability of player.abilityMana) {
                 model.rows.push({
@@ -269,7 +273,9 @@ export function buildTabModel(summary, tab, options = {}) {
                         // Mana gained is not tracked per ability
                         '',
                         rate(ability.perSecond),
+                        ability.refused > 0 ? number(ability.refused) : '',
                     ],
+                    blank: [false, false, false, false, !(ability.refused > 0)],
                 });
             }
         }

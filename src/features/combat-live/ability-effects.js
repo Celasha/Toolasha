@@ -22,4 +22,15 @@ export function getDotDurationMs(abilityHrid) {
     return longest / NS_PER_MS;
 }
 
-export default { getDotDurationMs };
+/**
+ * @param {string} abilityHrid
+ * @returns {?{manaCost: number, cooldownMs: number}} What the ability costs and how long before it can be
+ *     cast again, null when the game data does not know it
+ */
+export function getAbilityTiming(abilityHrid) {
+    const detail = dataManager.getInitClientData()?.abilityDetailMap?.[abilityHrid];
+    if (!detail) return null;
+    return { manaCost: detail.manaCost || 0, cooldownMs: (detail.cooldownDuration || 0) / NS_PER_MS };
+}
+
+export default { getDotDurationMs, getAbilityTiming };
