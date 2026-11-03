@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.28.6
+ * Version: 3.28.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -979,6 +979,8 @@
     // Keys for the damage "source" rows besides real ability hrids
     const SOURCE_AUTO = 'auto';
     const SOURCE_REFLECT = 'reflect';
+    // Reflected damage given to the party's only known reflecter when the update does not say whose it was
+    const SOURCE_REFLECT_GUESS = 'reflect-guess';
     const SOURCE_OVER_TIME = 'over-time';
     const SOURCE_AMBIGUOUS = 'ambiguous';
 
@@ -999,9 +1001,21 @@
         else if (event.crit) tally.crits += 1;
     }
 
+    // Damage-over-time ticks land a little after the nominal duration ends
+    const DOT_SLACK_MS = 1500;
+
     class BattleStats {
         constructor() {
+            // Looks up how long an ability's damage over time lasts (ms); abilities are unknown until set
+            this.dotDurationMs = () => 0;
             this.reset();
+        }
+
+        /**
+         * @param {function(string): number} lookup - Ability hrid to the length of its damage over time in ms
+         */
+        setDotLookup(lookup) {
+            this.dotDurationMs = lookup;
         }
 
         reset() {
@@ -1022,6 +1036,10 @@
             this.playerCount = 0;
             this.selfName = null;
             this.recentHits = [];
+            // Damage-over-time effects cast and still running: {player, key, until}
+            this.activeDots = [];
+            // Players seen reflecting damage, learned from updates where only they were struck
+            this.reflecters = new Set();
             this.bestDps = 0;
             this.dealt = new Map();
             this.unattributed = {
@@ -1071,6 +1089,7 @@
             }
             this.lastAt = at;
 
+            this.trackDots(events, at);
             for (const event of events) {
                 if (event.side === SIDE_MONSTER) {
                     this.recordMonster(event, at);
@@ -1082,11 +1101,31 @@
         }
 
         /**
+         * Remember which players have a damage-over-time effect running, from the abilities they cast.
+         * @param {Object[]} events - Events from one message
+         * @param {number} at - Message timestamp in ms
+         */
+        trackDots(events, at) {
+            this.activeDots = this.activeDots.filter((dot) => dot.until >= at);
+            for (const event of events) {
+                if (event.side !== SIDE_PLAYER || event.type !== 'attack' || !event.abilityHrid) continue;
+                const duration = this.dotDurationMs(event.abilityHrid);
+                if (!(duration > 0)) continue;
+                // A new cast of the same ability refreshes the old one
+                this.activeDots = this.activeDots.filter(
+                    (dot) => !(dot.player === event.name && dot.key === event.abilityHrid)
+                );
+                this.activeDots.push({ player: event.name, key: event.abilityHrid, until: at + duration + DOT_SLACK_MS });
+            }
+        }
+
+        /**
          * Decide who dealt the monster hits in one message.
          * @param {Object[]} events - Events from one message
+         * @param {number} [at] - Message timestamp in ms
          * @returns {{player: ?string, key: string, bucket: ?string}} player + key to credit, or a bucket
          */
-        resolveSource(events) {
+        resolveSource(events, at = Date.now()) {
             const attacks = events.filter((event) => event.side === SIDE_PLAYER && event.type === 'attack');
             const solo = this.playerNames.length === 1 ? this.playerNames[0] : null;
 
@@ -1096,6 +1135,35 @@
             }
             if (attacks.length === 0) {
                 const reflected = events.some((event) => event.side === SIDE_MONSTER && event.type === 'attack');
+                // Nobody acted and no monster did: it is a damage-over-time tick. When exactly one player has
+                // such an effect running, it is theirs (their latest cast if they have several).
+                if (!reflected) {
+                    const dots = this.activeDots.filter((dot) => dot.until >= at);
+                    if (new Set(dots.map((dot) => dot.player)).size === 1) {
+                        const latest = dots[dots.length - 1];
+                        return { player: latest.player, key: latest.key, bucket: null };
+                    }
+                }
+                // A monster that acted and lost HP in the same update was hit back by whoever it struck, a miss
+                // included. When exactly one player was struck, the reflected damage is theirs.
+                if (reflected) {
+                    const struck = new Set(
+                        events
+                            .filter((event) => event.side === SIDE_PLAYER && event.type === 'damage')
+                            .map((event) => event.name)
+                    );
+                    if (struck.size === 1) {
+                        const [player] = struck;
+                        this.reflecters.add(player);
+                        return { player, key: SOURCE_REFLECT, bucket: null };
+                    }
+                    // Several were struck. If the party has exactly one known reflecter and they were among
+                    // them, it is most likely theirs: credited, but marked as an estimate.
+                    const known = this.playerNames.filter((name) => this.reflecters.has(name));
+                    if (known.length === 1 && struck.has(known[0])) {
+                        return { player: known[0], key: SOURCE_REFLECT_GUESS, bucket: null };
+                    }
+                }
                 const key = reflected ? SOURCE_REFLECT : SOURCE_OVER_TIME;
                 return solo ? { player: solo, key, bucket: null } : { player: null, key, bucket: key };
             }
@@ -1111,7 +1179,7 @@
             const hits = events.filter((event) => event.side === SIDE_MONSTER && event.type === 'damage');
             if (!hits.length) return;
 
-            const source = this.resolveSource(events);
+            const source = this.resolveSource(events, at);
             for (const hit of hits) {
                 if (source.bucket) {
                     const bucket = this.unattributed[source.bucket];
@@ -1374,6 +1442,29 @@
     }
 
     /**
+     * Ability effects Combat Live needs from the game's static data.
+     */
+
+
+    const NS_PER_MS = 1e6;
+
+    /**
+     * How long an ability keeps damaging its targets after the cast.
+     * @param {string} abilityHrid
+     * @returns {number} Longest damage-over-time duration among its effects in ms, 0 when it has none
+     */
+    function getDotDurationMs(abilityHrid) {
+        const effects = dataManager.getInitClientData()?.abilityDetailMap?.[abilityHrid]?.abilityEffects || [];
+        let longest = 0;
+        for (const effect of effects) {
+            if (effect.damageOverTimeRatio > 0 && effect.damageOverTimeDuration > longest) {
+                longest = effect.damageOverTimeDuration;
+            }
+        }
+        return longest / NS_PER_MS;
+    }
+
+    /**
      * Combat Live Recorder
      *
      * Optional diagnostic: keeps the most recent battle messages in a compact form so who-hit-whom
@@ -1575,6 +1666,7 @@
         auto: '#9aa4b2',
         'over-time': '#b86bff',
         reflect: '#ff9a3c',
+        'reflect-guess': '#ff9a3c',
         '': '#6b7280',
         [OTHER_KEY]: '#4b5563',
     };
@@ -1745,6 +1837,7 @@
     const SOURCE_LABELS = {
         auto: () => i18n_js.t('combatLive.autoAttack'),
         reflect: () => i18n_js.t('combatLive.reflected'),
+        'reflect-guess': () => i18n_js.t('combatLive.reflectedGuess'),
         'over-time': () => i18n_js.t('combatLive.overTime'),
     };
 
@@ -2649,6 +2742,7 @@
             this.isInitialized = false;
             this.tracker = new BattleEventTracker();
             this.stats = new BattleStats();
+            this.stats.setDotLookup(getDotDurationMs);
             this.recorder = new CombatLiveRecorder();
             this.lastMessageAt = 0;
             this.newBattleHandler = null;
