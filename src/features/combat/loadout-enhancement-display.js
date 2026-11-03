@@ -8,7 +8,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import domObserver, { touchesSelector } from '../../core/dom-observer.js';
+import domObserver from '../../core/dom-observer.js';
 import loadoutState from '../../core/loadout-state.js';
 
 const OVERLAY_CLASS = 'script_loadoutEnhLevel';
@@ -117,7 +117,7 @@ function enable() {
             {
                 debounce: true,
                 debounceDelay: 200,
-                filter: (node) => touchesSelector(node, '[class*="LoadoutsPanel_"]'),
+                filter: (node) => domObserver.touchesSelector(node, '[class*="LoadoutsPanel_"]'),
             }
         );
     }

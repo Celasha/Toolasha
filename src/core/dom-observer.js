@@ -7,17 +7,6 @@
 
 import performanceMonitor from '../utils/performance-monitor.js';
 
-/**
- * Whether an added node is, sits inside, or contains an element matching a selector. A cheap check for
- * a handler `filter`, so it only wakes for changes in the part of the page it cares about.
- * @param {Element} node
- * @param {string} selector
- * @returns {boolean}
- */
-export function touchesSelector(node, selector) {
-    return Boolean(node.closest?.(selector) || node.querySelector?.(selector));
-}
-
 class DOMObserver {
     constructor() {
         this.observer = null;
@@ -27,6 +16,18 @@ class DOMObserver {
         this.debounceTimers = new Map(); // Track debounce timers per handler
         this.debouncedLatest = new Map(); // Latest { node, mutation } per handler (O(1) per handler)
         this.DEFAULT_DEBOUNCE_DELAY = 50; // 50ms default delay
+    }
+
+    /**
+     * Whether an added node is, sits inside, or contains an element matching a selector. A cheap check for
+     * a handler `filter`, so it only wakes for changes in the part of the page it cares about. A method,
+     * because the split libraries only see this module's default instance, never its named exports.
+     * @param {Element} node
+     * @param {string} selector
+     * @returns {boolean}
+     */
+    touchesSelector(node, selector) {
+        return Boolean(node.closest?.(selector) || node.querySelector?.(selector));
     }
 
     /**

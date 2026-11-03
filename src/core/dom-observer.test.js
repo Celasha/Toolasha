@@ -168,14 +168,12 @@ describe('DOMObserver readiness lifecycle (TLA-025 reopen)', () => {
 
 describe('DOMObserver handler filter', () => {
     let domObserver;
-    let touchesSelector;
 
     beforeEach(async () => {
         vi.useFakeTimers();
         vi.resetModules();
         const mod = await import('./dom-observer.js');
         domObserver = mod.default;
-        touchesSelector = mod.touchesSelector;
         document.body.innerHTML = '';
     });
 
@@ -189,15 +187,21 @@ describe('DOMObserver handler filter', () => {
         vi.runAllTimers();
     };
 
+    test('only the default instance is exported, since the split libraries see nothing else', async () => {
+        const mod = await import('./dom-observer.js');
+
+        expect(Object.keys(mod)).toEqual(['default']);
+    });
+
     test('touchesSelector matches the node, its ancestors and its descendants', () => {
         document.body.innerHTML = '<div class="Outer_x"><p><span class="Inner_y"></span></p></div>';
         const outer = document.querySelector('.Outer_x');
         const inner = document.querySelector('.Inner_y');
 
-        expect(touchesSelector(outer, '[class*="Inner_"]')).toBe(true);
-        expect(touchesSelector(inner, '[class*="Outer_"]')).toBe(true);
-        expect(touchesSelector(inner, '[class*="Inner_"]')).toBe(true);
-        expect(touchesSelector(outer, '[class*="Other_"]')).toBe(false);
+        expect(domObserver.touchesSelector(outer, '[class*="Inner_"]')).toBe(true);
+        expect(domObserver.touchesSelector(inner, '[class*="Outer_"]')).toBe(true);
+        expect(domObserver.touchesSelector(inner, '[class*="Inner_"]')).toBe(true);
+        expect(domObserver.touchesSelector(outer, '[class*="Other_"]')).toBe(false);
     });
 
     test('a filtered handler only fires for relevant nodes, even when an irrelevant one follows in the burst', async () => {
