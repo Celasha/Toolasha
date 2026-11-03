@@ -1770,8 +1770,8 @@ export default {
         colDeaths: 'Deaths',
         colDeathsPerHour: 'Deaths/h',
         colAbility: 'Ability',
-        colMana: 'Mana',
-        manaSpentGained: (p) => `${p.spent} spent / ${p.gained} gained`,
+        colSpent: 'Spent',
+        colGained: 'Gained',
         unknownAbility: 'Unknown ability',
         partyNote: 'Party total. Turn on "Show each party member\'s damage" in settings to split it.',
         attributionNote:

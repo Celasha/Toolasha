@@ -198,7 +198,14 @@ describe('buildTabModel', () => {
         const model = buildTabModel(summary(), 'mana');
 
         expect(model.rows.map((row) => row.kind)).toEqual(['player', 'ability']);
-        expect(model.rows[1].cells).toEqual(['Fireball', '120', '12.0']);
+        expect(model.headers).toEqual([
+            'combatLive.colAbility',
+            'combatLive.colSpent',
+            'combatLive.colGained',
+            'combatLive.colPerSecond',
+        ]);
+        expect(model.rows[0].cells).toEqual(['Alice', '120', '10', '12.0']);
+        expect(model.rows[1].cells).toEqual(['Fireball', '120', '', '12.0']);
     });
 
     test('an unnamed spend is labelled rather than shown blank', () => {

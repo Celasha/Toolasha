@@ -242,17 +242,20 @@ export function buildTabModel(summary, tab, options = {}) {
             ],
         }));
     } else {
-        model.headers = [t('combatLive.colAbility'), t('combatLive.colMana'), t('combatLive.colPerSecond')];
-        model.keys = ['ability', 'mana', 'perSecond'];
+        model.headers = [
+            t('combatLive.colAbility'),
+            t('combatLive.colSpent'),
+            t('combatLive.colGained'),
+            t('combatLive.colPerSecond'),
+        ];
+        model.keys = ['ability', 'spent', 'gained', 'perSecond'];
         for (const player of players) {
             model.rows.push({
                 kind: 'player',
                 cells: [
                     player.name || '?',
-                    t('combatLive.manaSpentGained', {
-                        spent: number(player.manaSpent),
-                        gained: number(player.manaGained),
-                    }),
+                    number(player.manaSpent),
+                    number(player.manaGained),
                     rate(player.manaSpentPerSecond),
                 ],
             });
@@ -264,6 +267,8 @@ export function buildTabModel(summary, tab, options = {}) {
                             ? getAbilityName(ability.abilityHrid, prettyHrid(ability.abilityHrid))
                             : t('combatLive.unknownAbility'),
                         number(ability.mana),
+                        // Mana gained is not tracked per ability
+                        '',
                         rate(ability.perSecond),
                     ],
                 });

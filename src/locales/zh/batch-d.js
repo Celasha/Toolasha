@@ -234,8 +234,8 @@ export default {
         colDeaths: '死亡',
         colDeathsPerHour: '死亡/时',
         colAbility: '技能',
-        colMana: '魔力',
-        manaSpentGained: (p) => `消耗 ${p.spent} / 获得 ${p.gained}`,
+        colSpent: '消耗',
+        colGained: '获得',
         unknownAbility: '未知技能',
         partyNote: '队伍总计。在设置中开启“显示每位队友的伤害”可按玩家拆分。',
         attributionNote:
