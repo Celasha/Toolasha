@@ -1,15 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-vi.mock('../../core/config.js', () => ({ default: { Z_FLOATING_PANEL: 1000, getSetting: vi.fn() } }));
+vi.mock('../../core/config.js', () => ({ default: { Z_FLOATING_PANEL: 1000, Z_HUD: 50, getSetting: vi.fn() } }));
 vi.mock('../../core/storage.js', () => ({ default: { get: vi.fn(), set: vi.fn() } }));
 vi.mock('../../core/i18n.js', () => ({
     t: (key, params) => (params ? `${key}:${JSON.stringify(params)}` : key),
-}));
-vi.mock('../../utils/panel-z-index.js', () => ({
-    registerFloatingPanel: vi.fn(),
-    unregisterFloatingPanel: vi.fn(),
-    bringPanelToFront: vi.fn(),
 }));
 vi.mock('../../utils/formatters.js', () => ({
     formatLargeNumber: (value, decimals) => (decimals ? Number(value).toFixed(decimals) : String(value)),
@@ -532,6 +527,14 @@ describe('party panel', () => {
 
         expect(rowNames(combatLiveUI.panel, 'damage.secondary')).toEqual(['▸ Alice', '▾ Bob', 'combatLive.autoAttack']);
         expect(storage.set).toHaveBeenCalledWith(SECTIONS_KEY, ['damage.secondary.player.Alice'], 'settings');
+    });
+
+    test('sits on the HUD layer, under game popups and the floating panels, and does not jump on click', async () => {
+        const panel = await openParty();
+
+        expect(panel.style.zIndex).toBe('50');
+        panel.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(panel.style.zIndex).toBe('50');
     });
 
     test('the attribution explanation opens from an info button and is not shown until then', async () => {

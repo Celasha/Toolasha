@@ -10,7 +10,6 @@
 import config from '../../core/config.js';
 import storage from '../../core/storage.js';
 import { t } from '../../core/i18n.js';
-import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import performanceMonitor from '../../utils/performance-monitor.js';
 import { formatLargeNumber, timeReadable } from '../../utils/formatters.js';
@@ -328,10 +327,13 @@ class CombatLiveUI {
     }
 
     buildPanel() {
+        // A live meter, not a window: it sits above the game's page but under every game popup and modal
+        // (those run from 200 up), and under the toolasha floating panels, so it is not registered for
+        // bring-to-front, which would lift it to their layer.
         const panel = document.createElement('div');
         panel.id = PANEL_ID;
         panel.style.cssText = `
-            position: fixed; top: 120px; right: 20px; z-index: ${config.Z_FLOATING_PANEL};
+            position: fixed; top: 120px; right: 20px; z-index: ${config.Z_HUD};
             display: none; flex-direction: column; width: 320px; max-height: 70vh;
             background: rgba(10, 10, 20, 0.95); border: 1px solid rgba(0, 200, 150, 0.45);
             border-radius: 8px; color: #e0e0e0; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.55);
@@ -371,8 +373,6 @@ class CombatLiveUI {
 
         panel.append(header, tabBar, chart.block, body);
         document.body.appendChild(panel);
-        registerFloatingPanel(panel);
-        panel.addEventListener('mousedown', () => bringPanelToFront(panel));
         this.setupDrag(header, panel);
 
         this.panel = panel;
@@ -946,7 +946,6 @@ class CombatLiveUI {
     cleanup() {
         this.timerRegistry.clearAll();
         if (this.panel) {
-            unregisterFloatingPanel(this.panel);
             this.panel.remove();
         }
         this.panel = null;
