@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.28.6](https://github.com/Celasha/Toolasha/compare/v3.28.5...v3.28.6) (2026-11-03)
+
+
+### Bug Fixes
+
+* give each party member their own foldable chart on the Combat Live panel ([8d802a2](https://github.com/Celasha/Toolasha/commit/8d802a26fb02f81b4b2665b5b2d3205052ee893b))
+* mention the Task shop in the Chinese shop token value setting text ([1882bee](https://github.com/Celasha/Toolasha/commit/1882beef975f37197d67723766dcb69fa4dcebe1))
+* move the Combat Live attribution explanation behind a click-to-open info button ([21531d0](https://github.com/Celasha/Toolasha/commit/21531d0cbc8fdadbad740c02f8b48295f45154a9))
+* show value per token and the best redemption in the Task shop too ([cf3ac64](https://github.com/Celasha/Toolasha/commit/cf3ac64ac6cb3cf8e5c74c20e80e86434326f9ac))
+
 ## [3.28.5](https://github.com/Celasha/Toolasha/compare/v3.28.4...v3.28.5) (2026-11-02)
 
 ### Bug Fixes
