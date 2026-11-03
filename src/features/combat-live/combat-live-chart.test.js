@@ -4,8 +4,10 @@ import {
     abilityColor,
     buildAbilityBar,
     buildPaceModel,
+    buildSparkModel,
     buildTapeModel,
     drawHitTape,
+    drawSparkline,
 } from './combat-live-chart.js';
 
 describe('buildPaceModel', () => {
@@ -177,5 +179,41 @@ describe('drawHitTape', () => {
             [0, 3],
             [293, 3],
         ]);
+    });
+});
+
+describe('buildSparkModel', () => {
+    const hit = (t, amount, miss = false) => ({ t, amount, miss });
+
+    test('cuts the last minute into steps and scales each against the best', () => {
+        const values = buildSparkModel(
+            [hit(1000, 50), hit(2000, 50), hit(56000, 50), hit(58000, 50)],
+            60000,
+            12,
+            60000
+        );
+
+        expect(values).toHaveLength(12);
+        // The first and last 5s steps hold 100 damage each, the rest nothing
+        expect(values[0]).toBe(1);
+        expect(values[11]).toBe(1);
+        expect(values.slice(1, 11).every((value) => value === 0)).toBe(true);
+    });
+
+    test('a smaller step is a share of the best, and misses and old hits add nothing', () => {
+        const values = buildSparkModel([hit(1000, 100), hit(6000, 50), hit(7000, 999, true), hit(-5000, 999)], 60000);
+
+        expect(values[0]).toBe(1);
+        expect(values[1]).toBe(0.5);
+    });
+
+    test('is all zeros with no damage', () => {
+        expect(buildSparkModel([], 60000).every((value) => value === 0)).toBe(true);
+    });
+});
+
+describe('drawSparkline', () => {
+    test('does nothing without canvas support', () => {
+        expect(() => drawSparkline({ getContext: () => null }, [0, 1])).not.toThrow();
     });
 });

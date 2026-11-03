@@ -212,6 +212,7 @@ export default {
     combatLive: {
         panelTitle: '战斗实时面板',
         headerSummary: (p) => `${p.dps} DPS`,
+        headerTooltip: (p) => `当前 ${p.now} · 平均 ${p.average} · 最佳 ${p.best} · 队伍 ${p.party}`,
         resetTooltip: '重置实时战斗数据',
         collapseTooltip: '折叠或展开',
         tab_damage: '伤害',

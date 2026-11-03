@@ -1748,6 +1748,7 @@ export default {
     combatLive: {
         panelTitle: 'Combat Live',
         headerSummary: (p) => `${p.dps} DPS`,
+        headerTooltip: (p) => `Now ${p.now} · average ${p.average} · best ${p.best} · party ${p.party}`,
         resetTooltip: 'Reset the live combat numbers',
         collapseTooltip: 'Collapse or expand',
         tab_damage: 'Damage',

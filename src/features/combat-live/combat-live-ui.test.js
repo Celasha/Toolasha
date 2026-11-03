@@ -505,7 +505,8 @@ describe('party panel', () => {
         const panel = await openParty();
 
         expect(chartTitles(panel)).toEqual(['damage.chart.player.Alice', 'damage.chart.player.Bob']);
-        expect(panel.querySelectorAll('canvas')).toHaveLength(3);
+        // The bar's sparkline, the single chart's tape, and one tape per member
+        expect(panel.querySelectorAll('canvas')).toHaveLength(4);
         expect(header(panel, CHART_SECTION).nextElementSibling.firstChild.style.display).toBe('none');
     });
 
@@ -541,6 +542,17 @@ describe('party panel', () => {
 
         expect(rowNames(combatLiveUI.panel, 'damage.secondary')).toEqual(['▸ Alice', '▾ Bob', 'combatLive.autoAttack']);
         expect(storage.set).toHaveBeenCalledWith(SECTIONS_KEY, ['damage.secondary.player.Alice'], 'settings');
+    });
+
+    test('the bar shows your DPS now with its trend against your average, not the party total', async () => {
+        const panel = await openParty();
+
+        const bar = panel.firstElementChild;
+        expect(bar.textContent).toContain('combatLive.headerSummary:{"dps":"100.0"}');
+        expect(bar.textContent).not.toContain('150.0');
+        expect(bar.textContent).toContain('▼ 17%');
+        expect(bar.querySelector('canvas').style.display).toBe('block');
+        expect(bar.querySelector('[title]').title).toContain('"party":"150.0"');
     });
 
     test('sits on the HUD layer, under game popups and the floating panels, and does not jump on click', async () => {

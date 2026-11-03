@@ -146,3 +146,54 @@ export function drawHitTape(canvas, model, width = TAPE_WIDTH, height = TAPE_HEI
         }
     }
 }
+
+export const SPARK_BUCKETS = 12;
+export const SPARK_BUCKET_WIDTH = 5;
+export const SPARK_HEIGHT = 16;
+
+/**
+ * DPS over time for the bar's sparkline: the last window cut into equal steps, each the damage dealt in
+ * it per second, as a share of the best step.
+ * @param {Array<{t: number, amount: number, miss: boolean}>} hits
+ * @param {number} now - Right edge in ms
+ * @param {number} [buckets]
+ * @param {number} [windowMs]
+ * @returns {number[]} One value per step, oldest first, each 0 to 1 (all 0 when there was no damage)
+ */
+export function buildSparkModel(hits, now, buckets = SPARK_BUCKETS, windowMs = TAPE_WINDOW_MS) {
+    const start = now - windowMs;
+    const step = windowMs / buckets;
+    const totals = new Array(buckets).fill(0);
+    for (const hit of hits) {
+        if (hit.miss || hit.t <= start || hit.t > now) continue;
+        const index = Math.min(buckets - 1, Math.floor((hit.t - start) / step));
+        totals[index] += hit.amount;
+    }
+    const best = Math.max(...totals);
+    return best > 0 ? totals.map((total) => total / best) : totals;
+}
+
+/**
+ * Draw the sparkline. Does nothing where there is no canvas support (tests, odd embeds).
+ * @param {HTMLCanvasElement} canvas
+ * @param {number[]} values - From buildSparkModel
+ */
+export function drawSparkline(canvas, values) {
+    const context = canvas.getContext?.('2d');
+    if (!context) return;
+
+    const width = values.length * SPARK_BUCKET_WIDTH;
+    const ratio = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    // Resizing the canvas also clears it
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(SPARK_HEIGHT * ratio);
+    context.scale(ratio, ratio);
+
+    context.fillStyle = 'rgba(255, 255, 255, 0.12)';
+    context.fillRect(0, SPARK_HEIGHT - 1, width, 1);
+    context.fillStyle = '#00c896';
+    values.forEach((value, index) => {
+        const height = value > 0 ? Math.max(2, Math.round(value * (SPARK_HEIGHT - 2))) : 0;
+        context.fillRect(index * SPARK_BUCKET_WIDTH, SPARK_HEIGHT - 1 - height, SPARK_BUCKET_WIDTH - 1, height);
+    });
+}

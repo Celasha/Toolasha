@@ -20,9 +20,14 @@ import {
     TAPE_WIDTH,
     abilityColor,
     buildAbilityBar,
+    SPARK_BUCKETS,
+    SPARK_BUCKET_WIDTH,
+    SPARK_HEIGHT,
     buildPaceModel,
+    buildSparkModel,
     buildTapeModel,
     drawHitTape,
+    drawSparkline,
 } from './combat-live-chart.js';
 
 const PANEL_ID = 'toolasha-combat-live';
@@ -351,7 +356,14 @@ class CombatLiveUI {
             background: rgba(0, 200, 150, 0.12); border-radius: 7px 7px 0 0; user-select: none;
         `;
         const title = this.textEl('span', t('combatLive.panelTitle'), 'font-weight:700; color:#00c896;');
-        const summary = this.textEl('span', '', 'margin-left:auto; color:#aaa;');
+        // Your pace at a glance, whether the panel is open or folded: DPS now, how it compares with your
+        // average, and the last minute as a sparkline
+        const summary = this.textEl('span', '', 'margin-left:auto; display:flex; align-items:center; gap:6px;');
+        const summaryDps = this.textEl('span', '', 'color:#ddd; font-weight:600;');
+        const summaryTrend = this.textEl('span', '', 'font-size:11px; font-weight:600;');
+        const sparkline = document.createElement('canvas');
+        sparkline.style.cssText = `display:none; width:${SPARK_BUCKETS * SPARK_BUCKET_WIDTH}px; height:${SPARK_HEIGHT}px;`;
+        summary.append(summaryDps, summaryTrend, sparkline);
         const resetButton = this.buttonEl('↺', t('combatLive.resetTooltip'), () => {
             this.deps.onReset();
             this.lastSignature = '';
@@ -382,7 +394,18 @@ class CombatLiveUI {
         this.setupDrag(header, panel);
 
         this.panel = panel;
-        this.elements = { summary, copyButton, collapseButton, tabBar, tabButtons, body, chart };
+        this.elements = {
+            summary,
+            summaryDps,
+            summaryTrend,
+            sparkline,
+            copyButton,
+            collapseButton,
+            tabBar,
+            tabButtons,
+            body,
+            chart,
+        };
         this.applyChrome();
     }
 
@@ -607,7 +630,7 @@ class CombatLiveUI {
 
         this.elements.copyButton.style.display = this.deps.isRecording() ? '' : 'none';
         const summary = this.deps.getSummary();
-        this.elements.summary.textContent = t('combatLive.headerSummary', { dps: rate(summary.party.dps) });
+        this.updateSummary(summary);
         this.updateChart(summary);
         if (this.collapsed) return;
 
@@ -618,6 +641,36 @@ class CombatLiveUI {
         if (signature === this.lastSignature) return;
         this.lastSignature = signature;
         this.renderModel(model);
+    }
+
+    /**
+     * The bar's summary: your DPS now with its trend and a sparkline of the last minute. Without a player
+     * to follow it falls back to the party total.
+     * @param {Object} summary - BattleStats.getSummary()
+     */
+    updateSummary(summary) {
+        const { summaryDps, summaryTrend, sparkline, summary: container } = this.elements;
+        const data = summary.chart;
+        if (!data) {
+            summaryDps.textContent = t('combatLive.headerSummary', { dps: rate(summary.party.dps) });
+            summaryTrend.textContent = '';
+            sparkline.style.display = 'none';
+            container.title = '';
+            return;
+        }
+
+        const pace = buildPaceModel(data);
+        summaryDps.textContent = t('combatLive.headerSummary', { dps: rate(data.currentDps) });
+        summaryTrend.textContent = `${pace.arrow} ${pace.percent}%`;
+        summaryTrend.style.color = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
+        container.title = t('combatLive.headerTooltip', {
+            now: rate(data.currentDps),
+            average: rate(data.averageDps),
+            best: rate(data.bestDps),
+            party: rate(summary.party.dps),
+        });
+        sparkline.style.display = 'block';
+        drawSparkline(sparkline, buildSparkModel(data.hits, data.now));
     }
 
     /**
