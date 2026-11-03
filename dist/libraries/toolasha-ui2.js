@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.28.9
+ * Version: 3.28.10
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1851,6 +1851,57 @@
         }
     }
 
+    const SPARK_BUCKETS = 10;
+    const SPARK_BUCKET_WIDTH = 5;
+    const SPARK_HEIGHT = 16;
+
+    /**
+     * DPS over time for the bar's sparkline: the last window cut into equal steps, each the damage dealt in
+     * it per second, as a share of the best step.
+     * @param {Array<{t: number, amount: number, miss: boolean}>} hits
+     * @param {number} now - Right edge in ms
+     * @param {number} [buckets]
+     * @param {number} [windowMs]
+     * @returns {number[]} One value per step, oldest first, each 0 to 1 (all 0 when there was no damage)
+     */
+    function buildSparkModel(hits, now, buckets = SPARK_BUCKETS, windowMs = TAPE_WINDOW_MS) {
+        const start = now - windowMs;
+        const step = windowMs / buckets;
+        const totals = new Array(buckets).fill(0);
+        for (const hit of hits) {
+            if (hit.miss || hit.t <= start || hit.t > now) continue;
+            const index = Math.min(buckets - 1, Math.floor((hit.t - start) / step));
+            totals[index] += hit.amount;
+        }
+        const best = Math.max(...totals);
+        return best > 0 ? totals.map((total) => total / best) : totals;
+    }
+
+    /**
+     * Draw the sparkline. Does nothing where there is no canvas support (tests, odd embeds).
+     * @param {HTMLCanvasElement} canvas
+     * @param {number[]} values - From buildSparkModel
+     */
+    function drawSparkline(canvas, values) {
+        const context = canvas.getContext?.('2d');
+        if (!context) return;
+
+        const width = values.length * SPARK_BUCKET_WIDTH;
+        const ratio = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+        // Resizing the canvas also clears it
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(SPARK_HEIGHT * ratio);
+        context.scale(ratio, ratio);
+
+        context.fillStyle = 'rgba(255, 255, 255, 0.12)';
+        context.fillRect(0, SPARK_HEIGHT - 1, width, 1);
+        context.fillStyle = '#00c896';
+        values.forEach((value, index) => {
+            const height = value > 0 ? Math.max(2, Math.round(value * (SPARK_HEIGHT - 2))) : 0;
+            context.fillRect(index * SPARK_BUCKET_WIDTH, SPARK_HEIGHT - 1 - height, SPARK_BUCKET_WIDTH - 1, height);
+        });
+    }
+
     /**
      * Combat Live UI
      *
@@ -2187,7 +2238,14 @@
             background: rgba(0, 200, 150, 0.12); border-radius: 7px 7px 0 0; user-select: none;
         `;
             const title = this.textEl('span', i18n_js.t('combatLive.panelTitle'), 'font-weight:700; color:#00c896;');
-            const summary = this.textEl('span', '', 'margin-left:auto; color:#aaa;');
+            // Your pace at a glance, whether the panel is open or folded: DPS now, how it compares with your
+            // average, and the last minute as a sparkline
+            const summary = this.textEl('span', '', 'margin-left:auto; display:flex; align-items:center; gap:6px;');
+            const summaryDps = this.textEl('span', '', 'color:#ddd; font-weight:600;');
+            const summaryTrend = this.textEl('span', '', 'font-size:11px; font-weight:600;');
+            const sparkline = document.createElement('canvas');
+            sparkline.style.cssText = `display:none; width:${SPARK_BUCKETS * SPARK_BUCKET_WIDTH}px; height:${SPARK_HEIGHT}px;`;
+            summary.append(summaryDps, summaryTrend, sparkline);
             const resetButton = this.buttonEl('↺', i18n_js.t('combatLive.resetTooltip'), () => {
                 this.deps.onReset();
                 this.lastSignature = '';
@@ -2218,7 +2276,18 @@
             this.setupDrag(header, panel);
 
             this.panel = panel;
-            this.elements = { summary, copyButton, collapseButton, tabBar, tabButtons, body, chart };
+            this.elements = {
+                summary,
+                summaryDps,
+                summaryTrend,
+                sparkline,
+                copyButton,
+                collapseButton,
+                tabBar,
+                tabButtons,
+                body,
+                chart,
+            };
             this.applyChrome();
         }
 
@@ -2443,7 +2512,7 @@
 
             this.elements.copyButton.style.display = this.deps.isRecording() ? '' : 'none';
             const summary = this.deps.getSummary();
-            this.elements.summary.textContent = i18n_js.t('combatLive.headerSummary', { dps: rate(summary.party.dps) });
+            this.updateSummary(summary);
             this.updateChart(summary);
             if (this.collapsed) return;
 
@@ -2454,6 +2523,36 @@
             if (signature === this.lastSignature) return;
             this.lastSignature = signature;
             this.renderModel(model);
+        }
+
+        /**
+         * The bar's summary: your DPS now with its trend and a sparkline of the last minute. Without a player
+         * to follow it falls back to the party total.
+         * @param {Object} summary - BattleStats.getSummary()
+         */
+        updateSummary(summary) {
+            const { summaryDps, summaryTrend, sparkline, summary: container } = this.elements;
+            const data = summary.chart;
+            if (!data) {
+                summaryDps.textContent = i18n_js.t('combatLive.headerSummary', { dps: rate(summary.party.dps) });
+                summaryTrend.textContent = '';
+                sparkline.style.display = 'none';
+                container.title = '';
+                return;
+            }
+
+            const pace = buildPaceModel(data);
+            summaryDps.textContent = i18n_js.t('combatLive.headerSummary', { dps: rate(data.currentDps) });
+            summaryTrend.textContent = `${pace.arrow} ${pace.percent}%`;
+            summaryTrend.style.color = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
+            container.title = i18n_js.t('combatLive.headerTooltip', {
+                now: rate(data.currentDps),
+                average: rate(data.averageDps),
+                best: rate(data.bestDps),
+                party: rate(summary.party.dps),
+            });
+            sparkline.style.display = 'block';
+            drawSparkline(sparkline, buildSparkModel(data.hits, data.now));
         }
 
         /**

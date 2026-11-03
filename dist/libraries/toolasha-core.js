@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.28.9
+ * Version: 3.28.10
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2428,6 +2428,7 @@
         combatLive: {
             panelTitle: 'Combat Live',
             headerSummary: (p) => `${p.dps} DPS`,
+            headerTooltip: (p) => `Now ${p.now} · average ${p.average} · best ${p.best} · party ${p.party}`,
             resetTooltip: 'Reset the live combat numbers',
             collapseTooltip: 'Collapse or expand',
             tab_damage: 'Damage',
@@ -7797,6 +7798,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         combatLive: {
             panelTitle: '战斗实时面板',
             headerSummary: (p) => `${p.dps} DPS`,
+            headerTooltip: (p) => `当前 ${p.now} · 平均 ${p.average} · 最佳 ${p.best} · 队伍 ${p.party}`,
             resetTooltip: '重置实时战斗数据',
             collapseTooltip: '折叠或展开',
             tab_damage: '伤害',
@@ -16450,6 +16452,18 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             this.debounceTimers = new Map(); // Track debounce timers per handler
             this.debouncedLatest = new Map(); // Latest { node, mutation } per handler (O(1) per handler)
             this.DEFAULT_DEBOUNCE_DELAY = 50; // 50ms default delay
+        }
+
+        /**
+         * Whether an added node is, sits inside, or contains an element matching a selector. A cheap check for
+         * a handler `filter`, so it only wakes for changes in the part of the page it cares about. A method,
+         * because the split libraries only see this module's default instance, never its named exports.
+         * @param {Element} node
+         * @param {string} selector
+         * @returns {boolean}
+         */
+        touchesSelector(node, selector) {
+            return Boolean(node.closest?.(selector) || node.querySelector?.(selector));
         }
 
         /**
