@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.28.10
+ * Version: 3.29.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20501,6 +20501,294 @@
     }
 
     /**
+     * Dungeon run planner
+     *
+     * A what-if for dungeon runs that needs no simulation: pick a dungeon and tier, say how long a run takes,
+     * and get chest value, keys and net per day. It does not have a formula of its own. It builds the result
+     * of an imaginary run of that many completions and hands it to the same functions the simulator uses for
+     * drops, market tax and key pricing, so the two can never disagree about how a chest is worth.
+     */
+
+
+    const PLAYER = 'player1';
+    const MINUTES_PER_DAY = 1440;
+
+    /**
+     * The drop quantity bonus the community buff gives at a level, as the simulator engine works it out.
+     * @param {Object} buffDetail - communityBuffTypeDetailMap entry for combat drop quantity
+     * @param {number} level - Community buff level (0 when it is not active)
+     * @returns {number} e.g. 0.295
+     */
+    function communityDropQuantity(buffDetail, level) {
+        const buff = buffDetail?.buff;
+        if (!buff || !(level > 0)) return 0;
+        return (buff.flatBoost || 0) + (level - 1) * (buff.flatBoostLevelBonus || 0);
+    }
+
+    /**
+     * Plan a day of runs.
+     * @param {Object} options
+     * @param {Object} options.gameData - From buildGameDataPayload()
+     * @param {string} options.dungeonHrid
+     * @param {number} options.tier - Difficulty tier
+     * @param {number} options.players - Party size (the chest count is split between them)
+     * @param {number} options.minutesPerRun
+     * @param {number} options.dropQuantity - Total drop quantity bonus, e.g. 0.295
+     * @param {number} [options.consumablesPerDay] - What food and drinks cost per day, entered by hand
+     * @returns {?{runsPerDay: number, keysPerDay: number, chestValuePerDay: number, keyCostPerDay: number,
+     *     consumablesPerDay: number, netPerDay: number, drops: Array, keys: Array, hasMissingPrices: boolean}}
+     *     null when the run length is not a positive number
+     */
+    function planDungeonRuns({
+        gameData,
+        dungeonHrid,
+        tier,
+        players,
+        minutesPerRun,
+        dropQuantity,
+        consumablesPerDay = 0,
+    }) {
+        if (!(minutesPerRun > 0)) return null;
+        const runsPerDay = MINUTES_PER_DAY / minutesPerRun;
+        const run = {
+            isDungeon: true,
+            dungeonsCompleted: runsPerDay,
+            zoneName: dungeonHrid,
+            numberOfPlayers: Math.max(1, players),
+            difficultyTier: tier,
+            combatDropQuantity: { [PLAYER]: dropQuantity },
+            dropRateMultiplier: { [PLAYER]: 1 },
+            rareFindMultiplier: {},
+            debuffOnLevelGap: {},
+            deaths: {},
+            consumablesUsed: {},
+        };
+
+        const revenue = combatSimAdapter_js.calculateSimRevenue(run, gameData, PLAYER, 24);
+        const keys = combatSimAdapter_js.calculateDungeonKeyCosts(combatSimAdapter_js.calculateExpectedDrops(run, gameData, PLAYER), combatSimAdapter_js.resolveKeyPrice);
+
+        const chestValuePerDay = revenue.revenuePerHour * 24;
+        const keyCostPerDay = revenue.keyCostPerHour * 24;
+        return {
+            runsPerDay,
+            keysPerDay: keys.reduce((sum, key) => sum + key.count, 0),
+            chestValuePerDay,
+            keyCostPerDay,
+            consumablesPerDay,
+            netPerDay: chestValuePerDay - keyCostPerDay - consumablesPerDay,
+            drops: revenue.dropEntries.map((entry) => ({
+                ...entry,
+                countPerDay: entry.countPerHour * 24,
+                valuePerDay: entry.totalValue * 24,
+            })),
+            keys,
+            hasMissingPrices: revenue.hasMissingPrices,
+        };
+    }
+
+    /**
+     * Dungeon tab of the Combat Sim: a what-if for dungeon runs (see dungeon-run-planner.js). The tab is
+     * built once and refilled when it is opened or an input changes.
+     */
+
+
+    const LABEL = 'color:#888; font-size:12px;';
+    const INPUT =
+        'width:70px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;';
+    const SELECT =
+        'background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px;';
+    const GOOD = '#4ade80';
+    const BAD = '#ff6b6b';
+
+    /**
+     * @param {Object} deps
+     * @param {function(): Array<{hrid: string, name: string, isDungeon: boolean}>} deps.getZones
+     * @param {function(): Object} deps.getGameData - buildGameDataPayload
+     * @param {function(): number} deps.getDefaultDropQuantity - Community buff bonus to start from
+     * @param {function(): ?number} deps.getDefaultMinutes - Average clear time from the last dungeon sim, if any
+     * @returns {{element: HTMLElement, refresh: function(): void}}
+     */
+    function createDungeonTab({ getZones, getGameData, getDefaultDropQuantity, getDefaultMinutes }) {
+        const element = document.createElement('div');
+        element.id = 'mwi-csim-dungeon-content';
+        element.style.cssText = 'display:none; flex-direction:column; flex:1; overflow:hidden;';
+
+        const controls = document.createElement('div');
+        controls.style.cssText =
+            'display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid #222; flex-shrink:0;';
+        const results = document.createElement('div');
+        results.style.cssText = 'flex:1; overflow-y:auto; padding:10px 14px;';
+        element.append(controls, results);
+
+        const state = { dungeon: null, tier: 0, players: 1, minutes: null, dropQuantity: null, consumables: 0 };
+
+        const field = (label, control) => {
+            const wrap = document.createElement('label');
+            wrap.style.cssText = 'display:flex; align-items:center; gap:4px;';
+            const text = document.createElement('span');
+            text.style.cssText = LABEL;
+            text.textContent = label;
+            wrap.append(text, control);
+            return wrap;
+        };
+        const numberInput = (key, { min = 0, step = 'any' } = {}) => {
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = String(min);
+            input.step = String(step);
+            input.style.cssText = INPUT;
+            input.addEventListener('change', () => {
+                state[key] = Number(input.value);
+                render();
+            });
+            return input;
+        };
+
+        const dungeonSelect = document.createElement('select');
+        dungeonSelect.style.cssText = `${SELECT} flex:1; min-width:0;`;
+        dungeonSelect.addEventListener('change', () => {
+            state.dungeon = dungeonSelect.value;
+            render();
+        });
+        const tierSelect = document.createElement('select');
+        tierSelect.style.cssText = SELECT;
+        for (let tier = 0; tier <= 2; tier++) tierSelect.append(new Option(`T${tier}`, String(tier)));
+        tierSelect.addEventListener('change', () => {
+            state.tier = Number(tierSelect.value);
+            render();
+        });
+        const players = numberInput('players', { min: 1, step: 1 });
+        const minutes = numberInput('minutes', { min: 1, step: 0.1 });
+        // Shown in percent, kept as a fraction
+        const dropQuantity = document.createElement('input');
+        dropQuantity.type = 'number';
+        dropQuantity.min = '0';
+        dropQuantity.step = '0.1';
+        dropQuantity.style.cssText = INPUT;
+        dropQuantity.addEventListener('change', () => {
+            state.dropQuantity = Math.max(0, Number(dropQuantity.value)) / 100;
+            render();
+        });
+        const consumables = numberInput('consumables', { min: 0, step: 1000 });
+        controls.append(
+            field(i18n_js.t('combatSimUi.dungeonLabel'), dungeonSelect),
+            field(i18n_js.t('combatSimUi.tierLabel'), tierSelect),
+            field(i18n_js.t('combatSimUi.dungeonPlayers'), players),
+            field(i18n_js.t('combatSimUi.dungeonMinutes'), minutes),
+            field(i18n_js.t('combatSimUi.dungeonDropQuantity'), dropQuantity),
+            field(i18n_js.t('combatSimUi.dungeonConsumables'), consumables)
+        );
+
+        const row = (label, value, { color = '#e0e0e0', bold = false, indent = false } = {}) => {
+            const line = document.createElement('div');
+            line.style.cssText = `display:flex; justify-content:space-between; padding:2px 0; font-size:12px; ${
+            indent ? 'padding-left:14px;' : ''
+        }`;
+            const left = document.createElement('span');
+            left.style.cssText = `color:${indent ? '#999' : '#aaa'};`;
+            left.textContent = label;
+            const right = document.createElement('span');
+            right.style.cssText = `color:${color}; font-weight:${bold ? 700 : 500};`;
+            right.textContent = value;
+            line.append(left, right);
+            return line;
+        };
+        const heading = (text) => {
+            const el = document.createElement('div');
+            el.style.cssText = 'color:#e8a87c; font-weight:700; font-size:12px; margin:10px 0 4px;';
+            el.textContent = text;
+            return el;
+        };
+
+        function syncInputs() {
+            dungeonSelect.value = state.dungeon;
+            tierSelect.value = String(state.tier);
+            players.value = String(state.players);
+            minutes.value = String(Math.round(state.minutes * 100) / 100);
+            dropQuantity.value = String(Math.round(state.dropQuantity * 1000) / 10);
+            consumables.value = String(state.consumables);
+        }
+
+        function render() {
+            const dungeons = getZones().filter((zone) => zone.isDungeon);
+            if (!dungeons.length) {
+                results.replaceChildren(row(i18n_js.t('combatSimUi.dungeonNoData'), ''));
+                return;
+            }
+            if (!state.dungeon || !dungeons.some((zone) => zone.hrid === state.dungeon)) state.dungeon = dungeons[0].hrid;
+            if (state.minutes === null) state.minutes = getDefaultMinutes() ?? 15;
+            if (state.dropQuantity === null) state.dropQuantity = getDefaultDropQuantity();
+            dungeonSelect.replaceChildren(
+                ...dungeons.map((zone) => new Option(getActionName(zone.hrid, zone.name), zone.hrid))
+            );
+            syncInputs();
+
+            const plan = planDungeonRuns({
+                gameData: getGameData(),
+                dungeonHrid: state.dungeon,
+                tier: state.tier,
+                players: state.players,
+                minutesPerRun: state.minutes,
+                dropQuantity: state.dropQuantity,
+                consumablesPerDay: state.consumables,
+            });
+            if (!plan) {
+                results.replaceChildren(row(i18n_js.t('combatSimUi.dungeonBadMinutes'), ''));
+                return;
+            }
+
+            const money = (value) => formatters_js.formatKMB(Math.round(value));
+            const nodes = [
+                row(i18n_js.t('combatSimUi.dungeonRunsPerDay'), formatters_js.formatWithSeparator(plan.runsPerDay, 1)),
+                row(i18n_js.t('combatSimUi.dungeonKeysPerDay'), formatters_js.formatWithSeparator(Math.round(plan.keysPerDay))),
+                heading(i18n_js.t('combatSimUi.dungeonValueHeading')),
+                row(i18n_js.t('combatSimUi.dungeonChestValue'), money(plan.chestValuePerDay), { color: '#e8a87c', bold: true }),
+            ];
+            for (const drop of plan.drops.slice(0, 6)) {
+                nodes.push(
+                    row(`${drop.name} ×${formatters_js.formatWithSeparator(drop.countPerDay, 1)}`, money(drop.valuePerDay), {
+                        indent: true,
+                    })
+                );
+            }
+            nodes.push(
+                heading(i18n_js.t('combatSimUi.dungeonCostHeading')),
+                row(i18n_js.t('combatSimUi.dungeonKeyCost'), `-${money(plan.keyCostPerDay)}`, { color: BAD, bold: true })
+            );
+            for (const key of plan.keys) {
+                nodes.push(
+                    row(
+                        `${getItemName(key.itemHrid, key.name)} ×${formatters_js.formatWithSeparator(Math.round(key.count))}`,
+                        key.unitCost > 0 ? `-${money(key.totalCost)}` : '—',
+                        { indent: true }
+                    )
+                );
+            }
+            if (plan.consumablesPerDay > 0) {
+                nodes.push(
+                    row(i18n_js.t('combatSimUi.dungeonConsumablesCost'), `-${money(plan.consumablesPerDay)}`, { color: BAD })
+                );
+            }
+            nodes.push(
+                heading(i18n_js.t('combatSimUi.dungeonNetHeading')),
+                row(i18n_js.t('combatSimUi.dungeonNet'), money(plan.netPerDay), {
+                    color: plan.netPerDay >= 0 ? GOOD : BAD,
+                    bold: true,
+                })
+            );
+            const note = document.createElement('div');
+            note.style.cssText = 'margin-top:10px; color:#777; font-size:11px;';
+            note.textContent = plan.hasMissingPrices
+                ? `${i18n_js.t('combatSimUi.dungeonMissingPrices')} ${i18n_js.t('combatSimUi.dungeonAssumptions')}`
+                : i18n_js.t('combatSimUi.dungeonAssumptions');
+            nodes.push(note);
+            results.replaceChildren(...nodes);
+        }
+
+        return { element, refresh: render };
+    }
+
+    /**
      * Combat Simulator UI
      * Floating panel for configuring and running combat simulations.
      */
@@ -20640,6 +20928,7 @@
             <button id="mwi-csim-tab-results" style="${tabStyle(false)}">${i18n_js.t('combatSimUi.tabResults')}</button>
             <button id="mwi-csim-tab-seek" style="${tabStyle(false)}">${i18n_js.t('combatSimUi.tabSeek')}</button>
             <button id="mwi-csim-tab-upgrade" style="${tabStyle(false)}">${i18n_js.t('combatSimUi.tabUpgrade')}</button>
+            <button id="mwi-csim-tab-dungeon" style="${tabStyle(false)}">${i18n_js.t('combatSimUi.tabDungeon')}</button>
         `;
 
             // Configure tab content
@@ -20974,6 +21263,24 @@
             this.panel.appendChild(configureContent);
             this.panel.appendChild(resultsContent);
             this.panel.appendChild(seekContent);
+            this._dungeonTab = createDungeonTab({
+                getZones: combatSimAdapter_js.getCombatZones,
+                getGameData: combatSimAdapter_js.buildGameDataPayload,
+                getDefaultDropQuantity: () =>
+                    communityDropQuantity(
+                        dataManager.getInitClientData()?.communityBuffTypeDetailMap?.[
+                            '/community_buff_types/combat_drop_quantity'
+                        ],
+                        dataManager.getCommunityBuffLevel('/community_buff_types/combat_drop_quantity') || 0
+                    ),
+                getDefaultMinutes: () => {
+                    const last = this._lastSimResult;
+                    return last?.isDungeon && last.dungeonsCompleted > 0
+                        ? last.totalDungeonCompletionDuration / last.dungeonsCompleted / 1e9 / 60
+                        : null;
+                },
+            });
+            this.panel.appendChild(this._dungeonTab.element);
             this.panel.appendChild(upgradeContent);
             this.panel.appendChild(status);
 
@@ -21009,6 +21316,7 @@
                 .addEventListener('click', () => this._switchTab('configure'));
             this.panel.querySelector('#mwi-csim-tab-results').addEventListener('click', () => this._switchTab('results'));
             this.panel.querySelector('#mwi-csim-tab-seek').addEventListener('click', () => this._switchTab('seek'));
+            this.panel.querySelector('#mwi-csim-tab-dungeon').addEventListener('click', () => this._switchTab('dungeon'));
             this.panel.querySelector('#mwi-csim-tab-upgrade').addEventListener('click', () => this._switchTab('upgrade'));
             this.panel.querySelector('#mwi-csim-upgrade-run').addEventListener('click', () => this._onUpgradeAnalyze());
             this.panel.querySelector('#mwi-csim-upgrade-stop').addEventListener('click', () => {
@@ -21846,6 +22154,8 @@
             const tabResults = this.panel.querySelector('#mwi-csim-tab-results');
             const tabSeek = this.panel.querySelector('#mwi-csim-tab-seek');
             const tabUpgrade = this.panel.querySelector('#mwi-csim-tab-upgrade');
+            const dungeonContent = this._dungeonTab?.element;
+            const tabDungeon = this.panel.querySelector('#mwi-csim-tab-dungeon');
 
             const activeStyle = `flex:1; padding:7px 0; text-align:center; font-size:12px; font-weight:600; cursor:pointer; border:none; font-family:inherit; transition:all 0.1s; background:${ACCENT_BG$1}; color:${ACCENT$1}; border-bottom:2px solid ${ACCENT$1};`;
             const inactiveStyle =
@@ -21855,6 +22165,8 @@
             resultsContent.style.display = 'none';
             if (seekContent) seekContent.style.display = 'none';
             if (upgradeContent) upgradeContent.style.display = 'none';
+            if (dungeonContent) dungeonContent.style.display = 'none';
+            if (tabDungeon) tabDungeon.style.cssText = inactiveStyle;
             tabConfigure.style.cssText = inactiveStyle;
             tabResults.style.cssText = inactiveStyle;
             if (tabSeek) tabSeek.style.cssText = inactiveStyle;
@@ -21869,6 +22181,11 @@
                 if (tabSeek) tabSeek.style.cssText = activeStyle;
                 this._populateSeekItems();
                 this._setStatus(i18n_js.t('combatSimUi.statusSearchSeek'));
+            } else if (tab === 'dungeon') {
+                if (dungeonContent) dungeonContent.style.display = 'flex';
+                if (tabDungeon) tabDungeon.style.cssText = activeStyle;
+                this._dungeonTab?.refresh();
+                this._setStatus(i18n_js.t('combatSimUi.statusDungeonPlanner'));
             } else if (tab === 'upgrade') {
                 if (upgradeContent) upgradeContent.style.display = 'flex';
                 if (tabUpgrade) tabUpgrade.style.cssText = activeStyle;
@@ -22396,6 +22713,10 @@
                 html += `<span style="${valueStyle}">${this._formatRate(completedPerHr)}</span>`;
                 html += '</div>';
                 html += `<div style="${rowStyle}">`;
+                html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.dungeonsCompletedPerDayLabel')}</span>`;
+                html += `<span style="${valueStyle}">${this._formatRate(completedPerHr * 24)}</span>`;
+                html += '</div>';
+                html += `<div style="${rowStyle}">`;
                 html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.dungeonsFailedPerHrLabel')}</span>`;
                 html += `<span style="${valueStyle}">${this._formatRate(failedPerHr)}</span>`;
                 html += '</div>';
@@ -22588,9 +22909,7 @@
 
                 // Compute dungeon key costs from drop map
                 if (simResult.isDungeon) {
-                    const getBuyPriceForKey = (keyHrid) =>
-                        marketData_js.getItemPriceOutlierInfo(keyHrid, { context: 'profit', side: 'buy' });
-                    dungeonKeyCosts = combatSimAdapter_js.calculateDungeonKeyCosts(dropMap, getBuyPriceForKey);
+                    dungeonKeyCosts = combatSimAdapter_js.calculateDungeonKeyCosts(dropMap, combatSimAdapter_js.resolveKeyPrice);
                     for (const key of dungeonKeyCosts) {
                         keyCostPerHr += (key.count / hours) * key.unitCost;
                         keyCostTotal += key.totalCost;
@@ -23048,8 +23367,7 @@
             let keyCostPerHrMetric = 0;
             if (simResult.isDungeon && gameData) {
                 const dropMap = combatSimAdapter_js.calculateExpectedDrops(simResult, gameData, activeTab);
-                const getBuyPriceForKey = (keyHrid) => marketData_js.getItemPriceOutlierInfo(keyHrid, { context: 'profit', side: 'buy' });
-                const keyCosts = combatSimAdapter_js.calculateDungeonKeyCosts(dropMap, getBuyPriceForKey);
+                const keyCosts = combatSimAdapter_js.calculateDungeonKeyCosts(dropMap, combatSimAdapter_js.resolveKeyPrice);
                 for (const key of keyCosts) {
                     keyCostPerHrMetric += (key.count / hours) * key.unitCost;
                 }

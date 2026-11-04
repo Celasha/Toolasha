@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.28.10
+ * Version: 3.29.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -27991,7 +27991,11 @@
      *
      * Total remaining time per drink =
      *   currentActivationNs (from slot.duration) +
-     *   inventoryCount × buffDurationNs × (1 + concentration)
+     *   inventoryCount × buffDurationNs / (1 + concentration)
+     *
+     * Drink concentration makes each drink's effect stronger and its duration shorter, so a tea lasts
+     * fewer seconds, not more (300 s base becomes 268 s at +12%). That is also how the combat engine
+     * applies it.
      *
      * slot.duration is the remaining nanoseconds on the current activation as reported
      * by the server at last action completion. It is frozen while the skill is inactive
@@ -28032,7 +28036,8 @@
             if (!itemDetails) continue;
 
             const buffDurationNs = itemDetails.consumableDetail?.buffs?.[0]?.duration ?? FALLBACK_BUFF_DURATION_NS;
-            const effectiveDurationNs = buffDurationNs * (1 + concentration);
+            // Concentration shortens how long one drink lasts
+            const effectiveDurationNs = buffDurationNs / (1 + concentration);
 
             const inventoryCount = inventory
                 .filter((i) => i.itemHrid === slot.itemHrid)

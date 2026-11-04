@@ -2,11 +2,11 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.28.10
+ * Version: 3.29.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, i18n_js, webSocketHook, performanceMonitor, storage, timerRegistry_js, formatters_js, dom_js, marketplaceSession_js, marketData_js, expectedValueCalculator, marketAPI, warningIcon_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, profitHelpers_js, actionCalculator_js, efficiency_js, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, loadoutState, buffParser_js) {
+(function (config, dataManager, domObserver, i18n_js, webSocketHook, formatters_js, marketData_js, performanceMonitor, timerRegistry_js, storage, dom_js, marketplaceSession_js, expectedValueCalculator, marketAPI, warningIcon_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, marketValuesAPI, profitHelpers_js, actionCalculator_js, efficiency_js, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, loadoutState, buffParser_js) {
     'use strict';
 
     /**
@@ -729,6 +729,130 @@
     combatLevelProgress.setupSettingListener();
 
     /**
+     * Mana food optimizer
+     *
+     * Given how much mana per minute you want from food, finds the cheapest set of mana foods that gets
+     * there. Pure logic over the game's item data and a price function: nothing here is a hand-kept list of
+     * foods.
+     *
+     * What the game does (from its data and the combat simulator): a mana food restores a fixed amount, can
+     * be used again once its cooldown (60 s for every one, shortened by food haste) has passed, and by
+     * default fires when the player is missing at least that much mana. Used as often as it can be, an item
+     * gives restore / cooldown per minute, so that is the most an item can contribute. Each food slot holds
+     * one item.
+     */
+
+    const NS_PER_MS$2 = 1e6;
+    const SECONDS_PER_DAY = 86400;
+
+    /**
+     * Every item that restores mana and can be used in combat.
+     * @param {Object<string, Object>} itemDetailMap
+     * @returns {Array<{hrid: string, restore: number, cooldownMs: number}>}
+     */
+    function findManaFoods(itemDetailMap) {
+        const foods = [];
+        for (const [hrid, item] of Object.entries(itemDetailMap || {})) {
+            const detail = item?.consumableDetail;
+            if (!(detail?.manapointRestore > 0)) continue;
+            if (item.usableInActionTypeMap && !item.usableInActionTypeMap['/action_types/combat']) continue;
+            foods.push({ hrid, restore: detail.manapointRestore, cooldownMs: (detail.cooldownDuration || 0) / NS_PER_MS$2 });
+        }
+        return foods.filter((food) => food.cooldownMs > 0);
+    }
+
+    /**
+     * @param {{restore: number, cooldownMs: number}} food
+     * @param {number} foodHaste - 0.1 for 10% faster cooldowns
+     * @returns {{usesPerDay: number, perMinute: number}} The most this food can give, used on every cooldown
+     */
+    function foodRate(food, foodHaste = 0) {
+        const cooldownSeconds = food.cooldownMs / 1000 / (1 + foodHaste);
+        return {
+            usesPerDay: SECONDS_PER_DAY / cooldownSeconds,
+            perMinute: (food.restore * 60) / cooldownSeconds,
+        };
+    }
+
+    /**
+     * @param {Array} items
+     * @param {number} size
+     * @returns {Array[]} Every combination of `size` items
+     */
+    function combinations(items, size) {
+        if (size === 0) return [[]];
+        const result = [];
+        items.forEach((item, index) => {
+            for (const rest of combinations(items.slice(index + 1), size - 1)) result.push([item, ...rest]);
+        });
+        return result;
+    }
+
+    /**
+     * The cheapest set of at most `slots` different foods that reaches the target. When nothing can, the set
+     * that gives the most mana.
+     * @param {Object} options
+     * @param {Array<{hrid: string, restore: number, cooldownMs: number}>} options.foods
+     * @param {function(string): ?{price: number, isOutlier?: boolean}} options.priceOf - null when unpriced
+     * @param {number} options.targetPerMinute - Mana per minute wanted from food
+     * @param {number} options.slots - Food slots available for mana food
+     * @param {number} [options.foodHaste]
+     * @param {number} [options.maxMana] - A food that restores more than this can never fire, so it is left out
+     * @returns {{reachable: boolean, items: Array, totalPerMinute: number, totalCostPerDay: number, deficit: number, unpriced: string[]}}
+     */
+    function optimizeManaFood({ foods, priceOf, targetPerMinute, slots, foodHaste = 0, maxMana = Infinity }) {
+        const unpriced = [];
+        const candidates = [];
+        for (const food of foods) {
+            if (food.restore > maxMana) continue;
+            const priced = priceOf(food.hrid);
+            if (!priced || !(priced.price > 0)) {
+                unpriced.push(food.hrid);
+                continue;
+            }
+            const { usesPerDay, perMinute } = foodRate(food, foodHaste);
+            candidates.push({
+                hrid: food.hrid,
+                restore: food.restore,
+                unitPrice: priced.price,
+                isOutlier: Boolean(priced.isOutlier),
+                usesPerDay,
+                perMinute,
+                costPerDay: usesPerDay * priced.price,
+            });
+        }
+
+        const size = Math.max(0, Math.min(Math.floor(slots), candidates.length));
+        let best = null;
+        let richest = null;
+        for (let count = 1; count <= size; count++) {
+            for (const set of combinations(candidates, count)) {
+                const perMinute = set.reduce((sum, item) => sum + item.perMinute, 0);
+                const cost = set.reduce((sum, item) => sum + item.costPerDay, 0);
+                if (!richest || perMinute > richest.perMinute || (perMinute === richest.perMinute && cost < richest.cost)) {
+                    richest = { set, perMinute, cost };
+                }
+                if (
+                    perMinute >= targetPerMinute &&
+                    (!best || cost < best.cost || (cost === best.cost && set.length < best.set.length))
+                ) {
+                    best = { set, perMinute, cost };
+                }
+            }
+        }
+
+        const chosen = best || richest;
+        return {
+            reachable: Boolean(best),
+            items: chosen ? [...chosen.set].sort((a, b) => b.perMinute - a.perMinute) : [],
+            totalPerMinute: chosen ? chosen.perMinute : 0,
+            totalCostPerDay: chosen ? chosen.cost : 0,
+            deficit: best || !richest ? 0 : Math.max(0, targetPerMinute - richest.perMinute),
+            unpriced,
+        };
+    }
+
+    /**
      * Battle Event Tracker
      *
      * Turns the game's `new_battle` / `battle_updated` messages into discrete combat events by diffing
@@ -754,6 +878,9 @@
      *
      * Pure logic: no DOM, no WebSocket. Feed it payloads with handleNewBattle / handleBattleUpdated.
      */
+
+    // The states the game flags on a unit, as the suffix of its isX field
+    const STATUSES = ['stunned', 'blinded', 'silenced', 'enraged'];
 
     const SIDE_PLAYER = 'p';
     const SIDE_MONSTER = 'm';
@@ -786,6 +913,14 @@
             // The abilities the unit has equipped, and how much faster its abilities come off cooldown
             abilities: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
             abilityHaste: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
+            // How long before the unit enrages; bosses get much longer than ordinary monsters
+            enrageTimerNs: unit?.enrageTimerDuration ?? 0,
+            // How much faster food comes off cooldown (a pouch bonus)
+            foodHaste: unit?.combatDetails?.combatStats?.foodHaste ?? 0,
+            isStunned: Boolean(unit?.isStunned),
+            isBlinded: Boolean(unit?.isBlinded),
+            isSilenced: Boolean(unit?.isSilenced),
+            isEnraged: Boolean(unit?.isEnraged),
         };
     }
 
@@ -808,6 +943,11 @@
             isAutoAtk: Boolean(entry.isAutoAtk),
             abilityHrid: entry.abilityHrid || '',
             intervalNs: entry.int ?? prev.intervalNs,
+            // Like the client, a flag the entry does not carry is off
+            isStunned: Boolean(entry.isStunned),
+            isBlinded: Boolean(entry.isBlinded),
+            isSilenced: Boolean(entry.isSilenced),
+            isEnraged: Boolean(entry.isEnraged),
         };
         const base = {
             side: prev.side,
@@ -862,6 +1002,12 @@
                 amount: -mpDelta,
                 abilityHrid: acted && !prev.isAutoAtk ? prev.abilityHrid : '',
             });
+        }
+
+        // A status switching on or off, from the flags the game sends (it gives no remaining time)
+        for (const status of STATUSES) {
+            const field = `is${status.charAt(0).toUpperCase()}${status.slice(1)}`;
+            if (next[field] !== prev[field]) events.push({ ...base, type: 'status', status, on: next[field] });
         }
 
         if (acted) {
@@ -954,6 +1100,136 @@
     }
 
     /**
+     * Damage history
+     *
+     * Damage per player in fixed 2-second steps, kept for the last five minutes, for the DPS line. The line
+     * is smoothed with a rolling average over the last 16 seconds so a single big hit or the quiet seconds
+     * between waves do not make it spike.
+     *
+     * Pure logic: times are whatever the caller passes (message timestamps in ms).
+     */
+
+    const HISTORY_BUCKET_MS = 2000;
+    const HISTORY_BUCKETS = 150;
+    // 8 steps of 2s: the last 16 seconds
+    const SMOOTH_BUCKETS = 8;
+    // A silence this long ends the series, so a new fight does not start with minutes of flat zeros
+    const SERIES_GAP_MS = 90000;
+
+    /**
+     * Rolling average over the last `window` steps (fewer at the start).
+     * @param {number[]} values
+     * @param {number} [window]
+     * @returns {number[]} Same length as `values`
+     */
+    function smoothSeries(values, window = SMOOTH_BUCKETS) {
+        return values.map((_, index) => {
+            const from = Math.max(0, index - window + 1);
+            let sum = 0;
+            for (let k = from; k <= index; k++) sum += values[k];
+            return sum / (index - from + 1);
+        });
+    }
+
+    class DamageHistory {
+        constructor() {
+            this.reset();
+        }
+
+        reset() {
+            this.players = new Map();
+            this.firstBucket = null;
+            this.lastAt = null;
+            // When the fight became (or stopped being) a boss fight: [{at, boss}] in time order
+            this.bossChanges = [];
+        }
+
+        /**
+         * Note whether the wave starting now is a boss wave.
+         * @param {boolean} boss
+         * @param {number} at - Timestamp in ms
+         */
+        markBoss(boss, at) {
+            const last = this.bossChanges[this.bossChanges.length - 1];
+            if (!last || last.boss !== Boolean(boss)) this.bossChanges.push({ at, boss: Boolean(boss) });
+        }
+
+        /**
+         * @param {string} player
+         * @param {number} amount - Damage dealt
+         * @param {number} at - Timestamp in ms
+         */
+        add(player, amount, at) {
+            const index = Math.floor(at / HISTORY_BUCKET_MS);
+            if (this.firstBucket === null || (this.lastAt !== null && at - this.lastAt > SERIES_GAP_MS)) {
+                this.firstBucket = index;
+            }
+            this.lastAt = at;
+
+            const row = this.players.get(player) || new Map();
+            row.set(index, (row.get(index) || 0) + amount);
+            this.players.set(player, row);
+
+            // Steps that have fallen out of the window
+            if (row.size > HISTORY_BUCKETS + 20) {
+                for (const key of row.keys()) {
+                    if (key < index - HISTORY_BUCKETS) row.delete(key);
+                }
+            }
+        }
+
+        /**
+         * The steps a series covers: the same for every player, so their lines line up.
+         * @param {number} now - Timestamp in ms
+         * @returns {{first: ?number, last: number}}
+         */
+        range(now) {
+            const last = Math.floor(now / HISTORY_BUCKET_MS) - 1;
+            if (this.firstBucket === null) return { first: null, last };
+            return { first: Math.max(this.firstBucket, last - HISTORY_BUCKETS + 1), last };
+        }
+
+        /**
+         * Whether each step of a series was in a boss fight.
+         * @param {number} now - Timestamp in ms
+         * @returns {boolean[]} One per step, matching `series`
+         */
+        bossSeries(now) {
+            const { first, last } = this.range(now);
+            if (first === null) return [];
+            const flags = [];
+            let cursor = 0;
+            for (let index = first; index <= last; index++) {
+                // A step counts as boss if the boss wave had started by the time it ended
+                const end = (index + 1) * HISTORY_BUCKET_MS - 1;
+                while (cursor + 1 < this.bossChanges.length && this.bossChanges[cursor + 1].at <= end) cursor++;
+                const change = this.bossChanges[cursor];
+                flags.push(Boolean(change && change.at <= end && change.boss));
+            }
+            return flags;
+        }
+
+        /**
+         * Damage per second in each finished step, oldest first, ending at the last step that is complete at
+         * `now` and starting when the fight did (never more than five minutes back).
+         * @param {string} player
+         * @param {number} now - Timestamp in ms
+         * @returns {number[]} Raw (unsmoothed) DPS per step, empty when there is nothing yet
+         */
+        series(player, now) {
+            // Someone who has not hit anything yet is a flat line at 0, so every player's series is the same length
+            const row = this.players.get(player) || new Map();
+            const { first, last } = this.range(now);
+            if (first === null) return [];
+            const values = [];
+            for (let index = first; index <= last; index++) {
+                values.push((row.get(index) || 0) / (HISTORY_BUCKET_MS / 1000));
+            }
+            return values;
+        }
+    }
+
+    /**
      * Battle Stats
      *
      * Aggregates BattleEventTracker events into the numbers the live combat panels show.
@@ -983,8 +1259,9 @@
     // How much of that the hit tape draws
     const TAPE_WINDOW_MS = 60000;
     const RECENT_HIT_MAX = 600;
-    // "Current DPS" is the damage dealt in this trailing window
-    const PACE_WINDOW_MS = 10000;
+    // "Current DPS" is the damage dealt in this trailing window: long enough that one big hit or the quiet
+    // seconds between waves do not swing it, the same smoothing the DPS line uses
+    const PACE_WINDOW_MS = 16000;
 
     // Keys for the damage "source" rows besides real ability hrids
     const SOURCE_AUTO = 'auto';
@@ -1067,6 +1344,10 @@
             this.playerCount = 0;
             this.selfName = null;
             this.recentHits = [];
+            // Damage per player in 2s steps over the last five minutes, for the DPS line
+            this.history = new DamageHistory();
+            // Healing done per player (credited to whoever acted when the heal landed), with the ability behind it
+            this.healing = new Map();
             // Damage-over-time effects cast and still running: {player, key, until}
             this.activeDots = [];
             // Per player: when each ability was last cast, and the casts that were refused for lack of mana
@@ -1112,6 +1393,15 @@
         }
 
         /**
+         * Whether the wave starting now has a boss in it (for colouring the DPS graph).
+         * @param {boolean} boss
+         * @param {number} [at] - Timestamp in ms
+         */
+        setBoss(boss, at = Date.now()) {
+            this.history.markBoss(boss, at);
+        }
+
+        /**
          * Fold events from one message into the totals.
          * @param {Object[]} events - Events from BattleEventTracker
          * @param {number} [at] - Message timestamp in ms
@@ -1133,6 +1423,7 @@
                 }
             }
             this.attributeHits(events, at);
+            this.attributeHeals(events);
         }
 
         /**
@@ -1152,6 +1443,27 @@
                 );
                 this.activeDots.push({ player: event.name, key: event.abilityHrid, until: at + duration + DOT_SLACK_MS });
             }
+        }
+
+        /**
+         * Credit the healing in this message to the player who acted. A heal with nobody acting (regeneration,
+         * food) is not healing done by anyone, and with several players acting there is no telling whose it was.
+         * @param {Object[]} events - Events from one message
+         */
+        attributeHeals(events) {
+            const heals = events.filter((event) => event.side === SIDE_PLAYER && event.type === 'heal');
+            if (!heals.length) return;
+            const attacks = events.filter((event) => event.side === SIDE_PLAYER && event.type === 'attack');
+            if (attacks.length !== 1) return;
+
+            const [attack] = attacks;
+            const key = attack.auto ? SOURCE_AUTO : attack.abilityHrid;
+            const row = this.healing.get(attack.name) || { healing: 0, abilities: new Map() };
+            for (const heal of heals) {
+                row.healing += heal.amount;
+                row.abilities.set(key, (row.abilities.get(key) || 0) + heal.amount);
+            }
+            this.healing.set(attack.name, row);
         }
 
         /**
@@ -1268,6 +1580,7 @@
                 addDamage(ability, hit);
                 row.abilities.set(source.key, ability);
                 this.dealt.set(source.player, row);
+                this.history.add(source.player, hit.amount, at);
                 this.recentHits.push({
                     t: at,
                     player: source.player,
@@ -1429,9 +1742,10 @@
          * @param {number} now - Window end in ms
          * @param {function(number): number} rate - Damage to per-second over the whole session
          * @param {?string} [player] - Whose chart; the followed player by default
+         * @param {boolean} [withSeries] - Also include the smoothed DPS line (the bar's sparkline needs it)
          * @returns {?Object} Recent hits and pace for that player, or null when there is none
          */
-        getChartData(now, rate, player = this.chartSubject()) {
+        getChartData(now, rate, player = this.chartSubject(), withSeries = false) {
             if (!player) return null;
             const start = now - TAPE_WINDOW_MS;
             return {
@@ -1442,6 +1756,38 @@
                 // Only the followed player's best is tracked
                 bestDps: player === this.chartSubject() ? this.bestDps : 0,
                 averageDps: rate((this.dealt.get(player) || emptyDealt()).damage),
+                // DPS over the last five minutes in 2s steps, smoothed over 16s; oldest first
+                series: withSeries ? smoothSeries(this.history.series(player, now)) : [],
+            };
+        }
+
+        /**
+         * The little numbers shown under a player on the combat screen.
+         * @param {string} name
+         * @returns {{dps: number, hps: number}}
+         */
+        getBadge(name) {
+            const seconds = this.getActiveSeconds();
+            if (!(seconds > 0)) return { dps: 0, hps: 0 };
+            return {
+                dps: (this.dealt.get(name)?.damage ?? 0) / seconds,
+                hps: (this.healing.get(name)?.healing ?? 0) / seconds,
+            };
+        }
+
+        /**
+         * What the DPS-over-time graph draws: a smoothed line per player over the last five minutes (just the
+         * followed player when alone), and which steps were boss fights.
+         * @param {number} now - Timestamp in ms
+         * @returns {{stepMs: number, boss: boolean[], lines: Array<{name: string, series: number[]}>}}
+         */
+        getGraphData(now) {
+            const subject = this.chartSubject();
+            const names = this.playerNames.length > 1 ? this.playerNames : subject ? [subject] : [];
+            return {
+                stepMs: HISTORY_BUCKET_MS,
+                boss: this.history.bossSeries(now),
+                lines: names.map((name) => ({ name, series: smoothSeries(this.history.series(name, now)) })),
             };
         }
 
@@ -1478,7 +1824,7 @@
                 // Alone, every hit is yours and nothing is left unattributed
                 attributionExact: this.playerCount === 1,
                 // What the DPS visual draws: the followed player's recent hits and pace
-                chart: this.getChartData(now, rate),
+                chart: this.getChartData(now, rate, this.chartSubject(), true),
                 // In a party, a chart for every member, the followed player first
                 charts:
                     this.playerNames.length > 1
@@ -1504,6 +1850,23 @@
                                 share: row.damage > 0 ? ability.damage / row.damage : 0,
                             }))
                             .sort((a, b) => b.damage - a.damage),
+                    };
+                }),
+                graph: this.getGraphData(now),
+                healers: this.playerNames.map((name) => {
+                    const row = this.healing.get(name) || { healing: 0, abilities: new Map() };
+                    return {
+                        name,
+                        healing: row.healing,
+                        hps: rate(row.healing),
+                        abilities: [...row.abilities.entries()]
+                            .map(([key, healing]) => ({
+                                key,
+                                healing,
+                                hps: rate(healing),
+                                share: row.healing > 0 ? healing / row.healing : 0,
+                            }))
+                            .sort((a, b) => b.healing - a.healing),
                     };
                 }),
                 unattributed: {
@@ -1541,7 +1904,7 @@
      */
 
 
-    const NS_PER_MS = 1e6;
+    const NS_PER_MS$1 = 1e6;
 
     /**
      * How long an ability keeps damaging its targets after the cast.
@@ -1556,7 +1919,7 @@
                 longest = effect.damageOverTimeDuration;
             }
         }
-        return longest / NS_PER_MS;
+        return longest / NS_PER_MS$1;
     }
 
     /**
@@ -1567,139 +1930,246 @@
     function getAbilityTiming(abilityHrid) {
         const detail = dataManager.getInitClientData()?.abilityDetailMap?.[abilityHrid];
         if (!detail) return null;
-        return { manaCost: detail.manaCost || 0, cooldownMs: (detail.cooldownDuration || 0) / NS_PER_MS };
+        return { manaCost: detail.manaCost || 0, cooldownMs: (detail.cooldownDuration || 0) / NS_PER_MS$1 };
     }
 
     /**
-     * Combat Live Recorder
-     *
-     * Optional diagnostic: keeps the most recent battle messages in a compact form so who-hit-whom
-     * rules can be tested offline against real fights (the game never says which attacker landed a
-     * hit, so any rule for it is a guess until it has been checked against recordings).
-     *
-     * Bounded (MAX_ENTRIES, oldest dropped first). A recording contains player names and character ids
-     * from the battle, so look it over before sharing it.
+     * @param {string} abilityHrid
+     * @returns {Object[]} The ability's effects as the game data lists them (empty when unknown)
      */
-
-    const MAX_ENTRIES$1 = 5000;
-    const FORMAT = 'toolasha-combat-live-recording';
-    const FORMAT_VERSION = 2;
+    function getAbilityEffects(abilityHrid) {
+        return dataManager.getInitClientData()?.abilityDetailMap?.[abilityHrid]?.abilityEffects || [];
+    }
 
     /**
-     * @param {Object} entry - Raw pMap/mMap entry from battle_updated
-     * @returns {Array} [cHP, cMP, atkCounter, isAutoAtk, abilityHrid, dmgCounter, critCounter]
+     * Buff tracker
+     *
+     * Which timed buffs and debuffs are on each unit, for the icons under the characters. The game sends no
+     * buff list in its combat updates, so this works from what it does send:
+     *
+     *   - a cast (the ability that just ran) is looked up in the game's own ability data, which says what it
+     *     applies, to whom, and for how long; nothing here is a hand-kept list of abilities;
+     *   - the stunned / blinded / silenced / enraged flags are exact, and only their length is predicted from
+     *     the ability that caused them;
+     *   - a unit dying clears what was on it, and a new wave clears the monsters.
+     *
+     * The timers are predictions from the moment the cast was seen, so they can drift from the server's by a
+     * little. Pure logic: feed it tracker events.
      */
-    function compactUnit(entry) {
-        return [
-            entry?.cHP ?? null,
-            entry?.cMP ?? null,
-            entry?.atkCounter ?? null,
-            entry?.isAutoAtk ? 1 : 0,
-            entry?.abilityHrid || '',
-            entry?.dmgCounter ?? null,
-            entry?.critCounter ?? null,
-        ];
-    }
 
-    function compactMap(map) {
-        const out = {};
-        for (const [index, entry] of Object.entries(map || {})) {
-            out[index] = compactUnit(entry);
-        }
-        return out;
-    }
 
-    class CombatLiveRecorder {
-        constructor(maxEntries = MAX_ENTRIES$1) {
-            this.maxEntries = maxEntries;
-            this.entries = [];
+    const NS_PER_MS = 1e6;
+    // A status flag that rises this soon after a cast is taken to be that cast's doing
+    const STATUS_LINK_MS = 1500;
+
+    const KIND_BUFF = 'buff';
+    const KIND_DEBUFF = 'debuff';
+    const KIND_DOT = 'dot';
+    const KIND_STATUS = 'status';
+
+    const opposite = (side) => (side === SIDE_PLAYER ? SIDE_MONSTER : SIDE_PLAYER);
+    const unitKey = (side, index) => `${side}:${index}`;
+
+    class BuffTracker {
+        constructor() {
+            // Looks up an ability's effects in the game data
+            this.effectsOf = () => [];
+            this.reset();
         }
 
-        /**
-         * @param {Object} data - new_battle payload
-         * @param {number} at - Timestamp in ms
-         * @param {string|number|null} selfCharacterId - The recording player's character id
-         */
-        recordNewBattle(data, at, selfCharacterId = null) {
-            this.push({
-                k: 'nb',
-                t: at,
-                id: data?.battleId ?? null,
-                w: data?.wave ?? null,
-                self: selfCharacterId,
-                // Every unit's starting point: the first action of a battle is judged against what it
-                // was already preparing and its counters when the battle began.
-                p: (data?.players || []).map((unit) => ({
-                    n: unit?.name ?? unit?.character?.name ?? null,
-                    c: unit?.character?.id ?? null,
-                    hp: unit?.currentHitpoints ?? null,
-                    mp: unit?.currentManapoints ?? null,
-                    atk: unit?.attackAttemptCounter ?? null,
-                    ab: unit?.preparingAbilityHrid || '',
-                    auto: unit?.isPreparingAutoAttack ? 1 : 0,
-                    dmg: unit?.damageSplatCounter ?? null,
-                    crit: unit?.criticalDamageSplatCounter ?? null,
-                    // What is equipped, and how much faster the abilities come off cooldown: casts refused
-                    la: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
-                    hs: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
-                })),
-                m: (data?.monsters || []).map((unit) => ({
-                    h: unit?.hrid ?? null,
-                    hp: unit?.currentHitpoints ?? null,
-                    maxHp: unit?.maxHitpoints ?? null,
-                    mp: unit?.currentManapoints ?? null,
-                    atk: unit?.attackAttemptCounter ?? null,
-                    ab: unit?.preparingAbilityHrid || '',
-                    auto: unit?.isPreparingAutoAttack ? 1 : 0,
-                    dmg: unit?.damageSplatCounter ?? null,
-                    crit: unit?.criticalDamageSplatCounter ?? null,
-                })),
-                // Which fields a new_battle unit really carries (the names the game uses)
-                fields: {
-                    p: Object.keys(data?.players?.[0] || {}),
-                    m: Object.keys(data?.monsters?.[0] || {}),
-                },
-            });
+        reset() {
+            // unitKey -> Map<entryId, entry>
+            this.units = new Map();
+            // `${unitKey}|${status}` -> {durationMs, at}: how long a status should last, from the cast behind it
+            this.pending = new Map();
         }
 
         /**
-         * @param {Object} data - battle_updated payload
-         * @param {number} at - Timestamp in ms
+         * @param {function(string): Object[]} lookup - Ability hrid to its effects
          */
-        recordBattleUpdated(data, at) {
-            this.push({
-                k: 'bu',
-                t: at,
-                id: data?.battleId ?? null,
-                p: compactMap(data?.pMap),
-                m: compactMap(data?.mMap),
-            });
+        setEffectsLookup(lookup) {
+            this.effectsOf = lookup;
         }
 
-        push(entry) {
-            this.entries.push(entry);
-            if (this.entries.length > this.maxEntries) {
-                this.entries.splice(0, this.entries.length - this.maxEntries);
+        /**
+         * A new wave: the monsters are new, so nothing on them carries over. Player buffs run on.
+         */
+        beginWave() {
+            for (const key of [...this.units.keys()]) {
+                if (key.startsWith(`${SIDE_MONSTER}:`)) this.units.delete(key);
+            }
+            this.pending.clear();
+        }
+
+        /**
+         * @param {Object[]} events - Events from one message, from BattleEventTracker
+         * @param {number} at - Message timestamp in ms
+         * @param {{p: Array<{index: number, hp: number}>, m: Array<{index: number, hp: number}>}} roster - Units
+         *     on each side as they are now, for the casts that hit everyone
+         */
+        record(events, at, roster) {
+            for (const event of events) {
+                if (event.type === 'death') this.units.delete(unitKey(event.side, event.index));
+            }
+
+            const damaged = { [SIDE_PLAYER]: [], [SIDE_MONSTER]: [] };
+            for (const event of events) {
+                if (event.type === 'damage' && !event.miss && event.amount > 0) damaged[event.side].push(event.index);
+            }
+
+            for (const event of events) {
+                if (event.type === 'attack' && event.abilityHrid) this.applyCast(event, at, roster, damaged);
+            }
+            for (const event of events) {
+                if (event.type === 'status') this.applyStatus(event, at);
             }
         }
 
-        clear() {
-            this.entries = [];
+        /**
+         * @param {Object} cast - An attack event with the ability that ran
+         * @param {number} at
+         * @param {Object} roster
+         * @param {Object} damaged - Indexes of the units that took damage in this message, per side
+         */
+        applyCast(cast, at, roster, damaged) {
+            for (const effect of this.effectsOf(cast.abilityHrid) || []) {
+                const targets = this.targetsOf(effect.targetType, cast, roster, damaged);
+                if (!targets.length) continue;
+                const friendly = targets[0].side === cast.side;
+
+                for (const buff of effect.buffs || []) {
+                    const durationMs = (buff.duration || 0) / NS_PER_MS;
+                    if (!(durationMs > 0)) continue;
+                    for (const target of targets) {
+                        this.add(target, buff.uniqueHrid || `${cast.abilityHrid}:${buff.typeHrid}`, {
+                            kind: friendly ? KIND_BUFF : KIND_DEBUFF,
+                            abilityHrid: cast.abilityHrid,
+                            durationMs,
+                            at,
+                        });
+                    }
+                }
+
+                if (!friendly && effect.damageOverTimeDuration > 0) {
+                    for (const target of targets) {
+                        this.add(target, `dot:${cast.abilityHrid}`, {
+                            kind: KIND_DOT,
+                            abilityHrid: cast.abilityHrid,
+                            durationMs: effect.damageOverTimeDuration / NS_PER_MS,
+                            at,
+                        });
+                    }
+                }
+
+                // The flag decides whether a stun, blind or silence happened; the ability says for how long
+                for (const [status, field] of [
+                    ['stunned', 'stunDuration'],
+                    ['blinded', 'blindDuration'],
+                    ['silenced', 'silenceDuration'],
+                ]) {
+                    if (!(effect[field] > 0) || friendly) continue;
+                    for (const target of targets) {
+                        this.pending.set(`${unitKey(target.side, target.index)}|${status}`, {
+                            abilityHrid: cast.abilityHrid,
+                            durationMs: effect[field] / NS_PER_MS,
+                            at,
+                        });
+                    }
+                }
+            }
         }
 
         /**
-         * @param {number} [now] - Timestamp in ms for the header
-         * @returns {string} JSON text of everything recorded so far
+         * @param {string} targetType - self, allAllies, enemy, allEnemies...
+         * @param {Object} cast
+         * @param {Object} roster
+         * @param {Object} damaged
+         * @returns {Array<{side: string, index: number}>}
          */
-        exportJSON(now = Date.now()) {
-            return JSON.stringify({
-                format: FORMAT,
-                version: FORMAT_VERSION,
-                recordedAt: new Date(now).toISOString(),
-                // Order of each [..] row in `p` / `m` entries of a 'bu' record
-                unitFields: ['cHP', 'cMP', 'atkCounter', 'isAutoAtk', 'abilityHrid', 'dmgCounter', 'critCounter'],
-                entries: this.entries,
-            });
+        targetsOf(targetType, cast, roster, damaged) {
+            const alive = (side) =>
+                (roster?.[side] || []).filter((unit) => unit.hp > 0).map((unit) => ({ side, index: unit.index }));
+            switch (targetType) {
+                case 'self':
+                    return [{ side: cast.side, index: cast.index }];
+                case 'allAllies':
+                    return alive(cast.side);
+                case 'allEnemies':
+                    return alive(opposite(cast.side));
+                case 'enemy':
+                    // The target is not sent; the unit that took the hit in this message is the one
+                    return [...new Set(damaged[opposite(cast.side)])].map((index) => ({
+                        side: opposite(cast.side),
+                        index,
+                    }));
+                default:
+                    return [];
+            }
+        }
+
+        add(target, id, entry) {
+            const key = unitKey(target.side, target.index);
+            const entries = this.units.get(key) || new Map();
+            // Casting again refreshes the timer
+            entries.set(id, { id, ...entry, expiresAt: entry.at + entry.durationMs });
+            this.units.set(key, entries);
+        }
+
+        applyStatus(event, at) {
+            const key = unitKey(event.side, event.index);
+            const id = `status:${event.status}`;
+            if (!event.on) {
+                this.units.get(key)?.delete(id);
+                return;
+            }
+            const linked = this.pending.get(`${key}|${event.status}`);
+            const known = linked && at - linked.at <= STATUS_LINK_MS;
+            this.add(
+                { side: event.side, index: event.index },
+                id,
+                known
+                    ? {
+                          kind: KIND_STATUS,
+                          status: event.status,
+                          abilityHrid: linked.abilityHrid,
+                          durationMs: linked.durationMs,
+                          at,
+                      }
+                    : // No cast to blame (an enrage, or one we missed): shown while the flag is up, without a countdown
+                      { kind: KIND_STATUS, status: event.status, abilityHrid: '', durationMs: null, at }
+            );
+            if (!known) this.units.get(key).get(id).expiresAt = null;
+        }
+
+        /**
+         * @param {string} side - 'p' or 'm'
+         * @param {number} index
+         * @param {number} now - Timestamp in ms
+         * @returns {Array<{id: string, kind: string, status?: string, abilityHrid: string, remainingMs: ?number, durationMs: ?number}>}
+         *     What is on that unit, buffs first and the ones running out soonest leading
+         */
+        getUnit(side, index, now) {
+            const entries = this.units.get(unitKey(side, index));
+            if (!entries) return [];
+            const out = [];
+            for (const [id, entry] of entries) {
+                if (entry.expiresAt !== null && entry.expiresAt <= now) {
+                    entries.delete(id);
+                    continue;
+                }
+                out.push({
+                    id,
+                    kind: entry.kind,
+                    status: entry.status,
+                    abilityHrid: entry.abilityHrid,
+                    remainingMs: entry.expiresAt === null ? null : entry.expiresAt - now,
+                    durationMs: entry.durationMs,
+                });
+            }
+            const order = { [KIND_BUFF]: 0, [KIND_STATUS]: 1, [KIND_DEBUFF]: 2, [KIND_DOT]: 3 };
+            return out.sort(
+                (a, b) => order[a.kind] - order[b.kind] || (a.remainingMs ?? Infinity) - (b.remainingMs ?? Infinity)
+            );
         }
     }
 
@@ -1851,55 +2321,826 @@
         }
     }
 
-    const SPARK_BUCKETS = 10;
-    const SPARK_BUCKET_WIDTH = 5;
+    const SPARK_WIDTH = 50;
     const SPARK_HEIGHT = 16;
 
     /**
-     * DPS over time for the bar's sparkline: the last window cut into equal steps, each the damage dealt in
-     * it per second, as a share of the best step.
-     * @param {Array<{t: number, amount: number, miss: boolean}>} hits
-     * @param {number} now - Right edge in ms
-     * @param {number} [buckets]
-     * @param {number} [windowMs]
-     * @returns {number[]} One value per step, oldest first, each 0 to 1 (all 0 when there was no damage)
+     * The bar's DPS line: the smoothed series squeezed into the sparkline's width, newest at the right edge,
+     * on a scale that starts at 0 so a high line and a low line look different. The average is a reference.
+     * @param {number[]} series - Smoothed DPS per step, oldest first
+     * @param {number} average - Session average DPS
+     * @param {number} [width] - Points to draw
+     * @returns {{points: number[], averageY: number}} Heights 0 to 1 (1 = the top of the scale), one per
+     *     pixel column, and the average on the same scale; no points when there is no series
      */
-    function buildSparkModel(hits, now, buckets = SPARK_BUCKETS, windowMs = TAPE_WINDOW_MS) {
-        const start = now - windowMs;
-        const step = windowMs / buckets;
-        const totals = new Array(buckets).fill(0);
-        for (const hit of hits) {
-            if (hit.miss || hit.t <= start || hit.t > now) continue;
-            const index = Math.min(buckets - 1, Math.floor((hit.t - start) / step));
-            totals[index] += hit.amount;
+    function buildSparkModel(series, average, width = SPARK_WIDTH) {
+        if (!series.length) return { points: [], averageY: 0 };
+        const top = Math.max(...series, average, 1) * 1.05;
+        // Fewer steps than columns (a fight just started): spread what there is over the right-hand side
+        const columns = Math.min(width, series.length);
+        const points = [];
+        for (let column = 0; column < columns; column++) {
+            const index = columns === 1 ? 0 : Math.round((column * (series.length - 1)) / (columns - 1));
+            points.push(series[index] / top);
         }
-        const best = Math.max(...totals);
-        return best > 0 ? totals.map((total) => total / best) : totals;
+        return { points, averageY: Math.min(1, average / top) };
     }
 
     /**
-     * Draw the sparkline. Does nothing where there is no canvas support (tests, odd embeds).
+     * Draw the line. Does nothing where there is no canvas support (tests, odd embeds).
      * @param {HTMLCanvasElement} canvas
-     * @param {number[]} values - From buildSparkModel
+     * @param {{points: number[], averageY: number}} model - From buildSparkModel
+     * @param {number} [width]
      */
-    function drawSparkline(canvas, values) {
+    function drawSparkline(canvas, model, width = SPARK_WIDTH) {
         const context = canvas.getContext?.('2d');
         if (!context) return;
 
-        const width = values.length * SPARK_BUCKET_WIDTH;
         const ratio = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
         // Resizing the canvas also clears it
         canvas.width = Math.round(width * ratio);
         canvas.height = Math.round(SPARK_HEIGHT * ratio);
         context.scale(ratio, ratio);
 
+        const usable = SPARK_HEIGHT - 2;
+        const y = (value) => SPARK_HEIGHT - 1 - value * usable;
+
         context.fillStyle = 'rgba(255, 255, 255, 0.12)';
         context.fillRect(0, SPARK_HEIGHT - 1, width, 1);
-        context.fillStyle = '#00c896';
-        values.forEach((value, index) => {
-            const height = value > 0 ? Math.max(2, Math.round(value * (SPARK_HEIGHT - 2))) : 0;
-            context.fillRect(index * SPARK_BUCKET_WIDTH, SPARK_HEIGHT - 1 - height, SPARK_BUCKET_WIDTH - 1, height);
+        if (!model.points.length) return;
+
+        // Your average, as a faint dashed line to read the line against
+        context.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        context.lineWidth = 1;
+        context.setLineDash?.([2, 2]);
+        context.beginPath();
+        context.moveTo(0, y(model.averageY));
+        context.lineTo(width, y(model.averageY));
+        context.stroke();
+        context.setLineDash?.([]);
+
+        // Pinned to the right edge, so the newest point is always at the right
+        const offset = width - model.points.length;
+        context.beginPath();
+        model.points.forEach((value, index) => {
+            if (index === 0) context.moveTo(offset + index, y(value));
+            else context.lineTo(offset + index, y(value));
         });
+        context.strokeStyle = '#00c896';
+        context.lineWidth = 1.5;
+        context.stroke();
+    }
+
+    // The colours handed out so far, shared by the panel and the labels under the units
+    const sharedPlayerColors = new Map();
+
+    // One colour per party member, kept apart from the ability colours, and without green (the accent)
+    const PLAYER_PALETTE = [
+        '#4fc3ff',
+        '#ff9f4a',
+        '#c78bff',
+        '#ff6a8a',
+        '#ffe27a',
+        '#7ff6ff',
+        '#8fa8ff',
+        '#e57373',
+        '#ba68c8',
+        '#4db6ac',
+    ];
+
+    /**
+     * A colour for a player, handed out in the order players are first seen and then kept, so someone keeps
+     * their colour across the bars, charts and tables for the whole session.
+     * @param {Map<string, number>} assigned - Names already given a place (updated)
+     * @param {string} name
+     * @returns {string} CSS colour
+     */
+    function playerColor(assigned, name) {
+        if (!assigned.has(name)) assigned.set(name, assigned.size);
+        return PLAYER_PALETTE[assigned.get(name) % PLAYER_PALETTE.length];
+    }
+
+    /**
+     * Bars for a ranking: width is the share of the leader's value, so the first is always full.
+     * @param {Array<{name: string, value: number}>} rows - Any order
+     * @returns {Array<{name: string, value: number, width: number}>} Largest first, zero values dropped
+     */
+    function buildRankingBars(rows) {
+        const ranked = rows.filter((row) => row.value > 0).sort((a, b) => b.value - a.value);
+        const top = ranked.length ? ranked[0].value : 1;
+        return ranked.map((row) => ({ ...row, width: row.value / top }));
+    }
+
+    const GRAPH_WIDTH = 296;
+    const GRAPH_HEIGHT = 96;
+    const GRAPH_LEFT = 34;
+    const GRAPH_RIGHT = 4;
+    const GRAPH_TOP = 6;
+    const GRAPH_BOTTOM = 14;
+    // A fight shorter than this still gets a graph this wide, so the line grows into it
+    const GRAPH_MIN_STEPS = 30;
+    const GRAPH_MAX_STEPS = 150;
+    const BOSS_BAND = 'rgba(255, 63, 52, 0.16)';
+
+    /**
+     * A round-number gridline spacing: 1, 2, 5 or 10 times a power of ten.
+     * @param {number} max - Highest value on the graph
+     * @param {number} [lines] - About how many gridlines
+     * @returns {number}
+     */
+    function niceInterval(max, lines = 3) {
+        if (!(max > 0)) return 1;
+        const raw = max / lines;
+        const magnitude = 10 ** Math.floor(Math.log10(raw));
+        const fraction = raw / magnitude;
+        const nice = fraction < 1.5 ? 1 : fraction < 3.5 ? 2 : fraction < 7.5 ? 5 : 10;
+        return nice * magnitude;
+    }
+
+    /**
+     * Lay out the DPS-over-time graph. Time runs left to right with "now" at the right edge; the scale starts at
+     * 0 and tops out on a round number above the highest point.
+     * @param {{stepMs: number, boss: boolean[], lines: Array<{name: string, series: number[]}>}} graph
+     * @param {number} [average] - A reference line (the session average), 0 for none
+     * @param {number} [width]
+     * @param {number} [height]
+     * @returns {?Object} null when there is nothing to draw yet
+     */
+    function buildGraphModel(graph, average = 0, width = GRAPH_WIDTH, height = GRAPH_HEIGHT) {
+        const steps = Math.max(0, ...graph.lines.map((line) => line.series.length));
+        if (steps < 2) return null;
+
+        const span = Math.min(GRAPH_MAX_STEPS, Math.max(GRAPH_MIN_STEPS, steps));
+        const left = GRAPH_LEFT;
+        const right = width - GRAPH_RIGHT;
+        const top = GRAPH_TOP;
+        const bottom = height - GRAPH_BOTTOM;
+        const peak = Math.max(1, average, ...graph.lines.flatMap((line) => line.series));
+        const interval = niceInterval(peak);
+        const yMax = Math.ceil(peak / interval) * interval;
+        const x = (index, length) => right - ((length - 1 - index) / (span - 1)) * (right - left);
+        const y = (value) => bottom - (value / yMax) * (bottom - top);
+
+        const ticks = [];
+        for (let value = 0; value <= yMax + 1e-9; value += interval) ticks.push({ value, y: y(value) });
+
+        const spanSeconds = (span * graph.stepMs) / 1000;
+        const labelEvery = spanSeconds <= 90 ? 15 : spanSeconds <= 180 ? 30 : 60;
+        const xTicks = [];
+        for (let seconds = 0; seconds <= spanSeconds; seconds += labelEvery) {
+            xTicks.push({ seconds, x: right - (seconds / ((span - 1) * (graph.stepMs / 1000))) * (right - left) });
+        }
+
+        // Runs of boss steps as bands
+        const bossSpans = [];
+        const flags = graph.boss;
+        let start = null;
+        flags.forEach((flag, index) => {
+            if (flag && start === null) start = index;
+            if ((!flag || index === flags.length - 1) && start !== null) {
+                const end = flag ? index : index - 1;
+                bossSpans.push({ x0: x(start, flags.length) - 0.5, x1: x(end, flags.length) + 0.5 });
+                start = null;
+            }
+        });
+
+        return {
+            width,
+            height,
+            left,
+            right,
+            top,
+            bottom,
+            yMax,
+            ticks,
+            xTicks,
+            bossSpans,
+            averageY: average > 0 ? y(average) : null,
+            lines: graph.lines.map((line) => ({
+                name: line.name,
+                points: line.series.map((value, index) => ({ x: x(index, line.series.length), y: y(value) })),
+            })),
+        };
+    }
+
+    /**
+     * Draw the graph built by buildGraphModel. Does nothing where there is no canvas support.
+     * @param {HTMLCanvasElement} canvas
+     * @param {?Object} model
+     * @param {{colorFor: function(string): string, selfName: ?string, formatValue: function(number): string, formatTime: function(number): string}} options
+     */
+    function drawDpsGraph(canvas, model, { colorFor, selfName, formatValue, formatTime }) {
+        const context = canvas.getContext?.('2d');
+        if (!context || !model) return;
+
+        const ratio = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+        canvas.width = Math.round(model.width * ratio);
+        canvas.height = Math.round(model.height * ratio);
+        context.scale(ratio, ratio);
+
+        context.fillStyle = 'rgba(255, 255, 255, 0.04)';
+        context.fillRect(model.left, model.top, model.right - model.left, model.bottom - model.top);
+
+        context.fillStyle = BOSS_BAND;
+        for (const band of model.bossSpans) {
+            context.fillRect(band.x0, model.top, Math.max(1, band.x1 - band.x0), model.bottom - model.top);
+        }
+
+        context.font = '9px sans-serif';
+        context.textAlign = 'right';
+        context.textBaseline = 'middle';
+        context.lineWidth = 1;
+        for (const tick of model.ticks) {
+            context.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+            context.setLineDash?.([2, 3]);
+            context.beginPath();
+            context.moveTo(model.left, tick.y);
+            context.lineTo(model.right, tick.y);
+            context.stroke();
+            context.fillStyle = '#8b93a1';
+            context.fillText(formatValue(tick.value), model.left - 3, tick.y);
+        }
+        context.setLineDash?.([]);
+
+        context.textAlign = 'center';
+        context.textBaseline = 'top';
+        context.fillStyle = '#8b93a1';
+        for (const tick of model.xTicks) {
+            context.fillText(formatTime(tick.seconds), tick.x, model.bottom + 2);
+        }
+
+        if (model.averageY !== null) {
+            context.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            context.setLineDash?.([3, 3]);
+            context.beginPath();
+            context.moveTo(model.left, model.averageY);
+            context.lineTo(model.right, model.averageY);
+            context.stroke();
+            context.setLineDash?.([]);
+        }
+
+        for (const line of model.lines) {
+            if (line.points.length < 2) continue;
+            context.beginPath();
+            line.points.forEach((point, index) => {
+                if (index === 0) context.moveTo(point.x, point.y);
+                else context.lineTo(point.x, point.y);
+            });
+            context.strokeStyle = colorFor(line.name);
+            context.lineWidth = line.name === selfName || model.lines.length === 1 ? 2 : 1.25;
+            context.lineJoin = 'round';
+            context.stroke();
+        }
+    }
+
+    /**
+     * Unit overlay
+     *
+     * Small labels under each character and monster on the game's combat screen: a DPS / HPS badge for the
+     * players, and an icon with a countdown for every buff, debuff and status on a unit. Nothing is inserted
+     * into the game's own elements: the labels live in one fixed, click-through layer and follow the game's
+     * unit elements by their screen position, so the game re-rendering its units cannot break them.
+     *
+     * Units are found by the substrings of the game's hashed class names. A unit's index is its position in
+     * its side's grid, which is also its key in the battle messages; if the DOM and the roster disagree in
+     * size (the guild party view shows teammates differently) that side is left alone.
+     */
+
+
+    const LAYER_ID = 'toolasha-combat-live-units';
+    const TICK_MS = 500;
+    const ICON_SIZE = 20;
+    const SIDES = [
+        { side: 'p', area: '[class*="BattlePanel_playersArea"]' },
+        { side: 'm', area: '[class*="BattlePanel_monstersArea"]' },
+    ];
+    const UNIT_SELECTOR = '[class*="CombatUnit_combatUnit"]';
+    const STATUS_SELECTOR = '[class*="CombatUnit_status"]';
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const STATUS_ICONS = { stunned: '💫', blinded: '🙈', silenced: '🤐', enraged: '😡' };
+    const KIND_COLORS = { buff: '#4ade80', debuff: '#f87171', dot: '#fb923c', status: '#facc15' };
+
+    /**
+     * @param {?number} ms
+     * @returns {string} "12" for 12 seconds left, "2m" past a minute, nothing for an open-ended status
+     */
+    function countdownText(ms) {
+        if (ms === null || ms === undefined) return '';
+        const seconds = Math.max(0, Math.ceil(ms / 1000));
+        return seconds >= 60 ? `${Math.ceil(seconds / 60)}m` : String(seconds);
+    }
+
+    /**
+     * The URL the game uses for its ability icon sheet, read from any ability icon on the page.
+     * @returns {?string} Sheet URL without the #name, or null when no ability icon is on screen
+     */
+    function findAbilitySprite() {
+        const href = document.querySelector('use[href*="abilities_sprite"]')?.getAttribute('href');
+        return href ? href.split('#')[0] : null;
+    }
+
+    class UnitOverlay {
+        constructor() {
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.layer = null;
+            this.deps = null;
+            // `${side}:${index}` -> {row, badge, icons: Map<id, {wrap, label}>}
+            this.rows = new Map();
+        }
+
+        /**
+         * @param {{getBuffs: function(string, number, number): Object[], getBadge: function(number): ?{text: string, color: string, healText: string}, isActive: function(): boolean, rosterSize: function(string): number}} deps
+         */
+        initialize(deps) {
+            if (this.layer) return;
+            this.deps = deps;
+            this.layer = document.createElement('div');
+            this.layer.id = LAYER_ID;
+            this.layer.style.cssText = `position:fixed; top:0; left:0; width:0; height:0; pointer-events:none; z-index:${config.Z_HUD};`;
+            document.body.appendChild(this.layer);
+            this.timerRegistry.registerInterval(setInterval(() => this.update(), TICK_MS));
+        }
+
+        /**
+         * Place and refresh every label.
+         * @param {number} [now]
+         */
+        update(now = Date.now()) {
+            if (!this.layer || !this.deps) return;
+            const show = this.deps.isActive() && !document.hidden;
+            this.layer.style.display = show ? 'block' : 'none';
+            if (!show) return;
+
+            const seen = new Set();
+            const sprite = findAbilitySprite();
+            for (const { side, area } of SIDES) {
+                const units = [...document.querySelectorAll(`${area} ${UNIT_SELECTOR}`)];
+                if (units.length !== this.deps.rosterSize(side)) continue;
+                units.forEach((unit, index) => {
+                    const key = `${side}:${index}`;
+                    seen.add(key);
+                    this.updateRow(key, side, index, unit, sprite, now);
+                });
+            }
+            for (const [key, entry] of this.rows) {
+                if (!seen.has(key)) {
+                    entry.row.remove();
+                    this.rows.delete(key);
+                }
+            }
+        }
+
+        updateRow(key, side, index, unit, sprite, now) {
+            const anchor = unit.querySelector(STATUS_SELECTOR) || unit;
+            const rect = anchor.getBoundingClientRect();
+            let entry = this.rows.get(key);
+            if (!entry) {
+                const row = document.createElement('div');
+                row.style.cssText = 'position:absolute; display:flex; flex-direction:column; align-items:center; gap:1px;';
+                const badge = document.createElement('div');
+                badge.style.cssText =
+                    'font-size:10px; font-weight:700; line-height:1.2; padding:0 4px; border-radius:3px; white-space:nowrap; color:#000;';
+                const icons = document.createElement('div');
+                icons.style.cssText = 'display:flex; flex-wrap:wrap; justify-content:center; gap:2px;';
+                row.append(badge, icons);
+                this.layer.appendChild(row);
+                entry = { row, badge, iconBox: icons, icons: new Map() };
+                this.rows.set(key, entry);
+            }
+
+            if (!(rect.width > 0 && rect.height > 0)) {
+                entry.row.style.display = 'none';
+                return;
+            }
+            entry.row.style.display = 'flex';
+            entry.row.style.left = `${rect.left}px`;
+            entry.row.style.top = `${rect.bottom + 1}px`;
+            entry.row.style.width = `${rect.width}px`;
+
+            const badge = side === 'p' && config.getSetting('combatLive_unitBadges') ? this.deps.getBadge(index) : null;
+            entry.badge.style.display = badge ? 'block' : 'none';
+            if (badge) {
+                entry.badge.textContent = badge.healText ? `${badge.text} · ${badge.healText}` : badge.text;
+                entry.badge.style.background = badge.color;
+            }
+
+            const buffs = config.getSetting('combatLive_buffIcons') ? this.deps.getBuffs(side, index, now) : [];
+            this.syncIcons(entry, buffs, sprite);
+        }
+
+        /**
+         * Bring a unit's icons in line with what is on it, keeping the icons that are still there.
+         * @param {Object} entry
+         * @param {Object[]} buffs
+         * @param {?string} sprite
+         */
+        syncIcons(entry, buffs, sprite) {
+            const wanted = new Set(buffs.map((buff) => buff.id));
+            for (const [id, icon] of entry.icons) {
+                if (!wanted.has(id)) {
+                    icon.wrap.remove();
+                    entry.icons.delete(id);
+                }
+            }
+            for (const buff of buffs) {
+                let icon = entry.icons.get(buff.id);
+                if (!icon) {
+                    icon = this.buildIcon(buff, sprite);
+                    entry.icons.set(buff.id, icon);
+                }
+                icon.label.textContent = countdownText(buff.remainingMs);
+                // Appending an element that is already there moves it, which keeps the DOM in the sorted order
+                entry.iconBox.appendChild(icon.wrap);
+            }
+        }
+
+        buildIcon(buff, sprite) {
+            const wrap = document.createElement('span');
+            wrap.style.cssText = `position:relative; width:${ICON_SIZE}px; height:${ICON_SIZE}px; box-sizing:border-box; border:2px solid ${
+            KIND_COLORS[buff.kind] || '#999'
+        }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; font-size:11px; overflow:visible;`;
+            // The tooltip is set once, so it does not flicker while a countdown ticks
+            wrap.title =
+                buff.kind === 'status' && !buff.abilityHrid
+                    ? i18n_js.t(`combatLive.status_${buff.status}`)
+                    : getAbilityName(buff.abilityHrid, buff.abilityHrid.split('/').pop());
+
+            if (buff.kind === 'status') {
+                wrap.append(STATUS_ICONS[buff.status] || '•');
+            } else if (sprite) {
+                const svg = document.createElementNS(SVG_NS, 'svg');
+                svg.setAttribute('width', String(ICON_SIZE - 4));
+                svg.setAttribute('height', String(ICON_SIZE - 4));
+                const use = document.createElementNS(SVG_NS, 'use');
+                use.setAttribute('href', `${sprite}#${buff.abilityHrid.split('/').pop()}`);
+                svg.appendChild(use);
+                wrap.appendChild(svg);
+            } else {
+                wrap.append(buff.abilityHrid.split('/').pop().charAt(0).toUpperCase());
+            }
+
+            const label = document.createElement('span');
+            label.style.cssText =
+                'position:absolute; right:-2px; bottom:-3px; font-size:9px; font-weight:700; color:#fff; text-shadow:0 0 2px #000, 0 0 2px #000;';
+            wrap.appendChild(label);
+            return { wrap, label };
+        }
+
+        cleanup() {
+            this.timerRegistry.clearAll();
+            this.layer?.remove();
+            this.layer = null;
+            this.deps = null;
+            this.rows = new Map();
+        }
+    }
+
+    const unitOverlay = new UnitOverlay();
+
+    /**
+     * Combat Live history
+     *
+     * The last finished sessions, kept so a fight can be looked at again after the meters have been reset
+     * (by hand or because a new combat started). Each entry is the summary the panel showed, so reopening
+     * it needs no recomputing. Plain sessions are capped; starred ones are kept longer.
+     */
+
+
+    const STORAGE_KEY$4 = 'combatLive_history';
+    const STORAGE_STORE$5 = 'settings';
+    // Fights shorter than this, or that dealt nothing, are not worth keeping
+    const MIN_SECONDS = 30;
+    const MAX_PLAIN = 10;
+    const MAX_FAVORITES = 30;
+
+    /**
+     * The part of a summary worth keeping: everything the tabs show, without the live chart data.
+     * @param {Object} summary - BattleStats.getSummary()
+     * @returns {Object}
+     */
+    function slimSummary(summary) {
+        const { chart: _chart, charts: _charts, graph: _graph, ...rest } = summary;
+        return JSON.parse(JSON.stringify(rest));
+    }
+
+    class CombatLiveHistory {
+        constructor() {
+            this.entries = [];
+            this.loaded = null;
+            this.listeners = new Set();
+        }
+
+        /**
+         * Read the saved entries once.
+         * @returns {Promise<void>}
+         */
+        load() {
+            if (!this.loaded) {
+                this.loaded = (async () => {
+                    const saved = await storage.get(STORAGE_KEY$4, STORAGE_STORE$5, []);
+                    this.entries = Array.isArray(saved) ? saved.filter((entry) => entry?.summary) : [];
+                })();
+            }
+            return this.loaded;
+        }
+
+        /**
+         * @param {function(): void} listener - Called whenever the list changes
+         * @returns {function(): void} Unsubscribe
+         */
+        onChange(listener) {
+            this.listeners.add(listener);
+            return () => this.listeners.delete(listener);
+        }
+
+        /**
+         * @returns {Object[]} Entries, newest first
+         */
+        list() {
+            return [...this.entries].sort((a, b) => b.date - a.date);
+        }
+
+        /**
+         * Keep a finished session, if it was big enough to matter.
+         * @param {Object} summary - BattleStats.getSummary() at the end of the session
+         * @param {number} [at] - When it ended, in ms
+         * @returns {Promise<?Object>} The new entry, or null when it was not kept
+         */
+        async archive(summary, at = Date.now()) {
+            if (!summary || !(summary.seconds >= MIN_SECONDS) || !(summary.party?.damage > 0)) return null;
+            await this.load();
+            const entry = {
+                id: `${at}-${Math.random().toString(36).slice(2, 7)}`,
+                date: at,
+                label: '',
+                favorite: false,
+                summary: slimSummary(summary),
+            };
+            this.entries.push(entry);
+            this.trim();
+            await this.persist();
+            return entry;
+        }
+
+        /**
+         * Drop the oldest plain entries beyond the cap, and the oldest stars beyond theirs.
+         */
+        trim() {
+            const dropOldest = (entries, max) => {
+                const keep = new Set(
+                    [...entries]
+                        .sort((a, b) => b.date - a.date)
+                        .slice(0, max)
+                        .map((entry) => entry.id)
+                );
+                return entries.filter((entry) => keep.has(entry.id));
+            };
+            this.entries = [
+                ...dropOldest(
+                    this.entries.filter((entry) => !entry.favorite),
+                    MAX_PLAIN
+                ),
+                ...dropOldest(
+                    this.entries.filter((entry) => entry.favorite),
+                    MAX_FAVORITES
+                ),
+            ];
+        }
+
+        async toggleFavorite(id) {
+            const entry = this.entries.find((item) => item.id === id);
+            if (!entry) return;
+            entry.favorite = !entry.favorite;
+            this.trim();
+            await this.persist();
+        }
+
+        async rename(id, label) {
+            const entry = this.entries.find((item) => item.id === id);
+            if (!entry) return;
+            entry.label = String(label || '').slice(0, 60);
+            await this.persist();
+        }
+
+        /**
+         * Remove every entry that is not starred.
+         */
+        async clearPlain() {
+            this.entries = this.entries.filter((entry) => entry.favorite);
+            await this.persist();
+        }
+
+        async persist() {
+            await storage.set(STORAGE_KEY$4, this.entries, STORAGE_STORE$5);
+            for (const listener of this.listeners) listener();
+        }
+    }
+
+    /**
+     * Combat Live Recorder
+     *
+     * Optional diagnostic: keeps the most recent battle messages in a compact form so who-hit-whom
+     * rules can be tested offline against real fights (the game never says which attacker landed a
+     * hit, so any rule for it is a guess until it has been checked against recordings).
+     *
+     * Bounded (MAX_ENTRIES, oldest dropped first). A recording contains player names and character ids
+     * from the battle, so look it over before sharing it.
+     */
+
+    const MAX_ENTRIES$1 = 5000;
+    const FORMAT = 'toolasha-combat-live-recording';
+    const FORMAT_VERSION = 2;
+
+    /**
+     * @param {Object} entry - Raw pMap/mMap entry from battle_updated
+     * @returns {Array} [cHP, cMP, atkCounter, isAutoAtk, abilityHrid, dmgCounter, critCounter]
+     */
+    function compactUnit(entry) {
+        return [
+            entry?.cHP ?? null,
+            entry?.cMP ?? null,
+            entry?.atkCounter ?? null,
+            entry?.isAutoAtk ? 1 : 0,
+            entry?.abilityHrid || '',
+            entry?.dmgCounter ?? null,
+            entry?.critCounter ?? null,
+        ];
+    }
+
+    function compactMap(map) {
+        const out = {};
+        for (const [index, entry] of Object.entries(map || {})) {
+            out[index] = compactUnit(entry);
+        }
+        return out;
+    }
+
+    /**
+     * A bounded copy of a unit's buff map as the game sent it.
+     * @param {*} map
+     * @returns {*} null when there is none
+     */
+    function trimBuffMap(map) {
+        if (!map || typeof map !== 'object') return null;
+        const entries = Array.isArray(map) ? map.slice(0, 25) : Object.entries(map).slice(0, 25);
+        return JSON.parse(JSON.stringify(entries));
+    }
+
+    class CombatLiveRecorder {
+        constructor(maxEntries = MAX_ENTRIES$1) {
+            this.maxEntries = maxEntries;
+            this.entries = [];
+        }
+
+        /**
+         * @param {Object} data - new_battle payload
+         * @param {number} at - Timestamp in ms
+         * @param {string|number|null} selfCharacterId - The recording player's character id
+         */
+        recordNewBattle(data, at, selfCharacterId = null) {
+            this.push({
+                k: 'nb',
+                t: at,
+                id: data?.battleId ?? null,
+                w: data?.wave ?? null,
+                self: selfCharacterId,
+                // The same for every wave of one combat; a different value is a new combat
+                cs: data?.combatStartTime ?? null,
+                // Every unit's starting point: the first action of a battle is judged against what it
+                // was already preparing and its counters when the battle began.
+                p: (data?.players || []).map((unit) => ({
+                    n: unit?.name ?? unit?.character?.name ?? null,
+                    c: unit?.character?.id ?? null,
+                    hp: unit?.currentHitpoints ?? null,
+                    mp: unit?.currentManapoints ?? null,
+                    atk: unit?.attackAttemptCounter ?? null,
+                    ab: unit?.preparingAbilityHrid || '',
+                    auto: unit?.isPreparingAutoAttack ? 1 : 0,
+                    dmg: unit?.damageSplatCounter ?? null,
+                    crit: unit?.criticalDamageSplatCounter ?? null,
+                    // What is equipped, and how much faster the abilities come off cooldown: casts refused
+                    la: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
+                    hs: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
+                    // The game's own buff list for the unit, kept so its real shape can be checked
+                    bm: trimBuffMap(unit?.combatBuffMap),
+                })),
+                m: (data?.monsters || []).map((unit) => ({
+                    h: unit?.hrid ?? null,
+                    hp: unit?.currentHitpoints ?? null,
+                    maxHp: unit?.maxHitpoints ?? null,
+                    mp: unit?.currentManapoints ?? null,
+                    atk: unit?.attackAttemptCounter ?? null,
+                    ab: unit?.preparingAbilityHrid || '',
+                    auto: unit?.isPreparingAutoAttack ? 1 : 0,
+                    dmg: unit?.damageSplatCounter ?? null,
+                    crit: unit?.criticalDamageSplatCounter ?? null,
+                })),
+                // Which fields a new_battle unit really carries (the names the game uses)
+                fields: {
+                    p: Object.keys(data?.players?.[0] || {}),
+                    m: Object.keys(data?.monsters?.[0] || {}),
+                },
+            });
+        }
+
+        /**
+         * @param {Object} data - battle_updated payload
+         * @param {number} at - Timestamp in ms
+         */
+        recordBattleUpdated(data, at) {
+            this.push({
+                k: 'bu',
+                t: at,
+                id: data?.battleId ?? null,
+                p: compactMap(data?.pMap),
+                m: compactMap(data?.mMap),
+            });
+        }
+
+        push(entry) {
+            this.entries.push(entry);
+            if (this.entries.length > this.maxEntries) {
+                this.entries.splice(0, this.entries.length - this.maxEntries);
+            }
+        }
+
+        clear() {
+            this.entries = [];
+        }
+
+        /**
+         * @param {number} [now] - Timestamp in ms for the header
+         * @returns {string} JSON text of everything recorded so far
+         */
+        exportJSON(now = Date.now()) {
+            return JSON.stringify({
+                format: FORMAT,
+                version: FORMAT_VERSION,
+                recordedAt: new Date(now).toISOString(),
+                // Order of each [..] row in `p` / `m` entries of a 'bu' record
+                unitFields: ['cHP', 'cMP', 'atkCounter', 'isAutoAtk', 'abilityHrid', 'dmgCounter', 'critCounter'],
+                entries: this.entries,
+            });
+        }
+    }
+
+    /**
+     * Combat Live results as plain text, for pasting into chat or Discord. Pure: takes a summary, returns a
+     * string.
+     */
+
+
+    const NAME_WIDTH = 14;
+
+    const pad = (text, width) => (String(text).length > width ? String(text).slice(0, width) : String(text).padEnd(width));
+    const number$1 = (value) => formatters_js.formatLargeNumber(Math.round(value));
+    const rate$1 = (value) => formatters_js.formatLargeNumber(value, 1);
+
+    /**
+     * @param {Object} summary - BattleStats.getSummary() (or a saved copy of it)
+     * @param {{label?: string, date?: number}} [options] - A name for the session and when it ended
+     * @returns {string}
+     */
+    function summaryToText(summary, { label = '', date = Date.now() } = {}) {
+        const when = new Date(date).toISOString().slice(0, 16).replace('T', ' ');
+        const lines = [
+            `=== Combat Live${label ? ` - ${label}` : ''} | ${when} | ${formatters_js.timeReadable(summary.seconds || 0)} ===`,
+        ];
+        const party = summary.party || {};
+        lines.push(`Party: ${rate$1(party.dps || 0)} dps | ${number$1(party.damage || 0)} damage | ${party.kills || 0} kills`);
+
+        const dealt = [...(summary.dealt || [])].filter((row) => row.damage > 0).sort((a, b) => b.damage - a.damage);
+        dealt.forEach((row, index) => {
+            const share = party.damage > 0 ? Math.round((row.damage / party.damage) * 100) : 0;
+            lines.push(
+                `${String(index + 1).padStart(2)}. ${pad(row.name || '?', NAME_WIDTH)} ${rate$1(row.dps).padStart(7)} dps ` +
+                    `${number$1(row.damage).padStart(8)} ${String(share).padStart(3)}%`
+            );
+        });
+        if (summary.unattributed?.damage > 0) {
+            lines.push(`Not assigned to a player: ${Math.round((summary.unattributed.share || 0) * 100)}%`);
+        }
+
+        const healers = [...(summary.healers || [])].filter((row) => row.healing > 0).sort((a, b) => b.healing - a.healing);
+        if (healers.length) {
+            lines.push('Healing:');
+            for (const row of healers) {
+                lines.push(
+                    `    ${pad(row.name || '?', NAME_WIDTH)} ${rate$1(row.hps).padStart(7)} hps ${number$1(row.healing).padStart(8)}`
+                );
+            }
+        }
+
+        const taken = [...(summary.players || [])].filter((row) => row.damage > 0).sort((a, b) => b.damage - a.damage);
+        if (taken.length) {
+            lines.push('Damage taken:');
+            for (const row of taken) {
+                lines.push(
+                    `    ${pad(row.name || '?', NAME_WIDTH)} ${number$1(row.damage).padStart(8)}  deaths ${row.deaths || 0}`
+                );
+            }
+        }
+        return lines.join('\n');
     }
 
     /**
@@ -1918,15 +3159,20 @@
     const COLLAPSED_KEY = 'combatLive_collapsed';
     const TAB_KEY = 'combatLive_tab';
     const SECTIONS_KEY = 'combatLive_collapsedSections';
+    const OPEN_SECTIONS_KEY = 'combatLive_openSections';
+    // Not worth the room until asked for
+    const FOLDED_BY_DEFAULT = new Set(['mana.optimizer']);
     const HIDDEN_COLUMNS_KEY = 'combatLive_hiddenColumns';
     const CHART_SECTION = 'damage.chart';
+    const GRAPH_SECTION = 'damage.chart.graph';
+    const OPTIMIZER_SECTION = 'mana.optimizer';
     const REFRESH_MS = 500;
     // Each party member's tape is shorter than the single one, so several fit
     const PLAYER_TAPE_HEIGHT = 30;
     // The panel hides when no combat message has arrived for this long
     const IDLE_HIDE_MS = 60000;
 
-    const TABS = ['damage', 'taken', 'mana'];
+    const TABS = ['damage', 'healing', 'taken', 'mana'];
 
     const number = (value) => formatters_js.formatLargeNumber(Math.round(value));
     const rate = (value) => formatters_js.formatLargeNumber(value, 1);
@@ -1994,7 +3240,7 @@
      */
     function buildTabModel(summary, tab, options = {}) {
         const { party, players, monsters } = summary;
-        const model = { stats: [], secondary: null, headers: [], keys: [], rows: [], note: '', info: '' };
+        const model = { stats: [], secondary: null, headers: [], keys: [], rows: [], note: '', info: '', ranking: null };
 
         if (tab === 'damage') {
             const solo = summary.attributionExact && summary.dealt.length > 0 ? summary.dealt[0] : null;
@@ -2015,6 +3261,15 @@
                 i18n_js.t('combatLive.colKills'),
             ];
             model.keys = ['enemy', 'damage', 'dps', 'killTime', 'kills'];
+            if (splitParty) {
+                model.ranking = summary.dealt.map((row) => ({
+                    name: row.name || '?',
+                    value: row.damage,
+                    valueText: number(row.damage),
+                    rateText: `${rate(row.dps)}/s`,
+                    share: party.damage > 0 ? row.damage / party.damage : 0,
+                }));
+            }
             model.rows = monsters.map((monster) => ({
                 kind: 'row',
                 cells: [
@@ -2098,6 +3353,51 @@
             } else if (!solo) {
                 model.info = i18n_js.t('combatLive.partyNote');
             }
+        } else if (tab === 'healing') {
+            const healers = summary.healers || [];
+            const total = healers.reduce((sum, row) => sum + row.healing, 0);
+            const totalRate = healers.reduce((sum, row) => sum + row.hps, 0);
+            if (total > 0) {
+                model.stats = [
+                    [i18n_js.t('combatLive.partyHps'), rate(totalRate)],
+                    [i18n_js.t('combatLive.totalHealing'), number(total)],
+                ];
+            }
+            model.headers = [
+                i18n_js.t('combatLive.colPlayer'),
+                i18n_js.t('combatLive.colHealing'),
+                i18n_js.t('combatLive.colHps'),
+                i18n_js.t('combatLive.colShare'),
+            ];
+            model.keys = ['player', 'healing', 'hps', 'share'];
+            for (const healer of [...healers].filter((row) => row.healing > 0).sort((a, b) => b.healing - a.healing)) {
+                model.rows.push({
+                    kind: 'player',
+                    cells: [healer.name || '?', number(healer.healing), rate(healer.hps), percent(healer.healing / total)],
+                });
+                for (const ability of healer.abilities) {
+                    model.rows.push({
+                        kind: 'ability',
+                        cells: [
+                            sourceName(ability.key),
+                            number(ability.healing),
+                            rate(ability.hps),
+                            percent(ability.share),
+                        ],
+                    });
+                }
+            }
+            model.info = i18n_js.t('combatLive.healingInfo');
+            if (healers.filter((row) => row.healing > 0).length > 1) {
+                model.ranking = healers.map((row) => ({
+                    name: row.name || '?',
+                    value: row.healing,
+                    valueText: number(row.healing),
+                    rateText: `${rate(row.hps)}/s`,
+                    share: total > 0 ? row.healing / total : 0,
+                }));
+            }
+            if (!total) model.note = i18n_js.t('combatLive.noHealing');
         } else if (tab === 'taken') {
             model.headers = [
                 i18n_js.t('combatLive.colPlayer'),
@@ -2108,6 +3408,16 @@
                 i18n_js.t('combatLive.colDeathsPerHour'),
             ];
             model.keys = ['player', 'taken', 'perSecond', 'healed', 'deaths', 'deathsPerHour'];
+            const takenTotal = players.reduce((sum, player) => sum + player.damage, 0);
+            if (players.length > 1) {
+                model.ranking = players.map((player) => ({
+                    name: player.name || '?',
+                    value: player.damage,
+                    valueText: number(player.damage),
+                    rateText: `${rate(player.damageTakenPerSecond)}/s`,
+                    share: takenTotal > 0 ? player.damage / takenTotal : 0,
+                }));
+            }
             model.rows = players.map((player) => ({
                 kind: 'row',
                 cells: [
@@ -2185,10 +3495,20 @@
             this.collapsed = false;
             // Sections the user folded away, as `<tab>.<section>` ids (the chart is 'damage.chart')
             this.collapsedSections = new Set();
+            // Sections that start folded and stay that way until opened
+            this.openSections = new Set();
+            // Colours handed out to players in the order they were first seen, shared with the unit labels
+            this.playerColors = sharedPlayerColors;
             // Columns the user hid, as `<tab>.<section>.<column>` ids, and which column pickers are open
             this.hiddenColumns = new Set();
             this.openPickers = new Set();
             this.openInfo = new Set();
+            // A finished session being looked at instead of the live one, and whether the past-runs list is open
+            this.viewing = null;
+            this.historyOpen = false;
+            // The mana food optimizer: what the viewer typed (null = use the suggestion) and the last answer
+            this.optimizer = { target: null, slots: 2, result: null, context: null };
+            this.unsubscribeHistory = null;
             this.lastSignature = '';
             this.elements = {};
         }
@@ -2202,10 +3522,17 @@
             this.collapsed = Boolean(await storage.get(COLLAPSED_KEY, STORAGE_STORE$4, false));
             const savedSections = await storage.get(SECTIONS_KEY, STORAGE_STORE$4, []);
             this.collapsedSections = new Set(Array.isArray(savedSections) ? savedSections : []);
+            const savedOpen = await storage.get(OPEN_SECTIONS_KEY, STORAGE_STORE$4, []);
+            this.openSections = new Set(Array.isArray(savedOpen) ? savedOpen : []);
             const savedColumns = await storage.get(HIDDEN_COLUMNS_KEY, STORAGE_STORE$4, []);
             this.hiddenColumns = new Set(Array.isArray(savedColumns) ? savedColumns : []);
+            await this.deps?.history?.load();
             // cleanup() may have run while the saved state was loading
             if (!this.deps) return;
+            this.unsubscribeHistory = this.deps.history?.onChange(() => {
+                this.lastSignature = '';
+                this.refresh();
+            });
 
             this.buildPanel();
             const savedPosition = await storage.get(POSITION_KEY, STORAGE_STORE$4, null);
@@ -2244,7 +3571,8 @@
             const summaryDps = this.textEl('span', '', 'color:#ddd; font-weight:600;');
             const summaryTrend = this.textEl('span', '', 'font-size:11px; font-weight:600;');
             const sparkline = document.createElement('canvas');
-            sparkline.style.cssText = `display:none; width:${SPARK_BUCKETS * SPARK_BUCKET_WIDTH}px; height:${SPARK_HEIGHT}px;`;
+            sparkline.style.cssText = `display:none; width:${SPARK_WIDTH}px; height:${SPARK_HEIGHT}px;`;
+            sparkline.title = i18n_js.t('combatLive.sparkTooltip');
             summary.append(summaryDps, summaryTrend, sparkline);
             const resetButton = this.buttonEl('↺', i18n_js.t('combatLive.resetTooltip'), () => {
                 this.deps.onReset();
@@ -2327,7 +3655,19 @@
             single.append(paceLine, canvas, abilityBar, legend);
             const players = document.createElement('div');
             players.style.display = 'none';
-            content.append(single, players);
+            // DPS over the last five minutes: one line alone, one per member in a party
+            const graph = document.createElement('div');
+            graph.style.display = 'none';
+            const graphHeader = this.sectionHeader(GRAPH_SECTION, i18n_js.t('combatLive.sectionGraph'));
+            const graphContent = document.createElement('div');
+            const graphCanvas = document.createElement('canvas');
+            graphCanvas.style.cssText = `display:block; width:${GRAPH_WIDTH}px; max-width:100%; height:${GRAPH_HEIGHT}px;`;
+            graphCanvas.title = i18n_js.t('combatLive.graphTooltip');
+            const graphLegend = document.createElement('div');
+            graphLegend.style.cssText = 'display:flex; flex-wrap:wrap; gap:2px 8px; margin-top:2px; font-size:11px;';
+            graphContent.append(graphCanvas, graphLegend);
+            graph.append(graphHeader, graphContent);
+            content.append(single, players, graph);
             const header = this.sectionHeader(CHART_SECTION, i18n_js.t('combatLive.sectionChart'));
             block.append(header, content);
             return {
@@ -2342,6 +3682,12 @@
                 legend,
                 single,
                 players,
+                graph,
+                graphHeader,
+                graphContent,
+                graphCanvas,
+                graphLegend,
+                graphSignature: '',
                 playerBlocks: new Map(),
                 playerOrder: '',
                 barSignature: '',
@@ -2373,7 +3719,7 @@
                     toggle();
                 }
             });
-            this.applySectionState(header, this.collapsedSections.has(id));
+            this.applySectionState(header, this.isFolded(id));
             return header;
         }
 
@@ -2382,10 +3728,24 @@
             header.setAttribute('aria-expanded', String(!collapsed));
         }
 
+        /**
+         * @param {string} id - Section id
+         * @returns {boolean} Whether the section is folded away
+         */
+        isFolded(id) {
+            return FOLDED_BY_DEFAULT.has(id) ? !this.openSections.has(id) : this.collapsedSections.has(id);
+        }
+
         toggleSection(id) {
-            if (this.collapsedSections.has(id)) this.collapsedSections.delete(id);
-            else this.collapsedSections.add(id);
-            storage.set(SECTIONS_KEY, [...this.collapsedSections], STORAGE_STORE$4);
+            if (FOLDED_BY_DEFAULT.has(id)) {
+                if (this.openSections.has(id)) this.openSections.delete(id);
+                else this.openSections.add(id);
+                storage.set(OPEN_SECTIONS_KEY, [...this.openSections], STORAGE_STORE$4);
+            } else {
+                if (this.collapsedSections.has(id)) this.collapsedSections.delete(id);
+                else this.collapsedSections.add(id);
+                storage.set(SECTIONS_KEY, [...this.collapsedSections], STORAGE_STORE$4);
+            }
 
             if (id === CHART_SECTION) {
                 const chart = this.elements.chart;
@@ -2463,7 +3823,7 @@
                 tabButtons[tab].style.cssText = `
                 flex:1; padding:5px 0; cursor:pointer; background:none; border:none;
                 border-bottom:2px solid ${active ? '#00c896' : 'transparent'};
-                color:${active ? '#00c896' : '#888'}; font-size:12px; font-weight:600;
+                color:${active ? '#00c896' : '#888'}; font-size:11px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
             `;
             }
         }
@@ -2511,23 +3871,32 @@
             if (!active || document.hidden) return;
 
             this.elements.copyButton.style.display = this.deps.isRecording() ? '' : 'none';
-            const summary = this.deps.getSummary();
-            this.updateSummary(summary);
-            this.updateChart(summary);
+            const live = this.deps.getSummary();
+            this.updateSummary(live);
+            this.updateChart(this.viewing ? {} : live);
             if (this.collapsed) return;
+            const summary = this.viewing ? this.viewing.summary : live;
 
             const model = buildTabModel(summary, this.tab, {
                 showPartyDamage: Boolean(config.getSetting('combatLive_estimateParty')),
             });
-            const signature = JSON.stringify([this.tab, model]);
+            const signature = JSON.stringify([
+                this.tab,
+                model,
+                this.viewing?.id ?? null,
+                this.historyOpen,
+                this.historyOpen ? this.deps.history?.list() : (this.deps.history?.list().length ?? 0),
+                this.tab === 'mana' ? this.computeOptimizer() : null,
+            ]);
             if (signature === this.lastSignature) return;
             this.lastSignature = signature;
             this.renderModel(model);
         }
 
         /**
-         * The bar's summary: your DPS now with its trend and a sparkline of the last minute. Without a player
-         * to follow it falls back to the party total.
+         * The bar's summary: your session average DPS, whether your recent pace is above or below it, and a
+         * line of your DPS over the last five minutes. Without a player to follow it falls back to the party
+         * total.
          * @param {Object} summary - BattleStats.getSummary()
          */
         updateSummary(summary) {
@@ -2542,7 +3911,7 @@
             }
 
             const pace = buildPaceModel(data);
-            summaryDps.textContent = i18n_js.t('combatLive.headerSummary', { dps: rate(data.currentDps) });
+            summaryDps.textContent = i18n_js.t('combatLive.headerSummary', { dps: rate(data.averageDps) });
             summaryTrend.textContent = `${pace.arrow} ${pace.percent}%`;
             summaryTrend.style.color = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
             container.title = i18n_js.t('combatLive.headerTooltip', {
@@ -2552,7 +3921,7 @@
                 party: rate(summary.party.dps),
             });
             sparkline.style.display = 'block';
-            drawSparkline(sparkline, buildSparkModel(data.hits, data.now));
+            drawSparkline(sparkline, buildSparkModel(data.series, data.averageDps));
         }
 
         /**
@@ -2585,6 +3954,7 @@
                     part.title = `${label(segment.key)} ${percent(segment.share)}`;
                     return part;
                 });
+            this.updateGraph(summary);
             if (partyCharts) {
                 this.updateChartPlayers(partyCharts, summary, segmentEls);
                 return;
@@ -2594,7 +3964,11 @@
             const pace = buildPaceModel(data);
             const trendColor = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
             chart.paceNow.textContent = i18n_js.t('combatLive.dpsNow', { dps: rate(data.currentDps) });
-            chart.paceTrend.textContent = i18n_js.t('combatLive.paceVsAverage', { arrow: pace.arrow, percent: pace.percent });
+            chart.paceTrend.textContent = i18n_js.t('combatLive.paceVsAverage', {
+                arrow: pace.arrow,
+                percent: pace.percent,
+                average: rate(data.averageDps),
+            });
             chart.paceTrend.style.color = trendColor;
             chart.paceBest.textContent = data.bestDps > 0 ? i18n_js.t('combatLive.bestDps', { dps: rate(data.bestDps) }) : '';
 
@@ -2612,6 +3986,42 @@
                 .slice(0, 3)
                 .map((segment) => `${label(segment.key)} ${percent(segment.share)}`)
                 .join(' · ');
+        }
+
+        /**
+         * The DPS-over-time graph under the chart: shown once there are a few steps to draw.
+         * @param {Object} summary - BattleStats.getSummary()
+         */
+        updateGraph(summary) {
+            const chart = this.elements.chart;
+            const model = summary.graph ? buildGraphModel(summary.graph, summary.chart?.averageDps || 0) : null;
+            // The average only makes sense for one line; in a party every line is a player
+            const party = (summary.graph?.lines.length || 0) > 1;
+            const partyModel = party && model ? { ...model, averageY: null } : model;
+            chart.graph.style.display = partyModel ? 'block' : 'none';
+            if (!partyModel) return;
+
+            const folded = this.collapsedSections.has(GRAPH_SECTION);
+            this.applySectionState(chart.graphHeader, folded);
+            chart.graphContent.style.display = folded ? 'none' : 'block';
+            if (folded) return;
+
+            const colorFor = (name) => (party ? playerColor(this.playerColors, name) : '#00c896');
+            drawDpsGraph(chart.graphCanvas, partyModel, {
+                colorFor,
+                selfName: summary.chart?.player ?? null,
+                formatValue: (value) => formatters_js.formatLargeNumber(value),
+                formatTime: (seconds) =>
+                    seconds === 0 ? i18n_js.t('combatLive.graphNow') : seconds >= 60 ? `-${seconds / 60}m` : `-${seconds}s`,
+            });
+
+            const legend = party ? summary.graph.lines.map((line) => line.name) : [];
+            const signature = JSON.stringify(legend);
+            if (signature === chart.graphSignature) return;
+            chart.graphSignature = signature;
+            chart.graphLegend.replaceChildren(
+                ...legend.map((name) => this.textEl('span', name, `color:${playerColor(this.playerColors, name)};`))
+            );
         }
 
         /**
@@ -2634,6 +4044,8 @@
             const id = `${CHART_SECTION}.player.${name}`;
             const wrap = document.createElement('div');
             const header = this.sectionHeader(id, name);
+            // The same colour the player has in the ranking
+            header.children[1].style.color = playerColor(this.playerColors, name);
             const pace = this.textEl('span', '', 'margin-left:auto; font-weight:600; font-size:11px;');
             header.append(pace);
             const content = document.createElement('div');
@@ -2777,6 +4189,167 @@
         }
 
         /**
+         * Work out the cheapest mana food for what the viewer asked, if the optimizer is open.
+         * @returns {?Object} The answer plus what it was worked out from
+         */
+        computeOptimizer() {
+            if (this.isFolded(OPTIMIZER_SECTION)) return null;
+            const context = this.deps.getManaFoodContext?.();
+            this.optimizer.context = context;
+            if (!context) {
+                this.optimizer.result = null;
+                return null;
+            }
+            const target = this.optimizer.target ?? Math.round(context.spentPerMinute);
+            this.optimizer.result = optimizeManaFood({
+                foods: context.foods,
+                priceOf: context.priceOf,
+                targetPerMinute: target,
+                slots: this.optimizer.slots,
+                foodHaste: context.foodHaste,
+                maxMana: context.maxMana,
+            });
+            return { target, slots: this.optimizer.slots, result: this.optimizer.result };
+        }
+
+        /**
+         * The mana food optimizer: a target and a slot count in, the cheapest foods out.
+         * @returns {HTMLElement}
+         */
+        buildOptimizer() {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'margin-bottom:6px;';
+            const { context, result } = this.optimizer;
+            if (!context || !result) {
+                wrap.append(this.textEl('div', i18n_js.t('combatLive.optimizerNoData'), 'color:#777; font-size:11px;'));
+                return wrap;
+            }
+
+            const field = (label, value, onChange) => {
+                const box = document.createElement('label');
+                box.style.cssText = 'display:flex; flex-direction:column; gap:2px; font-size:11px; color:#888;';
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.min = '0';
+                input.value = String(value);
+                input.style.cssText =
+                    'width:90px; background:#111; color:#e0e0e0; border:1px solid #333; border-radius:3px; padding:2px 4px;';
+                input.addEventListener('change', () => onChange(Number(input.value)));
+                box.append(this.textEl('span', label, ''), input);
+                return box;
+            };
+            const controls = document.createElement('div');
+            controls.style.cssText = 'display:flex; gap:8px; align-items:flex-end; margin-bottom:6px;';
+            const target = this.optimizer.target ?? Math.round(context.spentPerMinute);
+            controls.append(
+                field(i18n_js.t('combatLive.optimizerTarget'), target, (value) => {
+                    this.optimizer.target = value >= 0 ? value : 0;
+                    this.lastSignature = '';
+                    this.refresh();
+                }),
+                field(i18n_js.t('combatLive.optimizerSlots'), this.optimizer.slots, (value) => {
+                    this.optimizer.slots = Math.max(1, Math.min(6, Math.round(value) || 1));
+                    this.lastSignature = '';
+                    this.refresh();
+                }),
+                this.smallButton(i18n_js.t('combatLive.optimizerUseMine'), i18n_js.t('combatLive.optimizerUseMineTooltip'), () => {
+                    this.optimizer.target = null;
+                    this.lastSignature = '';
+                    this.refresh();
+                })
+            );
+            wrap.append(controls);
+
+            if (result.items.length) {
+                if (!result.reachable) {
+                    wrap.append(
+                        this.textEl(
+                            'div',
+                            i18n_js.t('combatLive.optimizerShort', { deficit: number(result.deficit) }),
+                            'color:#f87171; font-size:11px; margin-bottom:4px;'
+                        )
+                    );
+                }
+                const rows = result.items.map((item) => ({
+                    kind: 'row',
+                    cells: [
+                        `${getItemName(item.hrid, prettyHrid(item.hrid))}${item.isOutlier ? ' ⚠' : ''}`,
+                        number(item.usesPerDay),
+                        number(item.perMinute),
+                        number(item.costPerDay),
+                    ],
+                }));
+                rows.push({
+                    kind: 'player',
+                    cells: [
+                        i18n_js.t('combatLive.optimizerTotal'),
+                        '',
+                        number(result.totalPerMinute),
+                        number(result.totalCostPerDay),
+                    ],
+                });
+                wrap.append(
+                    this.buildTable(
+                        [
+                            i18n_js.t('combatLive.colItem'),
+                            i18n_js.t('combatLive.optimizerUses'),
+                            i18n_js.t('combatLive.optimizerPerMinute'),
+                            i18n_js.t('combatLive.optimizerCost'),
+                        ],
+                        rows,
+                        ['item', 'uses', 'perMinute', 'cost'],
+                        OPTIMIZER_SECTION
+                    )
+                );
+            } else {
+                wrap.append(this.textEl('div', i18n_js.t('combatLive.optimizerNone'), 'color:#777; font-size:11px;'));
+            }
+            if (result.unpriced.length) {
+                wrap.append(
+                    this.textEl(
+                        'div',
+                        i18n_js.t('combatLive.optimizerUnpriced', { count: result.unpriced.length }),
+                        'color:#777; font-size:11px;'
+                    )
+                );
+            }
+            wrap.append(
+                this.textEl('div', i18n_js.t('combatLive.optimizerAssumptions'), 'margin-top:4px; color:#777; font-size:11px;')
+            );
+            return wrap;
+        }
+
+        /**
+         * The party ranked as bars: each as long as its share of the leader's, in the player's own colour.
+         * @param {Array<{name: string, value: number, valueText: string, rateText: string, share: number}>} rows
+         * @returns {HTMLElement}
+         */
+        buildRanking(rows) {
+            const list = document.createElement('div');
+            list.style.cssText = 'margin-bottom:6px;';
+            buildRankingBars(rows).forEach((bar, index) => {
+                const row = document.createElement('div');
+                row.style.cssText =
+                    'position:relative; height:18px; margin-bottom:2px; border-radius:2px; overflow:hidden; background:rgba(255,255,255,0.05);';
+                const fill = document.createElement('div');
+                fill.style.cssText = `position:absolute; left:0; top:0; bottom:0; width:${(bar.width * 100).toFixed(1)}%; background:${playerColor(
+                this.playerColors,
+                bar.name
+            )}; opacity:0.55;`;
+                const text = document.createElement('div');
+                text.style.cssText =
+                    'position:relative; display:flex; justify-content:space-between; gap:6px; padding:0 6px; line-height:18px; font-size:11px; white-space:nowrap;';
+                text.append(
+                    this.textEl('span', `${index + 1}. ${bar.name}`, 'overflow:hidden; text-overflow:ellipsis;'),
+                    this.textEl('span', `${bar.valueText} (${bar.rateText}, ${percent(bar.share)})`, 'font-weight:600;')
+                );
+                row.append(fill, text);
+                list.append(row);
+            });
+            return list;
+        }
+
+        /**
          * Wrap one part of a tab in a section the user can fold away. Only an open section builds its
          * content.
          * @param {string} id - Section id (`<tab>.<section>`)
@@ -2791,7 +4364,7 @@
         buildSection(id, title, buildContent, note, table, info) {
             const wrap = document.createElement('div');
             const header = this.sectionHeader(id, title);
-            const folded = this.collapsedSections.has(id);
+            const folded = this.isFolded(id);
             const { button, picker } = table && !folded ? this.buildColumnPicker(id, table) : {};
             const infoButton =
                 info && !folded ? this.buttonEl('ⓘ', i18n_js.t('combatLive.infoTooltip'), () => this.toggleInfo(id)) : null;
@@ -2825,10 +4398,18 @@
                     : null;
             const mainTitle = {
                 damage: i18n_js.t('combatLive.sectionEnemies'),
+                healing: i18n_js.t('combatLive.tab_healing'),
                 taken: i18n_js.t('combatLive.tab_taken'),
                 mana: i18n_js.t('combatLive.tab_mana'),
             }[this.tab];
 
+            if (model.ranking?.length) {
+                sections.push(
+                    this.buildSection(`${this.tab}.ranking`, i18n_js.t('combatLive.sectionRanking'), () =>
+                        this.buildRanking(model.ranking)
+                    )
+                );
+            }
             if (model.stats.length) {
                 sections.push(
                     this.buildSection(
@@ -2881,10 +4462,175 @@
                 );
             }
 
+            // Nothing to tabulate yet: say why instead of showing an empty tab
+            if (!sections.length && model.note) {
+                sections.push(this.textEl('div', model.note, 'color:#777; font-size:11px; padding:4px 0;'));
+            }
+            if (this.tab === 'mana' && this.deps.getManaFoodContext) {
+                sections.push(
+                    this.buildSection(OPTIMIZER_SECTION, i18n_js.t('combatLive.sectionOptimizer'), () => this.buildOptimizer())
+                );
+            }
+            if (this.deps.history) sections.push(this.buildFooter());
+            if (this.viewing) sections.unshift(this.buildViewingBanner());
             this.elements.body.replaceChildren(...sections);
         }
 
+        /**
+         * Copy text to the clipboard and flash the result on the button that asked.
+         * @param {string} text
+         * @param {HTMLElement} button
+         * @param {string} label - What the button says normally
+         */
+        async copyText(text, button, label) {
+            try {
+                await navigator.clipboard.writeText(text);
+                button.textContent = '✓';
+            } catch (error) {
+                console.error('[CombatLive] Failed to copy results:', error);
+                button.textContent = '✗';
+            }
+            this.timerRegistry.registerTimeout(
+                setTimeout(() => {
+                    button.textContent = label;
+                }, 1500)
+            );
+        }
+
+        smallButton(label, tooltip, onClick) {
+            const button = this.textEl(
+                'button',
+                label,
+                'background:none; border:1px solid #333; border-radius:3px; color:#bbb; cursor:pointer; font-size:11px; padding:1px 6px;'
+            );
+            button.title = tooltip;
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                onClick(button);
+            });
+            return button;
+        }
+
+        /**
+         * Copy results and the past-runs list, at the bottom of every tab.
+         * @returns {HTMLElement}
+         */
+        buildFooter() {
+            const footer = document.createElement('div');
+            footer.style.cssText = 'margin-top:8px; padding-top:6px; border-top:1px solid #222;';
+            const history = this.deps.history;
+            const entries = history.list();
+
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; gap:6px; align-items:center;';
+            const copyLabel = i18n_js.t('combatLive.copyResults');
+            const copy = this.smallButton(copyLabel, i18n_js.t('combatLive.copyResultsTooltip'), (button) => {
+                const source = this.viewing
+                    ? { summary: this.viewing.summary, label: this.viewing.label, date: this.viewing.date }
+                    : { summary: this.deps.getSummary(), label: '', date: Date.now() };
+                this.copyText(summaryToText(source.summary, source), button, copyLabel);
+            });
+            const past = this.smallButton(
+                `${this.historyOpen ? '▾' : '▸'} ${i18n_js.t('combatLive.pastRuns', { count: entries.length })}`,
+                i18n_js.t('combatLive.pastRunsTooltip'),
+                () => {
+                    this.historyOpen = !this.historyOpen;
+                    this.lastSignature = '';
+                    this.refresh();
+                }
+            );
+            row.append(copy, past);
+            footer.append(row);
+            if (this.historyOpen) footer.append(this.buildHistoryList(entries));
+            return footer;
+        }
+
+        /**
+         * @param {Object[]} entries - From the history, newest first
+         * @returns {HTMLElement}
+         */
+        buildHistoryList(entries) {
+            const list = document.createElement('div');
+            list.style.cssText = 'margin-top:6px; display:flex; flex-direction:column; gap:3px;';
+            if (!entries.length) {
+                list.append(this.textEl('div', i18n_js.t('combatLive.noPastRuns'), 'color:#777; font-size:11px;'));
+                return list;
+            }
+
+            const history = this.deps.history;
+            for (const entry of entries) {
+                const row = document.createElement('div');
+                row.style.cssText = `display:flex; align-items:center; gap:4px; padding:2px 4px; border-radius:3px; background:${
+                this.viewing?.id === entry.id ? 'rgba(0,200,150,0.15)' : 'rgba(255,255,255,0.04)'
+            };`;
+                const when = new Date(entry.date).toLocaleString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                });
+                const title = this.textEl(
+                    'span',
+                    `${entry.label || when} · ${formatters_js.timeReadable(entry.summary.seconds || 0)} · ${rate(entry.summary.party?.dps || 0)} DPS`,
+                    'flex:1; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px;'
+                );
+                title.title = entry.label ? when : i18n_js.t('combatLive.viewTooltip');
+                title.addEventListener('click', () => {
+                    this.viewing = entry;
+                    this.lastSignature = '';
+                    this.refresh();
+                });
+
+                const star = this.buttonEl(entry.favorite ? '★' : '☆', i18n_js.t('combatLive.favoriteTooltip'), () =>
+                    history.toggleFavorite(entry.id)
+                );
+                const rename = this.buttonEl('✎', i18n_js.t('combatLive.renameTooltip'), () => {
+                    const label = window.prompt(i18n_js.t('combatLive.renamePrompt'), entry.label || '');
+                    if (label !== null) history.rename(entry.id, label.trim());
+                });
+                const copy = this.buttonEl('⎘', i18n_js.t('combatLive.copyResultsTooltip'), () =>
+                    this.copyText(summaryToText(entry.summary, { label: entry.label, date: entry.date }), copy, '⎘')
+                );
+                row.append(title, star, rename, copy);
+                list.append(row);
+            }
+            list.append(
+                this.smallButton(i18n_js.t('combatLive.clearPlain'), i18n_js.t('combatLive.clearPlainTooltip'), () => history.clearPlain())
+            );
+            return list;
+        }
+
+        /**
+         * The strip shown above a past session that is being looked at.
+         * @returns {HTMLElement}
+         */
+        buildViewingBanner() {
+            const banner = document.createElement('div');
+            banner.style.cssText =
+                'display:flex; align-items:center; gap:6px; margin-bottom:6px; padding:3px 6px; border-radius:3px; background:rgba(0,200,150,0.15); font-size:11px;';
+            const when = new Date(this.viewing.date).toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+            banner.append(
+                this.textEl('span', i18n_js.t('combatLive.viewingPast', { when: this.viewing.label || when }), 'flex:1;'),
+                this.smallButton(i18n_js.t('combatLive.backToLive'), i18n_js.t('combatLive.backToLive'), () => {
+                    this.viewing = null;
+                    this.lastSignature = '';
+                    this.refresh();
+                })
+            );
+            return banner;
+        }
+
         cleanup() {
+            this.unsubscribeHistory?.();
+            this.unsubscribeHistory = null;
+            this.viewing = null;
+            this.historyOpen = false;
+            this.playerColors.clear();
             this.timerRegistry.clearAll();
             if (this.panel) {
                 this.panel.remove();
@@ -2907,6 +4653,12 @@
      */
 
 
+    // The labels under the units hide once the fight has been quiet this long, like the panel
+    const OVERLAY_IDLE_MS = 60000;
+
+    // Ordinary monsters enrage after 3 minutes; a boss takes longer, which is the one reliable sign of a boss wave
+    const BOSS_ENRAGE_TIMER_NS = 180e9;
+
     class CombatLive {
         constructor() {
             this.isInitialized = false;
@@ -2915,7 +4667,13 @@
             this.stats.setDotLookup(getDotDurationMs);
             this.stats.setAbilityLookup(getAbilityTiming);
             this.recorder = new CombatLiveRecorder();
+            this.buffs = new BuffTracker();
+            this.buffs.setEffectsLookup(getAbilityEffects);
+            this.history = new CombatLiveHistory();
             this.lastMessageAt = 0;
+            // Rooms of a labyrinth are separate combats of one run, so they must not restart the meters
+            this.inLabyrinth = false;
+            this.labyrinthHandler = null;
             this.newBattleHandler = null;
             this.battleUpdatedHandler = null;
             this.socketCloseHandler = null;
@@ -2935,24 +4693,110 @@
 
             webSocketHook.on('new_battle', this.newBattleHandler);
             webSocketHook.on('battle_updated', this.battleUpdatedHandler);
+            this.labyrinthHandler = (data) => {
+                this.inLabyrinth = Boolean(data?.labyrinth?.isActive);
+            };
+            webSocketHook.on('labyrinth_updated', this.labyrinthHandler);
             webSocketHook.onSocketEvent('close', this.socketCloseHandler);
 
             combatLiveUI.initialize({
                 getSummary: () => this.stats.getSummary(),
                 getLastMessageAt: () => this.lastMessageAt,
                 onReset: () => {
-                    this.stats.reset();
+                    this.archiveAndReset();
                     this.recorder.clear();
                 },
+                history: this.history,
+                getManaFoodContext: () => this.getManaFoodContext(),
                 isRecording: () => this.isRecording(),
                 getRecording: () => (this.recorder.entries.length ? this.recorder.exportJSON() : null),
             });
+
+            unitOverlay.initialize({
+                getBuffs: (side, index, now) => this.buffs.getUnit(side, index, now),
+                getBadge: (index) => this.getUnitBadge(index),
+                isActive: () => this.lastMessageAt > 0 && Date.now() - this.lastMessageAt <= OVERLAY_IDLE_MS,
+                rosterSize: (side) => (side === 'p' ? this.tracker.players : this.tracker.monsters).length,
+            });
+        }
+
+        /**
+         * What the mana food optimizer needs: the foods, their prices, and the viewer's own limits.
+         * @returns {?Object} null before the game data has loaded
+         */
+        getManaFoodContext() {
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+            if (!itemDetailMap) return null;
+            const selfId = String(dataManager.getCurrentCharacterId() ?? '');
+            const self = this.tracker.players.find((unit) => selfId && String(unit.id) === selfId);
+            const spent = self ? this.stats.getSummary().players.find((row) => row.name === self.name) : null;
+            const mode = marketData_js.getPricingMode('profit', 'buy');
+            return {
+                foods: findManaFoods(itemDetailMap),
+                priceOf: (hrid) => {
+                    const info = marketData_js.getItemPriceOutlierInfo(hrid, { mode });
+                    return info?.value > 0 ? { price: info.value, isOutlier: Boolean(info.isOutlier) } : null;
+                },
+                foodHaste: self?.foodHaste ?? 0,
+                maxMana: self?.maxMp > 0 ? self.maxMp : Infinity,
+                // Mana the viewer actually spends per minute, as a place to start
+                spentPerMinute: (spent?.manaSpentPerSecond ?? 0) * 60,
+            };
+        }
+
+        /**
+         * The label under a player on the combat screen: their DPS, and their HPS if they heal.
+         * @param {number} index - Position in the party
+         * @returns {?{text: string, healText: string, color: string}}
+         */
+        getUnitBadge(index) {
+            const name = this.tracker.players[index]?.name;
+            if (!name) return null;
+            const { dps, hps } = this.stats.getBadge(name);
+            return {
+                text: `${formatters_js.formatLargeNumber(dps, 1)} dps`,
+                healText: hps > 0.05 ? `${formatters_js.formatLargeNumber(hps, 1)} hps` : '',
+                color: playerColor(sharedPlayerColors, name),
+            };
+        }
+
+        /**
+         * A new combat instance: the server gives every wave of one combat (a zone stay, a dungeon run) the same
+         * `combatStartTime`, so a different one means a different combat. Labyrinth rooms are left alone.
+         * @param {Object} data - new_battle payload
+         * @returns {boolean}
+         */
+        isNewCombat(data) {
+            const previous = this.tracker.combatStartTime;
+            return (
+                Boolean(config.getSetting('combatLive_autoReset')) &&
+                !this.inLabyrinth &&
+                previous !== null &&
+                data?.combatStartTime != null &&
+                data.combatStartTime !== previous
+            );
+        }
+
+        /**
+         * Keep the finished session in the history, then start the meters over.
+         */
+        archiveAndReset() {
+            this.history.archive(this.stats.getSummary()).catch((error) => {
+                console.error('[CombatLive] Failed to save the finished session:', error);
+            });
+            this.stats.reset();
         }
 
         onNewBattle(data) {
             const now = Date.now();
+            if (this.isNewCombat(data)) this.archiveAndReset();
             this.tracker.handleNewBattle(data);
             this.stats.beginWave(now);
+            this.buffs.beginWave();
+            this.stats.setBoss(
+                this.tracker.monsters.some((monster) => monster.enrageTimerNs > BOSS_ENRAGE_TIMER_NS),
+                now
+            );
             this.stats.setPlayers(this.tracker.players.map((player) => player.name));
             this.stats.setLoadouts(this.tracker.players);
             const selfId = String(dataManager.getCurrentCharacterId() ?? '');
@@ -2977,13 +4821,19 @@
             if (this.isRecording()) {
                 this.recorder.recordBattleUpdated(data, now);
             }
-            this.stats.record(this.tracker.handleBattleUpdated(data), now);
+            const events = this.tracker.handleBattleUpdated(data);
+            this.stats.record(events, now);
+            this.buffs.record(events, now, {
+                p: this.tracker.players.map((unit) => ({ index: unit.index, hp: unit.hp })),
+                m: this.tracker.monsters.map((unit) => ({ index: unit.index, hp: unit.hp })),
+            });
             this.lastMessageAt = now;
         }
 
         reset() {
             this.tracker.reset();
             this.stats.reset();
+            this.buffs.reset();
             this.lastMessageAt = 0;
         }
 
@@ -2994,11 +4844,14 @@
             if (this.newBattleHandler) webSocketHook.off('new_battle', this.newBattleHandler);
             if (this.battleUpdatedHandler) webSocketHook.off('battle_updated', this.battleUpdatedHandler);
             if (this.socketCloseHandler) webSocketHook.offSocketEvent('close', this.socketCloseHandler);
+            if (this.labyrinthHandler) webSocketHook.off('labyrinth_updated', this.labyrinthHandler);
+            this.labyrinthHandler = null;
             this.newBattleHandler = null;
             this.battleUpdatedHandler = null;
             this.socketCloseHandler = null;
 
             combatLiveUI.cleanup();
+            unitOverlay.cleanup();
             this.reset();
             // A recording holds party names, so it never outlives the character session
             this.recorder.clear();
@@ -29203,7 +31056,11 @@ self.onmessage = function (e) {
      *
      * Total remaining time per drink =
      *   currentActivationNs (from slot.duration) +
-     *   inventoryCount × buffDurationNs × (1 + concentration)
+     *   inventoryCount × buffDurationNs / (1 + concentration)
+     *
+     * Drink concentration makes each drink's effect stronger and its duration shorter, so a tea lasts
+     * fewer seconds, not more (300 s base becomes 268 s at +12%). That is also how the combat engine
+     * applies it.
      *
      * slot.duration is the remaining nanoseconds on the current activation as reported
      * by the server at last action completion. It is frozen while the skill is inactive
@@ -29244,7 +31101,8 @@ self.onmessage = function (e) {
             if (!itemDetails) continue;
 
             const buffDurationNs = itemDetails.consumableDetail?.buffs?.[0]?.duration ?? FALLBACK_BUFF_DURATION_NS;
-            const effectiveDurationNs = buffDurationNs * (1 + concentration);
+            // Concentration shortens how long one drink lasts
+            const effectiveDurationNs = buffDurationNs / (1 + concentration);
 
             const inventoryCount = inventory
                 .filter((i) => i.itemHrid === slot.itemHrid)
@@ -30151,4 +32009,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] UI library 2 loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Core.performanceMonitor, Toolasha.Core.storage, Toolasha.Utils.timerRegistry, Toolasha.Utils.formatters, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.marketData, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.buffParser);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Core.performanceMonitor, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Utils.warningIcon, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.buffParser);
