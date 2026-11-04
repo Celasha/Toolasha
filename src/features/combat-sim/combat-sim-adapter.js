@@ -14,6 +14,7 @@ import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import { calculateRawCombatLevel } from '../../utils/combat-level-progress-calculator.js';
 import { getItemName } from '../../utils/game-i18n.js';
+import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import {
     COMBAT_SHRINE_HRIDS,
     getCombatGuildBuffHridForShrine,
@@ -1317,6 +1318,17 @@ function resolveBuyPrice(itemHrid) {
 }
 
 /**
+ * Price a dungeon key the way the rest of Toolasha does: under the player's key pricing setting (ask,
+ * bid, or the cheaper of buying and crafting), not as a plain market buy.
+ * @param {string} keyHrid
+ * @returns {{value: number, isOutlier: boolean}} 0 when the key cannot be priced
+ */
+export function resolveKeyPrice(keyHrid) {
+    const { price, isOutlier } = getKeyPriceInfo(keyHrid);
+    return { value: price ?? 0, isOutlier: Boolean(isOutlier) };
+}
+
+/**
  * Calculate revenue and consumable costs from a sim result.
  * Respects the user's profitCalc_pricingMode setting. Reuses the canonical sell-side valuation +
  * market tax contract (CSIM-AUD-012) instead of a Combat-Sim-specific formula, and folds dungeon
@@ -1386,7 +1398,7 @@ export function calculateSimRevenue(simResult, gameData, playerHrid, hours) {
 
     let keyCostPerHour = 0;
     if (simResult.isDungeon) {
-        const keyCosts = calculateDungeonKeyCosts(dropMap, resolveBuyPrice);
+        const keyCosts = calculateDungeonKeyCosts(dropMap, resolveKeyPrice);
         for (const key of keyCosts) {
             keyCostPerHour += key.totalCost / hours;
         }

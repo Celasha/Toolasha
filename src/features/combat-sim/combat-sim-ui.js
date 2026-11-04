@@ -19,6 +19,7 @@ import {
     getCommunityBuffs,
     calculateExpectedDrops,
     calculateDungeonKeyCosts,
+    resolveKeyPrice,
     calculateSimRevenue,
     getZonesThatDropItem,
     computeOomPercent,
@@ -2111,9 +2112,7 @@ class CombatSimUI {
 
             // Compute dungeon key costs from drop map
             if (simResult.isDungeon) {
-                const getBuyPriceForKey = (keyHrid) =>
-                    getItemPriceOutlierInfo(keyHrid, { context: 'profit', side: 'buy' });
-                dungeonKeyCosts = calculateDungeonKeyCosts(dropMap, getBuyPriceForKey);
+                dungeonKeyCosts = calculateDungeonKeyCosts(dropMap, resolveKeyPrice);
                 for (const key of dungeonKeyCosts) {
                     keyCostPerHr += (key.count / hours) * key.unitCost;
                     keyCostTotal += key.totalCost;
@@ -2571,8 +2570,7 @@ class CombatSimUI {
         let keyCostPerHrMetric = 0;
         if (simResult.isDungeon && gameData) {
             const dropMap = calculateExpectedDrops(simResult, gameData, activeTab);
-            const getBuyPriceForKey = (keyHrid) => getItemPriceOutlierInfo(keyHrid, { context: 'profit', side: 'buy' });
-            const keyCosts = calculateDungeonKeyCosts(dropMap, getBuyPriceForKey);
+            const keyCosts = calculateDungeonKeyCosts(dropMap, resolveKeyPrice);
             for (const key of keyCosts) {
                 keyCostPerHrMetric += (key.count / hours) * key.unitCost;
             }

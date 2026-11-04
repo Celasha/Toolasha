@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     resolveSellSideValue: vi.fn(),
     resolveBuySideValue: vi.fn(),
+    getKeyPriceInfo: vi.fn(() => ({ price: null, isOutlier: false })),
     marketPrices: {},
     itemDetails: {},
     combatMonsterDetailMap: {},
@@ -36,6 +37,10 @@ vi.mock('../../core/config.js', () => ({
     default: {
         getSettingValue: vi.fn(() => 'hybrid'),
     },
+}));
+
+vi.mock('../../utils/dungeon-key-cost.js', () => ({
+    getKeyPriceInfo: (...args) => mocks.getKeyPriceInfo(...args),
 }));
 
 vi.mock('../market/expected-value-calculator.js', () => ({
@@ -193,10 +198,8 @@ describe('calculateSimRevenue - dungeon key cost included in own return (CSIM-AU
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.marketPrices = { '/items/chimerical_entry_key': { ask: 50, bid: 40 } };
-        mocks.resolveBuySideValue.mockImplementation((itemHrid) =>
-            itemHrid === '/items/chimerical_entry_key'
-                ? { value: 50, isOutlier: false }
-                : { value: 0, isOutlier: false }
+        mocks.getKeyPriceInfo.mockImplementation((keyHrid) =>
+            keyHrid === '/items/chimerical_entry_key' ? { price: 50, isOutlier: false } : { price: 0, isOutlier: false }
         );
     });
 
@@ -280,9 +283,9 @@ describe('calculateSimRevenue - outlier guard propagation', () => {
         expect(mocks.resolveBuySideValue).toHaveBeenCalledWith('/items/potion');
     });
 
-    test('flags dungeon key cost as outlier when resolveBuySideValue says so', () => {
+    test('flags dungeon key cost as outlier when the key price says so', () => {
         mocks.resolveSellSideValue.mockReturnValue({ value: 0, source: 'market', needsTax: false });
-        mocks.resolveBuySideValue.mockReturnValue({ value: 50, isOutlier: true });
+        mocks.getKeyPriceInfo.mockReturnValue({ price: 50, isOutlier: true });
         const gameData = {
             actionDetailMap: {
                 '/actions/combat/chimerical_dungeon': {
@@ -305,5 +308,46 @@ describe('calculateSimRevenue - outlier guard propagation', () => {
 
         const revenue = calculateSimRevenue(result, gameData, 'player1', 1);
         expect(revenue.keyCostPerHour).toBeGreaterThan(0);
+    });
+});
+
+describe('calculateSimRevenue - dungeon keys follow the key pricing setting', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.marketPrices = {};
+        mocks.itemDetails = {};
+        mocks.resolveSellSideValue.mockReturnValue({ value: 0, source: 'market', needsTax: false });
+        // The plain buy price is high; the key price (say the cheaper craft cost) is low
+        mocks.resolveBuySideValue.mockReturnValue({ value: 1000, isOutlier: false });
+        mocks.getKeyPriceInfo.mockReturnValue({ price: 10, isOutlier: false });
+    });
+
+    test('keys are priced through the key pricing setting, not as a plain market buy', () => {
+        const gameData = {
+            actionDetailMap: {
+                '/actions/combat/chimerical_dungeon': {
+                    combatZoneInfo: {
+                        dungeonInfo: {
+                            rewardDropTable: [
+                                { itemHrid: '/items/chimerical_chest', dropRate: 1, minCount: 1, maxCount: 1 },
+                            ],
+                        },
+                    },
+                },
+            },
+        };
+        const result = simResult({
+            isDungeon: true,
+            dungeonsCompleted: 1,
+            zoneName: '/actions/combat/chimerical_dungeon',
+            numberOfPlayers: 5,
+        });
+
+        const revenue = calculateSimRevenue(result, gameData, 'player1', 1);
+
+        // One chest: an entry key and a chest key at 10 each
+        expect(revenue.keyCostPerHour).toBeCloseTo(20);
+        expect(mocks.getKeyPriceInfo).toHaveBeenCalledWith('/items/chimerical_entry_key');
+        expect(mocks.getKeyPriceInfo).toHaveBeenCalledWith('/items/chimerical_chest_key');
     });
 });
