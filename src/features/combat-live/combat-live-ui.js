@@ -23,6 +23,8 @@ import {
     buildAbilityBar,
     SPARK_HEIGHT,
     SPARK_WIDTH,
+    buildRankingBars,
+    playerColor,
     buildPaceModel,
     buildSparkModel,
     buildTapeModel,
@@ -112,7 +114,7 @@ export function pruneEmptyColumns(headers, rows, keys) {
  */
 export function buildTabModel(summary, tab, options = {}) {
     const { party, players, monsters } = summary;
-    const model = { stats: [], secondary: null, headers: [], keys: [], rows: [], note: '', info: '' };
+    const model = { stats: [], secondary: null, headers: [], keys: [], rows: [], note: '', info: '', ranking: null };
 
     if (tab === 'damage') {
         const solo = summary.attributionExact && summary.dealt.length > 0 ? summary.dealt[0] : null;
@@ -133,6 +135,15 @@ export function buildTabModel(summary, tab, options = {}) {
             t('combatLive.colKills'),
         ];
         model.keys = ['enemy', 'damage', 'dps', 'killTime', 'kills'];
+        if (splitParty) {
+            model.ranking = summary.dealt.map((row) => ({
+                name: row.name || '?',
+                value: row.damage,
+                valueText: number(row.damage),
+                rateText: `${rate(row.dps)}/s`,
+                share: party.damage > 0 ? row.damage / party.damage : 0,
+            }));
+        }
         model.rows = monsters.map((monster) => ({
             kind: 'row',
             cells: [
@@ -251,6 +262,15 @@ export function buildTabModel(summary, tab, options = {}) {
             }
         }
         model.info = t('combatLive.healingInfo');
+        if (healers.filter((row) => row.healing > 0).length > 1) {
+            model.ranking = healers.map((row) => ({
+                name: row.name || '?',
+                value: row.healing,
+                valueText: number(row.healing),
+                rateText: `${rate(row.hps)}/s`,
+                share: total > 0 ? row.healing / total : 0,
+            }));
+        }
         if (!total) model.note = t('combatLive.noHealing');
     } else if (tab === 'taken') {
         model.headers = [
@@ -262,6 +282,16 @@ export function buildTabModel(summary, tab, options = {}) {
             t('combatLive.colDeathsPerHour'),
         ];
         model.keys = ['player', 'taken', 'perSecond', 'healed', 'deaths', 'deathsPerHour'];
+        const takenTotal = players.reduce((sum, player) => sum + player.damage, 0);
+        if (players.length > 1) {
+            model.ranking = players.map((player) => ({
+                name: player.name || '?',
+                value: player.damage,
+                valueText: number(player.damage),
+                rateText: `${rate(player.damageTakenPerSecond)}/s`,
+                share: takenTotal > 0 ? player.damage / takenTotal : 0,
+            }));
+        }
         model.rows = players.map((player) => ({
             kind: 'row',
             cells: [
@@ -339,6 +369,8 @@ class CombatLiveUI {
         this.collapsed = false;
         // Sections the user folded away, as `<tab>.<section>` ids (the chart is 'damage.chart')
         this.collapsedSections = new Set();
+        // Colours handed out to players in the order they were first seen
+        this.playerColors = new Map();
         // Columns the user hid, as `<tab>.<section>.<column>` ids, and which column pickers are open
         this.hiddenColumns = new Set();
         this.openPickers = new Set();
@@ -810,6 +842,8 @@ class CombatLiveUI {
         const id = `${CHART_SECTION}.player.${name}`;
         const wrap = document.createElement('div');
         const header = this.sectionHeader(id, name);
+        // The same colour the player has in the ranking
+        header.children[1].style.color = playerColor(this.playerColors, name);
         const pace = this.textEl('span', '', 'margin-left:auto; font-weight:600; font-size:11px;');
         header.append(pace);
         const content = document.createElement('div');
@@ -953,6 +987,36 @@ class CombatLiveUI {
     }
 
     /**
+     * The party ranked as bars: each as long as its share of the leader's, in the player's own colour.
+     * @param {Array<{name: string, value: number, valueText: string, rateText: string, share: number}>} rows
+     * @returns {HTMLElement}
+     */
+    buildRanking(rows) {
+        const list = document.createElement('div');
+        list.style.cssText = 'margin-bottom:6px;';
+        buildRankingBars(rows).forEach((bar, index) => {
+            const row = document.createElement('div');
+            row.style.cssText =
+                'position:relative; height:18px; margin-bottom:2px; border-radius:2px; overflow:hidden; background:rgba(255,255,255,0.05);';
+            const fill = document.createElement('div');
+            fill.style.cssText = `position:absolute; left:0; top:0; bottom:0; width:${(bar.width * 100).toFixed(1)}%; background:${playerColor(
+                this.playerColors,
+                bar.name
+            )}; opacity:0.55;`;
+            const text = document.createElement('div');
+            text.style.cssText =
+                'position:relative; display:flex; justify-content:space-between; gap:6px; padding:0 6px; line-height:18px; font-size:11px; white-space:nowrap;';
+            text.append(
+                this.textEl('span', `${index + 1}. ${bar.name}`, 'overflow:hidden; text-overflow:ellipsis;'),
+                this.textEl('span', `${bar.valueText} (${bar.rateText}, ${percent(bar.share)})`, 'font-weight:600;')
+            );
+            row.append(fill, text);
+            list.append(row);
+        });
+        return list;
+    }
+
+    /**
      * Wrap one part of a tab in a section the user can fold away. Only an open section builds its
      * content.
      * @param {string} id - Section id (`<tab>.<section>`)
@@ -1006,6 +1070,13 @@ class CombatLiveUI {
             mana: t('combatLive.tab_mana'),
         }[this.tab];
 
+        if (model.ranking?.length) {
+            sections.push(
+                this.buildSection(`${this.tab}.ranking`, t('combatLive.sectionRanking'), () =>
+                    this.buildRanking(model.ranking)
+                )
+            );
+        }
         if (model.stats.length) {
             sections.push(
                 this.buildSection(
@@ -1221,6 +1292,7 @@ class CombatLiveUI {
         this.unsubscribeHistory = null;
         this.viewing = null;
         this.historyOpen = false;
+        this.playerColors = new Map();
         this.timerRegistry.clearAll();
         if (this.panel) {
             this.panel.remove();

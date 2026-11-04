@@ -216,3 +216,40 @@ export function drawSparkline(canvas, model, width = SPARK_WIDTH) {
     context.lineWidth = 1.5;
     context.stroke();
 }
+
+// One colour per party member, kept apart from the ability colours, and without green (the accent)
+export const PLAYER_PALETTE = [
+    '#4fc3ff',
+    '#ff9f4a',
+    '#c78bff',
+    '#ff6a8a',
+    '#ffe27a',
+    '#7ff6ff',
+    '#8fa8ff',
+    '#e57373',
+    '#ba68c8',
+    '#4db6ac',
+];
+
+/**
+ * A colour for a player, handed out in the order players are first seen and then kept, so someone keeps
+ * their colour across the bars, charts and tables for the whole session.
+ * @param {Map<string, number>} assigned - Names already given a place (updated)
+ * @param {string} name
+ * @returns {string} CSS colour
+ */
+export function playerColor(assigned, name) {
+    if (!assigned.has(name)) assigned.set(name, assigned.size);
+    return PLAYER_PALETTE[assigned.get(name) % PLAYER_PALETTE.length];
+}
+
+/**
+ * Bars for a ranking: width is the share of the leader's value, so the first is always full.
+ * @param {Array<{name: string, value: number}>} rows - Any order
+ * @returns {Array<{name: string, value: number, width: number}>} Largest first, zero values dropped
+ */
+export function buildRankingBars(rows) {
+    const ranked = rows.filter((row) => row.value > 0).sort((a, b) => b.value - a.value);
+    const top = ranked.length ? ranked[0].value : 1;
+    return ranked.map((row) => ({ ...row, width: row.value / top }));
+}

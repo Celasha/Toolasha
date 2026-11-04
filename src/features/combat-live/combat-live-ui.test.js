@@ -772,3 +772,41 @@ describe('healing tab', () => {
         expect(() => buildTabModel(old, 'healing')).not.toThrow();
     });
 });
+
+describe('party ranking', () => {
+    const party = () => {
+        const base = summary();
+        base.attributionExact = false;
+        base.dealt = [
+            { ...base.dealt[0], name: 'Alice', damage: 600, dps: 60 },
+            { ...base.dealt[0], name: 'Bob', damage: 300, dps: 30 },
+        ];
+        base.party = { ...base.party, damage: 900 };
+        return base;
+    };
+
+    test('the damage tab ranks the party when each member is shown', () => {
+        const model = buildTabModel(party(), 'damage', { showPartyDamage: true });
+
+        expect(model.ranking.map((row) => [row.name, row.valueText, row.rateText])).toEqual([
+            ['Alice', '600', '60.0/s'],
+            ['Bob', '300', '30.0/s'],
+        ]);
+        expect(model.ranking[0].share).toBeCloseTo(2 / 3, 5);
+    });
+
+    test('there is no ranking alone, or when members are not split out', () => {
+        expect(buildTabModel(summary(), 'damage', { showPartyDamage: true }).ranking).toBeNull();
+        expect(buildTabModel(party(), 'damage', { showPartyDamage: false }).ranking).toBeNull();
+    });
+
+    test('damage taken ranks players too once there are several', () => {
+        const base = summary();
+        base.players = [
+            { ...base.players[0], name: 'Alice', damage: 400 },
+            { ...base.players[0], name: 'Bob', damage: 100 },
+        ];
+
+        expect(buildTabModel(base, 'taken').ranking.map((row) => row.name)).toEqual(['Alice', 'Bob']);
+    });
+});

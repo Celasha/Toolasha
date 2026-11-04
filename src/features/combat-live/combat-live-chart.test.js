@@ -3,11 +3,14 @@ import {
     OTHER_KEY,
     abilityColor,
     buildAbilityBar,
+    PLAYER_PALETTE,
     buildPaceModel,
+    buildRankingBars,
     buildSparkModel,
     buildTapeModel,
     drawHitTape,
     drawSparkline,
+    playerColor,
 } from './combat-live-chart.js';
 
 describe('buildPaceModel', () => {
@@ -220,5 +223,41 @@ describe('buildSparkModel', () => {
 describe('drawSparkline', () => {
     test('does nothing without canvas support', () => {
         expect(() => drawSparkline({ getContext: () => null }, { points: [0.5], averageY: 0.5 })).not.toThrow();
+    });
+});
+
+describe('playerColor', () => {
+    test('hands colours out in the order players are first seen and keeps them', () => {
+        const assigned = new Map();
+        const first = playerColor(assigned, 'Alice');
+        const second = playerColor(assigned, 'Bob');
+
+        expect(first).not.toBe(second);
+        expect(playerColor(assigned, 'Alice')).toBe(first);
+        expect(playerColor(assigned, 'Bob')).toBe(second);
+    });
+
+    test('wraps around after the palette runs out', () => {
+        const assigned = new Map();
+        const colors = Array.from({ length: PLAYER_PALETTE.length + 1 }, (_, i) => playerColor(assigned, `P${i}`));
+
+        expect(colors[PLAYER_PALETTE.length]).toBe(colors[0]);
+    });
+});
+
+describe('buildRankingBars', () => {
+    test('ranks largest first, scales against the leader and drops zeros', () => {
+        const bars = buildRankingBars([
+            { name: 'Bob', value: 50 },
+            { name: 'Idle', value: 0 },
+            { name: 'Alice', value: 200 },
+        ]);
+
+        expect(bars.map((bar) => bar.name)).toEqual(['Alice', 'Bob']);
+        expect(bars.map((bar) => bar.width)).toEqual([1, 0.25]);
+    });
+
+    test('is empty with nothing to rank', () => {
+        expect(buildRankingBars([{ name: 'Idle', value: 0 }])).toEqual([]);
     });
 });

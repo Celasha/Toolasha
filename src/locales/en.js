@@ -1754,6 +1754,7 @@ export default {
         collapseTooltip: 'Collapse or expand',
         tab_damage: 'Damage',
         tab_healing: 'Healing',
+        sectionRanking: 'Ranking',
         tab_taken: 'Damage taken',
         partyHps: 'Party HPS',
         totalHealing: 'Total healing',

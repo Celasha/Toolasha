@@ -218,6 +218,7 @@ export default {
         collapseTooltip: '折叠或展开',
         tab_damage: '伤害',
         tab_healing: '治疗',
+        sectionRanking: '排名',
         tab_taken: '承受伤害',
         partyHps: '队伍 HPS',
         totalHealing: '总治疗量',
