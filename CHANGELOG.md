@@ -2,10 +2,9 @@
 
 ## [3.29.1](https://github.com/Celasha/Toolasha/compare/v3.29.0...v3.29.1) (2026-11-04)
 
-
 ### Bug Fixes
 
-* show one buff icon per ability instead of one per effect in Combat Live ([cf232fc](https://github.com/Celasha/Toolasha/commit/cf232fcc5151ef41c094f896572978a0ff5c4db5))
+- show one buff icon per ability instead of one per effect in Combat Live ([cf232fc](https://github.com/Celasha/Toolasha/commit/cf232fcc5151ef41c094f896572978a0ff5c4db5))
 
 ## [3.29.0](https://github.com/Celasha/Toolasha/compare/v3.28.10...v3.29.0) (2026-11-04)
 
