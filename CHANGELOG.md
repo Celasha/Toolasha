@@ -2,24 +2,22 @@
 
 ## [3.29.0](https://github.com/Celasha/Toolasha/compare/v3.28.10...v3.29.0) (2026-11-04)
 
-
 ### Features
 
-* add a Dungeon tab to the Combat Sim for what-if dungeon run profit ([cb12901](https://github.com/Celasha/Toolasha/commit/cb129011f9c787a361a66fc3a759f057a0534bed))
-* add a mana food optimizer to the Combat Live mana tab ([900c799](https://github.com/Celasha/Toolasha/commit/900c799530834070924769f9f95c0ee7f8cfc8e3))
-* show buff and debuff icons and DPS badges under combat units in Combat Live ([fafc919](https://github.com/Celasha/Toolasha/commit/fafc919cfe69f8e317b90df78bc093fbb7ddc97f))
-
+- add a Dungeon tab to the Combat Sim for what-if dungeon run profit ([cb12901](https://github.com/Celasha/Toolasha/commit/cb129011f9c787a361a66fc3a759f057a0534bed))
+- add a mana food optimizer to the Combat Live mana tab ([900c799](https://github.com/Celasha/Toolasha/commit/900c799530834070924769f9f95c0ee7f8cfc8e3))
+- show buff and debuff icons and DPS badges under combat units in Combat Live ([fafc919](https://github.com/Celasha/Toolasha/commit/fafc919cfe69f8e317b90df78bc093fbb7ddc97f))
 
 ### Bug Fixes
 
-* add a five-minute DPS graph with party lines, gridlines and boss bands to Combat Live ([d211b05](https://github.com/Celasha/Toolasha/commit/d211b053e6d5700c59c692f617d96f76e22f6c63))
-* add a Healing tab to Combat Live with healing done and HPS per player and ability ([dc3b8f4](https://github.com/Celasha/Toolasha/commit/dc3b8f44057b70a60b631b176826424445c59bc8))
-* make tea timers use the shorter tea duration that drink concentration gives ([3dfb79c](https://github.com/Celasha/Toolasha/commit/3dfb79ce1cfbfaa7f3e6e9d7757276434979f0d4))
-* price dungeon keys in the Combat Sim with the key pricing setting ([19ddb0f](https://github.com/Celasha/Toolasha/commit/19ddb0f4925dbbaa605fded35a5691dc08d6fdbc))
-* rank the party as colored bars on the Combat Live damage, healing and taken tabs ([dd3db1f](https://github.com/Celasha/Toolasha/commit/dd3db1fca7e53c1c170e3170e5a5bf47433514ea))
-* restart Combat Live for a new combat and keep past runs with copy-as-text results ([07ef40d](https://github.com/Celasha/Toolasha/commit/07ef40da534f527f1cdfecc7f2a2aee9854ee5a7))
-* show session average DPS and a smoothed five-minute DPS line in the Combat Live bar ([36a0e20](https://github.com/Celasha/Toolasha/commit/36a0e20b57b1e2781fd7224a64604c1ae1aca9f8))
-* stop logging a missing skill for special actions such as Party Ready ([25e59e4](https://github.com/Celasha/Toolasha/commit/25e59e41e8f51384af25e5f067367e71c957de81))
+- add a five-minute DPS graph with party lines, gridlines and boss bands to Combat Live ([d211b05](https://github.com/Celasha/Toolasha/commit/d211b053e6d5700c59c692f617d96f76e22f6c63))
+- add a Healing tab to Combat Live with healing done and HPS per player and ability ([dc3b8f4](https://github.com/Celasha/Toolasha/commit/dc3b8f44057b70a60b631b176826424445c59bc8))
+- make tea timers use the shorter tea duration that drink concentration gives ([3dfb79c](https://github.com/Celasha/Toolasha/commit/3dfb79ce1cfbfaa7f3e6e9d7757276434979f0d4))
+- price dungeon keys in the Combat Sim with the key pricing setting ([19ddb0f](https://github.com/Celasha/Toolasha/commit/19ddb0f4925dbbaa605fded35a5691dc08d6fdbc))
+- rank the party as colored bars on the Combat Live damage, healing and taken tabs ([dd3db1f](https://github.com/Celasha/Toolasha/commit/dd3db1fca7e53c1c170e3170e5a5bf47433514ea))
+- restart Combat Live for a new combat and keep past runs with copy-as-text results ([07ef40d](https://github.com/Celasha/Toolasha/commit/07ef40da534f527f1cdfecc7f2a2aee9854ee5a7))
+- show session average DPS and a smoothed five-minute DPS line in the Combat Live bar ([36a0e20](https://github.com/Celasha/Toolasha/commit/36a0e20b57b1e2781fd7224a64604c1ae1aca9f8))
+- stop logging a missing skill for special actions such as Party Ready ([25e59e4](https://github.com/Celasha/Toolasha/commit/25e59e41e8f51384af25e5f067367e71c957de81))
 
 ## [3.28.10](https://github.com/Celasha/Toolasha/compare/v3.28.9...v3.28.10) (2026-11-03)
 
