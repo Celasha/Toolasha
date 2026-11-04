@@ -780,7 +780,7 @@ describe('DPS chart data', () => {
         ]);
 
         expect(stats.getSummary(3000).chart.currentDps).toBeCloseTo(10, 5);
-        expect(stats.getSummary(13000).chart.currentDps).toBe(0);
+        expect(stats.getSummary(30000).chart.currentDps).toBe(0);
     });
 
     test('the tape only holds the last minute', () => {
@@ -804,9 +804,9 @@ describe('DPS chart data', () => {
         expect(early.getSummary(1000).chart.bestDps).toBe(0);
 
         const steps = [];
-        for (let n = 0; n <= 14; n++) steps.push([n * 1000, hit(n, 1)]);
+        for (let n = 0; n <= 20; n++) steps.push([n * 1000, hit(n, 1)]);
         const long = fight(steps);
-        const best = long.getSummary(14000).chart.bestDps;
+        const best = long.getSummary(20000).chart.bestDps;
         expect(best).toBeGreaterThan(0);
         expect(long.getSummary(60000).chart.bestDps).toBe(best);
     });
@@ -1010,5 +1010,38 @@ describe('casts refused for lack of mana', () => {
 
         expect(run(steps, hasted).players.find((p) => p.name === 'Alice').refusedCasts).toBe(1);
         expect(run(steps).players.find((p) => p.name === 'Alice').refusedCasts).toBe(0);
+    });
+});
+
+describe('DPS over time', () => {
+    const tick = (n, hp) => update({ 0: { atkCounter: n } }, { 0: { cHP: hp, mHP: 3000, dmgCounter: n } });
+
+    test('the chart carries a smoothed DPS series for the followed player, and none for other charts', () => {
+        const players = [player(), player({ character: { id: 2, name: 'Bob' } })];
+        const tracker = startBattle(players, [monster({ currentHitpoints: 3000, maxHitpoints: 3000 })]);
+        const stats = new BattleStats();
+        stats.setPlayers(['Alice', 'Bob']);
+        stats.setSelf('Alice');
+        // Alice hits for 100 once a second for 8 seconds
+        for (let n = 1; n <= 8; n++) stats.record(tracker.handleBattleUpdated(tick(n, 3000 - 100 * n)), n * 1000);
+
+        const summary = stats.getSummary(10000);
+
+        // Finished 2s steps from the first hit's step (0-2s) to the one before the step in progress (10-12s)
+        expect(summary.chart.series.length).toBeGreaterThan(0);
+        expect(Math.max(...summary.chart.series)).toBeGreaterThan(0);
+        expect(summary.charts.find((chart) => chart.player === 'Bob').series).toEqual([]);
+    });
+
+    test('a reset forgets the series', () => {
+        const tracker = startBattle([player()], [monster({ currentHitpoints: 3000, maxHitpoints: 3000 })]);
+        const stats = new BattleStats();
+        stats.setPlayers(['Alice']);
+        stats.record(tracker.handleBattleUpdated(tick(1, 2900)), 1000);
+
+        stats.reset();
+        stats.setPlayers(['Alice']);
+
+        expect(stats.getSummary(10000).chart.series).toEqual([]);
     });
 });

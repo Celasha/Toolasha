@@ -20,9 +20,8 @@ import {
     TAPE_WIDTH,
     abilityColor,
     buildAbilityBar,
-    SPARK_BUCKETS,
-    SPARK_BUCKET_WIDTH,
     SPARK_HEIGHT,
+    SPARK_WIDTH,
     buildPaceModel,
     buildSparkModel,
     buildTapeModel,
@@ -362,7 +361,8 @@ class CombatLiveUI {
         const summaryDps = this.textEl('span', '', 'color:#ddd; font-weight:600;');
         const summaryTrend = this.textEl('span', '', 'font-size:11px; font-weight:600;');
         const sparkline = document.createElement('canvas');
-        sparkline.style.cssText = `display:none; width:${SPARK_BUCKETS * SPARK_BUCKET_WIDTH}px; height:${SPARK_HEIGHT}px;`;
+        sparkline.style.cssText = `display:none; width:${SPARK_WIDTH}px; height:${SPARK_HEIGHT}px;`;
+        sparkline.title = t('combatLive.sparkTooltip');
         summary.append(summaryDps, summaryTrend, sparkline);
         const resetButton = this.buttonEl('↺', t('combatLive.resetTooltip'), () => {
             this.deps.onReset();
@@ -644,8 +644,9 @@ class CombatLiveUI {
     }
 
     /**
-     * The bar's summary: your DPS now with its trend and a sparkline of the last minute. Without a player
-     * to follow it falls back to the party total.
+     * The bar's summary: your session average DPS, whether your recent pace is above or below it, and a
+     * line of your DPS over the last five minutes. Without a player to follow it falls back to the party
+     * total.
      * @param {Object} summary - BattleStats.getSummary()
      */
     updateSummary(summary) {
@@ -660,7 +661,7 @@ class CombatLiveUI {
         }
 
         const pace = buildPaceModel(data);
-        summaryDps.textContent = t('combatLive.headerSummary', { dps: rate(data.currentDps) });
+        summaryDps.textContent = t('combatLive.headerSummary', { dps: rate(data.averageDps) });
         summaryTrend.textContent = `${pace.arrow} ${pace.percent}%`;
         summaryTrend.style.color = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
         container.title = t('combatLive.headerTooltip', {
@@ -670,7 +671,7 @@ class CombatLiveUI {
             party: rate(summary.party.dps),
         });
         sparkline.style.display = 'block';
-        drawSparkline(sparkline, buildSparkModel(data.hits, data.now));
+        drawSparkline(sparkline, buildSparkModel(data.series, data.averageDps));
     }
 
     /**
@@ -712,7 +713,11 @@ class CombatLiveUI {
         const pace = buildPaceModel(data);
         const trendColor = { up: '#4ade80', down: '#f87171', flat: '#9aa4b2' }[pace.direction];
         chart.paceNow.textContent = t('combatLive.dpsNow', { dps: rate(data.currentDps) });
-        chart.paceTrend.textContent = t('combatLive.paceVsAverage', { arrow: pace.arrow, percent: pace.percent });
+        chart.paceTrend.textContent = t('combatLive.paceVsAverage', {
+            arrow: pace.arrow,
+            percent: pace.percent,
+            average: rate(data.averageDps),
+        });
         chart.paceTrend.style.color = trendColor;
         chart.paceBest.textContent = data.bestDps > 0 ? t('combatLive.bestDps', { dps: rate(data.bestDps) }) : '';
 

@@ -183,37 +183,42 @@ describe('drawHitTape', () => {
 });
 
 describe('buildSparkModel', () => {
-    const hit = (t, amount, miss = false) => ({ t, amount, miss });
+    test('puts the newest point at the right and scales against the highest of the line and the average', () => {
+        const { points, averageY } = buildSparkModel([10, 20, 40], 20, 3);
 
-    test('cuts the last minute into steps and scales each against the best', () => {
-        const values = buildSparkModel(
-            [hit(1000, 50), hit(2000, 50), hit(56000, 50), hit(58000, 50)],
-            60000,
-            12,
-            60000
-        );
-
-        expect(values).toHaveLength(12);
-        // The first and last 5s steps hold 100 damage each, the rest nothing
-        expect(values[0]).toBe(1);
-        expect(values[11]).toBe(1);
-        expect(values.slice(1, 11).every((value) => value === 0)).toBe(true);
+        expect(points).toHaveLength(3);
+        expect(points[2]).toBeCloseTo(40 / (40 * 1.05), 5);
+        expect(points[0]).toBeCloseTo(10 / (40 * 1.05), 5);
+        expect(averageY).toBeCloseTo(20 / (40 * 1.05), 5);
     });
 
-    test('a smaller step is a share of the best, and misses and old hits add nothing', () => {
-        const values = buildSparkModel([hit(1000, 100), hit(6000, 50), hit(7000, 999, true), hit(-5000, 999)], 60000);
+    test('an average above the whole line raises the scale so it still fits', () => {
+        const { points, averageY } = buildSparkModel([10, 10], 100, 2);
 
-        expect(values[0]).toBe(1);
-        expect(values[1]).toBe(0.5);
+        expect(averageY).toBeLessThanOrEqual(1);
+        expect(points[0]).toBeLessThan(0.2);
     });
 
-    test('is all zeros with no damage', () => {
-        expect(buildSparkModel([], 60000).every((value) => value === 0)).toBe(true);
+    test('squeezes a long series into the width, keeping the first and last steps', () => {
+        const series = Array.from({ length: 150 }, (_, i) => i);
+        const { points } = buildSparkModel(series, 75, 50);
+
+        expect(points).toHaveLength(50);
+        expect(points[0]).toBe(0);
+        expect(points[49]).toBeCloseTo(149 / (149 * 1.05), 5);
+    });
+
+    test('a short series is not stretched to fill the width', () => {
+        expect(buildSparkModel([5, 6, 7], 6, 50).points).toHaveLength(3);
+    });
+
+    test('is empty when there is no series yet', () => {
+        expect(buildSparkModel([], 0)).toEqual({ points: [], averageY: 0 });
     });
 });
 
 describe('drawSparkline', () => {
     test('does nothing without canvas support', () => {
-        expect(() => drawSparkline({ getContext: () => null }, [0, 1])).not.toThrow();
+        expect(() => drawSparkline({ getContext: () => null }, { points: [0.5], averageY: 0.5 })).not.toThrow();
     });
 });

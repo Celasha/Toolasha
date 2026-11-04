@@ -21,6 +21,7 @@
  */
 
 import { SIDE_MONSTER, SIDE_PLAYER } from './battle-event-tracker.js';
+import { DamageHistory, smoothSeries } from './damage-history.js';
 
 const SESSION_GAP_MS = 5000;
 
@@ -29,8 +30,9 @@ const RECENT_HIT_MS = 65000;
 // How much of that the hit tape draws
 export const TAPE_WINDOW_MS = 60000;
 const RECENT_HIT_MAX = 600;
-// "Current DPS" is the damage dealt in this trailing window
-export const PACE_WINDOW_MS = 10000;
+// "Current DPS" is the damage dealt in this trailing window: long enough that one big hit or the quiet
+// seconds between waves do not swing it, the same smoothing the DPS line uses
+export const PACE_WINDOW_MS = 16000;
 
 // Keys for the damage "source" rows besides real ability hrids
 export const SOURCE_AUTO = 'auto';
@@ -113,6 +115,8 @@ export class BattleStats {
         this.playerCount = 0;
         this.selfName = null;
         this.recentHits = [];
+        // Damage per player in 2s steps over the last five minutes, for the DPS line
+        this.history = new DamageHistory();
         // Damage-over-time effects cast and still running: {player, key, until}
         this.activeDots = [];
         // Per player: when each ability was last cast, and the casts that were refused for lack of mana
@@ -314,6 +318,7 @@ export class BattleStats {
             addDamage(ability, hit);
             row.abilities.set(source.key, ability);
             this.dealt.set(source.player, row);
+            this.history.add(source.player, hit.amount, at);
             this.recentHits.push({
                 t: at,
                 player: source.player,
@@ -477,9 +482,10 @@ export class BattleStats {
      * @param {number} now - Window end in ms
      * @param {function(number): number} rate - Damage to per-second over the whole session
      * @param {?string} [player] - Whose chart; the followed player by default
+     * @param {boolean} [withSeries] - Also include the smoothed DPS line (the bar's sparkline needs it)
      * @returns {?Object} Recent hits and pace for that player, or null when there is none
      */
-    getChartData(now, rate, player = this.chartSubject()) {
+    getChartData(now, rate, player = this.chartSubject(), withSeries = false) {
         if (!player) return null;
         const start = now - TAPE_WINDOW_MS;
         return {
@@ -490,6 +496,8 @@ export class BattleStats {
             // Only the followed player's best is tracked
             bestDps: player === this.chartSubject() ? this.bestDps : 0,
             averageDps: rate((this.dealt.get(player) || emptyDealt()).damage),
+            // DPS over the last five minutes in 2s steps, smoothed over 16s; oldest first
+            series: withSeries ? smoothSeries(this.history.series(player, now)) : [],
         };
     }
 
@@ -526,7 +534,7 @@ export class BattleStats {
             // Alone, every hit is yours and nothing is left unattributed
             attributionExact: this.playerCount === 1,
             // What the DPS visual draws: the followed player's recent hits and pace
-            chart: this.getChartData(now, rate),
+            chart: this.getChartData(now, rate, this.chartSubject(), true),
             // In a party, a chart for every member, the followed player first
             charts:
                 this.playerNames.length > 1

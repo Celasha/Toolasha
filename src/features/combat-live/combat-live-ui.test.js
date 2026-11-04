@@ -348,7 +348,15 @@ describe('foldable sections', () => {
         HTMLCanvasElement.prototype.getContext = () => null;
         storage.get.mockImplementation(async (key, _store, fallback) => (key === SECTIONS_KEY ? saved : fallback));
         storage.set.mockClear();
-        const chart = { player: 'Alice', now: 1_000_000, hits: [], currentDps: 100, bestDps: 150, averageDps: 120 };
+        const chart = {
+            player: 'Alice',
+            now: 1_000_000,
+            hits: [],
+            currentDps: 100,
+            bestDps: 150,
+            averageDps: 120,
+            series: [80, 100, 120, 100],
+        };
         await combatLiveUI.initialize({
             getSummary: () => summary({ chart }),
             getLastMessageAt: () => Date.now(),
@@ -465,7 +473,15 @@ describe('party panel', () => {
         const base = summary();
         const alice = base.dealt[0];
         const bob = { ...alice, name: 'Bob', dps: 40, abilities: [alice.abilities[1]] };
-        const chart = { player: 'Alice', now: 1_000_000, hits: [], currentDps: 100, bestDps: 150, averageDps: 120 };
+        const chart = {
+            player: 'Alice',
+            now: 1_000_000,
+            hits: [],
+            currentDps: 100,
+            bestDps: 150,
+            averageDps: 120,
+            series: [80, 100, 120, 100],
+        };
         await combatLiveUI.initialize({
             getSummary: () =>
                 summary({
@@ -544,11 +560,11 @@ describe('party panel', () => {
         expect(storage.set).toHaveBeenCalledWith(SECTIONS_KEY, ['damage.secondary.player.Alice'], 'settings');
     });
 
-    test('the bar shows your DPS now with its trend against your average, not the party total', async () => {
+    test('the bar shows your session average DPS and how your recent pace compares, not the party total', async () => {
         const panel = await openParty();
 
         const bar = panel.firstElementChild;
-        expect(bar.textContent).toContain('combatLive.headerSummary:{"dps":"100.0"}');
+        expect(bar.textContent).toContain('combatLive.headerSummary:{"dps":"120.0"}');
         expect(bar.textContent).not.toContain('150.0');
         expect(bar.textContent).toContain('▼ 17%');
         expect(bar.querySelector('canvas').style.display).toBe('block');
