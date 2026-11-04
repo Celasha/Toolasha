@@ -61,6 +61,8 @@ function unitFromNewBattle(unit, side, index) {
         abilityHaste: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
         // How long before the unit enrages; bosses get much longer than ordinary monsters
         enrageTimerNs: unit?.enrageTimerDuration ?? 0,
+        // How much faster food comes off cooldown (a pouch bonus)
+        foodHaste: unit?.combatDetails?.combatStats?.foodHaste ?? 0,
         isStunned: Boolean(unit?.isStunned),
         isBlinded: Boolean(unit?.isBlinded),
         isSilenced: Boolean(unit?.isSilenced),

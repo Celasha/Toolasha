@@ -13,6 +13,7 @@ vi.mock('../../utils/formatters.js', () => ({
 vi.mock('../../utils/game-i18n.js', () => ({
     getMonsterName: (hrid, fallback) => fallback,
     getAbilityName: (hrid, fallback) => fallback,
+    getItemName: (hrid, fallback) => fallback,
 }));
 
 const { buildTabModel, pruneEmptyColumns, default: combatLiveUI, CHART_SECTION } = await import('./combat-live-ui.js');
@@ -814,5 +815,96 @@ describe('party ranking', () => {
         ];
 
         expect(buildTabModel(base, 'taken').ranking.map((row) => row.name)).toEqual(['Alice', 'Bob']);
+    });
+});
+
+describe('mana food optimizer', () => {
+    const OPEN_KEY = 'combatLive_openSections';
+    const context = {
+        foods: [
+            { hrid: '/items/gummy', restore: 40, cooldownMs: 60000 },
+            { hrid: '/items/yogurt', restore: 350, cooldownMs: 60000 },
+        ],
+        priceOf: (hrid) => ({ price: hrid === '/items/gummy' ? 400 : 3000, isOutlier: false }),
+        foodHaste: 0,
+        maxMana: 2000,
+        spentPerMinute: 30,
+    };
+
+    async function openMana({ open = true, getManaFoodContext = () => context } = {}) {
+        HTMLCanvasElement.prototype.getContext = () => null;
+        config.getSetting.mockImplementation(() => true);
+        storage.get.mockImplementation(async (key, _store, fallback) => {
+            if (key === 'combatLive_tab') return 'mana';
+            if (key === OPEN_KEY) return open ? ['mana.optimizer'] : [];
+            return fallback;
+        });
+        await combatLiveUI.initialize({
+            getSummary: () => summary(),
+            getLastMessageAt: () => Date.now(),
+            onReset: vi.fn(),
+            isRecording: () => false,
+            getRecording: () => null,
+            getManaFoodContext,
+        });
+        combatLiveUI.refresh();
+        return document.getElementById('toolasha-combat-live');
+    }
+
+    const section = (panel) => panel.querySelector('[data-section="mana.optimizer"]')?.parentElement;
+
+    afterEach(() => {
+        combatLiveUI.cleanup();
+        document.body.innerHTML = '';
+    });
+
+    test('is folded until it is opened, and opening it is remembered separately from the folded sections', async () => {
+        const panel = await openMana({ open: false });
+
+        expect(section(panel).children).toHaveLength(1);
+        storage.set.mockClear();
+        panel.querySelector('[data-section="mana.optimizer"]').click();
+
+        expect(storage.set).toHaveBeenCalledWith(OPEN_KEY, ['mana.optimizer'], 'settings');
+        expect(section(combatLiveUI.panel).children.length).toBeGreaterThan(1);
+    });
+
+    test('starts from what you spend and shows the cheapest food that gets there', async () => {
+        const panel = await openMana();
+
+        const inputs = [...section(panel).querySelectorAll('input')];
+        expect(inputs.map((input) => input.value)).toEqual(['30', '2']);
+        expect(section(panel).textContent).toContain('Gummy');
+        expect(section(panel).textContent).not.toContain('Yogurt');
+    });
+
+    test('a new target is worked out again', async () => {
+        const panel = await openMana();
+        const target = section(panel).querySelector('input');
+
+        target.value = '300';
+        target.dispatchEvent(new Event('change'));
+
+        expect(section(combatLiveUI.panel).textContent).toContain('Yogurt');
+    });
+
+    test('says so when the target is out of reach', async () => {
+        const panel = await openMana();
+        const [target, slots] = section(panel).querySelectorAll('input');
+
+        slots.value = '1';
+        slots.dispatchEvent(new Event('change'));
+        const again = section(combatLiveUI.panel).querySelector('input');
+        again.value = '5000';
+        again.dispatchEvent(new Event('change'));
+
+        expect(section(combatLiveUI.panel).textContent).toContain('combatLive.optimizerShort');
+        expect(target).toBeTruthy();
+    });
+
+    test('before the game data has loaded it says so instead of failing', async () => {
+        const panel = await openMana({ getManaFoodContext: () => null });
+
+        expect(section(panel).textContent).toContain('combatLive.optimizerNoData');
     });
 });

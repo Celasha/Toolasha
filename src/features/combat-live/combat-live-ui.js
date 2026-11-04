@@ -14,7 +14,8 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import performanceMonitor from '../../utils/performance-monitor.js';
 import { formatLargeNumber, timeReadable } from '../../utils/formatters.js';
 import { summaryToText } from './combat-live-text.js';
-import { getAbilityName, getMonsterName } from '../../utils/game-i18n.js';
+import { optimizeManaFood } from './mana-food-optimizer.js';
+import { getAbilityName, getItemName, getMonsterName } from '../../utils/game-i18n.js';
 import {
     OTHER_KEY,
     TAPE_HEIGHT,
@@ -43,9 +44,13 @@ const POSITION_KEY = 'combatLive_position';
 const COLLAPSED_KEY = 'combatLive_collapsed';
 const TAB_KEY = 'combatLive_tab';
 const SECTIONS_KEY = 'combatLive_collapsedSections';
+const OPEN_SECTIONS_KEY = 'combatLive_openSections';
+// Not worth the room until asked for
+const FOLDED_BY_DEFAULT = new Set(['mana.optimizer']);
 const HIDDEN_COLUMNS_KEY = 'combatLive_hiddenColumns';
 export const CHART_SECTION = 'damage.chart';
 export const GRAPH_SECTION = 'damage.chart.graph';
+export const OPTIMIZER_SECTION = 'mana.optimizer';
 const REFRESH_MS = 500;
 // Each party member's tape is shorter than the single one, so several fit
 const PLAYER_TAPE_HEIGHT = 30;
@@ -375,6 +380,8 @@ class CombatLiveUI {
         this.collapsed = false;
         // Sections the user folded away, as `<tab>.<section>` ids (the chart is 'damage.chart')
         this.collapsedSections = new Set();
+        // Sections that start folded and stay that way until opened
+        this.openSections = new Set();
         // Colours handed out to players in the order they were first seen, shared with the unit labels
         this.playerColors = sharedPlayerColors;
         // Columns the user hid, as `<tab>.<section>.<column>` ids, and which column pickers are open
@@ -384,6 +391,8 @@ class CombatLiveUI {
         // A finished session being looked at instead of the live one, and whether the past-runs list is open
         this.viewing = null;
         this.historyOpen = false;
+        // The mana food optimizer: what the viewer typed (null = use the suggestion) and the last answer
+        this.optimizer = { target: null, slots: 2, result: null, context: null };
         this.unsubscribeHistory = null;
         this.lastSignature = '';
         this.elements = {};
@@ -398,6 +407,8 @@ class CombatLiveUI {
         this.collapsed = Boolean(await storage.get(COLLAPSED_KEY, STORAGE_STORE, false));
         const savedSections = await storage.get(SECTIONS_KEY, STORAGE_STORE, []);
         this.collapsedSections = new Set(Array.isArray(savedSections) ? savedSections : []);
+        const savedOpen = await storage.get(OPEN_SECTIONS_KEY, STORAGE_STORE, []);
+        this.openSections = new Set(Array.isArray(savedOpen) ? savedOpen : []);
         const savedColumns = await storage.get(HIDDEN_COLUMNS_KEY, STORAGE_STORE, []);
         this.hiddenColumns = new Set(Array.isArray(savedColumns) ? savedColumns : []);
         await this.deps?.history?.load();
@@ -593,7 +604,7 @@ class CombatLiveUI {
                 toggle();
             }
         });
-        this.applySectionState(header, this.collapsedSections.has(id));
+        this.applySectionState(header, this.isFolded(id));
         return header;
     }
 
@@ -602,10 +613,24 @@ class CombatLiveUI {
         header.setAttribute('aria-expanded', String(!collapsed));
     }
 
+    /**
+     * @param {string} id - Section id
+     * @returns {boolean} Whether the section is folded away
+     */
+    isFolded(id) {
+        return FOLDED_BY_DEFAULT.has(id) ? !this.openSections.has(id) : this.collapsedSections.has(id);
+    }
+
     toggleSection(id) {
-        if (this.collapsedSections.has(id)) this.collapsedSections.delete(id);
-        else this.collapsedSections.add(id);
-        storage.set(SECTIONS_KEY, [...this.collapsedSections], STORAGE_STORE);
+        if (FOLDED_BY_DEFAULT.has(id)) {
+            if (this.openSections.has(id)) this.openSections.delete(id);
+            else this.openSections.add(id);
+            storage.set(OPEN_SECTIONS_KEY, [...this.openSections], STORAGE_STORE);
+        } else {
+            if (this.collapsedSections.has(id)) this.collapsedSections.delete(id);
+            else this.collapsedSections.add(id);
+            storage.set(SECTIONS_KEY, [...this.collapsedSections], STORAGE_STORE);
+        }
 
         if (id === CHART_SECTION) {
             const chart = this.elements.chart;
@@ -746,6 +771,7 @@ class CombatLiveUI {
             this.viewing?.id ?? null,
             this.historyOpen,
             this.historyOpen ? this.deps.history?.list() : (this.deps.history?.list().length ?? 0),
+            this.tab === 'mana' ? this.computeOptimizer() : null,
         ]);
         if (signature === this.lastSignature) return;
         this.lastSignature = signature;
@@ -1048,6 +1074,137 @@ class CombatLiveUI {
     }
 
     /**
+     * Work out the cheapest mana food for what the viewer asked, if the optimizer is open.
+     * @returns {?Object} The answer plus what it was worked out from
+     */
+    computeOptimizer() {
+        if (this.isFolded(OPTIMIZER_SECTION)) return null;
+        const context = this.deps.getManaFoodContext?.();
+        this.optimizer.context = context;
+        if (!context) {
+            this.optimizer.result = null;
+            return null;
+        }
+        const target = this.optimizer.target ?? Math.round(context.spentPerMinute);
+        this.optimizer.result = optimizeManaFood({
+            foods: context.foods,
+            priceOf: context.priceOf,
+            targetPerMinute: target,
+            slots: this.optimizer.slots,
+            foodHaste: context.foodHaste,
+            maxMana: context.maxMana,
+        });
+        return { target, slots: this.optimizer.slots, result: this.optimizer.result };
+    }
+
+    /**
+     * The mana food optimizer: a target and a slot count in, the cheapest foods out.
+     * @returns {HTMLElement}
+     */
+    buildOptimizer() {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'margin-bottom:6px;';
+        const { context, result } = this.optimizer;
+        if (!context || !result) {
+            wrap.append(this.textEl('div', t('combatLive.optimizerNoData'), 'color:#777; font-size:11px;'));
+            return wrap;
+        }
+
+        const field = (label, value, onChange) => {
+            const box = document.createElement('label');
+            box.style.cssText = 'display:flex; flex-direction:column; gap:2px; font-size:11px; color:#888;';
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = '0';
+            input.value = String(value);
+            input.style.cssText =
+                'width:90px; background:#111; color:#e0e0e0; border:1px solid #333; border-radius:3px; padding:2px 4px;';
+            input.addEventListener('change', () => onChange(Number(input.value)));
+            box.append(this.textEl('span', label, ''), input);
+            return box;
+        };
+        const controls = document.createElement('div');
+        controls.style.cssText = 'display:flex; gap:8px; align-items:flex-end; margin-bottom:6px;';
+        const target = this.optimizer.target ?? Math.round(context.spentPerMinute);
+        controls.append(
+            field(t('combatLive.optimizerTarget'), target, (value) => {
+                this.optimizer.target = value >= 0 ? value : 0;
+                this.lastSignature = '';
+                this.refresh();
+            }),
+            field(t('combatLive.optimizerSlots'), this.optimizer.slots, (value) => {
+                this.optimizer.slots = Math.max(1, Math.min(6, Math.round(value) || 1));
+                this.lastSignature = '';
+                this.refresh();
+            }),
+            this.smallButton(t('combatLive.optimizerUseMine'), t('combatLive.optimizerUseMineTooltip'), () => {
+                this.optimizer.target = null;
+                this.lastSignature = '';
+                this.refresh();
+            })
+        );
+        wrap.append(controls);
+
+        if (result.items.length) {
+            if (!result.reachable) {
+                wrap.append(
+                    this.textEl(
+                        'div',
+                        t('combatLive.optimizerShort', { deficit: number(result.deficit) }),
+                        'color:#f87171; font-size:11px; margin-bottom:4px;'
+                    )
+                );
+            }
+            const rows = result.items.map((item) => ({
+                kind: 'row',
+                cells: [
+                    `${getItemName(item.hrid, prettyHrid(item.hrid))}${item.isOutlier ? ' ⚠' : ''}`,
+                    number(item.usesPerDay),
+                    number(item.perMinute),
+                    number(item.costPerDay),
+                ],
+            }));
+            rows.push({
+                kind: 'player',
+                cells: [
+                    t('combatLive.optimizerTotal'),
+                    '',
+                    number(result.totalPerMinute),
+                    number(result.totalCostPerDay),
+                ],
+            });
+            wrap.append(
+                this.buildTable(
+                    [
+                        t('combatLive.colItem'),
+                        t('combatLive.optimizerUses'),
+                        t('combatLive.optimizerPerMinute'),
+                        t('combatLive.optimizerCost'),
+                    ],
+                    rows,
+                    ['item', 'uses', 'perMinute', 'cost'],
+                    OPTIMIZER_SECTION
+                )
+            );
+        } else {
+            wrap.append(this.textEl('div', t('combatLive.optimizerNone'), 'color:#777; font-size:11px;'));
+        }
+        if (result.unpriced.length) {
+            wrap.append(
+                this.textEl(
+                    'div',
+                    t('combatLive.optimizerUnpriced', { count: result.unpriced.length }),
+                    'color:#777; font-size:11px;'
+                )
+            );
+        }
+        wrap.append(
+            this.textEl('div', t('combatLive.optimizerAssumptions'), 'margin-top:4px; color:#777; font-size:11px;')
+        );
+        return wrap;
+    }
+
+    /**
      * The party ranked as bars: each as long as its share of the leader's, in the player's own colour.
      * @param {Array<{name: string, value: number, valueText: string, rateText: string, share: number}>} rows
      * @returns {HTMLElement}
@@ -1092,7 +1249,7 @@ class CombatLiveUI {
     buildSection(id, title, buildContent, note, table, info) {
         const wrap = document.createElement('div');
         const header = this.sectionHeader(id, title);
-        const folded = this.collapsedSections.has(id);
+        const folded = this.isFolded(id);
         const { button, picker } = table && !folded ? this.buildColumnPicker(id, table) : {};
         const infoButton =
             info && !folded ? this.buttonEl('ⓘ', t('combatLive.infoTooltip'), () => this.toggleInfo(id)) : null;
@@ -1193,6 +1350,11 @@ class CombatLiveUI {
         // Nothing to tabulate yet: say why instead of showing an empty tab
         if (!sections.length && model.note) {
             sections.push(this.textEl('div', model.note, 'color:#777; font-size:11px; padding:4px 0;'));
+        }
+        if (this.tab === 'mana' && this.deps.getManaFoodContext) {
+            sections.push(
+                this.buildSection(OPTIMIZER_SECTION, t('combatLive.sectionOptimizer'), () => this.buildOptimizer())
+            );
         }
         if (this.deps.history) sections.push(this.buildFooter());
         if (this.viewing) sections.unshift(this.buildViewingBanner());

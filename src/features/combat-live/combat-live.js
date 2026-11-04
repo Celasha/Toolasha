@@ -10,6 +10,8 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import { formatLargeNumber } from '../../utils/formatters.js';
+import { getItemPriceOutlierInfo, getPricingMode } from '../../utils/market-data.js';
+import { findManaFoods } from './mana-food-optimizer.js';
 import performanceMonitor from '../../utils/performance-monitor.js';
 import BattleEventTracker from './battle-event-tracker.js';
 import BattleStats from './battle-stats.js';
@@ -75,6 +77,7 @@ class CombatLive {
                 this.recorder.clear();
             },
             history: this.history,
+            getManaFoodContext: () => this.getManaFoodContext(),
             isRecording: () => this.isRecording(),
             getRecording: () => (this.recorder.entries.length ? this.recorder.exportJSON() : null),
         });
@@ -85,6 +88,30 @@ class CombatLive {
             isActive: () => this.lastMessageAt > 0 && Date.now() - this.lastMessageAt <= OVERLAY_IDLE_MS,
             rosterSize: (side) => (side === 'p' ? this.tracker.players : this.tracker.monsters).length,
         });
+    }
+
+    /**
+     * What the mana food optimizer needs: the foods, their prices, and the viewer's own limits.
+     * @returns {?Object} null before the game data has loaded
+     */
+    getManaFoodContext() {
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+        if (!itemDetailMap) return null;
+        const selfId = String(dataManager.getCurrentCharacterId() ?? '');
+        const self = this.tracker.players.find((unit) => selfId && String(unit.id) === selfId);
+        const spent = self ? this.stats.getSummary().players.find((row) => row.name === self.name) : null;
+        const mode = getPricingMode('profit', 'buy');
+        return {
+            foods: findManaFoods(itemDetailMap),
+            priceOf: (hrid) => {
+                const info = getItemPriceOutlierInfo(hrid, { mode });
+                return info?.value > 0 ? { price: info.value, isOutlier: Boolean(info.isOutlier) } : null;
+            },
+            foodHaste: self?.foodHaste ?? 0,
+            maxMana: self?.maxMp > 0 ? self.maxMp : Infinity,
+            // Mana the viewer actually spends per minute, as a place to start
+            spentPerMinute: (spent?.manaSpentPerSecond ?? 0) * 60,
+        };
     }
 
     /**
