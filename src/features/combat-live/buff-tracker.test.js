@@ -27,6 +27,16 @@ const EFFECTS = {
             buffs: [{ uniqueHrid: '/buff_uniques/pierced', typeHrid: '/buff_types/armor', duration: 8 * SEC }],
         },
     ],
+    '/abilities/invincible': [
+        {
+            targetType: 'self',
+            buffs: [
+                { uniqueHrid: '/buff_uniques/inv_a', typeHrid: '/buff_types/armor', duration: 120 * SEC },
+                { uniqueHrid: '/buff_uniques/inv_b', typeHrid: '/buff_types/resist', duration: 120 * SEC },
+                { uniqueHrid: '/buff_uniques/inv_c', typeHrid: '/buff_types/tenacity', duration: 120 * SEC },
+            ],
+        },
+    ],
     '/abilities/firestorm': [{ targetType: 'allEnemies', damageOverTimeRatio: 1, damageOverTimeDuration: 6 * SEC }],
     '/abilities/stunning_blow': [{ targetType: 'enemy', stunChance: 0.7, stunDuration: 3 * SEC }],
 };
@@ -171,5 +181,14 @@ describe('BuffTracker', () => {
 
         expect(buffs.getUnit('p', 0, 100)).toEqual([]);
         expect(buffs.getUnit('p', 1, 100)).toEqual([]);
+    });
+
+    test('an ability that applies several effects shows as one icon', () => {
+        const buffs = tracker();
+        buffs.record([cast('p', 0, '/abilities/invincible')], 1000, roster());
+        const icons = buffs.getUnit('p', 0, 2000);
+        expect(icons).toHaveLength(1);
+        expect(icons[0].abilityHrid).toBe('/abilities/invincible');
+        expect(icons[0].remainingMs).toBe(119000);
     });
 });

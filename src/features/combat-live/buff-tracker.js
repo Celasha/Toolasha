@@ -209,21 +209,35 @@ export class BuffTracker {
     getUnit(side, index, now) {
         const entries = this.units.get(unitKey(side, index));
         if (!entries) return [];
-        const out = [];
+        // One icon per ability: a cast that applies several effects at once would otherwise show the same icon
+        // several times. Statuses stay apart, since each has its own icon.
+        const grouped = new Map();
         for (const [id, entry] of entries) {
             if (entry.expiresAt !== null && entry.expiresAt <= now) {
                 entries.delete(id);
                 continue;
             }
-            out.push({
-                id,
+            const remainingMs = entry.expiresAt === null ? null : entry.expiresAt - now;
+            const groupId =
+                entry.kind === KIND_STATUS || !entry.abilityHrid ? id : `${entry.kind}:${entry.abilityHrid}`;
+            const seen = grouped.get(groupId);
+            if (seen) {
+                if (remainingMs !== null && (seen.remainingMs === null || remainingMs > seen.remainingMs)) {
+                    seen.remainingMs = remainingMs;
+                    seen.durationMs = entry.durationMs;
+                }
+                continue;
+            }
+            grouped.set(groupId, {
+                id: groupId,
                 kind: entry.kind,
                 status: entry.status,
                 abilityHrid: entry.abilityHrid,
-                remainingMs: entry.expiresAt === null ? null : entry.expiresAt - now,
+                remainingMs,
                 durationMs: entry.durationMs,
             });
         }
+        const out = [...grouped.values()];
         const order = { [KIND_BUFF]: 0, [KIND_STATUS]: 1, [KIND_DEBUFF]: 2, [KIND_DOT]: 3 };
         return out.sort(
             (a, b) => order[a.kind] - order[b.kind] || (a.remainingMs ?? Infinity) - (b.remainingMs ?? Infinity)
