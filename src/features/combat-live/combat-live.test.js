@@ -135,6 +135,29 @@ describe('Combat Live feature', () => {
         expect(mockUI.initialize).toHaveBeenCalledTimes(1);
     });
 
+    describe('boss waves', () => {
+        test('a monster with a long enrage timer makes the wave a boss wave, and the next ordinary wave clears it', () => {
+            feature.initialize();
+            const setBoss = vi.spyOn(combatLive.stats, 'setBoss');
+
+            handlers.get('new_battle')({
+                ...newBattle,
+                monsters: [
+                    { hrid: '/monsters/boss', currentHitpoints: 5000, maxHitpoints: 5000, enrageTimerDuration: 600e9 },
+                ],
+            });
+            handlers.get('new_battle')({
+                ...newBattle,
+                battleId: 8,
+                monsters: [
+                    { hrid: '/monsters/fly', currentHitpoints: 300, maxHitpoints: 300, enrageTimerDuration: 180e9 },
+                ],
+            });
+
+            expect(setBoss.mock.calls.map((call) => call[0])).toEqual([true, false]);
+        });
+    });
+
     describe('starting over for a new combat', () => {
         const autoReset = () => mockConfig.getSetting.mockImplementation((key) => key === 'combatLive_autoReset');
         const withStart = (combatStartTime) => ({ ...newBattle, combatStartTime });

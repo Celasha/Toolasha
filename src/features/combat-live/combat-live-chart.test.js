@@ -4,11 +4,14 @@ import {
     abilityColor,
     buildAbilityBar,
     PLAYER_PALETTE,
+    buildGraphModel,
+    niceInterval,
     buildPaceModel,
     buildRankingBars,
     buildSparkModel,
     buildTapeModel,
     drawHitTape,
+    drawDpsGraph,
     drawSparkline,
     playerColor,
 } from './combat-live-chart.js';
@@ -259,5 +262,75 @@ describe('buildRankingBars', () => {
 
     test('is empty with nothing to rank', () => {
         expect(buildRankingBars([{ name: 'Idle', value: 0 }])).toEqual([]);
+    });
+});
+
+describe('niceInterval', () => {
+    test('snaps to 1, 2, 5 or 10 times a power of ten', () => {
+        expect(niceInterval(300, 3)).toBe(100);
+        expect(niceInterval(1800, 3)).toBe(500);
+        expect(niceInterval(95, 3)).toBe(20);
+        expect(niceInterval(7, 3)).toBe(2);
+    });
+
+    test('has a sane value for nothing', () => {
+        expect(niceInterval(0)).toBe(1);
+    });
+});
+
+describe('buildGraphModel', () => {
+    const graph = (series, boss = []) => ({ stepMs: 2000, boss, lines: [{ name: 'Alice', series }] });
+
+    test('is null until there are a couple of steps', () => {
+        expect(buildGraphModel(graph([]))).toBeNull();
+        expect(buildGraphModel(graph([100]))).toBeNull();
+    });
+
+    test('the scale starts at 0 and tops out on a round number above the peak', () => {
+        const model = buildGraphModel(graph([100, 480, 250]));
+
+        expect(model.ticks[0].value).toBe(0);
+        expect(model.yMax).toBe(600);
+        expect(model.ticks.map((tick) => tick.value)).toEqual([0, 200, 400, 600]);
+    });
+
+    test('the newest point is at the right edge, and a short fight leaves room on the left', () => {
+        const model = buildGraphModel(graph([10, 20, 30]));
+        const points = model.lines[0].points;
+
+        expect(points[2].x).toBe(model.right);
+        expect(points[0].x).toBeGreaterThan(model.left + 100);
+    });
+
+    test('a higher value is drawn higher up, and the average line sits on the same scale', () => {
+        const model = buildGraphModel(graph([0, 400]), 200);
+
+        expect(model.lines[0].points[1].y).toBeLessThan(model.lines[0].points[0].y);
+        expect(model.averageY).toBeGreaterThan(model.lines[0].points[1].y);
+        expect(model.averageY).toBeLessThan(model.lines[0].points[0].y);
+    });
+
+    test('runs of boss steps become bands', () => {
+        const model = buildGraphModel(graph([1, 2, 3, 4, 5, 6], [false, true, true, false, true, true]));
+
+        expect(model.bossSpans).toHaveLength(2);
+        expect(model.bossSpans[0].x0).toBeLessThan(model.bossSpans[0].x1);
+    });
+
+    test('time labels step by 15s for a short fight and by a minute for a long one', () => {
+        expect(buildGraphModel(graph(Array(20).fill(5))).xTicks.map((tick) => tick.seconds)).toEqual([
+            0, 15, 30, 45, 60,
+        ]);
+        expect(buildGraphModel(graph(Array(150).fill(5))).xTicks.map((tick) => tick.seconds)).toEqual([
+            0, 60, 120, 180, 240, 300,
+        ]);
+    });
+});
+
+describe('drawDpsGraph', () => {
+    test('does nothing without canvas support or a model', () => {
+        const options = { colorFor: () => '#fff', selfName: null, formatValue: String, formatTime: String };
+        expect(() => drawDpsGraph({ getContext: () => null }, {}, options)).not.toThrow();
+        expect(() => drawDpsGraph({ getContext: () => ({}) }, null, options)).not.toThrow();
     });
 });

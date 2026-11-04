@@ -36,13 +36,14 @@ describe('DamageHistory', () => {
         expect(history.series('Alice', 3000)).toEqual([50]);
     });
 
-    test('keeps players apart and is empty for someone who has done nothing', () => {
+    test('keeps players apart, and someone who has done nothing is a flat line', () => {
         const history = new DamageHistory();
         history.add('Alice', 100, 0);
         history.add('Bob', 40, 0);
 
         expect(history.series('Bob', 4000)).toEqual([20, 0]);
-        expect(history.series('Nobody', 4000)).toEqual([]);
+        expect(history.series('Nobody', 4000)).toEqual([0, 0]);
+        expect(new DamageHistory().series('Nobody', 4000)).toEqual([]);
     });
 
     test('starts when the fight did, with zeros for the quiet steps after it', () => {
@@ -73,5 +74,34 @@ describe('DamageHistory', () => {
         history.reset();
 
         expect(history.series('Alice', 10000)).toEqual([]);
+    });
+});
+
+describe('DamageHistory boss steps', () => {
+    test('marks the steps of a boss wave and not the ones around it', () => {
+        const history = new DamageHistory();
+        history.add('Alice', 10, 0);
+        history.markBoss(false, 0);
+        history.markBoss(true, 4000);
+        history.markBoss(false, 8000);
+        history.add('Alice', 10, 9000);
+
+        // Steps 0-2s, 2-4s, 4-6s, 6-8s, 8-10s, then up to the last finished one at 12s
+        expect(history.bossSeries(12000)).toEqual([false, false, true, true, false, false]);
+    });
+
+    test('is aligned with the series and empty before any damage', () => {
+        const history = new DamageHistory();
+        expect(history.bossSeries(10000)).toEqual([]);
+        history.add('Alice', 10, 0);
+        expect(history.bossSeries(10000)).toHaveLength(history.series('Alice', 10000).length);
+    });
+
+    test('ignores a repeat of the same flag', () => {
+        const history = new DamageHistory();
+        history.markBoss(true, 0);
+        history.markBoss(true, 5000);
+
+        expect(history.bossChanges).toHaveLength(1);
     });
 });

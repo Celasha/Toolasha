@@ -1105,3 +1105,44 @@ describe('healing done', () => {
         expect(row(summary, 'Alice').hps).toBeCloseTo(50, 5);
     });
 });
+
+describe('DPS graph data', () => {
+    const tick = (n, hp) => update({ 0: { atkCounter: n } }, { 0: { cHP: hp, mHP: 3000, dmgCounter: n } });
+
+    function fightFor(players) {
+        const tracker = startBattle(players, [monster({ currentHitpoints: 3000, maxHitpoints: 3000 })]);
+        const stats = new BattleStats();
+        stats.setPlayers(players.map((unit) => unit.character.name));
+        stats.setSelf('Alice');
+        stats.setBoss(false, 0);
+        for (let n = 1; n <= 12; n++) stats.record(tracker.handleBattleUpdated(tick(n, 3000 - 100 * n)), n * 1000);
+        return stats;
+    }
+
+    test('alone the graph has one line, for you', () => {
+        const graph = fightFor([player()]).getSummary(16000).graph;
+
+        expect(graph.lines.map((line) => line.name)).toEqual(['Alice']);
+        expect(graph.lines[0].series.length).toBeGreaterThan(2);
+        expect(graph.boss).toHaveLength(graph.lines[0].series.length);
+    });
+
+    test('in a party every member has a line of the same length, so they line up', () => {
+        const graph = fightFor([player(), player({ character: { id: 2, name: 'Bob' } })]).getSummary(16000).graph;
+
+        expect(graph.lines.map((line) => line.name)).toEqual(['Alice', 'Bob']);
+        expect(graph.lines[0].series).toHaveLength(graph.lines[1].series.length);
+        expect(Math.max(...graph.lines[1].series)).toBe(0);
+    });
+
+    test('a boss wave shows in the graph', () => {
+        const tracker = startBattle([player()], [monster({ currentHitpoints: 3000, maxHitpoints: 3000 })]);
+        const stats = new BattleStats();
+        stats.setPlayers(['Alice']);
+        stats.setSelf('Alice');
+        stats.setBoss(true, 0);
+        for (let n = 1; n <= 8; n++) stats.record(tracker.handleBattleUpdated(tick(n, 3000 - 100 * n)), n * 1000);
+
+        expect(stats.getSummary(12000).graph.boss.every(Boolean)).toBe(true);
+    });
+});

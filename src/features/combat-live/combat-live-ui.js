@@ -21,13 +21,17 @@ import {
     TAPE_WIDTH,
     abilityColor,
     buildAbilityBar,
+    GRAPH_HEIGHT,
+    GRAPH_WIDTH,
     SPARK_HEIGHT,
     SPARK_WIDTH,
+    buildGraphModel,
     buildRankingBars,
     playerColor,
     buildPaceModel,
     buildSparkModel,
     buildTapeModel,
+    drawDpsGraph,
     drawHitTape,
     drawSparkline,
 } from './combat-live-chart.js';
@@ -40,6 +44,7 @@ const TAB_KEY = 'combatLive_tab';
 const SECTIONS_KEY = 'combatLive_collapsedSections';
 const HIDDEN_COLUMNS_KEY = 'combatLive_hiddenColumns';
 export const CHART_SECTION = 'damage.chart';
+export const GRAPH_SECTION = 'damage.chart.graph';
 const REFRESH_MS = 500;
 // Each party member's tape is shorter than the single one, so several fit
 const PLAYER_TAPE_HEIGHT = 30;
@@ -523,7 +528,19 @@ class CombatLiveUI {
         single.append(paceLine, canvas, abilityBar, legend);
         const players = document.createElement('div');
         players.style.display = 'none';
-        content.append(single, players);
+        // DPS over the last five minutes: one line alone, one per member in a party
+        const graph = document.createElement('div');
+        graph.style.display = 'none';
+        const graphHeader = this.sectionHeader(GRAPH_SECTION, t('combatLive.sectionGraph'));
+        const graphContent = document.createElement('div');
+        const graphCanvas = document.createElement('canvas');
+        graphCanvas.style.cssText = `display:block; width:${GRAPH_WIDTH}px; max-width:100%; height:${GRAPH_HEIGHT}px;`;
+        graphCanvas.title = t('combatLive.graphTooltip');
+        const graphLegend = document.createElement('div');
+        graphLegend.style.cssText = 'display:flex; flex-wrap:wrap; gap:2px 8px; margin-top:2px; font-size:11px;';
+        graphContent.append(graphCanvas, graphLegend);
+        graph.append(graphHeader, graphContent);
+        content.append(single, players, graph);
         const header = this.sectionHeader(CHART_SECTION, t('combatLive.sectionChart'));
         block.append(header, content);
         return {
@@ -538,6 +555,12 @@ class CombatLiveUI {
             legend,
             single,
             players,
+            graph,
+            graphHeader,
+            graphContent,
+            graphCanvas,
+            graphLegend,
+            graphSignature: '',
             playerBlocks: new Map(),
             playerOrder: '',
             barSignature: '',
@@ -789,6 +812,7 @@ class CombatLiveUI {
                 part.title = `${label(segment.key)} ${percent(segment.share)}`;
                 return part;
             });
+        this.updateGraph(summary);
         if (partyCharts) {
             this.updateChartPlayers(partyCharts, summary, segmentEls);
             return;
@@ -820,6 +844,42 @@ class CombatLiveUI {
             .slice(0, 3)
             .map((segment) => `${label(segment.key)} ${percent(segment.share)}`)
             .join(' · ');
+    }
+
+    /**
+     * The DPS-over-time graph under the chart: shown once there are a few steps to draw.
+     * @param {Object} summary - BattleStats.getSummary()
+     */
+    updateGraph(summary) {
+        const chart = this.elements.chart;
+        const model = summary.graph ? buildGraphModel(summary.graph, summary.chart?.averageDps || 0) : null;
+        // The average only makes sense for one line; in a party every line is a player
+        const party = (summary.graph?.lines.length || 0) > 1;
+        const partyModel = party && model ? { ...model, averageY: null } : model;
+        chart.graph.style.display = partyModel ? 'block' : 'none';
+        if (!partyModel) return;
+
+        const folded = this.collapsedSections.has(GRAPH_SECTION);
+        this.applySectionState(chart.graphHeader, folded);
+        chart.graphContent.style.display = folded ? 'none' : 'block';
+        if (folded) return;
+
+        const colorFor = (name) => (party ? playerColor(this.playerColors, name) : '#00c896');
+        drawDpsGraph(chart.graphCanvas, partyModel, {
+            colorFor,
+            selfName: summary.chart?.player ?? null,
+            formatValue: (value) => formatLargeNumber(value),
+            formatTime: (seconds) =>
+                seconds === 0 ? t('combatLive.graphNow') : seconds >= 60 ? `-${seconds / 60}m` : `-${seconds}s`,
+        });
+
+        const legend = party ? summary.graph.lines.map((line) => line.name) : [];
+        const signature = JSON.stringify(legend);
+        if (signature === chart.graphSignature) return;
+        chart.graphSignature = signature;
+        chart.graphLegend.replaceChildren(
+            ...legend.map((name) => this.textEl('span', name, `color:${playerColor(this.playerColors, name)};`))
+        );
     }
 
     /**

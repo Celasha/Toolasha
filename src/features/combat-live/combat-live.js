@@ -17,6 +17,9 @@ import CombatLiveHistory from './combat-live-history.js';
 import CombatLiveRecorder from './combat-live-recorder.js';
 import combatLiveUI from './combat-live-ui.js';
 
+// Ordinary monsters enrage after 3 minutes; a boss takes longer, which is the one reliable sign of a boss wave
+const BOSS_ENRAGE_TIMER_NS = 180e9;
+
 class CombatLive {
     constructor() {
         this.isInitialized = false;
@@ -100,6 +103,10 @@ class CombatLive {
         if (this.isNewCombat(data)) this.archiveAndReset();
         this.tracker.handleNewBattle(data);
         this.stats.beginWave(now);
+        this.stats.setBoss(
+            this.tracker.monsters.some((monster) => monster.enrageTimerNs > BOSS_ENRAGE_TIMER_NS),
+            now
+        );
         this.stats.setPlayers(this.tracker.players.map((player) => player.name));
         this.stats.setLoadouts(this.tracker.players);
         const selfId = String(dataManager.getCurrentCharacterId() ?? '');

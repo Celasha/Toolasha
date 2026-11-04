@@ -253,3 +253,165 @@ export function buildRankingBars(rows) {
     const top = ranked.length ? ranked[0].value : 1;
     return ranked.map((row) => ({ ...row, width: row.value / top }));
 }
+
+export const GRAPH_WIDTH = 296;
+export const GRAPH_HEIGHT = 96;
+const GRAPH_LEFT = 34;
+const GRAPH_RIGHT = 4;
+const GRAPH_TOP = 6;
+const GRAPH_BOTTOM = 14;
+// A fight shorter than this still gets a graph this wide, so the line grows into it
+const GRAPH_MIN_STEPS = 30;
+const GRAPH_MAX_STEPS = 150;
+const BOSS_BAND = 'rgba(255, 63, 52, 0.16)';
+
+/**
+ * A round-number gridline spacing: 1, 2, 5 or 10 times a power of ten.
+ * @param {number} max - Highest value on the graph
+ * @param {number} [lines] - About how many gridlines
+ * @returns {number}
+ */
+export function niceInterval(max, lines = 3) {
+    if (!(max > 0)) return 1;
+    const raw = max / lines;
+    const magnitude = 10 ** Math.floor(Math.log10(raw));
+    const fraction = raw / magnitude;
+    const nice = fraction < 1.5 ? 1 : fraction < 3.5 ? 2 : fraction < 7.5 ? 5 : 10;
+    return nice * magnitude;
+}
+
+/**
+ * Lay out the DPS-over-time graph. Time runs left to right with "now" at the right edge; the scale starts at
+ * 0 and tops out on a round number above the highest point.
+ * @param {{stepMs: number, boss: boolean[], lines: Array<{name: string, series: number[]}>}} graph
+ * @param {number} [average] - A reference line (the session average), 0 for none
+ * @param {number} [width]
+ * @param {number} [height]
+ * @returns {?Object} null when there is nothing to draw yet
+ */
+export function buildGraphModel(graph, average = 0, width = GRAPH_WIDTH, height = GRAPH_HEIGHT) {
+    const steps = Math.max(0, ...graph.lines.map((line) => line.series.length));
+    if (steps < 2) return null;
+
+    const span = Math.min(GRAPH_MAX_STEPS, Math.max(GRAPH_MIN_STEPS, steps));
+    const left = GRAPH_LEFT;
+    const right = width - GRAPH_RIGHT;
+    const top = GRAPH_TOP;
+    const bottom = height - GRAPH_BOTTOM;
+    const peak = Math.max(1, average, ...graph.lines.flatMap((line) => line.series));
+    const interval = niceInterval(peak);
+    const yMax = Math.ceil(peak / interval) * interval;
+    const x = (index, length) => right - ((length - 1 - index) / (span - 1)) * (right - left);
+    const y = (value) => bottom - (value / yMax) * (bottom - top);
+
+    const ticks = [];
+    for (let value = 0; value <= yMax + 1e-9; value += interval) ticks.push({ value, y: y(value) });
+
+    const spanSeconds = (span * graph.stepMs) / 1000;
+    const labelEvery = spanSeconds <= 90 ? 15 : spanSeconds <= 180 ? 30 : 60;
+    const xTicks = [];
+    for (let seconds = 0; seconds <= spanSeconds; seconds += labelEvery) {
+        xTicks.push({ seconds, x: right - (seconds / ((span - 1) * (graph.stepMs / 1000))) * (right - left) });
+    }
+
+    // Runs of boss steps as bands
+    const bossSpans = [];
+    const flags = graph.boss;
+    let start = null;
+    flags.forEach((flag, index) => {
+        if (flag && start === null) start = index;
+        if ((!flag || index === flags.length - 1) && start !== null) {
+            const end = flag ? index : index - 1;
+            bossSpans.push({ x0: x(start, flags.length) - 0.5, x1: x(end, flags.length) + 0.5 });
+            start = null;
+        }
+    });
+
+    return {
+        width,
+        height,
+        left,
+        right,
+        top,
+        bottom,
+        yMax,
+        ticks,
+        xTicks,
+        bossSpans,
+        averageY: average > 0 ? y(average) : null,
+        lines: graph.lines.map((line) => ({
+            name: line.name,
+            points: line.series.map((value, index) => ({ x: x(index, line.series.length), y: y(value) })),
+        })),
+    };
+}
+
+/**
+ * Draw the graph built by buildGraphModel. Does nothing where there is no canvas support.
+ * @param {HTMLCanvasElement} canvas
+ * @param {?Object} model
+ * @param {{colorFor: function(string): string, selfName: ?string, formatValue: function(number): string, formatTime: function(number): string}} options
+ */
+export function drawDpsGraph(canvas, model, { colorFor, selfName, formatValue, formatTime }) {
+    const context = canvas.getContext?.('2d');
+    if (!context || !model) return;
+
+    const ratio = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    canvas.width = Math.round(model.width * ratio);
+    canvas.height = Math.round(model.height * ratio);
+    context.scale(ratio, ratio);
+
+    context.fillStyle = 'rgba(255, 255, 255, 0.04)';
+    context.fillRect(model.left, model.top, model.right - model.left, model.bottom - model.top);
+
+    context.fillStyle = BOSS_BAND;
+    for (const band of model.bossSpans) {
+        context.fillRect(band.x0, model.top, Math.max(1, band.x1 - band.x0), model.bottom - model.top);
+    }
+
+    context.font = '9px sans-serif';
+    context.textAlign = 'right';
+    context.textBaseline = 'middle';
+    context.lineWidth = 1;
+    for (const tick of model.ticks) {
+        context.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        context.setLineDash?.([2, 3]);
+        context.beginPath();
+        context.moveTo(model.left, tick.y);
+        context.lineTo(model.right, tick.y);
+        context.stroke();
+        context.fillStyle = '#8b93a1';
+        context.fillText(formatValue(tick.value), model.left - 3, tick.y);
+    }
+    context.setLineDash?.([]);
+
+    context.textAlign = 'center';
+    context.textBaseline = 'top';
+    context.fillStyle = '#8b93a1';
+    for (const tick of model.xTicks) {
+        context.fillText(formatTime(tick.seconds), tick.x, model.bottom + 2);
+    }
+
+    if (model.averageY !== null) {
+        context.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        context.setLineDash?.([3, 3]);
+        context.beginPath();
+        context.moveTo(model.left, model.averageY);
+        context.lineTo(model.right, model.averageY);
+        context.stroke();
+        context.setLineDash?.([]);
+    }
+
+    for (const line of model.lines) {
+        if (line.points.length < 2) continue;
+        context.beginPath();
+        line.points.forEach((point, index) => {
+            if (index === 0) context.moveTo(point.x, point.y);
+            else context.lineTo(point.x, point.y);
+        });
+        context.strokeStyle = colorFor(line.name);
+        context.lineWidth = line.name === selfName || model.lines.length === 1 ? 2 : 1.25;
+        context.lineJoin = 'round';
+        context.stroke();
+    }
+}

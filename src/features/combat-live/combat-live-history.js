@@ -21,7 +21,7 @@ export const MAX_FAVORITES = 30;
  * @returns {Object}
  */
 export function slimSummary(summary) {
-    const { chart: _chart, charts: _charts, ...rest } = summary;
+    const { chart: _chart, charts: _charts, graph: _graph, ...rest } = summary;
     return JSON.parse(JSON.stringify(rest));
 }
 

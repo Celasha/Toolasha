@@ -56,6 +56,8 @@ function unitFromNewBattle(unit, side, index) {
         // The abilities the unit has equipped, and how much faster its abilities come off cooldown
         abilities: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
         abilityHaste: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
+        // How long before the unit enrages; bosses get much longer than ordinary monsters
+        enrageTimerNs: unit?.enrageTimerDuration ?? 0,
     };
 }
 

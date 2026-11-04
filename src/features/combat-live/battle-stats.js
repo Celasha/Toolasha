@@ -21,7 +21,7 @@
  */
 
 import { SIDE_MONSTER, SIDE_PLAYER } from './battle-event-tracker.js';
-import { DamageHistory, smoothSeries } from './damage-history.js';
+import { DamageHistory, HISTORY_BUCKET_MS, smoothSeries } from './damage-history.js';
 
 const SESSION_GAP_MS = 5000;
 
@@ -161,6 +161,15 @@ export class BattleStats {
      */
     setSelf(name) {
         this.selfName = name || null;
+    }
+
+    /**
+     * Whether the wave starting now has a boss in it (for colouring the DPS graph).
+     * @param {boolean} boss
+     * @param {number} [at] - Timestamp in ms
+     */
+    setBoss(boss, at = Date.now()) {
+        this.history.markBoss(boss, at);
     }
 
     /**
@@ -526,6 +535,22 @@ export class BattleStats {
     }
 
     /**
+     * What the DPS-over-time graph draws: a smoothed line per player over the last five minutes (just the
+     * followed player when alone), and which steps were boss fights.
+     * @param {number} now - Timestamp in ms
+     * @returns {{stepMs: number, boss: boolean[], lines: Array<{name: string, series: number[]}>}}
+     */
+    getGraphData(now) {
+        const subject = this.chartSubject();
+        const names = this.playerNames.length > 1 ? this.playerNames : subject ? [subject] : [];
+        return {
+            stepMs: HISTORY_BUCKET_MS,
+            boss: this.history.bossSeries(now),
+            lines: names.map((name) => ({ name, series: smoothSeries(this.history.series(name, now)) })),
+        };
+    }
+
+    /**
      * @returns {number} Seconds of combat counted so far
      */
     getActiveSeconds() {
@@ -586,6 +611,7 @@ export class BattleStats {
                         .sort((a, b) => b.damage - a.damage),
                 };
             }),
+            graph: this.getGraphData(now),
             healers: this.playerNames.map((name) => {
                 const row = this.healing.get(name) || { healing: 0, abilities: new Map() };
                 return {

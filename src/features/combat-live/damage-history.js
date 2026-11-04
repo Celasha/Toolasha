@@ -39,6 +39,18 @@ export class DamageHistory {
         this.players = new Map();
         this.firstBucket = null;
         this.lastAt = null;
+        // When the fight became (or stopped being) a boss fight: [{at, boss}] in time order
+        this.bossChanges = [];
+    }
+
+    /**
+     * Note whether the wave starting now is a boss wave.
+     * @param {boolean} boss
+     * @param {number} at - Timestamp in ms
+     */
+    markBoss(boss, at) {
+        const last = this.bossChanges[this.bossChanges.length - 1];
+        if (!last || last.boss !== Boolean(boss)) this.bossChanges.push({ at, boss: Boolean(boss) });
     }
 
     /**
@@ -66,6 +78,37 @@ export class DamageHistory {
     }
 
     /**
+     * The steps a series covers: the same for every player, so their lines line up.
+     * @param {number} now - Timestamp in ms
+     * @returns {{first: ?number, last: number}}
+     */
+    range(now) {
+        const last = Math.floor(now / HISTORY_BUCKET_MS) - 1;
+        if (this.firstBucket === null) return { first: null, last };
+        return { first: Math.max(this.firstBucket, last - HISTORY_BUCKETS + 1), last };
+    }
+
+    /**
+     * Whether each step of a series was in a boss fight.
+     * @param {number} now - Timestamp in ms
+     * @returns {boolean[]} One per step, matching `series`
+     */
+    bossSeries(now) {
+        const { first, last } = this.range(now);
+        if (first === null) return [];
+        const flags = [];
+        let cursor = 0;
+        for (let index = first; index <= last; index++) {
+            // A step counts as boss if the boss wave had started by the time it ended
+            const end = (index + 1) * HISTORY_BUCKET_MS - 1;
+            while (cursor + 1 < this.bossChanges.length && this.bossChanges[cursor + 1].at <= end) cursor++;
+            const change = this.bossChanges[cursor];
+            flags.push(Boolean(change && change.at <= end && change.boss));
+        }
+        return flags;
+    }
+
+    /**
      * Damage per second in each finished step, oldest first, ending at the last step that is complete at
      * `now` and starting when the fight did (never more than five minutes back).
      * @param {string} player
@@ -73,10 +116,10 @@ export class DamageHistory {
      * @returns {number[]} Raw (unsmoothed) DPS per step, empty when there is nothing yet
      */
     series(player, now) {
-        const row = this.players.get(player);
-        if (!row || this.firstBucket === null) return [];
-        const last = Math.floor(now / HISTORY_BUCKET_MS) - 1;
-        const first = Math.max(this.firstBucket, last - HISTORY_BUCKETS + 1);
+        // Someone who has not hit anything yet is a flat line at 0, so every player's series is the same length
+        const row = this.players.get(player) || new Map();
+        const { first, last } = this.range(now);
+        if (first === null) return [];
         const values = [];
         for (let index = first; index <= last; index++) {
             values.push((row.get(index) || 0) / (HISTORY_BUCKET_MS / 1000));

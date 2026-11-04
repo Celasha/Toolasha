@@ -380,7 +380,13 @@ describe('foldable sections', () => {
         return openPanel().then((panel) => {
             const ids = [...panel.querySelectorAll('[data-section]')].map((el) => el.dataset.section);
 
-            expect(ids).toEqual([CHART_SECTION, 'damage.totals', 'damage.secondary', 'damage.main']);
+            expect(ids).toEqual([
+                CHART_SECTION,
+                'damage.chart.graph',
+                'damage.totals',
+                'damage.secondary',
+                'damage.main',
+            ]);
         });
     });
 
@@ -521,8 +527,8 @@ describe('party panel', () => {
         const panel = await openParty();
 
         expect(chartTitles(panel)).toEqual(['damage.chart.player.Alice', 'damage.chart.player.Bob']);
-        // The bar's sparkline, the single chart's tape, and one tape per member
-        expect(panel.querySelectorAll('canvas')).toHaveLength(4);
+        // The bar's sparkline, the single chart's tape, the DPS graph, and one tape per member
+        expect(panel.querySelectorAll('canvas')).toHaveLength(5);
         expect(header(panel, CHART_SECTION).nextElementSibling.firstChild.style.display).toBe('none');
     });
 
