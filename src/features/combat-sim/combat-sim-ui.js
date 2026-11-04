@@ -28,6 +28,8 @@ import { runSimulation, cancelSimulation } from './combat-sim-runner.js';
 import { runAllZonesSimulation, cancelAllZonesSimulation } from './all-zones-runner.js';
 import { runUpgradeAnalysis } from './upgrade-advisor.js';
 import { SimEditor } from './sim-editor.js';
+import { createDungeonTab } from './dungeon-run-tab.js';
+import { communityDropQuantity } from './dungeon-run-planner.js';
 import { getItemName, getActionName } from '../../utils/game-i18n.js';
 
 const PANEL_ID = 'mwi-combat-sim-panel';
@@ -164,6 +166,7 @@ class CombatSimUI {
             <button id="mwi-csim-tab-results" style="${tabStyle(false)}">${t('combatSimUi.tabResults')}</button>
             <button id="mwi-csim-tab-seek" style="${tabStyle(false)}">${t('combatSimUi.tabSeek')}</button>
             <button id="mwi-csim-tab-upgrade" style="${tabStyle(false)}">${t('combatSimUi.tabUpgrade')}</button>
+            <button id="mwi-csim-tab-dungeon" style="${tabStyle(false)}">${t('combatSimUi.tabDungeon')}</button>
         `;
 
         // Configure tab content
@@ -498,6 +501,24 @@ class CombatSimUI {
         this.panel.appendChild(configureContent);
         this.panel.appendChild(resultsContent);
         this.panel.appendChild(seekContent);
+        this._dungeonTab = createDungeonTab({
+            getZones: getCombatZones,
+            getGameData: buildGameDataPayload,
+            getDefaultDropQuantity: () =>
+                communityDropQuantity(
+                    dataManager.getInitClientData()?.communityBuffTypeDetailMap?.[
+                        '/community_buff_types/combat_drop_quantity'
+                    ],
+                    dataManager.getCommunityBuffLevel('/community_buff_types/combat_drop_quantity') || 0
+                ),
+            getDefaultMinutes: () => {
+                const last = this._lastSimResult;
+                return last?.isDungeon && last.dungeonsCompleted > 0
+                    ? last.totalDungeonCompletionDuration / last.dungeonsCompleted / 1e9 / 60
+                    : null;
+            },
+        });
+        this.panel.appendChild(this._dungeonTab.element);
         this.panel.appendChild(upgradeContent);
         this.panel.appendChild(status);
 
@@ -533,6 +554,7 @@ class CombatSimUI {
             .addEventListener('click', () => this._switchTab('configure'));
         this.panel.querySelector('#mwi-csim-tab-results').addEventListener('click', () => this._switchTab('results'));
         this.panel.querySelector('#mwi-csim-tab-seek').addEventListener('click', () => this._switchTab('seek'));
+        this.panel.querySelector('#mwi-csim-tab-dungeon').addEventListener('click', () => this._switchTab('dungeon'));
         this.panel.querySelector('#mwi-csim-tab-upgrade').addEventListener('click', () => this._switchTab('upgrade'));
         this.panel.querySelector('#mwi-csim-upgrade-run').addEventListener('click', () => this._onUpgradeAnalyze());
         this.panel.querySelector('#mwi-csim-upgrade-stop').addEventListener('click', () => {
@@ -1370,6 +1392,8 @@ class CombatSimUI {
         const tabResults = this.panel.querySelector('#mwi-csim-tab-results');
         const tabSeek = this.panel.querySelector('#mwi-csim-tab-seek');
         const tabUpgrade = this.panel.querySelector('#mwi-csim-tab-upgrade');
+        const dungeonContent = this._dungeonTab?.element;
+        const tabDungeon = this.panel.querySelector('#mwi-csim-tab-dungeon');
 
         const activeStyle = `flex:1; padding:7px 0; text-align:center; font-size:12px; font-weight:600; cursor:pointer; border:none; font-family:inherit; transition:all 0.1s; background:${ACCENT_BG}; color:${ACCENT}; border-bottom:2px solid ${ACCENT};`;
         const inactiveStyle =
@@ -1379,6 +1403,8 @@ class CombatSimUI {
         resultsContent.style.display = 'none';
         if (seekContent) seekContent.style.display = 'none';
         if (upgradeContent) upgradeContent.style.display = 'none';
+        if (dungeonContent) dungeonContent.style.display = 'none';
+        if (tabDungeon) tabDungeon.style.cssText = inactiveStyle;
         tabConfigure.style.cssText = inactiveStyle;
         tabResults.style.cssText = inactiveStyle;
         if (tabSeek) tabSeek.style.cssText = inactiveStyle;
@@ -1393,6 +1419,11 @@ class CombatSimUI {
             if (tabSeek) tabSeek.style.cssText = activeStyle;
             this._populateSeekItems();
             this._setStatus(t('combatSimUi.statusSearchSeek'));
+        } else if (tab === 'dungeon') {
+            if (dungeonContent) dungeonContent.style.display = 'flex';
+            if (tabDungeon) tabDungeon.style.cssText = activeStyle;
+            this._dungeonTab?.refresh();
+            this._setStatus(t('combatSimUi.statusDungeonPlanner'));
         } else if (tab === 'upgrade') {
             if (upgradeContent) upgradeContent.style.display = 'flex';
             if (tabUpgrade) tabUpgrade.style.cssText = activeStyle;
@@ -1918,6 +1949,10 @@ class CombatSimUI {
             html += `<div style="${rowStyle}">`;
             html += `<span style="${labelStyle}">${t('combatSimUi.dungeonsCompletedPerHrLabel')}</span>`;
             html += `<span style="${valueStyle}">${this._formatRate(completedPerHr)}</span>`;
+            html += '</div>';
+            html += `<div style="${rowStyle}">`;
+            html += `<span style="${labelStyle}">${t('combatSimUi.dungeonsCompletedPerDayLabel')}</span>`;
+            html += `<span style="${valueStyle}">${this._formatRate(completedPerHr * 24)}</span>`;
             html += '</div>';
             html += `<div style="${rowStyle}">`;
             html += `<span style="${labelStyle}">${t('combatSimUi.dungeonsFailedPerHrLabel')}</span>`;
