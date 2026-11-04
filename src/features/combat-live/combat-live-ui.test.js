@@ -609,3 +609,122 @@ describe('party panel', () => {
         expect(headerCells(panel, 'damage.secondary')).not.toContain('combatLive.colDps');
     });
 });
+
+describe('past runs and copy results', () => {
+    let history;
+    let entries;
+
+    async function openWithHistory() {
+        HTMLCanvasElement.prototype.getContext = () => null;
+        config.getSetting.mockImplementation(() => true);
+        storage.get.mockImplementation(async (_key, _store, fallback) => fallback);
+        entries = [
+            {
+                id: 'a',
+                date: Date.UTC(2026, 10, 3, 12, 0),
+                label: '',
+                favorite: false,
+                summary: {
+                    ...summary(),
+                    seconds: 300,
+                    party: { damage: 9000, dps: 30, hits: 1, crits: 0, misses: 0, kills: 9 },
+                },
+            },
+            {
+                id: 'b',
+                date: Date.UTC(2026, 10, 2, 12, 0),
+                label: 'Boss night',
+                favorite: true,
+                summary: {
+                    ...summary(),
+                    seconds: 600,
+                    party: { damage: 50000, dps: 83, hits: 1, crits: 0, misses: 0, kills: 20 },
+                },
+            },
+        ];
+        history = {
+            load: vi.fn(async () => {}),
+            onChange: vi.fn(() => () => {}),
+            list: vi.fn(() => entries),
+            toggleFavorite: vi.fn(),
+            rename: vi.fn(),
+            clearPlain: vi.fn(),
+        };
+        Object.defineProperty(navigator, 'clipboard', {
+            value: { writeText: vi.fn(async () => {}) },
+            configurable: true,
+        });
+        await combatLiveUI.initialize({
+            getSummary: () => summary(),
+            getLastMessageAt: () => Date.now(),
+            onReset: vi.fn(),
+            isRecording: () => false,
+            getRecording: () => null,
+            history,
+        });
+        combatLiveUI.refresh();
+        return document.getElementById('toolasha-combat-live');
+    }
+
+    const buttonWith = (panel, text) => [...panel.querySelectorAll('button')].find((b) => b.textContent.includes(text));
+
+    afterEach(() => {
+        combatLiveUI.cleanup();
+        document.body.innerHTML = '';
+    });
+
+    test('the footer offers copy results and a count of past runs, with the list folded', async () => {
+        const panel = await openWithHistory();
+
+        expect(buttonWith(panel, 'combatLive.copyResults')).toBeTruthy();
+        expect(buttonWith(panel, 'combatLive.pastRuns:{"count":2}')).toBeTruthy();
+        expect(panel.textContent).not.toContain('Boss night');
+    });
+
+    test('copy results puts the current session on the clipboard as text', async () => {
+        const panel = await openWithHistory();
+
+        buttonWith(panel, 'combatLive.copyResults').click();
+        await Promise.resolve();
+
+        const text = navigator.clipboard.writeText.mock.calls[0][0];
+        expect(text).toContain('=== Combat Live');
+        expect(text).toContain('Party:');
+    });
+
+    test('opening the list shows each past run; a name replaces the date', async () => {
+        const panel = await openWithHistory();
+
+        buttonWith(panel, 'combatLive.pastRuns').click();
+
+        expect(panel.textContent).toContain('Boss night');
+        expect(panel.textContent).toContain('83.0 DPS');
+        expect(panel.textContent).toContain('30.0 DPS');
+    });
+
+    test('star, rename and clear go to the history', async () => {
+        const panel = await openWithHistory();
+        buttonWith(panel, 'combatLive.pastRuns').click();
+        vi.spyOn(window, 'prompt').mockReturnValue('  Zone 5  ');
+
+        buttonWith(panel, '☆').click();
+        buttonWith(panel, '✎').click();
+        buttonWith(panel, 'combatLive.clearPlain').click();
+
+        expect(history.toggleFavorite).toHaveBeenCalledWith('a');
+        expect(history.rename).toHaveBeenCalledWith('a', 'Zone 5');
+        expect(history.clearPlain).toHaveBeenCalled();
+    });
+
+    test('clicking a past run shows that session with a banner, and back to live returns', async () => {
+        const panel = await openWithHistory();
+        buttonWith(panel, 'combatLive.pastRuns').click();
+
+        const title = [...panel.querySelectorAll('span')].find((el) => el.textContent.includes('Boss night'));
+        title.click();
+
+        expect(panel.textContent).toContain('combatLive.viewingPast:{"when":"Boss night"}');
+        buttonWith(panel, 'combatLive.backToLive').click();
+        expect(panel.textContent).not.toContain('combatLive.viewingPast');
+    });
+});

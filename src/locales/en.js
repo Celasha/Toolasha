@@ -1775,6 +1775,20 @@ export default {
         colSpent: 'Spent',
         colGained: 'Gained',
         colRefused: 'Refused',
+        copyResults: 'Copy results',
+        copyResultsTooltip: 'Copy these results as text to paste into chat',
+        pastRuns: (p) => `Past runs (${p.count})`,
+        pastRunsTooltip: 'Finished sessions are kept when a new combat starts or you reset',
+        noPastRuns:
+            'Nothing here yet. A session is kept when a new combat starts or you reset, if it lasted at least 30 seconds.',
+        viewTooltip: 'Look at this session',
+        favoriteTooltip: 'Star it (starred sessions are kept longer)',
+        renameTooltip: 'Rename',
+        renamePrompt: 'Name this session',
+        clearPlain: 'Clear unstarred',
+        clearPlainTooltip: 'Remove every session that is not starred',
+        viewingPast: (p) => `Viewing ${p.when}`,
+        backToLive: 'Back to live',
         refusedInfo:
             'Refused: auto attacks made while an ability you use was off cooldown but cost more mana than you had. The game does not drop to a cheaper ability, it auto attacks until it can afford the first one that is ready. An estimate: ability triggers are not visible, so only abilities you have cast count.',
         unknownAbility: 'Unknown ability',
@@ -3880,6 +3894,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             combatLive_showChart: {
                 label: 'Combat Live: Show the DPS chart on the Damage tab',
                 help: 'A strip showing your last minute of hits (height = damage, gold = crit, hollow = miss), your current DPS against your average, and a bar of damage by ability.',
+            },
+            combatLive_autoReset: {
+                label: 'Combat Live: Start over when a new combat begins',
+                help: 'Keeps the finished session in the history and resets the meters when you start a new combat (a different zone, or a new dungeon run). Labyrinth rooms do not count as a new combat.',
             },
             combatLive_record: {
                 label: 'Combat Live: Record battle ticks for debugging',

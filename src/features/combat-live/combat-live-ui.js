@@ -13,6 +13,7 @@ import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import performanceMonitor from '../../utils/performance-monitor.js';
 import { formatLargeNumber, timeReadable } from '../../utils/formatters.js';
+import { summaryToText } from './combat-live-text.js';
 import { getAbilityName, getMonsterName } from '../../utils/game-i18n.js';
 import {
     OTHER_KEY,
@@ -306,6 +307,10 @@ class CombatLiveUI {
         this.hiddenColumns = new Set();
         this.openPickers = new Set();
         this.openInfo = new Set();
+        // A finished session being looked at instead of the live one, and whether the past-runs list is open
+        this.viewing = null;
+        this.historyOpen = false;
+        this.unsubscribeHistory = null;
         this.lastSignature = '';
         this.elements = {};
     }
@@ -321,8 +326,13 @@ class CombatLiveUI {
         this.collapsedSections = new Set(Array.isArray(savedSections) ? savedSections : []);
         const savedColumns = await storage.get(HIDDEN_COLUMNS_KEY, STORAGE_STORE, []);
         this.hiddenColumns = new Set(Array.isArray(savedColumns) ? savedColumns : []);
+        await this.deps?.history?.load();
         // cleanup() may have run while the saved state was loading
         if (!this.deps) return;
+        this.unsubscribeHistory = this.deps.history?.onChange(() => {
+            this.lastSignature = '';
+            this.refresh();
+        });
 
         this.buildPanel();
         const savedPosition = await storage.get(POSITION_KEY, STORAGE_STORE, null);
@@ -629,15 +639,22 @@ class CombatLiveUI {
         if (!active || document.hidden) return;
 
         this.elements.copyButton.style.display = this.deps.isRecording() ? '' : 'none';
-        const summary = this.deps.getSummary();
-        this.updateSummary(summary);
-        this.updateChart(summary);
+        const live = this.deps.getSummary();
+        this.updateSummary(live);
+        this.updateChart(this.viewing ? {} : live);
         if (this.collapsed) return;
+        const summary = this.viewing ? this.viewing.summary : live;
 
         const model = buildTabModel(summary, this.tab, {
             showPartyDamage: Boolean(config.getSetting('combatLive_estimateParty')),
         });
-        const signature = JSON.stringify([this.tab, model]);
+        const signature = JSON.stringify([
+            this.tab,
+            model,
+            this.viewing?.id ?? null,
+            this.historyOpen,
+            this.historyOpen ? this.deps.history?.list() : (this.deps.history?.list().length ?? 0),
+        ]);
         if (signature === this.lastSignature) return;
         this.lastSignature = signature;
         this.renderModel(model);
@@ -1004,10 +1021,165 @@ class CombatLiveUI {
             );
         }
 
+        if (this.deps.history) sections.push(this.buildFooter());
+        if (this.viewing) sections.unshift(this.buildViewingBanner());
         this.elements.body.replaceChildren(...sections);
     }
 
+    /**
+     * Copy text to the clipboard and flash the result on the button that asked.
+     * @param {string} text
+     * @param {HTMLElement} button
+     * @param {string} label - What the button says normally
+     */
+    async copyText(text, button, label) {
+        try {
+            await navigator.clipboard.writeText(text);
+            button.textContent = '✓';
+        } catch (error) {
+            console.error('[CombatLive] Failed to copy results:', error);
+            button.textContent = '✗';
+        }
+        this.timerRegistry.registerTimeout(
+            setTimeout(() => {
+                button.textContent = label;
+            }, 1500)
+        );
+    }
+
+    smallButton(label, tooltip, onClick) {
+        const button = this.textEl(
+            'button',
+            label,
+            'background:none; border:1px solid #333; border-radius:3px; color:#bbb; cursor:pointer; font-size:11px; padding:1px 6px;'
+        );
+        button.title = tooltip;
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            onClick(button);
+        });
+        return button;
+    }
+
+    /**
+     * Copy results and the past-runs list, at the bottom of every tab.
+     * @returns {HTMLElement}
+     */
+    buildFooter() {
+        const footer = document.createElement('div');
+        footer.style.cssText = 'margin-top:8px; padding-top:6px; border-top:1px solid #222;';
+        const history = this.deps.history;
+        const entries = history.list();
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; gap:6px; align-items:center;';
+        const copyLabel = t('combatLive.copyResults');
+        const copy = this.smallButton(copyLabel, t('combatLive.copyResultsTooltip'), (button) => {
+            const source = this.viewing
+                ? { summary: this.viewing.summary, label: this.viewing.label, date: this.viewing.date }
+                : { summary: this.deps.getSummary(), label: '', date: Date.now() };
+            this.copyText(summaryToText(source.summary, source), button, copyLabel);
+        });
+        const past = this.smallButton(
+            `${this.historyOpen ? '▾' : '▸'} ${t('combatLive.pastRuns', { count: entries.length })}`,
+            t('combatLive.pastRunsTooltip'),
+            () => {
+                this.historyOpen = !this.historyOpen;
+                this.lastSignature = '';
+                this.refresh();
+            }
+        );
+        row.append(copy, past);
+        footer.append(row);
+        if (this.historyOpen) footer.append(this.buildHistoryList(entries));
+        return footer;
+    }
+
+    /**
+     * @param {Object[]} entries - From the history, newest first
+     * @returns {HTMLElement}
+     */
+    buildHistoryList(entries) {
+        const list = document.createElement('div');
+        list.style.cssText = 'margin-top:6px; display:flex; flex-direction:column; gap:3px;';
+        if (!entries.length) {
+            list.append(this.textEl('div', t('combatLive.noPastRuns'), 'color:#777; font-size:11px;'));
+            return list;
+        }
+
+        const history = this.deps.history;
+        for (const entry of entries) {
+            const row = document.createElement('div');
+            row.style.cssText = `display:flex; align-items:center; gap:4px; padding:2px 4px; border-radius:3px; background:${
+                this.viewing?.id === entry.id ? 'rgba(0,200,150,0.15)' : 'rgba(255,255,255,0.04)'
+            };`;
+            const when = new Date(entry.date).toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+            const title = this.textEl(
+                'span',
+                `${entry.label || when} · ${timeReadable(entry.summary.seconds || 0)} · ${rate(entry.summary.party?.dps || 0)} DPS`,
+                'flex:1; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px;'
+            );
+            title.title = entry.label ? when : t('combatLive.viewTooltip');
+            title.addEventListener('click', () => {
+                this.viewing = entry;
+                this.lastSignature = '';
+                this.refresh();
+            });
+
+            const star = this.buttonEl(entry.favorite ? '★' : '☆', t('combatLive.favoriteTooltip'), () =>
+                history.toggleFavorite(entry.id)
+            );
+            const rename = this.buttonEl('✎', t('combatLive.renameTooltip'), () => {
+                const label = window.prompt(t('combatLive.renamePrompt'), entry.label || '');
+                if (label !== null) history.rename(entry.id, label.trim());
+            });
+            const copy = this.buttonEl('⎘', t('combatLive.copyResultsTooltip'), () =>
+                this.copyText(summaryToText(entry.summary, { label: entry.label, date: entry.date }), copy, '⎘')
+            );
+            row.append(title, star, rename, copy);
+            list.append(row);
+        }
+        list.append(
+            this.smallButton(t('combatLive.clearPlain'), t('combatLive.clearPlainTooltip'), () => history.clearPlain())
+        );
+        return list;
+    }
+
+    /**
+     * The strip shown above a past session that is being looked at.
+     * @returns {HTMLElement}
+     */
+    buildViewingBanner() {
+        const banner = document.createElement('div');
+        banner.style.cssText =
+            'display:flex; align-items:center; gap:6px; margin-bottom:6px; padding:3px 6px; border-radius:3px; background:rgba(0,200,150,0.15); font-size:11px;';
+        const when = new Date(this.viewing.date).toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+        banner.append(
+            this.textEl('span', t('combatLive.viewingPast', { when: this.viewing.label || when }), 'flex:1;'),
+            this.smallButton(t('combatLive.backToLive'), t('combatLive.backToLive'), () => {
+                this.viewing = null;
+                this.lastSignature = '';
+                this.refresh();
+            })
+        );
+        return banner;
+    }
+
     cleanup() {
+        this.unsubscribeHistory?.();
+        this.unsubscribeHistory = null;
+        this.viewing = null;
+        this.historyOpen = false;
         this.timerRegistry.clearAll();
         if (this.panel) {
             this.panel.remove();

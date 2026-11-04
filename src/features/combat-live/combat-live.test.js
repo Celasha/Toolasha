@@ -18,6 +18,9 @@ const { handlers, socketHandlers, mockHook, mockUI, mockConfig } = vi.hoisted(()
 });
 
 vi.mock('../../core/websocket.js', () => ({ default: mockHook }));
+vi.mock('../../core/storage.js', () => ({
+    default: { get: async (_key, _store, fallback) => fallback, set: async () => {} },
+}));
 vi.mock('./combat-live-ui.js', () => ({ default: mockUI }));
 vi.mock('../../core/config.js', () => ({ default: mockConfig }));
 vi.mock('../../core/data-manager.js', () => ({ default: { getCurrentCharacterId: () => 1 } }));
@@ -128,8 +131,80 @@ describe('Combat Live feature', () => {
         feature.initialize();
         feature.initialize();
 
-        expect(mockHook.on).toHaveBeenCalledTimes(2);
+        expect(mockHook.on).toHaveBeenCalledTimes(3);
         expect(mockUI.initialize).toHaveBeenCalledTimes(1);
+    });
+
+    describe('starting over for a new combat', () => {
+        const autoReset = () => mockConfig.getSetting.mockImplementation((key) => key === 'combatLive_autoReset');
+        const withStart = (combatStartTime) => ({ ...newBattle, combatStartTime });
+
+        function playOneWave() {
+            handlers.get('new_battle')(withStart('2026-11-03T10:00:00Z'));
+            handlers.get('battle_updated')(hit(7, 250));
+        }
+
+        test('a different combat start time keeps the finished session and starts the meters over', () => {
+            autoReset();
+            feature.initialize();
+            const archive = vi.spyOn(combatLive.history, 'archive').mockResolvedValue(null);
+            playOneWave();
+            expect(combatLive.stats.partyDamage).toBe(50);
+
+            handlers.get('new_battle')(withStart('2026-11-03T10:30:00Z'));
+
+            expect(archive).toHaveBeenCalledTimes(1);
+            expect(combatLive.stats.partyDamage).toBe(0);
+        });
+
+        test('the next wave of the same combat carries on', () => {
+            autoReset();
+            feature.initialize();
+            const archive = vi.spyOn(combatLive.history, 'archive').mockResolvedValue(null);
+            playOneWave();
+
+            handlers.get('new_battle')({ ...withStart('2026-11-03T10:00:00Z'), battleId: 8 });
+
+            expect(archive).not.toHaveBeenCalled();
+            expect(combatLive.stats.partyDamage).toBe(50);
+        });
+
+        test('the setting off keeps accumulating across combats', () => {
+            feature.initialize();
+            vi.spyOn(combatLive.history, 'archive').mockResolvedValue(null);
+            playOneWave();
+
+            handlers.get('new_battle')(withStart('2026-11-03T10:30:00Z'));
+
+            expect(combatLive.stats.partyDamage).toBe(50);
+        });
+
+        test('labyrinth rooms do not count as a new combat', () => {
+            autoReset();
+            feature.initialize();
+            vi.spyOn(combatLive.history, 'archive').mockResolvedValue(null);
+            handlers.get('labyrinth_updated')({ labyrinth: { isActive: true } });
+            playOneWave();
+
+            handlers.get('new_battle')(withStart('2026-11-03T10:30:00Z'));
+
+            expect(combatLive.stats.partyDamage).toBe(50);
+
+            handlers.get('labyrinth_updated')({ labyrinth: { isActive: false } });
+            handlers.get('new_battle')(withStart('2026-11-03T11:00:00Z'));
+            expect(combatLive.stats.partyDamage).toBe(0);
+        });
+
+        test('the reset button keeps the session too', () => {
+            feature.initialize();
+            const archive = vi.spyOn(combatLive.history, 'archive').mockResolvedValue(null);
+            playOneWave();
+
+            mockUI.initialize.mock.calls[0][0].onReset();
+
+            expect(archive).toHaveBeenCalledTimes(1);
+            expect(combatLive.stats.partyDamage).toBe(0);
+        });
     });
 
     describe('recording', () => {

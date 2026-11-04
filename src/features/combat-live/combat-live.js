@@ -13,6 +13,7 @@ import performanceMonitor from '../../utils/performance-monitor.js';
 import BattleEventTracker from './battle-event-tracker.js';
 import BattleStats from './battle-stats.js';
 import { getAbilityTiming, getDotDurationMs } from './ability-effects.js';
+import CombatLiveHistory from './combat-live-history.js';
 import CombatLiveRecorder from './combat-live-recorder.js';
 import combatLiveUI from './combat-live-ui.js';
 
@@ -24,7 +25,11 @@ class CombatLive {
         this.stats.setDotLookup(getDotDurationMs);
         this.stats.setAbilityLookup(getAbilityTiming);
         this.recorder = new CombatLiveRecorder();
+        this.history = new CombatLiveHistory();
         this.lastMessageAt = 0;
+        // Rooms of a labyrinth are separate combats of one run, so they must not restart the meters
+        this.inLabyrinth = false;
+        this.labyrinthHandler = null;
         this.newBattleHandler = null;
         this.battleUpdatedHandler = null;
         this.socketCloseHandler = null;
@@ -44,22 +49,55 @@ class CombatLive {
 
         webSocketHook.on('new_battle', this.newBattleHandler);
         webSocketHook.on('battle_updated', this.battleUpdatedHandler);
+        this.labyrinthHandler = (data) => {
+            this.inLabyrinth = Boolean(data?.labyrinth?.isActive);
+        };
+        webSocketHook.on('labyrinth_updated', this.labyrinthHandler);
         webSocketHook.onSocketEvent('close', this.socketCloseHandler);
 
         combatLiveUI.initialize({
             getSummary: () => this.stats.getSummary(),
             getLastMessageAt: () => this.lastMessageAt,
             onReset: () => {
-                this.stats.reset();
+                this.archiveAndReset();
                 this.recorder.clear();
             },
+            history: this.history,
             isRecording: () => this.isRecording(),
             getRecording: () => (this.recorder.entries.length ? this.recorder.exportJSON() : null),
         });
     }
 
+    /**
+     * A new combat instance: the server gives every wave of one combat (a zone stay, a dungeon run) the same
+     * `combatStartTime`, so a different one means a different combat. Labyrinth rooms are left alone.
+     * @param {Object} data - new_battle payload
+     * @returns {boolean}
+     */
+    isNewCombat(data) {
+        const previous = this.tracker.combatStartTime;
+        return (
+            Boolean(config.getSetting('combatLive_autoReset')) &&
+            !this.inLabyrinth &&
+            previous !== null &&
+            data?.combatStartTime != null &&
+            data.combatStartTime !== previous
+        );
+    }
+
+    /**
+     * Keep the finished session in the history, then start the meters over.
+     */
+    archiveAndReset() {
+        this.history.archive(this.stats.getSummary()).catch((error) => {
+            console.error('[CombatLive] Failed to save the finished session:', error);
+        });
+        this.stats.reset();
+    }
+
     onNewBattle(data) {
         const now = Date.now();
+        if (this.isNewCombat(data)) this.archiveAndReset();
         this.tracker.handleNewBattle(data);
         this.stats.beginWave(now);
         this.stats.setPlayers(this.tracker.players.map((player) => player.name));
@@ -103,6 +141,8 @@ class CombatLive {
         if (this.newBattleHandler) webSocketHook.off('new_battle', this.newBattleHandler);
         if (this.battleUpdatedHandler) webSocketHook.off('battle_updated', this.battleUpdatedHandler);
         if (this.socketCloseHandler) webSocketHook.offSocketEvent('close', this.socketCloseHandler);
+        if (this.labyrinthHandler) webSocketHook.off('labyrinth_updated', this.labyrinthHandler);
+        this.labyrinthHandler = null;
         this.newBattleHandler = null;
         this.battleUpdatedHandler = null;
         this.socketCloseHandler = null;

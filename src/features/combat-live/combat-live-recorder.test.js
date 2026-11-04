@@ -43,6 +43,7 @@ describe('CombatLiveRecorder', () => {
             id: 7,
             w: 2,
             self: 1,
+            cs: null,
             p: [
                 {
                     n: 'Alice',

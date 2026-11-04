@@ -2138,6 +2138,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'A strip showing your last minute of hits (height = damage, gold = crit, hollow = miss), your current DPS against your average, and a bar of damage by ability.',
             },
+            combatLive_autoReset: {
+                id: 'combatLive_autoReset',
+                label: 'Combat Live: Start over when a new combat begins',
+                type: 'checkbox',
+                default: true,
+                help: 'Keeps the finished session in the history and resets the meters when you start a new combat (a different zone, or a new dungeon run). Labyrinth rooms do not count as a new combat.',
+            },
             combatLive_record: {
                 id: 'combatLive_record',
                 label: 'Combat Live: Record battle ticks for debugging',

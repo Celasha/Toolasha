@@ -55,6 +55,8 @@ export class CombatLiveRecorder {
             id: data?.battleId ?? null,
             w: data?.wave ?? null,
             self: selfCharacterId,
+            // The same for every wave of one combat; a different value is a new combat
+            cs: data?.combatStartTime ?? null,
             // Every unit's starting point: the first action of a battle is judged against what it
             // was already preparing and its counters when the battle began.
             p: (data?.players || []).map((unit) => ({
