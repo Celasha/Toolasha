@@ -1045,3 +1045,63 @@ describe('DPS over time', () => {
         expect(stats.getSummary(10000).chart.series).toEqual([]);
     });
 });
+
+describe('healing done', () => {
+    const hurt = (name, id) =>
+        player({
+            character: { id, name },
+            currentHitpoints: 500,
+            maxHitpoints: 1000,
+            preparingAbilityHrid: '/abilities/heal',
+        });
+
+    function run(steps) {
+        const units = [hurt('Alice', 1), hurt('Bob', 2)];
+        const tracker = startBattle(units);
+        const stats = new BattleStats();
+        stats.setPlayers(['Alice', 'Bob']);
+        for (const [at, message] of steps) stats.record(tracker.handleBattleUpdated(message), at);
+        return stats.getSummary(steps[steps.length - 1][0]);
+    }
+
+    const row = (summary, name) => summary.healers.find((healer) => healer.name === name);
+
+    test('a heal on someone is credited to the player who acted, under the ability they used', () => {
+        // Alice casts (counter up); Bob's HP rises by 100
+        const summary = run([[1000, update({ 0: { atkCounter: 1 }, 1: { cHP: 600, mHP: 1000 } })]]);
+
+        expect(row(summary, 'Alice').healing).toBe(100);
+        expect(row(summary, 'Alice').abilities).toEqual([
+            expect.objectContaining({ key: '/abilities/heal', healing: 100 }),
+        ]);
+        expect(row(summary, 'Bob').healing).toBe(0);
+    });
+
+    test('healing yourself counts too', () => {
+        const summary = run([[1000, update({ 0: { atkCounter: 1, cHP: 650, mHP: 1000 } })]]);
+
+        expect(row(summary, 'Alice').healing).toBe(150);
+    });
+
+    test('regeneration and food, with nobody acting, are not healing done', () => {
+        const summary = run([[1000, update({ 1: { cHP: 560, mHP: 1000 } })]]);
+
+        expect(summary.healers.every((healer) => healer.healing === 0)).toBe(true);
+    });
+
+    test('when several players acted nobody is credited', () => {
+        const summary = run([[1000, update({ 0: { atkCounter: 1 }, 1: { atkCounter: 1, cHP: 600, mHP: 1000 } })]]);
+
+        expect(summary.healers.every((healer) => healer.healing === 0)).toBe(true);
+    });
+
+    test('a revive is not healing, and HPS is over the session time', () => {
+        const summary = run([
+            [0, update({ 0: { atkCounter: 1 }, 1: { cHP: 600, mHP: 1000 } })],
+            [4000, update({ 0: { atkCounter: 2 }, 1: { cHP: 700, mHP: 1000 } })],
+        ]);
+
+        expect(row(summary, 'Alice').healing).toBe(200);
+        expect(row(summary, 'Alice').hps).toBeCloseTo(50, 5);
+    });
+});

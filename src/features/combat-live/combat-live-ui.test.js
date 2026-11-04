@@ -728,3 +728,47 @@ describe('past runs and copy results', () => {
         expect(panel.textContent).not.toContain('combatLive.viewingPast');
     });
 });
+
+describe('healing tab', () => {
+    const withHealing = (healers) => ({ ...summary(), healers });
+
+    test('lists healers by healing with their abilities nested, and the party totals', () => {
+        const model = buildTabModel(
+            withHealing([
+                { name: 'Bob', healing: 300, hps: 3, abilities: [{ key: 'auto', healing: 300, hps: 3, share: 1 }] },
+                {
+                    name: 'Alice',
+                    healing: 700,
+                    hps: 7,
+                    abilities: [
+                        { key: '/abilities/heal', healing: 600, hps: 6, share: 600 / 700 },
+                        { key: 'auto', healing: 100, hps: 1, share: 100 / 700 },
+                    ],
+                },
+            ]),
+            'healing'
+        );
+
+        expect(model.stats).toEqual([
+            ['combatLive.partyHps', '10.0'],
+            ['combatLive.totalHealing', '1000'],
+        ]);
+        expect(model.rows.map((row) => row.kind)).toEqual(['player', 'ability', 'ability', 'player', 'ability']);
+        expect(model.rows[0].cells).toEqual(['Alice', '700', '7.0', '70%']);
+        expect(model.rows[3].cells[0]).toBe('Bob');
+    });
+
+    test('says there is no healing yet instead of an empty table', () => {
+        const model = buildTabModel(withHealing([{ name: 'Alice', healing: 0, hps: 0, abilities: [] }]), 'healing');
+
+        expect(model.rows).toEqual([]);
+        expect(model.note).toBe('combatLive.noHealing');
+    });
+
+    test('an older saved session without healing data still opens', () => {
+        const old = summary();
+        delete old.healers;
+
+        expect(() => buildTabModel(old, 'healing')).not.toThrow();
+    });
+});

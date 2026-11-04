@@ -117,6 +117,8 @@ export class BattleStats {
         this.recentHits = [];
         // Damage per player in 2s steps over the last five minutes, for the DPS line
         this.history = new DamageHistory();
+        // Healing done per player (credited to whoever acted when the heal landed), with the ability behind it
+        this.healing = new Map();
         // Damage-over-time effects cast and still running: {player, key, until}
         this.activeDots = [];
         // Per player: when each ability was last cast, and the casts that were refused for lack of mana
@@ -183,6 +185,7 @@ export class BattleStats {
             }
         }
         this.attributeHits(events, at);
+        this.attributeHeals(events);
     }
 
     /**
@@ -202,6 +205,27 @@ export class BattleStats {
             );
             this.activeDots.push({ player: event.name, key: event.abilityHrid, until: at + duration + DOT_SLACK_MS });
         }
+    }
+
+    /**
+     * Credit the healing in this message to the player who acted. A heal with nobody acting (regeneration,
+     * food) is not healing done by anyone, and with several players acting there is no telling whose it was.
+     * @param {Object[]} events - Events from one message
+     */
+    attributeHeals(events) {
+        const heals = events.filter((event) => event.side === SIDE_PLAYER && event.type === 'heal');
+        if (!heals.length) return;
+        const attacks = events.filter((event) => event.side === SIDE_PLAYER && event.type === 'attack');
+        if (attacks.length !== 1) return;
+
+        const [attack] = attacks;
+        const key = attack.auto ? SOURCE_AUTO : attack.abilityHrid;
+        const row = this.healing.get(attack.name) || { healing: 0, abilities: new Map() };
+        for (const heal of heals) {
+            row.healing += heal.amount;
+            row.abilities.set(key, (row.abilities.get(key) || 0) + heal.amount);
+        }
+        this.healing.set(attack.name, row);
     }
 
     /**
@@ -560,6 +584,22 @@ export class BattleStats {
                             share: row.damage > 0 ? ability.damage / row.damage : 0,
                         }))
                         .sort((a, b) => b.damage - a.damage),
+                };
+            }),
+            healers: this.playerNames.map((name) => {
+                const row = this.healing.get(name) || { healing: 0, abilities: new Map() };
+                return {
+                    name,
+                    healing: row.healing,
+                    hps: rate(row.healing),
+                    abilities: [...row.abilities.entries()]
+                        .map(([key, healing]) => ({
+                            key,
+                            healing,
+                            hps: rate(healing),
+                            share: row.healing > 0 ? healing / row.healing : 0,
+                        }))
+                        .sort((a, b) => b.healing - a.healing),
                 };
             }),
             unattributed: {

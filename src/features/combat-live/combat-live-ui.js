@@ -44,7 +44,7 @@ const PLAYER_TAPE_HEIGHT = 30;
 // The panel hides when no combat message has arrived for this long
 const IDLE_HIDE_MS = 60000;
 
-export const TABS = ['damage', 'taken', 'mana'];
+export const TABS = ['damage', 'healing', 'taken', 'mana'];
 
 const number = (value) => formatLargeNumber(Math.round(value));
 const rate = (value) => formatLargeNumber(value, 1);
@@ -216,6 +216,42 @@ export function buildTabModel(summary, tab, options = {}) {
         } else if (!solo) {
             model.info = t('combatLive.partyNote');
         }
+    } else if (tab === 'healing') {
+        const healers = summary.healers || [];
+        const total = healers.reduce((sum, row) => sum + row.healing, 0);
+        const totalRate = healers.reduce((sum, row) => sum + row.hps, 0);
+        if (total > 0) {
+            model.stats = [
+                [t('combatLive.partyHps'), rate(totalRate)],
+                [t('combatLive.totalHealing'), number(total)],
+            ];
+        }
+        model.headers = [
+            t('combatLive.colPlayer'),
+            t('combatLive.colHealing'),
+            t('combatLive.colHps'),
+            t('combatLive.colShare'),
+        ];
+        model.keys = ['player', 'healing', 'hps', 'share'];
+        for (const healer of [...healers].filter((row) => row.healing > 0).sort((a, b) => b.healing - a.healing)) {
+            model.rows.push({
+                kind: 'player',
+                cells: [healer.name || '?', number(healer.healing), rate(healer.hps), percent(healer.healing / total)],
+            });
+            for (const ability of healer.abilities) {
+                model.rows.push({
+                    kind: 'ability',
+                    cells: [
+                        sourceName(ability.key),
+                        number(ability.healing),
+                        rate(ability.hps),
+                        percent(ability.share),
+                    ],
+                });
+            }
+        }
+        model.info = t('combatLive.healingInfo');
+        if (!total) model.note = t('combatLive.noHealing');
     } else if (tab === 'taken') {
         model.headers = [
             t('combatLive.colPlayer'),
@@ -591,7 +627,7 @@ class CombatLiveUI {
             tabButtons[tab].style.cssText = `
                 flex:1; padding:5px 0; cursor:pointer; background:none; border:none;
                 border-bottom:2px solid ${active ? '#00c896' : 'transparent'};
-                color:${active ? '#00c896' : '#888'}; font-size:12px; font-weight:600;
+                color:${active ? '#00c896' : '#888'}; font-size:11px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
             `;
         }
     }
@@ -965,6 +1001,7 @@ class CombatLiveUI {
                 : null;
         const mainTitle = {
             damage: t('combatLive.sectionEnemies'),
+            healing: t('combatLive.tab_healing'),
             taken: t('combatLive.tab_taken'),
             mana: t('combatLive.tab_mana'),
         }[this.tab];
@@ -1021,6 +1058,10 @@ class CombatLiveUI {
             );
         }
 
+        // Nothing to tabulate yet: say why instead of showing an empty tab
+        if (!sections.length && model.note) {
+            sections.push(this.textEl('div', model.note, 'color:#777; font-size:11px; padding:4px 0;'));
+        }
         if (this.deps.history) sections.push(this.buildFooter());
         if (this.viewing) sections.unshift(this.buildViewingBanner());
         this.elements.body.replaceChildren(...sections);
