@@ -539,9 +539,10 @@ export class BattleStats {
      * @param {string} name
      * @returns {{dps: number, hps: number}}
      */
-    getBadge(name) {
-        const seconds = this.getActiveSeconds();
-        if (!(seconds > 0)) return { dps: 0, hps: 0 };
+    getBadge(name, now = Date.now()) {
+        // Under a second of combat a single hit would read as a huge rate
+        const seconds = this.getActiveSeconds(now);
+        if (!(seconds >= 1)) return { dps: 0, hps: 0 };
         return {
             dps: (this.dealt.get(name)?.damage ?? 0) / seconds,
             hps: (this.healing.get(name)?.healing ?? 0) / seconds,
@@ -565,10 +566,14 @@ export class BattleStats {
     }
 
     /**
+     * @param {number} [now] - When given, time since the last message counts too (while combat is flowing), so
+     *     rates fall smoothly between messages instead of stepping when one arrives
      * @returns {number} Seconds of combat counted so far
      */
-    getActiveSeconds() {
-        return this.activeMs / 1000;
+    getActiveSeconds(now) {
+        const sinceLast = now !== undefined && this.lastAt !== null ? now - this.lastAt : 0;
+        const live = sinceLast > 0 && sinceLast <= SESSION_GAP_MS ? sinceLast : 0;
+        return (this.activeMs + live) / 1000;
     }
 
     /**
@@ -576,7 +581,7 @@ export class BattleStats {
      * @returns {Object} Plain summary for the panels
      */
     getSummary(now = Date.now()) {
-        const seconds = this.getActiveSeconds();
+        const seconds = this.getActiveSeconds(now);
         const rate = (value) => (seconds > 0 ? value / seconds : 0);
         const kills = [...this.kills.values()].reduce((sum, count) => sum + count, 0);
         const unattributedDamage = Object.values(this.unattributed).reduce((sum, bucket) => sum + bucket.damage, 0);

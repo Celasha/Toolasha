@@ -1181,3 +1181,23 @@ describe('status flags', () => {
         expect(tracker.handleBattleUpdated(flags({ isStunned: true }))).toEqual([]);
     });
 });
+
+describe('BattleStats live clock', () => {
+    test('rates keep falling between messages and ignore long silences', () => {
+        const stats = new BattleStats();
+        stats.activeMs = 10000;
+        stats.lastAt = 100000;
+        stats.dealt.set('A', { damage: 1000, hits: 1, crits: 0, misses: 0, abilities: new Map() });
+        expect(stats.getBadge('A', 100000).dps).toBeCloseTo(100);
+        expect(stats.getBadge('A', 102000).dps).toBeCloseTo(1000 / 12);
+        expect(stats.getBadge('A', 160000).dps).toBeCloseTo(100);
+    });
+
+    test('shows nothing in the first second', () => {
+        const stats = new BattleStats();
+        stats.activeMs = 400;
+        stats.lastAt = 1000;
+        stats.dealt.set('A', { damage: 500, hits: 1, crits: 0, misses: 0, abilities: new Map() });
+        expect(stats.getBadge('A', 1000).dps).toBe(0);
+    });
+});

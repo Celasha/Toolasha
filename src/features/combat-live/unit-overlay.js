@@ -17,7 +17,7 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { getAbilityName } from '../../utils/game-i18n.js';
 
 const LAYER_ID = 'toolasha-combat-live-units';
-const TICK_MS = 500;
+const TICK_MS = 250;
 const ICON_SIZE = 20;
 const SIDES = [
     { side: 'p', area: '[class*="BattlePanel_playersArea"]' },
@@ -105,10 +105,10 @@ class UnitOverlay {
         let entry = this.rows.get(key);
         if (!entry) {
             const row = document.createElement('div');
-            row.style.cssText = 'position:absolute; display:flex; flex-direction:column; align-items:center; gap:1px;';
+            row.style.cssText = 'position:absolute; display:flex; flex-direction:column; align-items:stretch; gap:1px;';
             const badge = document.createElement('div');
             badge.style.cssText =
-                'font-size:10px; font-weight:700; line-height:1.2; padding:0 4px; border-radius:3px; white-space:nowrap; color:#000;';
+                'font-size:11px; font-weight:700; line-height:1.3; padding:0 4px; border-radius:3px; white-space:nowrap; text-align:center; overflow:hidden; color:#000;';
             const icons = document.createElement('div');
             icons.style.cssText = 'display:flex; flex-wrap:wrap; justify-content:center; gap:2px;';
             row.append(badge, icons);

@@ -123,9 +123,11 @@ class CombatLive {
         const name = this.tracker.players[index]?.name;
         if (!name) return null;
         const { dps, hps } = this.stats.getBadge(name);
+        // One decimal below a thousand, where the numbers are small enough to be worth it
+        const rate = (value) => (value < 1000 ? value.toFixed(1) : formatLargeNumber(value, 1));
         return {
-            text: `${formatLargeNumber(dps, 1)} dps`,
-            healText: hps > 0.05 ? `${formatLargeNumber(hps, 1)} hps` : '',
+            text: `${rate(dps)} dps`,
+            healText: hps > 0.05 ? `${rate(hps)} hps` : '',
             color: playerColor(sharedPlayerColors, name),
         };
     }
