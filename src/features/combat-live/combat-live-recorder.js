@@ -37,6 +37,17 @@ function compactMap(map) {
     return out;
 }
 
+/**
+ * A bounded copy of a unit's buff map as the game sent it.
+ * @param {*} map
+ * @returns {*} null when there is none
+ */
+function trimBuffMap(map) {
+    if (!map || typeof map !== 'object') return null;
+    const entries = Array.isArray(map) ? map.slice(0, 25) : Object.entries(map).slice(0, 25);
+    return JSON.parse(JSON.stringify(entries));
+}
+
 export class CombatLiveRecorder {
     constructor(maxEntries = MAX_ENTRIES) {
         this.maxEntries = maxEntries;
@@ -72,6 +83,8 @@ export class CombatLiveRecorder {
                 // What is equipped, and how much faster the abilities come off cooldown: casts refused
                 la: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
                 hs: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
+                // The game's own buff list for the unit, kept so its real shape can be checked
+                bm: trimBuffMap(unit?.combatBuffMap),
             })),
             m: (data?.monsters || []).map((unit) => ({
                 h: unit?.hrid ?? null,

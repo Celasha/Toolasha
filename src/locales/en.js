@@ -1755,6 +1755,10 @@ export default {
         tab_damage: 'Damage',
         tab_healing: 'Healing',
         sectionRanking: 'Ranking',
+        status_stunned: 'Stunned',
+        status_blinded: 'Blinded',
+        status_silenced: 'Silenced',
+        status_enraged: 'Enraged',
         sectionGraph: 'DPS over time',
         graphNow: 'now',
         graphTooltip: 'Damage per second over the last 5 minutes, smoothed over 16 seconds. Red bands are boss fights.',
@@ -3906,6 +3910,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             combatLive_showChart: {
                 label: 'Combat Live: Show the DPS chart on the Damage tab',
                 help: 'A strip showing your last minute of hits (height = damage, gold = crit, hollow = miss), your current DPS against your average, and a bar of damage by ability.',
+            },
+            combatLive_buffIcons: {
+                label: 'Combat Live: Show buff and debuff icons under each unit',
+                help: 'Icons with a countdown under each character and monster for the buffs, debuffs, damage over time and stun, blind and silence effects on them. Which effects a cast applies comes from the game data; the countdowns are predicted from when the cast was seen, so they can drift a little from the server.',
+            },
+            combatLive_unitBadges: {
+                label: 'Combat Live: Show DPS and HPS under each party member',
+                help: 'A small label under each character on the combat screen with their damage per second, and healing per second if they heal, in their colour from the ranking.',
             },
             combatLive_autoReset: {
                 label: 'Combat Live: Start over when a new combat begins',

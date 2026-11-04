@@ -2138,6 +2138,20 @@ export const settingsGroups = {
                 default: true,
                 help: 'A strip showing your last minute of hits (height = damage, gold = crit, hollow = miss), your current DPS against your average, and a bar of damage by ability.',
             },
+            combatLive_buffIcons: {
+                id: 'combatLive_buffIcons',
+                label: 'Combat Live: Show buff and debuff icons under each unit',
+                type: 'checkbox',
+                default: true,
+                help: 'Icons with a countdown under each character and monster for the buffs, debuffs, damage over time and stun, blind and silence effects on them. Which effects a cast applies comes from the game data; the countdowns are predicted from when the cast was seen, so they can drift a little from the server.',
+            },
+            combatLive_unitBadges: {
+                id: 'combatLive_unitBadges',
+                label: 'Combat Live: Show DPS and HPS under each party member',
+                type: 'checkbox',
+                default: true,
+                help: 'A small label under each character on the combat screen with their damage per second, and healing per second if they heal, in their colour from the ranking.',
+            },
             combatLive_autoReset: {
                 id: 'combatLive_autoReset',
                 label: 'Combat Live: Start over when a new combat begins',

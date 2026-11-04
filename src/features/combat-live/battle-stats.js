@@ -535,6 +535,20 @@ export class BattleStats {
     }
 
     /**
+     * The little numbers shown under a player on the combat screen.
+     * @param {string} name
+     * @returns {{dps: number, hps: number}}
+     */
+    getBadge(name) {
+        const seconds = this.getActiveSeconds();
+        if (!(seconds > 0)) return { dps: 0, hps: 0 };
+        return {
+            dps: (this.dealt.get(name)?.damage ?? 0) / seconds,
+            hps: (this.healing.get(name)?.healing ?? 0) / seconds,
+        };
+    }
+
+    /**
      * What the DPS-over-time graph draws: a smoothed line per player over the last five minutes (just the
      * followed player when alone), and which steps were boss fights.
      * @param {number} now - Timestamp in ms

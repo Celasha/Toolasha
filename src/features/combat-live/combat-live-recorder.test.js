@@ -57,6 +57,7 @@ describe('CombatLiveRecorder', () => {
                     crit: 4,
                     la: ['/abilities/fireball', '/abilities/poke'],
                     hs: 25,
+                    bm: null,
                 },
             ],
             m: [{ h: '/monsters/fly', hp: 300, maxHp: 400, mp: 0, atk: null, ab: '', auto: 1, dmg: null, crit: null }],

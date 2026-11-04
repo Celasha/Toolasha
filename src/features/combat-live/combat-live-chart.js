@@ -217,6 +217,9 @@ export function drawSparkline(canvas, model, width = SPARK_WIDTH) {
     context.stroke();
 }
 
+// The colours handed out so far, shared by the panel and the labels under the units
+export const sharedPlayerColors = new Map();
+
 // One colour per party member, kept apart from the ability colours, and without green (the accent)
 export const PLAYER_PALETTE = [
     '#4fc3ff',

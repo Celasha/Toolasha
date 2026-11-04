@@ -22,8 +22,11 @@ vi.mock('../../core/storage.js', () => ({
     default: { get: async (_key, _store, fallback) => fallback, set: async () => {} },
 }));
 vi.mock('./combat-live-ui.js', () => ({ default: mockUI }));
+vi.mock('./unit-overlay.js', () => ({ default: { initialize: vi.fn(), cleanup: vi.fn() } }));
 vi.mock('../../core/config.js', () => ({ default: mockConfig }));
-vi.mock('../../core/data-manager.js', () => ({ default: { getCurrentCharacterId: () => 1 } }));
+vi.mock('../../core/data-manager.js', () => ({
+    default: { getCurrentCharacterId: () => 1, getInitClientData: () => null },
+}));
 
 const { default: feature } = await import('./combat-live.js');
 const combatLive = feature.instance;
@@ -133,6 +136,42 @@ describe('Combat Live feature', () => {
 
         expect(mockHook.on).toHaveBeenCalledTimes(3);
         expect(mockUI.initialize).toHaveBeenCalledTimes(1);
+    });
+
+    describe('buffs', () => {
+        test('a cast seen in a battle update puts its buff on the caster, and the next wave keeps player buffs', () => {
+            feature.initialize();
+            combatLive.buffs.setEffectsLookup((hrid) =>
+                hrid === '/abilities/berserk'
+                    ? [
+                          {
+                              targetType: 'self',
+                              buffs: [{ uniqueHrid: '/buff_uniques/berserk', typeHrid: 't', duration: 20e9 }],
+                          },
+                      ]
+                    : []
+            );
+            const unit = {
+                ...newBattle.players[0],
+                attackAttemptCounter: 1,
+                preparingAbilityHrid: '/abilities/berserk',
+            };
+            handlers.get('new_battle')({ ...newBattle, players: [unit] });
+
+            handlers.get('battle_updated')({
+                battleId: 7,
+                pMap: { 0: { atkCounter: 2, isAutoAtk: true, cHP: 1000, mHP: 1000 } },
+                mMap: {},
+            });
+
+            const now = Date.now();
+            expect(combatLive.buffs.getUnit('p', 0, now).map((buff) => buff.abilityHrid)).toEqual([
+                '/abilities/berserk',
+            ]);
+
+            handlers.get('new_battle')({ ...newBattle, battleId: 8, players: [unit] });
+            expect(combatLive.buffs.getUnit('p', 0, Date.now())).toHaveLength(1);
+        });
     });
 
     describe('boss waves', () => {

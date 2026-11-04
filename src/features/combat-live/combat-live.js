@@ -9,13 +9,20 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
+import { formatLargeNumber } from '../../utils/formatters.js';
 import performanceMonitor from '../../utils/performance-monitor.js';
 import BattleEventTracker from './battle-event-tracker.js';
 import BattleStats from './battle-stats.js';
-import { getAbilityTiming, getDotDurationMs } from './ability-effects.js';
+import { getAbilityEffects, getAbilityTiming, getDotDurationMs } from './ability-effects.js';
+import BuffTracker from './buff-tracker.js';
+import { playerColor, sharedPlayerColors } from './combat-live-chart.js';
+import unitOverlay from './unit-overlay.js';
 import CombatLiveHistory from './combat-live-history.js';
 import CombatLiveRecorder from './combat-live-recorder.js';
 import combatLiveUI from './combat-live-ui.js';
+
+// The labels under the units hide once the fight has been quiet this long, like the panel
+const OVERLAY_IDLE_MS = 60000;
 
 // Ordinary monsters enrage after 3 minutes; a boss takes longer, which is the one reliable sign of a boss wave
 const BOSS_ENRAGE_TIMER_NS = 180e9;
@@ -28,6 +35,8 @@ class CombatLive {
         this.stats.setDotLookup(getDotDurationMs);
         this.stats.setAbilityLookup(getAbilityTiming);
         this.recorder = new CombatLiveRecorder();
+        this.buffs = new BuffTracker();
+        this.buffs.setEffectsLookup(getAbilityEffects);
         this.history = new CombatLiveHistory();
         this.lastMessageAt = 0;
         // Rooms of a labyrinth are separate combats of one run, so they must not restart the meters
@@ -69,6 +78,29 @@ class CombatLive {
             isRecording: () => this.isRecording(),
             getRecording: () => (this.recorder.entries.length ? this.recorder.exportJSON() : null),
         });
+
+        unitOverlay.initialize({
+            getBuffs: (side, index, now) => this.buffs.getUnit(side, index, now),
+            getBadge: (index) => this.getUnitBadge(index),
+            isActive: () => this.lastMessageAt > 0 && Date.now() - this.lastMessageAt <= OVERLAY_IDLE_MS,
+            rosterSize: (side) => (side === 'p' ? this.tracker.players : this.tracker.monsters).length,
+        });
+    }
+
+    /**
+     * The label under a player on the combat screen: their DPS, and their HPS if they heal.
+     * @param {number} index - Position in the party
+     * @returns {?{text: string, healText: string, color: string}}
+     */
+    getUnitBadge(index) {
+        const name = this.tracker.players[index]?.name;
+        if (!name) return null;
+        const { dps, hps } = this.stats.getBadge(name);
+        return {
+            text: `${formatLargeNumber(dps, 1)} dps`,
+            healText: hps > 0.05 ? `${formatLargeNumber(hps, 1)} hps` : '',
+            color: playerColor(sharedPlayerColors, name),
+        };
     }
 
     /**
@@ -103,6 +135,7 @@ class CombatLive {
         if (this.isNewCombat(data)) this.archiveAndReset();
         this.tracker.handleNewBattle(data);
         this.stats.beginWave(now);
+        this.buffs.beginWave();
         this.stats.setBoss(
             this.tracker.monsters.some((monster) => monster.enrageTimerNs > BOSS_ENRAGE_TIMER_NS),
             now
@@ -131,13 +164,19 @@ class CombatLive {
         if (this.isRecording()) {
             this.recorder.recordBattleUpdated(data, now);
         }
-        this.stats.record(this.tracker.handleBattleUpdated(data), now);
+        const events = this.tracker.handleBattleUpdated(data);
+        this.stats.record(events, now);
+        this.buffs.record(events, now, {
+            p: this.tracker.players.map((unit) => ({ index: unit.index, hp: unit.hp })),
+            m: this.tracker.monsters.map((unit) => ({ index: unit.index, hp: unit.hp })),
+        });
         this.lastMessageAt = now;
     }
 
     reset() {
         this.tracker.reset();
         this.stats.reset();
+        this.buffs.reset();
         this.lastMessageAt = 0;
     }
 
@@ -155,6 +194,7 @@ class CombatLive {
         this.socketCloseHandler = null;
 
         combatLiveUI.cleanup();
+        unitOverlay.cleanup();
         this.reset();
         // A recording holds party names, so it never outlives the character session
         this.recorder.clear();

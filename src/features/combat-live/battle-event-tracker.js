@@ -25,6 +25,9 @@
  * Pure logic: no DOM, no WebSocket. Feed it payloads with handleNewBattle / handleBattleUpdated.
  */
 
+// The states the game flags on a unit, as the suffix of its isX field
+const STATUSES = ['stunned', 'blinded', 'silenced', 'enraged'];
+
 const SIDE_PLAYER = 'p';
 const SIDE_MONSTER = 'm';
 
@@ -58,6 +61,10 @@ function unitFromNewBattle(unit, side, index) {
         abilityHaste: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
         // How long before the unit enrages; bosses get much longer than ordinary monsters
         enrageTimerNs: unit?.enrageTimerDuration ?? 0,
+        isStunned: Boolean(unit?.isStunned),
+        isBlinded: Boolean(unit?.isBlinded),
+        isSilenced: Boolean(unit?.isSilenced),
+        isEnraged: Boolean(unit?.isEnraged),
     };
 }
 
@@ -80,6 +87,11 @@ function applyUpdate(prev, entry) {
         isAutoAtk: Boolean(entry.isAutoAtk),
         abilityHrid: entry.abilityHrid || '',
         intervalNs: entry.int ?? prev.intervalNs,
+        // Like the client, a flag the entry does not carry is off
+        isStunned: Boolean(entry.isStunned),
+        isBlinded: Boolean(entry.isBlinded),
+        isSilenced: Boolean(entry.isSilenced),
+        isEnraged: Boolean(entry.isEnraged),
     };
     const base = {
         side: prev.side,
@@ -134,6 +146,12 @@ function applyUpdate(prev, entry) {
             amount: -mpDelta,
             abilityHrid: acted && !prev.isAutoAtk ? prev.abilityHrid : '',
         });
+    }
+
+    // A status switching on or off, from the flags the game sends (it gives no remaining time)
+    for (const status of STATUSES) {
+        const field = `is${status.charAt(0).toUpperCase()}${status.slice(1)}`;
+        if (next[field] !== prev[field]) events.push({ ...base, type: 'status', status, on: next[field] });
     }
 
     if (acted) {

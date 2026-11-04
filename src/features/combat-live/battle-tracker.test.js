@@ -1146,3 +1146,38 @@ describe('DPS graph data', () => {
         expect(stats.getSummary(12000).graph.boss.every(Boolean)).toBe(true);
     });
 });
+
+describe('status flags', () => {
+    const flags = (entry = {}) => update({ 0: { atkCounter: 0, ...entry } });
+
+    test('a flag going up or down is a status event, and a flag the entry leaves out is off', () => {
+        const tracker = startBattle([player()]);
+
+        const on = tracker.handleBattleUpdated(flags({ isStunned: true }));
+        expect(on).toEqual([
+            expect.objectContaining({ type: 'status', status: 'stunned', on: true, side: 'p', index: 0 }),
+        ]);
+
+        expect(tracker.handleBattleUpdated(flags({ isStunned: true }))).toEqual([]);
+
+        const off = tracker.handleBattleUpdated(flags());
+        expect(off).toEqual([expect.objectContaining({ type: 'status', status: 'stunned', on: false })]);
+    });
+
+    test('monsters have them too, and each status is its own event', () => {
+        const tracker = startBattle([player()]);
+
+        const events = tracker.handleBattleUpdated(update({}, { 0: { isBlinded: true, isSilenced: true } }));
+
+        expect(events.map((event) => [event.side, event.status, event.on])).toEqual([
+            ['m', 'blinded', true],
+            ['m', 'silenced', true],
+        ]);
+    });
+
+    test('a unit that starts a battle already stunned is not announced as a change', () => {
+        const tracker = startBattle([player({ isStunned: true })]);
+
+        expect(tracker.handleBattleUpdated(flags({ isStunned: true }))).toEqual([]);
+    });
+});

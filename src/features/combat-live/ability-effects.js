@@ -33,4 +33,12 @@ export function getAbilityTiming(abilityHrid) {
     return { manaCost: detail.manaCost || 0, cooldownMs: (detail.cooldownDuration || 0) / NS_PER_MS };
 }
 
-export default { getDotDurationMs, getAbilityTiming };
+/**
+ * @param {string} abilityHrid
+ * @returns {Object[]} The ability's effects as the game data lists them (empty when unknown)
+ */
+export function getAbilityEffects(abilityHrid) {
+    return dataManager.getInitClientData()?.abilityDetailMap?.[abilityHrid]?.abilityEffects || [];
+}
+
+export default { getDotDurationMs, getAbilityTiming, getAbilityEffects };

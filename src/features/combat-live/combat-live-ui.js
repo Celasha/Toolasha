@@ -28,6 +28,7 @@ import {
     buildGraphModel,
     buildRankingBars,
     playerColor,
+    sharedPlayerColors,
     buildPaceModel,
     buildSparkModel,
     buildTapeModel,
@@ -374,8 +375,8 @@ class CombatLiveUI {
         this.collapsed = false;
         // Sections the user folded away, as `<tab>.<section>` ids (the chart is 'damage.chart')
         this.collapsedSections = new Set();
-        // Colours handed out to players in the order they were first seen
-        this.playerColors = new Map();
+        // Colours handed out to players in the order they were first seen, shared with the unit labels
+        this.playerColors = sharedPlayerColors;
         // Columns the user hid, as `<tab>.<section>.<column>` ids, and which column pickers are open
         this.hiddenColumns = new Set();
         this.openPickers = new Set();
@@ -1352,7 +1353,7 @@ class CombatLiveUI {
         this.unsubscribeHistory = null;
         this.viewing = null;
         this.historyOpen = false;
-        this.playerColors = new Map();
+        this.playerColors.clear();
         this.timerRegistry.clearAll();
         if (this.panel) {
             this.panel.remove();
