@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.30.0](https://github.com/Celasha/Toolasha/compare/v3.29.4...v3.30.0) (2026-11-05)
+
+### Features
+
+- add a Combat Live setting to show only your own damage numbers on the monster cards ([0e21ef4](https://github.com/Celasha/Toolasha/commit/0e21ef433b48f9839f2d8afd45c8a3fbf13b7b34))
+
+### Bug Fixes
+
+- hide Combat Live badges and icons for units scrolled out of view in windowed mode ([79273bb](https://github.com/Celasha/Toolasha/commit/79273bb17fb3b0af8fcb31eb9e6b4ed49429748f))
+
 ## [3.29.4](https://github.com/Celasha/Toolasha/compare/v3.29.3...v3.29.4) (2026-11-05)
 
 ### Bug Fixes
