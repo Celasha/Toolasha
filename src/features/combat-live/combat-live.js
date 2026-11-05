@@ -19,6 +19,7 @@ import { getAbilityEffects, getAbilityTiming, getDotDurationMs } from './ability
 import BuffTracker from './buff-tracker.js';
 import { playerColor, sharedPlayerColors } from './combat-live-chart.js';
 import unitOverlay from './unit-overlay.js';
+import ownDamageFilter from './own-damage-filter.js';
 import CombatLiveHistory from './combat-live-history.js';
 import CombatLiveRecorder from './combat-live-recorder.js';
 import combatLiveUI from './combat-live-ui.js';
@@ -86,6 +87,12 @@ class CombatLive {
             getManaFoodContext: () => this.getManaFoodContext(),
             isRecording: () => this.isRecording(),
             getRecording: () => (this.recorder.entries.length ? this.recorder.exportJSON() : null),
+        });
+
+        ownDamageFilter.initialize({
+            getSelf: () => this.stats.selfName,
+            getPartySize: () => this.stats.playerCount,
+            rosterSize: () => this.tracker.monsters.length,
         });
 
         unitOverlay.initialize({
@@ -171,6 +178,7 @@ class CombatLive {
         this.tracker.handleNewBattle(data);
         this.stats.beginWave(now);
         this.buffs.beginWave();
+        ownDamageFilter.beginWave();
         this.stats.setBoss(
             this.tracker.monsters.some((monster) => monster.enrageTimerNs > BOSS_ENRAGE_TIMER_NS),
             now
@@ -200,7 +208,8 @@ class CombatLive {
             this.recorder.recordBattleUpdated(data, now);
         }
         const events = this.tracker.handleBattleUpdated(data);
-        this.stats.record(events, now);
+        const hits = this.stats.record(events, now);
+        ownDamageFilter.noteHits(hits, now);
         this.buffs.record(events, now, {
             p: this.tracker.players.map((unit) => ({ index: unit.index, hp: unit.hp })),
             m: this.tracker.monsters.map((unit) => ({ index: unit.index, hp: unit.hp })),
@@ -232,6 +241,7 @@ class CombatLive {
 
         combatLiveUI.cleanup();
         unitOverlay.cleanup();
+        ownDamageFilter.cleanup();
         this.reset();
         // A recording holds party names, so it never outlives the character session
         this.recorder.clear();

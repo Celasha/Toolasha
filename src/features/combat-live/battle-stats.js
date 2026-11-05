@@ -193,8 +193,9 @@ export class BattleStats {
                 this.recordPlayer(event);
             }
         }
-        this.attributeHits(events, at);
+        const hits = this.attributeHits(events, at);
         this.attributeHeals(events);
+        return hits;
     }
 
     /**
@@ -332,12 +333,21 @@ export class BattleStats {
      * Credit this message's monster hits to a player's ability, or to an unattributed bucket.
      * @param {Object[]} events - Events from one message
      * @param {number} at - Message timestamp in ms
+     * @returns {Array<{index: number, amount: number, crit: boolean, miss: boolean, player: ?string}>} Each
+     *     monster hit with the player it was credited to (null when it has no known owner)
      */
     attributeHits(events, at = Date.now()) {
         const hits = events.filter((event) => event.side === SIDE_MONSTER && event.type === 'damage');
-        if (!hits.length) return;
+        if (!hits.length) return [];
 
         const source = this.resolveSource(events, at);
+        const owners = hits.map((hit) => ({
+            index: hit.index,
+            amount: hit.amount,
+            crit: Boolean(hit.crit) && !hit.miss,
+            miss: Boolean(hit.miss),
+            player: source.bucket ? null : source.player,
+        }));
         for (const hit of hits) {
             if (source.bucket) {
                 const bucket = this.unattributed[source.bucket];
@@ -363,6 +373,7 @@ export class BattleStats {
         }
         this.pruneRecentHits(at);
         this.trackBestDps(at);
+        return owners;
     }
 
     /**

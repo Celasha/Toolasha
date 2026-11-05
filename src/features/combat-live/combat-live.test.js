@@ -23,6 +23,9 @@ vi.mock('../../core/storage.js', () => ({
 }));
 vi.mock('./combat-live-ui.js', () => ({ default: mockUI }));
 vi.mock('./unit-overlay.js', () => ({ default: { initialize: vi.fn(), cleanup: vi.fn() } }));
+vi.mock('./own-damage-filter.js', () => ({
+    default: { initialize: vi.fn(), cleanup: vi.fn(), noteHits: vi.fn(), beginWave: vi.fn() },
+}));
 vi.mock('../../core/config.js', () => ({ default: mockConfig }));
 vi.mock('../../core/data-manager.js', () => ({
     default: { getCurrentCharacterId: () => 1, getInitClientData: () => null },

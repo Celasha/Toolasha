@@ -2152,6 +2152,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'A small label under each character on the combat screen with their damage per second, and healing per second if they heal, in their colour from the ranking.',
             },
+            combatLive_ownDamageOnly: {
+                id: 'combatLive_ownDamageOnly',
+                label: 'Combat Live: Only show my damage on the monster cards',
+                type: 'checkbox',
+                default: false,
+                help: 'In a party, hides the damage numbers on the monster cards that are not yours. Hits are matched to the player who acted in the same combat message; damage over time, reflected damage and messages where several players acted have no known owner and are hidden too. Alone, nothing is hidden.',
+            },
             combatLive_autoReset: {
                 id: 'combatLive_autoReset',
                 label: 'Combat Live: Start over when a new combat begins',

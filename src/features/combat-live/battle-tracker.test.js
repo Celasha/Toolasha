@@ -387,6 +387,22 @@ describe('BattleStats', () => {
             expect(summary.unattributed).toEqual(expect.objectContaining({ damage: 0, share: 0 }));
         });
 
+        test('says who each hit was credited to, and nobody when it has no owner', () => {
+            const tracker = startBattle([player(), bob()], [monster()]);
+            const stats = new BattleStats();
+            stats.setPlayers(['Alice', 'Bob']);
+            const owners = (message) => stats.record(tracker.handleBattleUpdated(message), 0);
+
+            expect(owners(swing(1, 250, 1))).toEqual([
+                { index: 0, amount: 50, crit: false, miss: false, player: 'Bob' },
+            ]);
+            // Nobody acted: damage over time has no owner in a party
+            expect(owners(update({}, { 0: { cHP: 200, mHP: 300, dmgCounter: 2 } }))).toEqual([
+                { index: 0, amount: 50, crit: false, miss: false, player: null },
+            ]);
+            expect(owners(update({ 0: { atkCounter: 1 } }, {}))).toEqual([]);
+        });
+
         test('when two players started attacks in the same message, the hit is left unattributed', () => {
             const both = update(
                 { 0: { atkCounter: 1 }, 1: { atkCounter: 1 } },

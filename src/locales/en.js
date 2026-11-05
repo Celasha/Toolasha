@@ -3958,6 +3958,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Combat Live: Show DPS and HPS under each party member',
                 help: 'A small label under each character on the combat screen with their damage per second, and healing per second if they heal, in their colour from the ranking.',
             },
+            combatLive_ownDamageOnly: {
+                label: 'Combat Live: Only show my damage on the monster cards',
+                help: 'In a party, hides the damage numbers on the monster cards that are not yours. Hits are matched to the player who acted in the same combat message; damage over time, reflected damage and messages where several players acted have no known owner and are hidden too. Alone, nothing is hidden.',
+            },
             combatLive_autoReset: {
                 label: 'Combat Live: Start over when a new combat begins',
                 help: 'Keeps the finished session in the history and resets the meters when you start a new combat (a different zone, or a new dungeon run). Labyrinth rooms do not count as a new combat.',
