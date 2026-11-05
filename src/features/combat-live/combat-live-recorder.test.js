@@ -30,6 +30,7 @@ describe('CombatLiveRecorder', () => {
                         maxHitpoints: 400,
                         currentManapoints: 0,
                         isPreparingAutoAttack: true,
+                        combatBuffMap: { '/buff_uniques/curse': { typeHrid: '/buff_types/damage_taken', duration: 8 } },
                     },
                 ],
             },
@@ -60,7 +61,20 @@ describe('CombatLiveRecorder', () => {
                     bm: null,
                 },
             ],
-            m: [{ h: '/monsters/fly', hp: 300, maxHp: 400, mp: 0, atk: null, ab: '', auto: 1, dmg: null, crit: null }],
+            m: [
+                {
+                    h: '/monsters/fly',
+                    hp: 300,
+                    maxHp: 400,
+                    mp: 0,
+                    atk: null,
+                    ab: '',
+                    auto: 1,
+                    dmg: null,
+                    crit: null,
+                    bm: [['/buff_uniques/curse', { typeHrid: '/buff_types/damage_taken', duration: 8 }]],
+                },
+            ],
             fields: {
                 p: [
                     'character',
@@ -74,7 +88,14 @@ describe('CombatLiveRecorder', () => {
                     'combatAbilities',
                     'combatDetails',
                 ],
-                m: ['hrid', 'currentHitpoints', 'maxHitpoints', 'currentManapoints', 'isPreparingAutoAttack'],
+                m: [
+                    'hrid',
+                    'currentHitpoints',
+                    'maxHitpoints',
+                    'currentManapoints',
+                    'isPreparingAutoAttack',
+                    'combatBuffMap',
+                ],
             },
         });
     });

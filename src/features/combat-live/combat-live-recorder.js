@@ -96,6 +96,8 @@ export class CombatLiveRecorder {
                 auto: unit?.isPreparingAutoAttack ? 1 : 0,
                 dmg: unit?.damageSplatCounter ?? null,
                 crit: unit?.criticalDamageSplatCounter ?? null,
+                // Debuffs on a monster (e.g. curse) live here, as for players
+                bm: trimBuffMap(unit?.combatBuffMap),
             })),
             // Which fields a new_battle unit really carries (the names the game uses)
             fields: {
