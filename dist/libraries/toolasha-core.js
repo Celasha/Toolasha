@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.29.4
+ * Version: 3.30.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4638,6 +4638,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Combat Live: Show DPS and HPS under each party member',
                     help: 'A small label under each character on the combat screen with their damage per second, and healing per second if they heal, in their colour from the ranking.',
                 },
+                combatLive_ownDamageOnly: {
+                    label: 'Combat Live: Only show my damage on the monster cards',
+                    help: 'In a party, hides the damage numbers on the monster cards that are not yours. Hits are matched to the player who acted in the same combat message; damage over time, reflected damage and messages where several players acted have no known owner and are hidden too. Alone, nothing is hidden.',
+                },
                 combatLive_autoReset: {
                     label: 'Combat Live: Start over when a new combat begins',
                     help: 'Keeps the finished session in the history and resets the meters when you start a new combat (a different zone, or a new dungeon run). Labyrinth rooms do not count as a new combat.',
@@ -5946,6 +5950,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 combatLive_unitBadges: {
                     label: '战斗实时面板：在每位队员下方显示 DPS 和 HPS',
                     help: '在战斗界面每个角色下方显示一个小标签，写明其每秒伤害，若会治疗则同时显示每秒治疗量，颜色与排名中的颜色一致。',
+                },
+                combatLive_ownDamageOnly: {
+                    label: '战斗实时面板：怪物卡片上只显示我的伤害',
+                    help: '组队时，隐藏怪物卡片上不属于你的伤害数字。伤害按同一条战斗消息中行动的玩家来归属；持续伤害、反弹伤害，以及多名玩家同时行动的消息无法确定归属，也会被隐藏。单人时不会隐藏任何内容。',
                 },
                 combatLive_autoReset: {
                     label: '战斗实时面板：新战斗开始时重新统计',
@@ -11386,6 +11394,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'checkbox',
                     default: true,
                     help: 'A small label under each character on the combat screen with their damage per second, and healing per second if they heal, in their colour from the ranking.',
+                },
+                combatLive_ownDamageOnly: {
+                    id: 'combatLive_ownDamageOnly',
+                    label: 'Combat Live: Only show my damage on the monster cards',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'In a party, hides the damage numbers on the monster cards that are not yours. Hits are matched to the player who acted in the same combat message; damage over time, reflected damage and messages where several players acted have no known owner and are hidden too. Alone, nothing is hidden.',
                 },
                 combatLive_autoReset: {
                     id: 'combatLive_autoReset',

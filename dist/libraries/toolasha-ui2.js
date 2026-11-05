@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.29.4
+ * Version: 3.30.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1422,8 +1422,9 @@
                     this.recordPlayer(event);
                 }
             }
-            this.attributeHits(events, at);
+            const hits = this.attributeHits(events, at);
             this.attributeHeals(events);
+            return hits;
         }
 
         /**
@@ -1561,12 +1562,21 @@
          * Credit this message's monster hits to a player's ability, or to an unattributed bucket.
          * @param {Object[]} events - Events from one message
          * @param {number} at - Message timestamp in ms
+         * @returns {Array<{index: number, amount: number, crit: boolean, miss: boolean, player: ?string}>} Each
+         *     monster hit with the player it was credited to (null when it has no known owner)
          */
         attributeHits(events, at = Date.now()) {
             const hits = events.filter((event) => event.side === SIDE_MONSTER && event.type === 'damage');
-            if (!hits.length) return;
+            if (!hits.length) return [];
 
             const source = this.resolveSource(events, at);
+            const owners = hits.map((hit) => ({
+                index: hit.index,
+                amount: hit.amount,
+                crit: Boolean(hit.crit) && !hit.miss,
+                miss: Boolean(hit.miss),
+                player: source.bucket ? null : source.player,
+            }));
             for (const hit of hits) {
                 if (source.bucket) {
                     const bucket = this.unattributed[source.bucket];
@@ -1592,6 +1602,7 @@
             }
             this.pruneRecentHits(at);
             this.trackBestDps(at);
+            return owners;
         }
 
         /**
@@ -2633,7 +2644,7 @@
         { side: 'p', area: '[class*="BattlePanel_playersArea"]' },
         { side: 'm', area: '[class*="BattlePanel_monstersArea"]' },
     ];
-    const UNIT_SELECTOR = '[class*="CombatUnit_combatUnit"]';
+    const UNIT_SELECTOR$1 = '[class*="CombatUnit_combatUnit"]';
     const STATUS_SELECTOR = '[class*="CombatUnit_status"]';
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const STATUS_ICONS = { stunned: '💫', blinded: '🙈', silenced: '🤐', enraged: '😡' };
@@ -2656,6 +2667,36 @@
     function findAbilitySprite() {
         const href = document.querySelector('use[href*="abilities_sprite"]')?.getAttribute('href');
         return href ? href.split('#')[0] : null;
+    }
+
+    /**
+     * Whether an element is scrolled or cut off out of view. The labels live in a fixed layer, so a unit that the
+     * game's scroll box has pushed out of sight (the windowed layout) would otherwise leave its labels floating
+     * over whatever is on screen in its place.
+     * @param {Element} el
+     * @param {DOMRect} rect - The element's own box
+     * @returns {boolean} True when the box is not fully inside the page and every scroll or clipping ancestor
+     */
+    function isOutOfView(el, rect) {
+        const TOLERANCE = 1;
+        if (
+            rect.left < -TOLERANCE ||
+            rect.top < -TOLERANCE ||
+            rect.right > window.innerWidth + TOLERANCE ||
+            rect.bottom > window.innerHeight + TOLERANCE
+        ) {
+            return true;
+        }
+        for (let node = el.parentElement; node && node !== document.documentElement; node = node.parentElement) {
+            const style = window.getComputedStyle(node);
+            const clipsX = style.overflowX !== 'visible';
+            const clipsY = style.overflowY !== 'visible';
+            if (!clipsX && !clipsY) continue;
+            const box = node.getBoundingClientRect();
+            if (clipsX && (rect.left < box.left - TOLERANCE || rect.right > box.right + TOLERANCE)) return true;
+            if (clipsY && (rect.top < box.top - TOLERANCE || rect.bottom > box.bottom + TOLERANCE)) return true;
+        }
+        return false;
     }
 
     class UnitOverlay {
@@ -2693,7 +2734,7 @@
             const seen = new Set();
             const sprite = findAbilitySprite();
             for (const { side, area } of SIDES) {
-                const units = [...document.querySelectorAll(`${area} ${UNIT_SELECTOR}`)];
+                const units = [...document.querySelectorAll(`${area} ${UNIT_SELECTOR$1}`)];
                 if (units.length !== this.deps.rosterSize(side)) continue;
                 units.forEach((unit, index) => {
                     const key = `${side}:${index}`;
@@ -2728,7 +2769,7 @@
                 this.rows.set(key, entry);
             }
 
-            if (!(rect.width > 0 && rect.height > 0)) {
+            if (!(rect.width > 0 && rect.height > 0) || isOutOfView(anchor, rect)) {
                 entry.row.style.display = 'none';
                 return;
             }
@@ -2817,6 +2858,214 @@
     }
 
     const unitOverlay = new UnitOverlay();
+
+    /**
+     * Own damage filter
+     *
+     * Hides the damage numbers on the game's monster cards that are not the viewer's. The game draws a number
+     * for every hit and says nothing about who landed it, so each monster hit is credited the way Combat Live
+     * credits damage (to the one player who acted in the same combat message) and the number the game draws
+     * for it is matched by its kind (damage, critical, miss) and its value, then hidden with `visibility`.
+     * Nothing is removed from the game's elements, and the hiding is undone when the game reuses the slot.
+     *
+     * Only active in a party, with the viewer known. A hit with no known owner (damage over time, reflected
+     * damage, several players acting in one message) is not the viewer's, so it is hidden too.
+     */
+
+
+    const AREA_SELECTOR = '[class*="BattlePanel_monstersArea"]';
+    const UNIT_SELECTOR = '[class*="CombatUnit_combatUnit"]';
+    const SPLATS_SELECTOR = '[class*="CombatUnit_splatsContainer"]';
+    const CHECK_MS = 250;
+    // The game shows a number for under two seconds; an event that never found its number is dropped after this
+    const PENDING_MAX_MS = 4000;
+
+    /**
+     * @param {Element} splat - One slot of a monster's splat list
+     * @returns {?string} 'damage' | 'criticalDamage' | 'miss' for a number worth judging, else null (empty slot,
+     *     heals and mana)
+     */
+    function splatKind(splat) {
+        const cls = splat.className || '';
+        if (typeof cls !== 'string' || !cls.includes('CombatUnit_splat')) return null;
+        if (cls.includes('CombatUnit_criticalDamage')) return 'criticalDamage';
+        if (cls.includes('CombatUnit_damage')) return 'damage';
+        if (cls.includes('CombatUnit_miss')) return 'miss';
+        return null;
+    }
+
+    /**
+     * @param {{crit: boolean, miss: boolean}} hit
+     * @returns {string} The kind of number the game draws for this hit
+     */
+    function hitKind(hit) {
+        if (hit.miss) return 'miss';
+        return hit.crit ? 'criticalDamage' : 'damage';
+    }
+
+    class OwnDamageFilter {
+        constructor() {
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.deps = null;
+            this.observer = null;
+            this.observed = null;
+            // monster index -> [{kind, text, at, foreign}], oldest first
+            this.pending = new Map();
+            // splat element -> {signature, resolved}
+            this.seen = new WeakMap();
+            this.hidden = new Set();
+        }
+
+        /**
+         * @param {{getSelf: function(): ?string, getPartySize: function(): number, rosterSize: function(): number}} deps
+         */
+        initialize(deps) {
+            if (this.deps) return;
+            this.deps = deps;
+            this.timerRegistry.registerInterval(setInterval(() => this.reconcile(), CHECK_MS));
+        }
+
+        /**
+         * @returns {boolean} Whether numbers should be hidden right now
+         */
+        isFiltering() {
+            return Boolean(
+                this.deps &&
+                config.getSetting('combatLive_ownDamageOnly') &&
+                this.deps.getSelf() &&
+                this.deps.getPartySize() > 1
+            );
+        }
+
+        /**
+         * Remember the owner of each monster hit of one combat message, then look for the numbers.
+         * @param {Array<{index: number, amount: number, crit: boolean, miss: boolean, player: ?string}>} hits
+         * @param {number} [now]
+         */
+        noteHits(hits, now = Date.now()) {
+            if (!this.isFiltering() || !hits?.length) return;
+            const self = this.deps.getSelf();
+            for (const hit of hits) {
+                const list = this.pending.get(hit.index) || [];
+                list.push({ kind: hitKind(hit), text: String(hit.amount), at: now, foreign: hit.player !== self });
+                this.pending.set(hit.index, list);
+            }
+            this.reconcile(now);
+        }
+
+        /**
+         * A new wave has fresh monsters; nothing from before applies.
+         */
+        beginWave() {
+            this.pending.clear();
+        }
+
+        /**
+         * Judge every number currently on the monster cards.
+         * @param {number} [now]
+         */
+        reconcile(now = Date.now()) {
+            if (!this.deps) return;
+            if (!this.isFiltering()) {
+                this.pending.clear();
+                this.showAll();
+                this.stopObserving();
+                return;
+            }
+
+            const area = document.querySelector(AREA_SELECTOR);
+            this.observe(area);
+            for (const [index, list] of this.pending) {
+                const fresh = list.filter((entry) => now - entry.at <= PENDING_MAX_MS);
+                if (fresh.length) this.pending.set(index, fresh);
+                else this.pending.delete(index);
+            }
+            if (!area) return;
+
+            const units = [...area.querySelectorAll(UNIT_SELECTOR)];
+            // The DOM and the roster disagree in size (a different view of the party): leave the cards alone
+            if (units.length !== this.deps.rosterSize()) return;
+            units.forEach((unit, index) => {
+                const slots = unit.querySelector(SPLATS_SELECTOR)?.children ?? [];
+                for (const splat of slots) this.judge(splat, index);
+            });
+        }
+
+        judge(splat, index) {
+            const kind = splatKind(splat);
+            if (!kind) {
+                this.release(splat);
+                return;
+            }
+            const signature = `${kind}:${splat.textContent}`;
+            const known = this.seen.get(splat);
+            if (known?.signature === signature && known.resolved) return;
+            if (known && known.signature !== signature) this.release(splat);
+
+            const list = this.pending.get(index) || [];
+            const at = list.findIndex((entry) => entry.kind === kind && entry.text === splat.textContent);
+            if (at === -1) {
+                // Not heard of (yet): leave it as it is and look again next time
+                this.seen.set(splat, { signature, resolved: false });
+                return;
+            }
+            const [entry] = list.splice(at, 1);
+            this.seen.set(splat, { signature, resolved: true });
+            if (entry.foreign) {
+                splat.style.visibility = 'hidden';
+                this.hidden.add(splat);
+            }
+        }
+
+        /**
+         * Forget a number the game has cleared or reused, and show it again.
+         * @param {Element} splat
+         */
+        release(splat) {
+            this.seen.delete(splat);
+            if (this.hidden.delete(splat)) splat.style.visibility = '';
+        }
+
+        showAll() {
+            for (const splat of this.hidden) splat.style.visibility = '';
+            this.hidden.clear();
+        }
+
+        /**
+         * React as soon as the game changes a number rather than waiting for the next check.
+         * @param {?Element} area
+         */
+        observe(area) {
+            if (area === this.observed) return;
+            this.stopObserving();
+            if (!area) return;
+            this.observer = new MutationObserver(() => this.reconcile());
+            this.observer.observe(area, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                attributes: true,
+                attributeFilter: ['class'],
+            });
+            this.observed = area;
+        }
+
+        stopObserving() {
+            this.observer?.disconnect();
+            this.observer = null;
+            this.observed = null;
+        }
+
+        cleanup() {
+            this.timerRegistry.clearAll();
+            this.stopObserving();
+            this.showAll();
+            this.pending.clear();
+            this.deps = null;
+        }
+    }
+
+    const ownDamageFilter = new OwnDamageFilter();
 
     /**
      * Combat Live history
@@ -4762,6 +5011,12 @@
                 getRecording: () => (this.recorder.entries.length ? this.recorder.exportJSON() : null),
             });
 
+            ownDamageFilter.initialize({
+                getSelf: () => this.stats.selfName,
+                getPartySize: () => this.stats.playerCount,
+                rosterSize: () => this.tracker.monsters.length,
+            });
+
             unitOverlay.initialize({
                 getBuffs: (side, index, now) => this.buffs.getUnit(side, index, now),
                 getBadge: (index) => this.getUnitBadge(index),
@@ -4845,6 +5100,7 @@
             this.tracker.handleNewBattle(data);
             this.stats.beginWave(now);
             this.buffs.beginWave();
+            ownDamageFilter.beginWave();
             this.stats.setBoss(
                 this.tracker.monsters.some((monster) => monster.enrageTimerNs > BOSS_ENRAGE_TIMER_NS),
                 now
@@ -4874,7 +5130,8 @@
                 this.recorder.recordBattleUpdated(data, now);
             }
             const events = this.tracker.handleBattleUpdated(data);
-            this.stats.record(events, now);
+            const hits = this.stats.record(events, now);
+            ownDamageFilter.noteHits(hits, now);
             this.buffs.record(events, now, {
                 p: this.tracker.players.map((unit) => ({ index: unit.index, hp: unit.hp })),
                 m: this.tracker.monsters.map((unit) => ({ index: unit.index, hp: unit.hp })),
@@ -4906,6 +5163,7 @@
 
             combatLiveUI.cleanup();
             unitOverlay.cleanup();
+            ownDamageFilter.cleanup();
             this.reset();
             // A recording holds party names, so it never outlives the character session
             this.recorder.clear();
