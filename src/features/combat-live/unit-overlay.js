@@ -48,6 +48,36 @@ export function findAbilitySprite() {
     return href ? href.split('#')[0] : null;
 }
 
+/**
+ * Whether an element is scrolled or cut off out of view. The labels live in a fixed layer, so a unit that the
+ * game's scroll box has pushed out of sight (the windowed layout) would otherwise leave its labels floating
+ * over whatever is on screen in its place.
+ * @param {Element} el
+ * @param {DOMRect} rect - The element's own box
+ * @returns {boolean} True when the box is not fully inside the page and every scroll or clipping ancestor
+ */
+export function isOutOfView(el, rect) {
+    const TOLERANCE = 1;
+    if (
+        rect.left < -TOLERANCE ||
+        rect.top < -TOLERANCE ||
+        rect.right > window.innerWidth + TOLERANCE ||
+        rect.bottom > window.innerHeight + TOLERANCE
+    ) {
+        return true;
+    }
+    for (let node = el.parentElement; node && node !== document.documentElement; node = node.parentElement) {
+        const style = window.getComputedStyle(node);
+        const clipsX = style.overflowX !== 'visible';
+        const clipsY = style.overflowY !== 'visible';
+        if (!clipsX && !clipsY) continue;
+        const box = node.getBoundingClientRect();
+        if (clipsX && (rect.left < box.left - TOLERANCE || rect.right > box.right + TOLERANCE)) return true;
+        if (clipsY && (rect.top < box.top - TOLERANCE || rect.bottom > box.bottom + TOLERANCE)) return true;
+    }
+    return false;
+}
+
 class UnitOverlay {
     constructor() {
         this.timerRegistry = createTimerRegistry();
@@ -118,7 +148,7 @@ class UnitOverlay {
             this.rows.set(key, entry);
         }
 
-        if (!(rect.width > 0 && rect.height > 0)) {
+        if (!(rect.width > 0 && rect.height > 0) || isOutOfView(anchor, rect)) {
             entry.row.style.display = 'none';
             return;
         }

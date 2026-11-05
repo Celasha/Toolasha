@@ -19,7 +19,14 @@ function buildBattle(players = 2, monsters = 2) {
             () => '<div class="CombatUnit_combatUnit__x"><div class="CombatUnit_status__x"></div></div>'
         ).join('')}</div>`;
     document.querySelectorAll('[class*="CombatUnit_status"]').forEach((el, i) => {
-        el.getBoundingClientRect = () => ({ left: 100 + i * 120, top: 283, bottom: 301, width: 110, height: 18 });
+        el.getBoundingClientRect = () => ({
+            left: 100 + i * 120,
+            right: 210 + i * 120,
+            top: 283,
+            bottom: 301,
+            width: 110,
+            height: 18,
+        });
     });
 }
 
@@ -182,6 +189,45 @@ describe('UnitOverlay', () => {
         overlay.update();
 
         expect([...layer().children].every((row) => row.style.display === 'none')).toBe(true);
+    });
+
+    describe('a unit scrolled out of view', () => {
+        const scrollBox = (top, bottom) => {
+            const box = document.querySelector('.BattlePanel_monstersArea__x');
+            box.style.overflowY = 'auto';
+            box.getBoundingClientRect = () => ({ left: 0, right: 900, top, bottom, width: 900, height: bottom - top });
+        };
+        const displays = () => [...layer().children].map((row) => row.style.display);
+
+        test('gets no label, while the units still inside the scroll box keep theirs', () => {
+            // Monster rows sit at y 283-301; a box that ends at 290 cuts them both off
+            scrollBox(0, 290);
+            overlay.update();
+            expect(displays()).toEqual(['flex', 'flex', 'none', 'none']);
+        });
+
+        test('gets its label back when it scrolls into the box', () => {
+            scrollBox(0, 290);
+            overlay.update();
+            scrollBox(0, 400);
+            overlay.update();
+            expect(displays()).toEqual(['flex', 'flex', 'flex', 'flex']);
+        });
+
+        test('a unit below the bottom of the page gets no label', () => {
+            document.querySelectorAll('[class*="CombatUnit_status"]').forEach((el) => {
+                el.getBoundingClientRect = () => ({
+                    left: 100,
+                    right: 210,
+                    top: 2000,
+                    bottom: 2018,
+                    width: 110,
+                    height: 18,
+                });
+            });
+            overlay.update();
+            expect(displays().every((display) => display === 'none')).toBe(true);
+        });
     });
 
     test('cleanup removes the layer', () => {
