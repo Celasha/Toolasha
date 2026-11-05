@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.29.1
+ * Version: 3.29.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1766,9 +1766,10 @@
          * @param {string} name
          * @returns {{dps: number, hps: number}}
          */
-        getBadge(name) {
-            const seconds = this.getActiveSeconds();
-            if (!(seconds > 0)) return { dps: 0, hps: 0 };
+        getBadge(name, now = Date.now()) {
+            // Under a second of combat a single hit would read as a huge rate
+            const seconds = this.getActiveSeconds(now);
+            if (!(seconds >= 1)) return { dps: 0, hps: 0 };
             return {
                 dps: (this.dealt.get(name)?.damage ?? 0) / seconds,
                 hps: (this.healing.get(name)?.healing ?? 0) / seconds,
@@ -1792,10 +1793,14 @@
         }
 
         /**
+         * @param {number} [now] - When given, time since the last message counts too (while combat is flowing), so
+         *     rates fall smoothly between messages instead of stepping when one arrives
          * @returns {number} Seconds of combat counted so far
          */
-        getActiveSeconds() {
-            return this.activeMs / 1000;
+        getActiveSeconds(now) {
+            const sinceLast = now !== undefined && this.lastAt !== null ? now - this.lastAt : 0;
+            const live = sinceLast > 0 && sinceLast <= SESSION_GAP_MS ? sinceLast : 0;
+            return (this.activeMs + live) / 1000;
         }
 
         /**
@@ -1803,7 +1808,7 @@
          * @returns {Object} Plain summary for the panels
          */
         getSummary(now = Date.now()) {
-            const seconds = this.getActiveSeconds();
+            const seconds = this.getActiveSeconds(now);
             const rate = (value) => (seconds > 0 ? value / seconds : 0);
             const kills = [...this.kills.values()].reduce((sum, count) => sum + count, 0);
             const unattributedDamage = Object.values(this.unattributed).reduce((sum, bucket) => sum + bucket.damage, 0);
@@ -2622,7 +2627,7 @@
 
 
     const LAYER_ID = 'toolasha-combat-live-units';
-    const TICK_MS = 500;
+    const TICK_MS = 250;
     const ICON_SIZE = 20;
     const SIDES = [
         { side: 'p', area: '[class*="BattlePanel_playersArea"]' },
@@ -2710,10 +2715,10 @@
             let entry = this.rows.get(key);
             if (!entry) {
                 const row = document.createElement('div');
-                row.style.cssText = 'position:absolute; display:flex; flex-direction:column; align-items:center; gap:1px;';
+                row.style.cssText = 'position:absolute; display:flex; flex-direction:column; align-items:stretch; gap:1px;';
                 const badge = document.createElement('div');
                 badge.style.cssText =
-                    'font-size:10px; font-weight:700; line-height:1.2; padding:0 4px; border-radius:3px; white-space:nowrap; color:#000;';
+                    'font-size:11px; font-weight:700; line-height:1.3; padding:0 4px; border-radius:3px; white-space:nowrap; text-align:center; overflow:hidden; color:#000;';
                 const icons = document.createElement('div');
                 icons.style.cssText = 'display:flex; flex-wrap:wrap; justify-content:center; gap:2px;';
                 row.append(badge, icons);
@@ -3048,6 +3053,8 @@
                     auto: unit?.isPreparingAutoAttack ? 1 : 0,
                     dmg: unit?.damageSplatCounter ?? null,
                     crit: unit?.criticalDamageSplatCounter ?? null,
+                    // Debuffs on a monster (e.g. curse) live here, as for players
+                    bm: trimBuffMap(unit?.combatBuffMap),
                 })),
                 // Which fields a new_battle unit really carries (the names the game uses)
                 fields: {
@@ -4767,9 +4774,11 @@
             const name = this.tracker.players[index]?.name;
             if (!name) return null;
             const { dps, hps } = this.stats.getBadge(name);
+            // One decimal below a thousand, where the numbers are small enough to be worth it
+            const rate = (value) => (value < 1000 ? value.toFixed(1) : formatters_js.formatLargeNumber(value, 1));
             return {
-                text: `${formatters_js.formatLargeNumber(dps, 1)} dps`,
-                healText: hps > 0.05 ? `${formatters_js.formatLargeNumber(hps, 1)} hps` : '',
+                text: `${rate(dps)} dps`,
+                healText: hps > 0.05 ? `${rate(hps)} hps` : '',
                 color: playerColor(sharedPlayerColors, name),
             };
         }
