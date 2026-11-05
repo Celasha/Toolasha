@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.29.4](https://github.com/Celasha/Toolasha/compare/v3.29.3...v3.29.4) (2026-11-05)
+
+
+### Bug Fixes
+
+* record opened unit panels in Combat Live recordings so debuffs like curse can be inspected ([ce0b0e6](https://github.com/Celasha/Toolasha/commit/ce0b0e689b46bd4a60b4da8e92cbf502124bed7d))
+
 ## [3.29.3](https://github.com/Celasha/Toolasha/compare/v3.29.2...v3.29.3) (2026-11-05)
 
 ### Bug Fixes
