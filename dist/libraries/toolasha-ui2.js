@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.29.3
+ * Version: 3.29.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3080,6 +3080,27 @@
             });
         }
 
+        /**
+         * The full unit the game sends when a unit's panel is opened. Unlike battle_updated it carries the
+         * unit's buffs and combat stats, so it shows what a debuff such as curse really looks like.
+         * @param {Object} data - battle_unit_fetched payload
+         * @param {number} at - Timestamp in ms
+         */
+        recordUnitFetched(data, at) {
+            const unit = data?.unit;
+            this.push({
+                k: 'uf',
+                t: at,
+                guild: data?.isGuildBattle ? 1 : 0,
+                n: unit?.name ?? unit?.character?.name ?? null,
+                h: unit?.hrid ?? null,
+                hp: unit?.currentHitpoints ?? null,
+                bm: trimBuffMap(unit?.combatBuffMap),
+                cs: unit?.combatDetails?.combatStats ? JSON.parse(JSON.stringify(unit.combatDetails.combatStats)) : null,
+                fields: Object.keys(unit || {}),
+            });
+        }
+
         push(entry) {
             this.entries.push(entry);
             if (this.entries.length > this.maxEntries) {
@@ -4699,6 +4720,7 @@
             this.labyrinthHandler = null;
             this.newBattleHandler = null;
             this.battleUpdatedHandler = null;
+            this.unitFetchedHandler = null;
             this.socketCloseHandler = null;
         }
 
@@ -4716,6 +4738,11 @@
 
             webSocketHook.on('new_battle', this.newBattleHandler);
             webSocketHook.on('battle_updated', this.battleUpdatedHandler);
+            // Only sent when a unit's panel is opened, so recording it costs nothing otherwise
+            this.unitFetchedHandler = (data) => {
+                if (this.isRecording()) this.recorder.recordUnitFetched(data, Date.now());
+            };
+            webSocketHook.on('battle_unit_fetched', this.unitFetchedHandler);
             this.labyrinthHandler = (data) => {
                 this.inLabyrinth = Boolean(data?.labyrinth?.isActive);
             };
@@ -4868,11 +4895,13 @@
 
             if (this.newBattleHandler) webSocketHook.off('new_battle', this.newBattleHandler);
             if (this.battleUpdatedHandler) webSocketHook.off('battle_updated', this.battleUpdatedHandler);
+            if (this.unitFetchedHandler) webSocketHook.off('battle_unit_fetched', this.unitFetchedHandler);
             if (this.socketCloseHandler) webSocketHook.offSocketEvent('close', this.socketCloseHandler);
             if (this.labyrinthHandler) webSocketHook.off('labyrinth_updated', this.labyrinthHandler);
             this.labyrinthHandler = null;
             this.newBattleHandler = null;
             this.battleUpdatedHandler = null;
+            this.unitFetchedHandler = null;
             this.socketCloseHandler = null;
 
             combatLiveUI.cleanup();
