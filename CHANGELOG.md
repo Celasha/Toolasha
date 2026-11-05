@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.29.2](https://github.com/Celasha/Toolasha/compare/v3.29.1...v3.29.2) (2026-11-05)
+
+### Bug Fixes
+
+- record monster buff maps in Combat Live recordings so debuffs like curse can be inspected ([c60a630](https://github.com/Celasha/Toolasha/commit/c60a63003fcb24ca624d2c2ab966bffd44cc2477))
+- smooth the Combat Live DPS badge, show it full width with one decimal ([6ef1bb7](https://github.com/Celasha/Toolasha/commit/6ef1bb77cb1c2b80459a8f05ca5dc6c6f142f536))
+
 ## [3.29.1](https://github.com/Celasha/Toolasha/compare/v3.29.0...v3.29.1) (2026-11-04)
 
 ### Bug Fixes
