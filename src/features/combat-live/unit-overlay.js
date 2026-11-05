@@ -1,8 +1,8 @@
 /**
  * Unit overlay
  *
- * Small labels under each character and monster on the game's combat screen: a DPS / HPS badge for the
- * players, and an icon with a countdown for every buff, debuff and status on a unit. Nothing is inserted
+ * Small labels in the empty status row under the ability bar of each character and monster on the game's
+ * combat screen: a DPS / HPS badge for the players, and an icon with a countdown for every buff, debuff and status on a unit. Nothing is inserted
  * into the game's own elements: the labels live in one fixed, click-through layer and follow the game's
  * unit elements by their screen position, so the game re-rendering its units cannot break them.
  *
@@ -18,7 +18,7 @@ import { getAbilityName } from '../../utils/game-i18n.js';
 
 const LAYER_ID = 'toolasha-combat-live-units';
 const TICK_MS = 250;
-const ICON_SIZE = 20;
+const ICON_SIZE = 16;
 const SIDES = [
     { side: 'p', area: '[class*="BattlePanel_playersArea"]' },
     { side: 'm', area: '[class*="BattlePanel_monstersArea"]' },
@@ -105,12 +105,13 @@ class UnitOverlay {
         let entry = this.rows.get(key);
         if (!entry) {
             const row = document.createElement('div');
-            row.style.cssText = 'position:absolute; display:flex; flex-direction:column; align-items:stretch; gap:1px;';
+            row.style.cssText =
+                'position:absolute; display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; justify-content:center; gap:2px;';
             const badge = document.createElement('div');
             badge.style.cssText =
-                'font-size:11px; font-weight:700; line-height:1.3; padding:0 4px; border-radius:3px; white-space:nowrap; text-align:center; overflow:hidden; color:#000;';
+                'font-size:11px; font-weight:700; line-height:1.3; padding:0 4px; flex:0 1 auto; min-width:0; border-radius:3px; white-space:nowrap; text-align:center; overflow:hidden; color:#000;';
             const icons = document.createElement('div');
-            icons.style.cssText = 'display:flex; flex-wrap:wrap; justify-content:center; gap:2px;';
+            icons.style.cssText = 'display:flex; flex-wrap:wrap; justify-content:center; gap:2px; flex:0 0 auto;';
             row.append(badge, icons);
             this.layer.appendChild(row);
             entry = { row, badge, iconBox: icons, icons: new Map() };
@@ -123,7 +124,8 @@ class UnitOverlay {
         }
         entry.row.style.display = 'flex';
         entry.row.style.left = `${rect.left}px`;
-        entry.row.style.top = `${rect.bottom + 1}px`;
+        // The game leaves this row empty, so the labels start inside it rather than below it
+        entry.row.style.top = `${rect.top}px`;
         entry.row.style.width = `${rect.width}px`;
 
         const badge = side === 'p' && config.getSetting('combatLive_unitBadges') ? this.deps.getBadge(index) : null;
@@ -167,7 +169,7 @@ class UnitOverlay {
         const wrap = document.createElement('span');
         wrap.style.cssText = `position:relative; width:${ICON_SIZE}px; height:${ICON_SIZE}px; box-sizing:border-box; border:2px solid ${
             KIND_COLORS[buff.kind] || '#999'
-        }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; font-size:11px; overflow:visible;`;
+        }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; font-size:10px; overflow:visible;`;
         // The tooltip is set once, so it does not flicker while a countdown ticks
         wrap.title =
             buff.kind === 'status' && !buff.abilityHrid

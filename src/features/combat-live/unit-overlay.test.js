@@ -19,7 +19,7 @@ function buildBattle(players = 2, monsters = 2) {
             () => '<div class="CombatUnit_combatUnit__x"><div class="CombatUnit_status__x"></div></div>'
         ).join('')}</div>`;
     document.querySelectorAll('[class*="CombatUnit_status"]').forEach((el, i) => {
-        el.getBoundingClientRect = () => ({ left: 100 + i * 120, bottom: 300, width: 110, height: 18 });
+        el.getBoundingClientRect = () => ({ left: 100 + i * 120, top: 283, bottom: 301, width: 110, height: 18 });
     });
 }
 
@@ -95,13 +95,13 @@ describe('UnitOverlay', () => {
         expect(layer().style.zIndex).toBe('50');
     });
 
-    test('a row under every unit, placed at the unit status bar', () => {
+    test('a row under every unit, placed inside the unit status row', () => {
         overlay.update();
 
         expect(layer().children).toHaveLength(4);
         const first = layer().children[0];
         expect(first.style.left).toBe('100px');
-        expect(first.style.top).toBe('301px');
+        expect(first.style.top).toBe('283px');
         expect(first.style.width).toBe('110px');
     });
 
@@ -176,7 +176,7 @@ describe('UnitOverlay', () => {
 
     test('a unit with no size on screen (the combat tab is not showing) gets no label', () => {
         document.querySelectorAll('[class*="CombatUnit_status"]').forEach((el) => {
-            el.getBoundingClientRect = () => ({ left: 0, bottom: 0, width: 0, height: 0 });
+            el.getBoundingClientRect = () => ({ left: 0, top: 0, bottom: 0, width: 0, height: 0 });
         });
 
         overlay.update();
