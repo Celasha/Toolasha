@@ -121,6 +121,27 @@ export class CombatLiveRecorder {
         });
     }
 
+    /**
+     * The full unit the game sends when a unit's panel is opened. Unlike battle_updated it carries the
+     * unit's buffs and combat stats, so it shows what a debuff such as curse really looks like.
+     * @param {Object} data - battle_unit_fetched payload
+     * @param {number} at - Timestamp in ms
+     */
+    recordUnitFetched(data, at) {
+        const unit = data?.unit;
+        this.push({
+            k: 'uf',
+            t: at,
+            guild: data?.isGuildBattle ? 1 : 0,
+            n: unit?.name ?? unit?.character?.name ?? null,
+            h: unit?.hrid ?? null,
+            hp: unit?.currentHitpoints ?? null,
+            bm: trimBuffMap(unit?.combatBuffMap),
+            cs: unit?.combatDetails?.combatStats ? JSON.parse(JSON.stringify(unit.combatDetails.combatStats)) : null,
+            fields: Object.keys(unit || {}),
+        });
+    }
+
     push(entry) {
         this.entries.push(entry);
         if (this.entries.length > this.maxEntries) {

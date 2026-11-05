@@ -134,7 +134,7 @@ describe('Combat Live feature', () => {
         feature.initialize();
         feature.initialize();
 
-        expect(mockHook.on).toHaveBeenCalledTimes(3);
+        expect(mockHook.on).toHaveBeenCalledTimes(4);
         expect(mockUI.initialize).toHaveBeenCalledTimes(1);
     });
 
@@ -289,6 +289,30 @@ describe('Combat Live feature', () => {
             handlers.get('battle_updated')(hit(7, 250));
 
             expect(combatLive.recorder.entries.map((entry) => entry.k)).toEqual(['nb', 'bu']);
+        });
+
+        test('keeps a unit the player opens, with its buffs, only when the setting is on', () => {
+            const fetched = {
+                unit: {
+                    hrid: '/monsters/fly',
+                    combatBuffMap: { '/buff_uniques/x': { typeHrid: '/buff_types/damage_taken' } },
+                    combatDetails: { combatStats: { damageTaken: 0.1 } },
+                },
+            };
+            feature.initialize();
+            handlers.get('battle_unit_fetched')(fetched);
+            expect(combatLive.recorder.entries).toEqual([]);
+
+            recordingOn();
+            handlers.get('battle_unit_fetched')(fetched);
+
+            expect(combatLive.recorder.entries).toHaveLength(1);
+            expect(combatLive.recorder.entries[0]).toMatchObject({
+                k: 'uf',
+                h: '/monsters/fly',
+                bm: [['/buff_uniques/x', { typeHrid: '/buff_types/damage_taken' }]],
+                cs: { damageTaken: 0.1 },
+            });
         });
 
         test('survives a dropped connection but not a cleanup', () => {

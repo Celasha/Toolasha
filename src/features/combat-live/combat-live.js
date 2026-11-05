@@ -46,6 +46,7 @@ class CombatLive {
         this.labyrinthHandler = null;
         this.newBattleHandler = null;
         this.battleUpdatedHandler = null;
+        this.unitFetchedHandler = null;
         this.socketCloseHandler = null;
     }
 
@@ -63,6 +64,11 @@ class CombatLive {
 
         webSocketHook.on('new_battle', this.newBattleHandler);
         webSocketHook.on('battle_updated', this.battleUpdatedHandler);
+        // Only sent when a unit's panel is opened, so recording it costs nothing otherwise
+        this.unitFetchedHandler = (data) => {
+            if (this.isRecording()) this.recorder.recordUnitFetched(data, Date.now());
+        };
+        webSocketHook.on('battle_unit_fetched', this.unitFetchedHandler);
         this.labyrinthHandler = (data) => {
             this.inLabyrinth = Boolean(data?.labyrinth?.isActive);
         };
@@ -215,11 +221,13 @@ class CombatLive {
 
         if (this.newBattleHandler) webSocketHook.off('new_battle', this.newBattleHandler);
         if (this.battleUpdatedHandler) webSocketHook.off('battle_updated', this.battleUpdatedHandler);
+        if (this.unitFetchedHandler) webSocketHook.off('battle_unit_fetched', this.unitFetchedHandler);
         if (this.socketCloseHandler) webSocketHook.offSocketEvent('close', this.socketCloseHandler);
         if (this.labyrinthHandler) webSocketHook.off('labyrinth_updated', this.labyrinthHandler);
         this.labyrinthHandler = null;
         this.newBattleHandler = null;
         this.battleUpdatedHandler = null;
+        this.unitFetchedHandler = null;
         this.socketCloseHandler = null;
 
         combatLiveUI.cleanup();
