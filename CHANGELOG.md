@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.29.3](https://github.com/Celasha/Toolasha/compare/v3.29.2...v3.29.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* put Combat Live badges and buff icons inside the empty status row instead of below it ([54c1c5c](https://github.com/Celasha/Toolasha/commit/54c1c5c1305b7a53a8f7f8b7692e0284afc7fba4))
+
 ## [3.29.2](https://github.com/Celasha/Toolasha/compare/v3.29.1...v3.29.2) (2026-11-05)
 
 ### Bug Fixes
