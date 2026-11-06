@@ -2128,6 +2128,19 @@ export default class CustomTabsUI {
         headerEl.innerHTML = `<span>${this._unorgOpen ? '▼' : '▶'}</span> <span>${this._escHtml(
             t('customTabsUi.unorganizedHeaderLabel', { count: totalTiles })
         )}</span>`;
+        const valueKey = this._categoryTotalValueKey();
+        if (valueKey) {
+            const total = remainingEntries
+                .flatMap(({ tiles }) => tiles)
+                .reduce((sum, tile) => sum + (parseFloat(tile.dataset[valueKey]) || 0), 0);
+            if (total > 0) {
+                const valueBadge = document.createElement('span');
+                valueBadge.className = 'toolasha-ct-section-value';
+                valueBadge.style.marginLeft = 'auto';
+                valueBadge.textContent = formatKMB(total, 2);
+                headerEl.appendChild(valueBadge);
+            }
+        }
         headerEl.style.order = orderCounter++;
         headerEl.addEventListener('click', () => {
             this._unorgOpen = !this._unorgOpen;

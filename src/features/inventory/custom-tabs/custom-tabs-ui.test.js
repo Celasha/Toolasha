@@ -355,6 +355,32 @@ describe('CustomTabsUI layout invalidation', () => {
             expect(container.querySelector('.toolasha-ct-section-value')).toBeNull();
         });
 
+        test('shows the Unorganized total only for tiles outside every tab', () => {
+            mocks.categoryTotals = true;
+            const tiles = [makeTile('Milk'), makeTile('Egg'), makeTile('Sword')];
+            tiles[0].dataset.askValue = 100;
+            tiles[1].dataset.askValue = 50;
+            tiles[2].dataset.askValue = 7;
+            ui._config = { version: 1, tabs: [foodTab], selectedTabId: null };
+            const container = makeInvContainer(tiles);
+
+            ui._applyLayoutSync(container);
+
+            expect(container.querySelector('.toolasha-ct-unorg-header .toolasha-ct-section-value').textContent).toBe(
+                '7'
+            );
+        });
+
+        test('shows no Unorganized total when "Show category totals" is off', () => {
+            const tiles = [makeTile('Sword')];
+            tiles[0].dataset.askValue = 7;
+            const container = makeInvContainer(tiles);
+
+            ui._applyLayoutSync(container);
+
+            expect(container.querySelector('.toolasha-ct-unorg-header .toolasha-ct-section-value')).toBeNull();
+        });
+
         test('rebuilds once after the badge pass wrote the values, so a first layout does not stay without totals', async () => {
             mocks.categoryTotals = true;
             const container = setup([undefined, undefined]);
