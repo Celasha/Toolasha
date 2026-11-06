@@ -2,11 +2,10 @@
 
 ## [3.30.2](https://github.com/Celasha/Toolasha/compare/v3.30.1...v3.30.2) (2026-11-06)
 
-
 ### Bug Fixes
 
-* show a value total on the custom tabs Unorganized section ([17c70a3](https://github.com/Celasha/Toolasha/commit/17c70a3be2c9d9956e75a1b143790610c786bed8))
-* value Labyrinth tokens and scrolls in inventory totals and net worth, behind a setting ([6569ced](https://github.com/Celasha/Toolasha/commit/6569cedfaf00a825061863bbd859054db5f38f98))
+- show a value total on the custom tabs Unorganized section ([17c70a3](https://github.com/Celasha/Toolasha/commit/17c70a3be2c9d9956e75a1b143790610c786bed8))
+- value Labyrinth tokens and scrolls in inventory totals and net worth, behind a setting ([6569ced](https://github.com/Celasha/Toolasha/commit/6569cedfaf00a825061863bbd859054db5f38f98))
 
 ## [3.30.1](https://github.com/Celasha/Toolasha/compare/v3.30.0...v3.30.1) (2026-11-06)
 

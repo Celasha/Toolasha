@@ -1086,7 +1086,7 @@ if (combatSimSite === 'shykai') {
     // Expose minimal user-facing API
     const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    targetWindow.Toolasha.version = '3.30.1';
+    targetWindow.Toolasha.version = '3.30.2';
 
     // Feature toggle API (for users to manage settings via console)
     targetWindow.Toolasha.features = {
