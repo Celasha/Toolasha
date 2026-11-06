@@ -2,10 +2,9 @@
 
 ## [3.30.3](https://github.com/Celasha/Toolasha/compare/v3.30.2...v3.30.3) (2026-11-06)
 
-
 ### Bug Fixes
 
-* record each player's curse stat in Combat Live recordings ([42c52f2](https://github.com/Celasha/Toolasha/commit/42c52f283e8427ef03ca708f5a0ff5943c33d068))
+- record each player's curse stat in Combat Live recordings ([42c52f2](https://github.com/Celasha/Toolasha/commit/42c52f283e8427ef03ca708f5a0ff5943c33d068))
 
 ## [3.30.2](https://github.com/Celasha/Toolasha/compare/v3.30.1...v3.30.2) (2026-11-06)
 
