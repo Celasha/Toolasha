@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.30.1
+ * Version: 3.30.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21818,6 +21818,12 @@ self.onmessage = function (e) {
             return credit ? credit.value : null;
         }
 
+        // Labyrinth Tokens and scrolls: best gold per token in the Labyrinth shop (opt-out setting).
+        // Off, or no data, leaves them to the ordinary pricing below, as before.
+        if (tokenValuation_js.LABYRINTH_VALUED_HRIDS.has(itemHrid) && config.getSetting('networth_includeLabyrinthValues') !== false) {
+            return tokenValuation_js.calculateLabyrinthItemValue(itemHrid)?.value ?? null;
+        }
+
         // Task Tokens: Expected value from Task Shop chests
         if (itemHrid === '/items/task_token') {
             const includeTaskTokens = config.getSetting('networth_includeTaskTokens');
@@ -27752,6 +27758,22 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                     continue;
                 }
 
+                // Labyrinth Tokens and scrolls: no market listing, valued through the Labyrinth shop (best
+                // gold per token). Opt-out setting shared with Net Worth.
+                if (
+                    tokenValuation_js.LABYRINTH_VALUED_HRIDS.has(itemHrid) &&
+                    config.getSetting('networth_includeLabyrinthValues') !== false
+                ) {
+                    const labyrinthValue = tokenValuation_js.calculateLabyrinthItemValue(itemHrid);
+                    const perItem = labyrinthValue?.value > 0 ? labyrinthValue.value : 0;
+                    itemElem.dataset.askPrice = perItem;
+                    itemElem.dataset.bidPrice = perItem;
+                    itemElem.dataset.askValue = perItem * itemCount;
+                    itemElem.dataset.bidValue = perItem * itemCount;
+                    itemElem.dataset.priceOutlier = perItem > 0 && labyrinthValue.isOutlier ? '1' : '0';
+                    continue;
+                }
+
                 // Get item details (reused throughout)
                 const itemDetails = gameData.itemDetailMap[itemHrid];
 
@@ -33371,6 +33393,19 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             headerEl.innerHTML = `<span>${this._unorgOpen ? '▼' : '▶'}</span> <span>${this._escHtml(
             i18n_js.t('customTabsUi.unorganizedHeaderLabel', { count: totalTiles })
         )}</span>`;
+            const valueKey = this._categoryTotalValueKey();
+            if (valueKey) {
+                const total = remainingEntries
+                    .flatMap(({ tiles }) => tiles)
+                    .reduce((sum, tile) => sum + (parseFloat(tile.dataset[valueKey]) || 0), 0);
+                if (total > 0) {
+                    const valueBadge = document.createElement('span');
+                    valueBadge.className = 'toolasha-ct-section-value';
+                    valueBadge.style.marginLeft = 'auto';
+                    valueBadge.textContent = formatters_js.formatKMB(total, 2);
+                    headerEl.appendChild(valueBadge);
+                }
+            }
             headerEl.style.order = orderCounter++;
             headerEl.addEventListener('click', () => {
                 this._unorgOpen = !this._unorgOpen;

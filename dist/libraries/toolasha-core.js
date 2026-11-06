@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.30.1
+ * Version: 3.30.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4384,6 +4384,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Value guild credits (net worth, inventory totals, tooltips)',
                     help: 'Guild Credits cannot be sold, so each is valued at the cheapest tradeable item that converts into it. Disable to leave them out of net worth and inventory totals and hide the tooltip value.',
                 },
+                networth_includeLabyrinthValues: {
+                    label: 'Value Labyrinth tokens and scrolls (net worth, inventory totals)',
+                    help: 'Labyrinth Tokens and scrolls cannot be traded, so each is valued through the Labyrinth shop (best market value per token; a scroll costs 30 tokens). Disable to leave them out of net worth and inventory totals.',
+                },
                 networth_includeTaskTokens: {
                     label: 'Include task tokens in net worth',
                     help: 'Value task tokens based on expected value from Task Shop chests. Disable to exclude them from net worth.',
@@ -5713,6 +5717,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 networth_includeGuildCredits: {
                     label: '计算公会信用点价值（净资产、库存总额、提示）',
                     help: '公会信用点无法出售，因此按可兑换成它的最便宜的可交易物品估值。关闭后，净资产和库存总额将不含信用点，并隐藏提示中的价值。',
+                },
+                networth_includeLabyrinthValues: {
+                    label: '计算迷宫代币和卷轴价值（净资产、库存总额）',
+                    help: '迷宫代币和卷轴无法交易，因此通过迷宫商店估值（按每枚代币的最佳市场价值计算；一个卷轴需要30枚代币）。关闭后，净资产和库存总额将不含它们。',
                 },
                 networth_includeTaskTokens: {
                     label: '净资产中包含任务代币',
@@ -10886,6 +10894,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'checkbox',
                     default: true,
                     help: 'Guild Credits cannot be sold, so each is valued at the cheapest tradeable item that converts into it. Disable to leave them out of net worth and inventory totals and hide the tooltip value.',
+                },
+                networth_includeLabyrinthValues: {
+                    id: 'networth_includeLabyrinthValues',
+                    label: 'Value Labyrinth tokens and scrolls (net worth, inventory totals)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Labyrinth Tokens and scrolls cannot be traded, so each is valued through the Labyrinth shop (best market value per token; a scroll costs 30 tokens). Disable to leave them out of net worth and inventory totals.',
                 },
                 networth_abilityBooksAsInventory: {
                     id: 'networth_abilityBooksAsInventory',
