@@ -20,7 +20,7 @@ describe('CombatLiveRecorder', () => {
                         damageSplatCounter: 12,
                         criticalDamageSplatCounter: 4,
                         combatAbilities: [{ abilityHrid: '/abilities/fireball' }, { abilityHrid: '/abilities/poke' }],
-                        combatDetails: { combatStats: { abilityHaste: 25 } },
+                        combatDetails: { combatStats: { abilityHaste: 25, curse: 0.022 } },
                     },
                 ],
                 monsters: [
@@ -58,6 +58,7 @@ describe('CombatLiveRecorder', () => {
                     crit: 4,
                     la: ['/abilities/fireball', '/abilities/poke'],
                     hs: 25,
+                    cu: 0.022,
                     bm: null,
                 },
             ],
