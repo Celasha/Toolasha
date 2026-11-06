@@ -2,10 +2,9 @@
 
 ## [3.30.1](https://github.com/Celasha/Toolasha/compare/v3.30.0...v3.30.1) (2026-11-06)
 
-
 ### Bug Fixes
 
-* make custom tab section totals follow the category totals setting, not the badge settings ([eab6a31](https://github.com/Celasha/Toolasha/commit/eab6a31333d42b80c6f02e21628a7d6c337c147b))
+- make custom tab section totals follow the category totals setting, not the badge settings ([eab6a31](https://github.com/Celasha/Toolasha/commit/eab6a31333d42b80c6f02e21628a7d6c337c147b))
 
 ## [3.30.0](https://github.com/Celasha/Toolasha/compare/v3.29.4...v3.30.0) (2026-11-05)
 
