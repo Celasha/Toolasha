@@ -16,7 +16,7 @@ vi.mock('./market-data.js', () => ({
     getItemPriceOutlierInfo: (...args) => mocks.getItemPriceOutlierInfo(...args),
 }));
 
-import { calculateDungeonTokenValue } from './token-valuation.js';
+import { calculateDungeonTokenValue, calculateLabyrinthItemValue } from './token-valuation.js';
 
 function gameDataWithShopItems() {
     return {
@@ -119,5 +119,47 @@ describe('calculateDungeonTokenValue - outlier guard propagation', () => {
         });
 
         calculateDungeonTokenValue('/items/chimerical_token', 'profitCalc_pricingMode', null);
+    });
+});
+
+describe('calculateLabyrinthItemValue', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getSettingValue.mockImplementation((_key, fallback) => fallback);
+        mocks.getInitClientData.mockReturnValue({
+            labyrinthShopItemDetailMap: {
+                a: { itemHrid: '/items/essence_a', cost: { itemHrid: '/items/labyrinth_token', count: 10 } },
+                b: {
+                    itemHrid: '/items/essence_b',
+                    cost: { itemHrid: '/items/labyrinth_token', count: 4 },
+                    outputCount: 2,
+                },
+            },
+        });
+        mocks.getItemPriceOutlierInfo.mockImplementation((itemHrid) => {
+            if (itemHrid === '/items/essence_a') return { value: 100, isOutlier: false }; // 10/token
+            if (itemHrid === '/items/essence_b') return { value: 40, isOutlier: true }; // 40 x 2 / 4 = 20/token (best)
+            return { value: null, isOutlier: false };
+        });
+    });
+
+    test('values a Labyrinth Token at the best market value per token, counting output count', () => {
+        expect(calculateLabyrinthItemValue('/items/labyrinth_token')).toEqual({ value: 20, isOutlier: true });
+    });
+
+    test('values a scroll as 30 tokens', () => {
+        expect(calculateLabyrinthItemValue('/items/seal_of_damage')).toEqual({ value: 600, isOutlier: true });
+    });
+
+    test('returns null for any other item', () => {
+        expect(calculateLabyrinthItemValue('/items/milk')).toBeNull();
+    });
+
+    test('returns null when no shop item has a price or game data is missing', () => {
+        mocks.getItemPriceOutlierInfo.mockReturnValue({ value: null, isOutlier: false });
+        expect(calculateLabyrinthItemValue('/items/labyrinth_token')).toBeNull();
+
+        mocks.getInitClientData.mockReturnValue(null);
+        expect(calculateLabyrinthItemValue('/items/labyrinth_token')).toBeNull();
     });
 });

@@ -19,7 +19,12 @@ import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profi
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
 import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
-import { calculateDungeonTokenValue, DUNGEON_TOKEN_HRIDS } from '../../utils/token-valuation.js';
+import {
+    calculateDungeonTokenValue,
+    calculateLabyrinthItemValue,
+    DUNGEON_TOKEN_HRIDS,
+    LABYRINTH_VALUED_HRIDS,
+} from '../../utils/token-valuation.js';
 import { GUILD_CREDIT_HRIDS, getGuildCreditValue } from '../../utils/guild-credit-conversion.js';
 
 /**
@@ -362,6 +367,22 @@ class InventoryBadgeManager {
                 itemElem.dataset.askValue = askPerCredit * itemCount;
                 itemElem.dataset.bidValue = bidPerCredit * itemCount;
                 itemElem.dataset.priceOutlier = askCredit?.isOutlier || bidCredit?.isOutlier ? '1' : '0';
+                continue;
+            }
+
+            // Labyrinth Tokens and scrolls: no market listing, valued through the Labyrinth shop (best
+            // gold per token). Opt-out setting shared with Net Worth.
+            if (
+                LABYRINTH_VALUED_HRIDS.has(itemHrid) &&
+                config.getSetting('networth_includeLabyrinthValues') !== false
+            ) {
+                const labyrinthValue = calculateLabyrinthItemValue(itemHrid);
+                const perItem = labyrinthValue?.value > 0 ? labyrinthValue.value : 0;
+                itemElem.dataset.askPrice = perItem;
+                itemElem.dataset.bidPrice = perItem;
+                itemElem.dataset.askValue = perItem * itemCount;
+                itemElem.dataset.bidValue = perItem * itemCount;
+                itemElem.dataset.priceOutlier = perItem > 0 && labyrinthValue.isOutlier ? '1' : '0';
                 continue;
             }
 

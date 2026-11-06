@@ -1644,6 +1644,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Guild Credits cannot be sold, so each is valued at the cheapest tradeable item that converts into it. Disable to leave them out of net worth and inventory totals and hide the tooltip value.',
             },
+            networth_includeLabyrinthValues: {
+                id: 'networth_includeLabyrinthValues',
+                label: 'Value Labyrinth tokens and scrolls (net worth, inventory totals)',
+                type: 'checkbox',
+                default: true,
+                help: 'Labyrinth Tokens and scrolls cannot be traded, so each is valued through the Labyrinth shop (best market value per token; a scroll costs 30 tokens). Disable to leave them out of net worth and inventory totals.',
+            },
             networth_abilityBooksAsInventory: {
                 id: 'networth_abilityBooksAsInventory',
                 label: 'Count ability books as inventory (Current Assets)',

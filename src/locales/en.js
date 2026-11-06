@@ -3704,6 +3704,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Value guild credits (net worth, inventory totals, tooltips)',
                 help: 'Guild Credits cannot be sold, so each is valued at the cheapest tradeable item that converts into it. Disable to leave them out of net worth and inventory totals and hide the tooltip value.',
             },
+            networth_includeLabyrinthValues: {
+                label: 'Value Labyrinth tokens and scrolls (net worth, inventory totals)',
+                help: 'Labyrinth Tokens and scrolls cannot be traded, so each is valued through the Labyrinth shop (best market value per token; a scroll costs 30 tokens). Disable to leave them out of net worth and inventory totals.',
+            },
             networth_includeTaskTokens: {
                 label: 'Include task tokens in net worth',
                 help: 'Value task tokens based on expected value from Task Shop chests. Disable to exclude them from net worth.',

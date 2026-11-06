@@ -5,6 +5,7 @@ const mockCheckOutlier = vi.hoisted(() => vi.fn());
 const mockGetPricesBatch = vi.hoisted(() => vi.fn(() => new Map()));
 const mockCalculateDungeonTokenValue = vi.hoisted(() => vi.fn());
 const mockGetGuildCreditValue = vi.hoisted(() => vi.fn());
+const mockCalculateLabyrinthItemValue = vi.hoisted(() => vi.fn());
 
 vi.mock('../../core/dom-observer.js', () => ({ default: { onClass: vi.fn(() => () => {}) } }));
 vi.mock('../../core/config.js', () => ({
@@ -25,6 +26,8 @@ vi.mock('../combat-stats/combat-stats-calculator.js', () => ({ DUNGEON_CHEST_CHE
 vi.mock('../../utils/dom-observer-helpers.js', () => ({ createMutationWatcher: vi.fn() }));
 vi.mock('../../utils/token-valuation.js', () => ({
     calculateDungeonTokenValue: mockCalculateDungeonTokenValue,
+    calculateLabyrinthItemValue: mockCalculateLabyrinthItemValue,
+    LABYRINTH_VALUED_HRIDS: new Set(['/items/labyrinth_token', '/items/seal_of_damage']),
     DUNGEON_TOKEN_HRIDS: new Set([
         '/items/chimerical_token',
         '/items/sinister_token',
@@ -244,5 +247,45 @@ describe('InventoryBadgeManager.calculateItemPrices - guild credits', () => {
 
         expect(mockGetGuildCreditValue).not.toHaveBeenCalled();
         expect(itemElem.dataset.askValue).not.toBe(String(1000 * 42));
+    });
+});
+
+describe('InventoryBadgeManager.calculateItemPrices - Labyrinth tokens and scrolls', () => {
+    function buildScrollElem() {
+        const itemElem = buildItemContainer({ ariaLabel: 'Scroll Of Damage', href: '#seal_of_damage' });
+        const countElem = document.createElement('div');
+        countElem.className = 'Item_count';
+        countElem.textContent = '6';
+        itemElem.appendChild(countElem);
+        return itemElem;
+    }
+
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        const { default: dataManager } = await import('../../core/data-manager.js');
+        dataManager.getInitClientData.mockReturnValue({ itemDetailMap: {} });
+        const { parseItemCount } = await import('../../utils/number-parser.js');
+        parseItemCount.mockReturnValue(6);
+        const { default: config } = await import('../../core/config.js');
+        config.getSetting.mockReturnValue(undefined);
+        mockCalculateLabyrinthItemValue.mockReturnValue({ value: 600, isOutlier: false });
+    });
+
+    test('values a scroll stack from the Labyrinth shop valuation', async () => {
+        const itemElem = buildScrollElem();
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(itemElem.dataset.askValue).toBe(String(600 * 6));
+        expect(itemElem.dataset.bidValue).toBe(String(600 * 6));
+    });
+
+    test('leaves scrolls at the old unvalued behavior when the setting is off', async () => {
+        const { default: config } = await import('../../core/config.js');
+        config.getSetting.mockImplementation((key) => (key === 'networth_includeLabyrinthValues' ? false : undefined));
+        const itemElem = buildScrollElem();
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(mockCalculateLabyrinthItemValue).not.toHaveBeenCalled();
+        expect(itemElem.dataset.askValue).toBe('0');
     });
 });

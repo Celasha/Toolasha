@@ -104,6 +104,73 @@ export function calculateDungeonTokenValue(
     return bestValuePerToken > 0 ? { value: bestValuePerToken, isOutlier: bestIsOutlier } : null;
 }
 
+export const LABYRINTH_TOKEN_HRID = '/items/labyrinth_token';
+
+/**
+ * The Labyrinth scrolls ("seals"). They cannot be traded, but each costs SCROLL_TOKEN_COST
+ * Labyrinth Tokens in the Labyrinth shop.
+ */
+export const SCROLL_HRIDS = new Set([
+    '/items/seal_of_action_speed',
+    '/items/seal_of_attack_speed',
+    '/items/seal_of_cast_speed',
+    '/items/seal_of_combat_drop',
+    '/items/seal_of_critical_rate',
+    '/items/seal_of_damage',
+    '/items/seal_of_efficiency',
+    '/items/seal_of_gathering',
+    '/items/seal_of_gourmet',
+    '/items/seal_of_processing',
+    '/items/seal_of_rare_find',
+    '/items/seal_of_wisdom',
+]);
+
+export const SCROLL_TOKEN_COST = 30;
+
+/** Items valued through the Labyrinth shop: the token itself and the scrolls. */
+export const LABYRINTH_VALUED_HRIDS = new Set([LABYRINTH_TOKEN_HRID, ...SCROLL_HRIDS]);
+
+/**
+ * Value of one Labyrinth Token: the best market value per token among the Labyrinth shop's items
+ * (price x output count / token cost), on the side the profit pricing mode selects.
+ * @returns {{value: number, isOutlier: boolean}|null} null when no shop item has a market price
+ */
+function calculateLabyrinthTokenValue() {
+    const gameData = dataManager.getInitClientData();
+    if (!gameData) return null;
+
+    const mode = resolvePricingSide('profitCalc_pricingMode', null);
+    let best = null;
+    for (const shopItem of Object.values(gameData.labyrinthShopItemDetailMap || {})) {
+        const tokenCost = shopItem.cost?.count || 0;
+        if (tokenCost <= 0) continue;
+
+        const priceInfo = getItemPriceOutlierInfo(shopItem.itemHrid, { mode });
+        const marketPrice = priceInfo.value || 0;
+        if (marketPrice <= 0) continue;
+
+        const valuePerToken = (marketPrice * (shopItem.outputCount || 1)) / tokenCost;
+        if (!best || valuePerToken > best.value) {
+            best = { value: valuePerToken, isOutlier: priceInfo.isOutlier };
+        }
+    }
+    return best;
+}
+
+/**
+ * Value of one Labyrinth Token or one Labyrinth scroll (SCROLL_TOKEN_COST tokens' worth).
+ * @param {string} itemHrid - A member of LABYRINTH_VALUED_HRIDS
+ * @returns {{value: number, isOutlier: boolean}|null} null for other items or when there is no data
+ */
+export function calculateLabyrinthItemValue(itemHrid) {
+    if (!LABYRINTH_VALUED_HRIDS.has(itemHrid)) return null;
+    const token = calculateLabyrinthTokenValue();
+    if (!token) return null;
+    return itemHrid === LABYRINTH_TOKEN_HRID
+        ? token
+        : { value: token.value * SCROLL_TOKEN_COST, isOutlier: token.isOutlier };
+}
+
 /**
  * Calculate task token value based on best chest expected value
  * @returns {number} Value per token, or 0 if no data

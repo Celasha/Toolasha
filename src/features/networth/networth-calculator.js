@@ -20,7 +20,11 @@ import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { isUntradableCape } from '../../utils/untradable-cape.js';
 import { getUntradableCapeValue } from '../enhancement/untradable-cape-value.js';
 import { calculateTaskTokenValue } from '../tasks/task-profit-calculator.js';
-import { calculateDungeonTokenValue } from '../../utils/token-valuation.js';
+import {
+    calculateDungeonTokenValue,
+    calculateLabyrinthItemValue,
+    LABYRINTH_VALUED_HRIDS,
+} from '../../utils/token-valuation.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import config from '../../core/config.js';
 import networthCache from './networth-cache.js';
@@ -253,6 +257,12 @@ function calculateCurrencyValue(itemHrid) {
         const side = (config.getSettingValue('networth_pricingMode') || 'ask') === 'bid' ? 'buy' : 'sell';
         const credit = getGuildCreditValue(itemHrid, dataManager.getInitClientData()?.itemDetailMap, side);
         return credit ? credit.value : null;
+    }
+
+    // Labyrinth Tokens and scrolls: best gold per token in the Labyrinth shop (opt-out setting).
+    // Off, or no data, leaves them to the ordinary pricing below, as before.
+    if (LABYRINTH_VALUED_HRIDS.has(itemHrid) && config.getSetting('networth_includeLabyrinthValues') !== false) {
+        return calculateLabyrinthItemValue(itemHrid)?.value ?? null;
     }
 
     // Task Tokens: Expected value from Task Shop chests

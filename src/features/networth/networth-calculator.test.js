@@ -84,7 +84,12 @@ vi.mock('../enhancement/tooltip-enhancement.js', () => ({ calculateEnhancementPa
 vi.mock('../../utils/enhancement-config.js', () => ({ getEnhancingParams: vi.fn(() => ({})) }));
 vi.mock('../enhancement/untradable-cape-value.js', () => ({ getUntradableCapeValue: mockGetUntradableCapeValue }));
 vi.mock('../tasks/task-profit-calculator.js', () => ({ calculateTaskTokenValue: vi.fn(() => null) }));
-vi.mock('../../utils/token-valuation.js', () => ({ calculateDungeonTokenValue: vi.fn(() => 0) }));
+const mockCalculateLabyrinthItemValue = vi.hoisted(() => vi.fn());
+vi.mock('../../utils/token-valuation.js', () => ({
+    calculateDungeonTokenValue: vi.fn(() => 0),
+    calculateLabyrinthItemValue: mockCalculateLabyrinthItemValue,
+    LABYRINTH_VALUED_HRIDS: new Set(['/items/labyrinth_token', '/items/seal_of_damage']),
+}));
 vi.mock('../market/expected-value-calculator.js', () => ({
     default: { isInitialized: false, calculateExpectedValue: vi.fn(() => null) },
 }));
@@ -690,5 +695,36 @@ describe('calculateItemValue - guild credits', () => {
     test('a credit with no priced source item is worth 0, not a fake value', async () => {
         mockGetItemPrice.mockReturnValue(0);
         expect(await calculateItemValue({ itemHrid: CREDIT, count: 5 })).toBe(0);
+    });
+});
+
+describe('calculateItemValue - Labyrinth tokens and scrolls', () => {
+    let includeSetting;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        includeSetting = undefined;
+        mockGetSetting.mockImplementation((key) =>
+            key === 'networth_includeLabyrinthValues' ? includeSetting : false
+        );
+        mockGetSettingValue.mockReturnValue('ask');
+        mockGetInitClientData.mockReturnValue({ itemDetailMap: {} });
+        mockGetItemPrice.mockReturnValue(0);
+        mockCalculateLabyrinthItemValue.mockReturnValue({ value: 600, isOutlier: false });
+    });
+
+    test('values scrolls through the Labyrinth shop valuation', async () => {
+        expect(await calculateItemValue({ itemHrid: '/items/seal_of_damage', count: 5 })).toBe(5 * 600);
+    });
+
+    test('turning the setting off leaves them as before (unvalued)', async () => {
+        includeSetting = false;
+        expect(await calculateItemValue({ itemHrid: '/items/seal_of_damage', count: 5 })).toBe(0);
+        expect(mockCalculateLabyrinthItemValue).not.toHaveBeenCalled();
+    });
+
+    test('with no shop data they stay unvalued', async () => {
+        mockCalculateLabyrinthItemValue.mockReturnValue(null);
+        expect(await calculateItemValue({ itemHrid: '/items/seal_of_damage', count: 5 })).toBe(0);
     });
 });
