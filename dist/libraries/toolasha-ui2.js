@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.30.2
+ * Version: 3.30.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3291,6 +3291,8 @@
                     // What is equipped, and how much faster the abilities come off cooldown: casts refused
                     la: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
                     hs: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
+                    // The curse stat (e.g. a Cursed Bow): who can curse a monster, and how much per stack
+                    cu: unit?.combatDetails?.combatStats?.curse ?? 0,
                     // The game's own buff list for the unit, kept so its real shape can be checked
                     bm: trimBuffMap(unit?.combatBuffMap),
                 })),
