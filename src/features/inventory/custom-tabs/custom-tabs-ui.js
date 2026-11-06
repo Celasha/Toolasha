@@ -614,6 +614,14 @@ export default class CustomTabsUI {
         config.onSettingChange('inventoryTabs_tileGap', onTileGapChange);
         this._unregisterHandlers.push(() => config.offSettingChange('inventoryTabs_tileGap', onTileGapChange));
 
+        // Live setting change for the section totals (they are only drawn on a full rebuild)
+        const onCategoryTotalsChange = () => {
+            this._lastRebuildComposition = null;
+            if (this._isActive) this._applyLayout();
+        };
+        config.onSettingChange('invCategoryTotals', onCategoryTotalsChange);
+        this._unregisterHandlers.push(() => config.offSettingChange('invCategoryTotals', onCategoryTotalsChange));
+
         // Re-apply layout when inventory changes.
         // Uses requestAnimationFrame instead of a long debounce — rAF fires at the next frame
         // boundary (~16ms), by which point React has finished swapping tile elements for
@@ -1059,6 +1067,12 @@ export default class CustomTabsUI {
             // Full rebuild: inject action buttons + headers
             let orderCounter = 0;
 
+            // The tile values are written by the badge pass that runs after this layout, so on a
+            // first build the totals below can only see zeros; _applyLayout rebuilds once more.
+            const totalKey = this._categoryTotalValueKey();
+            this._totalsAwaitValues =
+                Boolean(totalKey) && [...allTiles].some((tile) => tile.dataset[totalKey] === undefined);
+
             const topbar = this._injectActionButtons();
             if (topbar) {
                 topbar.style.order = orderCounter++;
@@ -1140,6 +1154,12 @@ export default class CustomTabsUI {
             inventoryBadgeManager.lastRenderTime = 0;
             inventoryBadgeManager.lastCalculationTime = 0;
             await inventoryBadgeManager.renderAllBadges();
+
+            if (this._totalsAwaitValues && this._isActive) {
+                this._totalsAwaitValues = false;
+                this._lastRebuildComposition = null;
+                this._applyLayoutSync(invContainer);
+            }
         } finally {
             this._isApplying = false;
             if (this._needsAnotherPass) {
@@ -1866,17 +1886,7 @@ export default class CustomTabsUI {
             }
 
             // Sum badge values across all tiles in this section
-            const valueKey = (() => {
-                const mode = inventorySort.currentMode;
-                if (mode === 'ask' || mode === 'bid') {
-                    return config.getSetting('invSort_showBadges') ? mode + 'Value' : null;
-                }
-                if (mode === 'none') {
-                    const badgesOnNone = config.getSettingValue('invSort_badgesOnNone', 'None');
-                    return badgesOnNone !== 'None' ? badgesOnNone.toLowerCase() + 'Value' : null;
-                }
-                return null;
-            })();
+            const valueKey = this._categoryTotalValueKey();
             if (valueKey) {
                 const total = sectionTiles.reduce((sum, t) => sum + (parseFloat(t.dataset[valueKey]) || 0), 0);
                 if (total > 0) {
@@ -1913,17 +1923,7 @@ export default class CustomTabsUI {
 
             // Show rolled-up value on the collapsed header (own items + all descendants)
             // Must peek BEFORE claiming tiles so values are still in the map.
-            const valueKey = (() => {
-                const mode = inventorySort.currentMode;
-                if (mode === 'ask' || mode === 'bid') {
-                    return config.getSetting('invSort_showBadges') ? mode + 'Value' : null;
-                }
-                if (mode === 'none') {
-                    const badgesOnNone = config.getSettingValue('invSort_badgesOnNone', 'None');
-                    return badgesOnNone !== 'None' ? badgesOnNone.toLowerCase() + 'Value' : null;
-                }
-                return null;
-            })();
+            const valueKey = this._categoryTotalValueKey();
             if (valueKey) {
                 const total = this._peekTileValue(tab, tileMap, valueKey);
                 if (total > 0) {
@@ -1962,6 +1962,20 @@ export default class CustomTabsUI {
             for (const hrid of tab.items) this._claimTilesForHrid(hrid, tileMap);
             if (tab.children.length > 0) this._removeTilesFromMapForChildren(tab.children, tileMap);
         }
+    }
+
+    /**
+     * Which tile value the section totals add up. Governed only by "Show category totals in
+     * inventory" and independent of the stack-price badge settings: the sort mode's own value
+     * for Ask/Bid, and the Ask value when sorting is off.
+     * @returns {?string} dataset key ('askValue' | 'bidValue'), or null when totals are off
+     */
+    _categoryTotalValueKey() {
+        if (!config.getSetting('invCategoryTotals')) return null;
+        const mode = inventorySort.currentMode;
+        if (mode === 'ask' || mode === 'bid') return mode + 'Value';
+        const badgesOnNone = config.getSettingValue('invSort_badgesOnNone', 'None');
+        return badgesOnNone !== 'None' ? badgesOnNone.toLowerCase() + 'Value' : 'askValue';
     }
 
     /**

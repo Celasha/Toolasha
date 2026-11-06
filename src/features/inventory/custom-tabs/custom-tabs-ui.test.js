@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     // the way getSetting() does.
     showUnorganizedCacheEmpty: false,
     tileGap: 4,
+    categoryTotals: false,
     localizedNames: new Map(),
 }));
 
@@ -29,6 +30,7 @@ vi.mock('../../../core/config.js', () => ({
             // deliberately NOT affected by showUnorganizedCacheEmpty here: that's the whole
             // point of the fix this file's cache-empty-window tests verify.
             if (key === 'inventoryTabs_showUnorganized') return mocks.showUnorganized;
+            if (key === 'invCategoryTotals') return mocks.categoryTotals;
             return false;
         }),
         onSettingChange: vi.fn(),
@@ -98,6 +100,7 @@ vi.mock('../../../utils/formatters.js', () => ({
 }));
 
 import CustomTabsUI from './custom-tabs-ui.js';
+import inventoryBadgeManager from '../inventory-badge-manager.js';
 
 /**
  * Build a fake game inventory tile matching the DOM shape _buildTileMap/_getHridFromTile expect:
@@ -138,6 +141,7 @@ describe('CustomTabsUI layout invalidation', () => {
         mocks.showUnorganized = true;
         mocks.showUnorganizedCacheEmpty = false;
         mocks.tileGap = 4;
+        mocks.categoryTotals = false;
         ui = new CustomTabsUI();
         ui._config = { version: 1, tabs: [], selectedTabId: null };
         // Bypass DOM lookups unrelated to the layout pass itself.
@@ -313,6 +317,59 @@ describe('CustomTabsUI layout invalidation', () => {
         expect(container.querySelector('.toolasha-ct-unorg-header').textContent).toContain('Unorganized (1)');
         const milkTile = container.querySelector('svg[aria-label="Milk"]').closest('.Item_itemContainer_abc');
         expect(milkTile.dataset.toolashaTabId).toBe('tab-1');
+    });
+
+    describe('section value totals', () => {
+        const foodTab = {
+            id: 'tab-1',
+            name: 'Food',
+            color: null,
+            open: true,
+            items: ['/items/milk', '/items/egg'],
+            children: [],
+        };
+
+        function setup(values) {
+            const tiles = [makeTile('Milk'), makeTile('Egg')];
+            tiles.forEach((tile, i) => {
+                if (values[i] !== undefined) tile.dataset.askValue = values[i];
+            });
+            ui._config = { version: 1, tabs: [foodTab], selectedTabId: null };
+            return makeInvContainer(tiles);
+        }
+
+        test('shows the section total when "Show category totals" is on, regardless of the badge settings', () => {
+            mocks.categoryTotals = true;
+            const container = setup([100, 50]);
+
+            ui._applyLayoutSync(container);
+
+            expect(container.querySelector('.toolasha-ct-section-value').textContent).toBe('150');
+        });
+
+        test('shows no section total when "Show category totals" is off', () => {
+            const container = setup([100, 50]);
+
+            ui._applyLayoutSync(container);
+
+            expect(container.querySelector('.toolasha-ct-section-value')).toBeNull();
+        });
+
+        test('rebuilds once after the badge pass wrote the values, so a first layout does not stay without totals', async () => {
+            mocks.categoryTotals = true;
+            const container = setup([undefined, undefined]);
+            vi.spyOn(ui, '_findInvContainer').mockReturnValue(container);
+            ui._isActive = true;
+            inventoryBadgeManager.renderAllBadges.mockImplementationOnce(async () => {
+                container.querySelectorAll('.Item_itemContainer_abc').forEach((tile, i) => {
+                    tile.dataset.askValue = [100, 50][i];
+                });
+            });
+
+            await ui._applyLayout();
+
+            expect(container.querySelector('.toolasha-ct-section-value').textContent).toBe('150');
+        });
     });
 
     test('does not create an Unorganized header when the setting is disabled', () => {
