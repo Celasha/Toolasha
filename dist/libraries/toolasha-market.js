@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.30.6
+ * Version: 3.30.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11031,6 +11031,18 @@ self.onmessage = function (e) {
         return cell;
     }
 
+    /**
+     * A price for the injected columns: as the game's own Price column writes it, or as the Number format mode
+     * setting says.
+     * @param {?number} value
+     * @returns {?string}
+     */
+    function formatListingPrice(value) {
+        return config.getSettingValue('market_listingPriceFormat', 'game') === 'setting'
+            ? formatters_js.formatLargeNumber(value)
+            : formatters_js.formatMarketplacePrice(value);
+    }
+
     class ListingPriceDisplay {
         constructor() {
             this.allListings = {}; // Maintained listing state
@@ -12101,7 +12113,7 @@ self.onmessage = function (e) {
                   : '#00FF00';
             const title = lastUpdated ? estimatedListingAge.getStalenessTooltip(lastUpdated) : undefined;
 
-            return createStyledCell(formatters_js.formatKMB(topOrderPrice, 1) + (isOutlier ? ' ⚠' : ''), color, { title });
+            return createStyledCell(formatListingPrice(topOrderPrice) + (isOutlier ? ' ⚠' : ''), color, { title });
         }
 
         /**
@@ -12163,7 +12175,7 @@ self.onmessage = function (e) {
                 unclaimedCoinCount,
                 unclaimedItemCount
             );
-            return createStyledCell(formatters_js.formatKMB(totalPrice, 1), this.getAmountColor(totalPrice));
+            return createStyledCell(formatListingPrice(totalPrice), this.getAmountColor(totalPrice));
         }
 
         /**

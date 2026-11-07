@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.30.6
+ * Version: 3.30.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4233,6 +4233,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         datetime: 'Date/Time (e.g., "01-13 14:30")',
                     },
                 },
+                market_listingPriceFormat: {
+                    label: 'My Listings: Top Order Price and Total Price number format',
+                    help: 'How the Top Order Price and Total Price columns we add to My Listings write their numbers. Matching the game puts them on the same scale as its Price column.',
+                    options: {
+                        game: "Match the game's Price column (80100, 2800K)",
+                        setting: 'Follow the Number format mode setting',
+                    },
+                },
                 market_listingTimeFormat: {
                     label: 'Time format for date/time display',
                     help: 'Time format used in marketplace listings, action completion times, and chat timestamps',
@@ -5629,6 +5637,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     options: {
                         elapsed: '已用时间（例如“3h 45m”）',
                         datetime: '日期/时间（例如“01-13 14:30”）',
+                    },
+                },
+                market_listingPriceFormat: {
+                    label: '我的挂牌：最优订单价格和总价的数字格式',
+                    help: '我们在“我的挂牌”中添加的最优订单价格和总价两列的数字写法。与游戏一致可使其与游戏自带的价格列处于同一刻度。',
+                    options: {
+                        game: '与游戏价格列一致（80100、2800K）',
+                        setting: '遵循“数字格式模式”设置',
                     },
                 },
                 market_listingTimeFormat: {
@@ -10731,6 +10747,17 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         { value: 'datetime', label: 'Date/Time (e.g., "01-13 14:30")' },
                     ],
                     help: 'Choose how to display listing creation times',
+                },
+                market_listingPriceFormat: {
+                    id: 'market_listingPriceFormat',
+                    label: 'My Listings: Top Order Price and Total Price number format',
+                    type: 'select',
+                    default: 'game',
+                    options: [
+                        { value: 'game', label: "Match the game's Price column (80100, 2800K)" },
+                        { value: 'setting', label: 'Follow the Number format mode setting' },
+                    ],
+                    help: 'How the Top Order Price and Total Price columns we add to My Listings write their numbers. Matching the game puts them on the same scale as its Price column.',
                 },
                 market_listingTimeFormat: {
                     id: 'market_listingTimeFormat',
