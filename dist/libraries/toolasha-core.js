@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.30.3
+ * Version: 3.30.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2478,6 +2478,8 @@
             status_blinded: 'Blinded',
             status_silenced: 'Silenced',
             status_enraged: 'Enraged',
+            curse: 'Curse (estimated from the hits of the player with the Cursed Bow)',
+            curseTooltip: (p) => `Curse x${p.stacks}: +${p.percent}% damage taken (estimated from landed hits)`,
             sectionGraph: 'DPS over time',
             graphNow: 'now',
             graphTooltip: 'Damage per second over the last 5 minutes, smoothed over 16 seconds. Red bands are boss fights.',
@@ -7957,6 +7959,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             status_blinded: '致盲',
             status_silenced: '沉默',
             status_enraged: '狂暴',
+            curse: '诅咒（根据持有诅咒武器的玩家命中次数估算）',
+            curseTooltip: (p) => `诅咒 x${p.stacks}：受到的伤害 +${p.percent}%（根据命中次数估算）`,
             sectionGraph: 'DPS 走势',
             graphNow: '现在',
             graphTooltip: '最近5分钟的每秒伤害，按16秒平滑。红色区域为首领战。',

@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.30.3
+ * Version: 3.30.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -913,6 +913,8 @@
             // The abilities the unit has equipped, and how much faster its abilities come off cooldown
             abilities: (unit?.combatAbilities || []).map((ability) => ability?.abilityHrid).filter(Boolean),
             abilityHaste: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
+            // How much damage taken a landed hit adds to its target (a Cursed Bow); 0 for most players
+            curse: unit?.combatDetails?.combatStats?.curse ?? 0,
             // How long before the unit enrages; bosses get much longer than ordinary monsters
             enrageTimerNs: unit?.enrageTimerDuration ?? 0,
             // How much faster food comes off cooldown (a pouch bonus)
@@ -1967,7 +1969,8 @@
      *     applies, to whom, and for how long; nothing here is a hand-kept list of abilities;
      *   - the stunned / blinded / silenced / enraged flags are exact, and only their length is predicted from
      *     the ability that caused them;
-     *   - a unit dying clears what was on it, and a new wave clears the monsters.
+     *   - a unit dying clears what was on it, and a new wave clears the monsters;
+     *   - curse is counted from the hits of the player who holds it (their curse stat is in `new_battle`).
      *
      * The timers are predictions from the moment the cast was seen, so they can drift from the server's by a
      * little. Pure logic: feed it tracker events.
@@ -1977,6 +1980,11 @@
     const NS_PER_MS = 1e6;
     // A status flag that rises this soon after a cast is taken to be that cast's doing
     const STATUS_LINK_MS = 1500;
+    // Curse (a weapon stat, not an ability): every landed hit by its holder adds a stack, each hit refreshes the
+    // timer of all of them, up to five. Per the game's own description of the stat.
+    const CURSE_ID = 'curse';
+    const CURSE_MAX_STACKS = 5;
+    const CURSE_DURATION_MS = 15000;
 
     const KIND_BUFF = 'buff';
     const KIND_DEBUFF = 'debuff';
@@ -2036,8 +2044,47 @@
             for (const event of events) {
                 if (event.type === 'attack' && event.abilityHrid) this.applyCast(event, at, roster, damaged);
             }
+            this.applyCurse(events, at, roster, damaged);
             for (const event of events) {
                 if (event.type === 'status') this.applyStatus(event, at);
+            }
+        }
+
+        /**
+         * One message is one combat event with one attacker, so when the player who acted holds curse, every
+         * monster that took damage from it gains a stack. Several actors at once, or damage with no attacker
+         * (damage over time), leaves the count alone: the owner of those hits is not known.
+         * @param {Object[]} events
+         * @param {number} at
+         * @param {Object} roster - Players carry their `curse` stat
+         * @param {Object} damaged - Indexes of the units that took damage in this message, per side
+         */
+        applyCurse(events, at, roster, damaged) {
+            const attackers = events.filter((event) => event.type === 'attack' && event.side === SIDE_PLAYER);
+            if (attackers.length !== 1) return;
+            const perStack = roster?.[SIDE_PLAYER]?.find((unit) => unit.index === attackers[0].index)?.curse;
+            if (!(perStack > 0)) return;
+
+            // A monster that died of this hit has nothing left to show
+            const died = new Set(events.filter((e) => e.type === 'death' && e.side === SIDE_MONSTER).map((e) => e.index));
+            for (const index of new Set(damaged[SIDE_MONSTER])) {
+                if (died.has(index)) continue;
+                const key = unitKey(SIDE_MONSTER, index);
+                const entries = this.units.get(key) || new Map();
+                const current = entries.get(CURSE_ID);
+                const live = current && current.expiresAt > at;
+                entries.set(CURSE_ID, {
+                    id: CURSE_ID,
+                    kind: KIND_DEBUFF,
+                    abilityHrid: '',
+                    symbol: '☠',
+                    stacks: Math.min(CURSE_MAX_STACKS, (live ? current.stacks : 0) + 1),
+                    perStack,
+                    durationMs: CURSE_DURATION_MS,
+                    at,
+                    expiresAt: at + CURSE_DURATION_MS,
+                });
+                this.units.set(key, entries);
             }
         }
 
@@ -2161,7 +2208,7 @@
          * @param {string} side - 'p' or 'm'
          * @param {number} index
          * @param {number} now - Timestamp in ms
-         * @returns {Array<{id: string, kind: string, status?: string, abilityHrid: string, remainingMs: ?number, durationMs: ?number}>}
+         * @returns {Array<{id: string, kind: string, status?: string, abilityHrid: string, remainingMs: ?number, durationMs: ?number, symbol?: string, stacks?: number, value?: number}>}
          *     What is on that unit, buffs first and the ones running out soonest leading
          */
         getUnit(side, index, now) {
@@ -2193,6 +2240,9 @@
                     abilityHrid: entry.abilityHrid,
                     remainingMs,
                     durationMs: entry.durationMs,
+                    ...(entry.stacks
+                        ? { symbol: entry.symbol, stacks: entry.stacks, value: entry.stacks * entry.perStack }
+                        : {}),
                 });
             }
             const out = [...grouped.values()];
@@ -2810,7 +2860,15 @@
                     icon = this.buildIcon(buff, sprite);
                     entry.icons.set(buff.id, icon);
                 }
-                icon.label.textContent = countdownText(buff.remainingMs);
+                // Curse is judged by its stacks, which matter more than a timer that every hit resets
+                icon.label.textContent = buff.stacks ? String(buff.stacks) : countdownText(buff.remainingMs);
+                if (buff.stacks) {
+                    const title = i18n_js.t('combatLive.curseTooltip', {
+                        stacks: buff.stacks,
+                        percent: Number((buff.value * 100).toFixed(1)),
+                    });
+                    if (icon.wrap.title !== title) icon.wrap.title = title;
+                }
                 // Appending an element that is already there moves it, which keeps the DOM in the sorted order
                 entry.iconBox.appendChild(icon.wrap);
             }
@@ -2822,12 +2880,15 @@
             KIND_COLORS[buff.kind] || '#999'
         }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; font-size:10px; overflow:visible;`;
             // The tooltip is set once, so it does not flicker while a countdown ticks
-            wrap.title =
-                buff.kind === 'status' && !buff.abilityHrid
-                    ? i18n_js.t(`combatLive.status_${buff.status}`)
-                    : getAbilityName(buff.abilityHrid, buff.abilityHrid.split('/').pop());
+            wrap.title = buff.symbol
+                ? i18n_js.t('combatLive.curse')
+                : buff.kind === 'status' && !buff.abilityHrid
+                  ? i18n_js.t(`combatLive.status_${buff.status}`)
+                  : getAbilityName(buff.abilityHrid, buff.abilityHrid.split('/').pop());
 
-            if (buff.kind === 'status') {
+            if (buff.symbol) {
+                wrap.append(buff.symbol);
+            } else if (buff.kind === 'status') {
                 wrap.append(STATUS_ICONS[buff.status] || '•');
             } else if (sprite) {
                 const svg = document.createElementNS(SVG_NS, 'svg');
@@ -5135,7 +5196,7 @@
             const hits = this.stats.record(events, now);
             ownDamageFilter.noteHits(hits, now);
             this.buffs.record(events, now, {
-                p: this.tracker.players.map((unit) => ({ index: unit.index, hp: unit.hp })),
+                p: this.tracker.players.map((unit) => ({ index: unit.index, hp: unit.hp, curse: unit.curse })),
                 m: this.tracker.monsters.map((unit) => ({ index: unit.index, hp: unit.hp })),
             });
             this.lastMessageAt = now;
