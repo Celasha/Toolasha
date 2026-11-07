@@ -8,7 +8,8 @@
  *     applies, to whom, and for how long; nothing here is a hand-kept list of abilities;
  *   - the stunned / blinded / silenced / enraged flags are exact, and only their length is predicted from
  *     the ability that caused them;
- *   - a unit dying clears what was on it, and a new wave clears the monsters.
+ *   - a unit dying clears what was on it, and a new wave clears the monsters;
+ *   - curse is counted from the hits of the player who holds it (their curse stat is in `new_battle`).
  *
  * The timers are predictions from the moment the cast was seen, so they can drift from the server's by a
  * little. Pure logic: feed it tracker events.
@@ -19,6 +20,11 @@ import { SIDE_MONSTER, SIDE_PLAYER } from './battle-event-tracker.js';
 const NS_PER_MS = 1e6;
 // A status flag that rises this soon after a cast is taken to be that cast's doing
 const STATUS_LINK_MS = 1500;
+// Curse (a weapon stat, not an ability): every landed hit by its holder adds a stack, each hit refreshes the
+// timer of all of them, up to five. Per the game's own description of the stat.
+const CURSE_ID = 'curse';
+const CURSE_MAX_STACKS = 5;
+const CURSE_DURATION_MS = 15000;
 
 export const KIND_BUFF = 'buff';
 export const KIND_DEBUFF = 'debuff';
@@ -78,8 +84,47 @@ export class BuffTracker {
         for (const event of events) {
             if (event.type === 'attack' && event.abilityHrid) this.applyCast(event, at, roster, damaged);
         }
+        this.applyCurse(events, at, roster, damaged);
         for (const event of events) {
             if (event.type === 'status') this.applyStatus(event, at);
+        }
+    }
+
+    /**
+     * One message is one combat event with one attacker, so when the player who acted holds curse, every
+     * monster that took damage from it gains a stack. Several actors at once, or damage with no attacker
+     * (damage over time), leaves the count alone: the owner of those hits is not known.
+     * @param {Object[]} events
+     * @param {number} at
+     * @param {Object} roster - Players carry their `curse` stat
+     * @param {Object} damaged - Indexes of the units that took damage in this message, per side
+     */
+    applyCurse(events, at, roster, damaged) {
+        const attackers = events.filter((event) => event.type === 'attack' && event.side === SIDE_PLAYER);
+        if (attackers.length !== 1) return;
+        const perStack = roster?.[SIDE_PLAYER]?.find((unit) => unit.index === attackers[0].index)?.curse;
+        if (!(perStack > 0)) return;
+
+        // A monster that died of this hit has nothing left to show
+        const died = new Set(events.filter((e) => e.type === 'death' && e.side === SIDE_MONSTER).map((e) => e.index));
+        for (const index of new Set(damaged[SIDE_MONSTER])) {
+            if (died.has(index)) continue;
+            const key = unitKey(SIDE_MONSTER, index);
+            const entries = this.units.get(key) || new Map();
+            const current = entries.get(CURSE_ID);
+            const live = current && current.expiresAt > at;
+            entries.set(CURSE_ID, {
+                id: CURSE_ID,
+                kind: KIND_DEBUFF,
+                abilityHrid: '',
+                symbol: '☠',
+                stacks: Math.min(CURSE_MAX_STACKS, (live ? current.stacks : 0) + 1),
+                perStack,
+                durationMs: CURSE_DURATION_MS,
+                at,
+                expiresAt: at + CURSE_DURATION_MS,
+            });
+            this.units.set(key, entries);
         }
     }
 
@@ -203,7 +248,7 @@ export class BuffTracker {
      * @param {string} side - 'p' or 'm'
      * @param {number} index
      * @param {number} now - Timestamp in ms
-     * @returns {Array<{id: string, kind: string, status?: string, abilityHrid: string, remainingMs: ?number, durationMs: ?number}>}
+     * @returns {Array<{id: string, kind: string, status?: string, abilityHrid: string, remainingMs: ?number, durationMs: ?number, symbol?: string, stacks?: number, value?: number}>}
      *     What is on that unit, buffs first and the ones running out soonest leading
      */
     getUnit(side, index, now) {
@@ -235,6 +280,9 @@ export class BuffTracker {
                 abilityHrid: entry.abilityHrid,
                 remainingMs,
                 durationMs: entry.durationMs,
+                ...(entry.stacks
+                    ? { symbol: entry.symbol, stacks: entry.stacks, value: entry.stacks * entry.perStack }
+                    : {}),
             });
         }
         const out = [...grouped.values()];

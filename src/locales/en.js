@@ -1798,6 +1798,8 @@ export default {
         status_blinded: 'Blinded',
         status_silenced: 'Silenced',
         status_enraged: 'Enraged',
+        curse: 'Curse (estimated from the hits of the player with the Cursed Bow)',
+        curseTooltip: (p) => `Curse x${p.stacks}: +${p.percent}% damage taken (estimated from landed hits)`,
         sectionGraph: 'DPS over time',
         graphNow: 'now',
         graphTooltip: 'Damage per second over the last 5 minutes, smoothed over 16 seconds. Red bands are boss fights.',

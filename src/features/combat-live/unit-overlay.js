@@ -189,7 +189,15 @@ class UnitOverlay {
                 icon = this.buildIcon(buff, sprite);
                 entry.icons.set(buff.id, icon);
             }
-            icon.label.textContent = countdownText(buff.remainingMs);
+            // Curse is judged by its stacks, which matter more than a timer that every hit resets
+            icon.label.textContent = buff.stacks ? String(buff.stacks) : countdownText(buff.remainingMs);
+            if (buff.stacks) {
+                const title = t('combatLive.curseTooltip', {
+                    stacks: buff.stacks,
+                    percent: Number((buff.value * 100).toFixed(1)),
+                });
+                if (icon.wrap.title !== title) icon.wrap.title = title;
+            }
             // Appending an element that is already there moves it, which keeps the DOM in the sorted order
             entry.iconBox.appendChild(icon.wrap);
         }
@@ -201,12 +209,15 @@ class UnitOverlay {
             KIND_COLORS[buff.kind] || '#999'
         }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; font-size:10px; overflow:visible;`;
         // The tooltip is set once, so it does not flicker while a countdown ticks
-        wrap.title =
-            buff.kind === 'status' && !buff.abilityHrid
-                ? t(`combatLive.status_${buff.status}`)
-                : getAbilityName(buff.abilityHrid, buff.abilityHrid.split('/').pop());
+        wrap.title = buff.symbol
+            ? t('combatLive.curse')
+            : buff.kind === 'status' && !buff.abilityHrid
+              ? t(`combatLive.status_${buff.status}`)
+              : getAbilityName(buff.abilityHrid, buff.abilityHrid.split('/').pop());
 
-        if (buff.kind === 'status') {
+        if (buff.symbol) {
+            wrap.append(buff.symbol);
+        } else if (buff.kind === 'status') {
             wrap.append(STATUS_ICONS[buff.status] || '•');
         } else if (sprite) {
             const svg = document.createElementNS(SVG_NS, 'svg');

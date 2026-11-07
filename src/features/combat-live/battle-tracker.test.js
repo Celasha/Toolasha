@@ -965,6 +965,15 @@ describe('casts refused for lack of mana', () => {
     const act = (counter, mp, prepared = {}) => update({ 0: { atkCounter: counter, cMP: mp, ...prepared } });
     const auto = { isAutoAtk: true };
 
+    test('the tracker reads the curse stat a unit brings, and none as 0', () => {
+        const tracker = startBattle([
+            caster({ combatDetails: { combatStats: { curse: 0.022 } } }),
+            caster({ combatDetails: { combatStats: {} } }),
+        ]);
+
+        expect(tracker.players.map((unit) => unit.curse)).toEqual([0.022, 0]);
+    });
+
     test('the tracker reads the loadout, the haste and the mana the unit had when it acted', () => {
         const tracker = startBattle([caster({ combatDetails: { combatStats: { abilityHaste: 30 } } })]);
         const [unit] = tracker.players;

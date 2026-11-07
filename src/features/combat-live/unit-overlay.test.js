@@ -160,6 +160,31 @@ describe('UnitOverlay', () => {
         expect(layer().children[3].textContent).toContain('💫');
     });
 
+    test('curse shows a skull with its stack count and a tooltip with the estimated damage taken', () => {
+        deps.getBuffs.mockImplementation((side, index) =>
+            side === 'm' && index === 0
+                ? [
+                      {
+                          id: 'curse',
+                          kind: 'debuff',
+                          abilityHrid: '',
+                          symbol: '☠',
+                          stacks: 3,
+                          value: 0.066,
+                          remainingMs: 9000,
+                          durationMs: 15000,
+                      },
+                  ]
+                : []
+        );
+
+        overlay.update();
+
+        const icon = layer().children[2].querySelector('span[title]');
+        expect(icon.textContent).toBe('☠3');
+        expect(icon.title).toBe('combatLive.curseTooltip');
+    });
+
     test('a side whose roster does not match the screen is left alone', () => {
         deps.rosterSize.mockImplementation((side) => (side === 'p' ? 5 : 2));
 

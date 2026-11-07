@@ -192,3 +192,101 @@ describe('BuffTracker', () => {
         expect(icons[0].remainingMs).toBe(119000);
     });
 });
+
+describe('BuffTracker curse', () => {
+    const SEC_MS = 1000;
+    const auto = (index) => ({ type: 'attack', side: 'p', index, abilityHrid: '', auto: true });
+    const withCurse = () => ({
+        p: [
+            { index: 0, hp: 100, curse: 0.022 },
+            { index: 1, hp: 100, curse: 0 },
+        ],
+        m: [
+            { index: 0, hp: 50 },
+            { index: 1, hp: 50 },
+        ],
+    });
+    const curse = (buffs, index, now) => buffs.getUnit('m', index, now).find((buff) => buff.id === 'curse');
+
+    test('every landed hit by the player who holds curse adds a stack and the value follows', () => {
+        const buffs = tracker();
+        buffs.record([auto(0), hit('m', 0)], 0, withCurse());
+        buffs.record([auto(0), hit('m', 0)], 2 * SEC_MS, withCurse());
+        buffs.record([auto(0), hit('m', 0)], 4 * SEC_MS, withCurse());
+
+        const entry = curse(buffs, 0, 5 * SEC_MS);
+        expect(entry).toMatchObject({ stacks: 3, kind: 'debuff', symbol: '☠' });
+        expect(entry.value).toBeCloseTo(0.066);
+        expect(curse(buffs, 1, 5 * SEC_MS)).toBeUndefined();
+    });
+
+    test('an ability that hits several monsters curses each one it damaged', () => {
+        const buffs = tracker();
+        buffs.record([cast('p', 0, '/abilities/spear'), hit('m', 0), hit('m', 1)], 0, withCurse());
+
+        expect(curse(buffs, 0, 1000).stacks).toBe(1);
+        expect(curse(buffs, 1, 1000).stacks).toBe(1);
+    });
+
+    test('stops at five stacks', () => {
+        const buffs = tracker();
+        for (let i = 0; i < 8; i++) buffs.record([auto(0), hit('m', 0)], i * SEC_MS, withCurse());
+
+        expect(curse(buffs, 0, 9 * SEC_MS).stacks).toBe(5);
+    });
+
+    test('every hit refreshes the 15 seconds, and all stacks go when they run out', () => {
+        const buffs = tracker();
+        buffs.record([auto(0), hit('m', 0)], 0, withCurse());
+        buffs.record([auto(0), hit('m', 0)], 10 * SEC_MS, withCurse());
+
+        expect(curse(buffs, 0, 24 * SEC_MS).stacks).toBe(2);
+        expect(curse(buffs, 0, 26 * SEC_MS)).toBeUndefined();
+
+        // A new hit after it ran out starts again from one
+        buffs.record([auto(0), hit('m', 0)], 30 * SEC_MS, withCurse());
+        expect(curse(buffs, 0, 31 * SEC_MS).stacks).toBe(1);
+    });
+
+    test('a player without the curse stat curses nothing', () => {
+        const buffs = tracker();
+        buffs.record([auto(1), hit('m', 0)], 0, withCurse());
+
+        expect(curse(buffs, 0, 1000)).toBeUndefined();
+    });
+
+    test('a miss, or a message with no damage on a monster, adds no stack', () => {
+        const buffs = tracker();
+        buffs.record([auto(0), { type: 'damage', side: 'm', index: 0, amount: 0, miss: true }], 0, withCurse());
+        buffs.record([auto(0)], 1000, withCurse());
+
+        expect(curse(buffs, 0, 2000)).toBeUndefined();
+    });
+
+    test('several players acting in one message, or damage with no attacker, leave the count alone', () => {
+        const buffs = tracker();
+        buffs.record([auto(0), auto(1), hit('m', 0)], 0, withCurse());
+        buffs.record([hit('m', 0)], 1000, withCurse());
+
+        expect(curse(buffs, 0, 2000)).toBeUndefined();
+    });
+
+    test('a monster attacking the party curses nothing', () => {
+        const buffs = tracker();
+        buffs.record([cast('m', 0, '/abilities/spear'), hit('p', 1)], 0, withCurse());
+
+        expect(buffs.getUnit('p', 1, 1000).find((buff) => buff.id === 'curse')).toBeUndefined();
+    });
+
+    test('a monster that dies, or a new wave, loses its curse', () => {
+        const buffs = tracker();
+        buffs.record([auto(0), hit('m', 0), hit('m', 1)], 0, withCurse());
+        buffs.record([auto(0), hit('m', 0), { type: 'death', side: 'm', index: 0 }], 1000, withCurse());
+
+        expect(curse(buffs, 0, 1500)).toBeUndefined();
+        expect(curse(buffs, 1, 1500).stacks).toBe(1);
+
+        buffs.beginWave();
+        expect(curse(buffs, 1, 2000)).toBeUndefined();
+    });
+});
