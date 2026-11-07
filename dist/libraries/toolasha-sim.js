@@ -2,7 +2,7 @@
  * Toolasha Sim Library
  * Headless combat simulator (engine, adapter, runners, worker scripts) shared by the
  * Combat, UI and UI2 libraries so there is exactly one copy and one runner state
- * Version: 3.30.4
+ * Version: 3.30.5
  * License: CC-BY-NC-SA-4.0
  */
 
