@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.30.4](https://github.com/Celasha/Toolasha/compare/v3.30.3...v3.30.4) (2026-11-07)
+
+
+### Bug Fixes
+
+* show an estimated Curse stack count on monsters in Combat Live from landed hits ([f46791d](https://github.com/Celasha/Toolasha/commit/f46791d917a70bfb07e7e27598e31efeae179103))
+
 ## [3.30.3](https://github.com/Celasha/Toolasha/compare/v3.30.2...v3.30.3) (2026-11-06)
 
 ### Bug Fixes
