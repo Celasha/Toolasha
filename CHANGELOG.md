@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.30.5](https://github.com/Celasha/Toolasha/compare/v3.30.4...v3.30.5) (2026-11-07)
+
+
+### Bug Fixes
+
+* restyle Combat Live unit badges, add icon size, effect filters, covered check, player colours ([191f6c2](https://github.com/Celasha/Toolasha/commit/191f6c21b922361f366b1133c5ab2be78fd0a8f4))
+
 ## [3.30.4](https://github.com/Celasha/Toolasha/compare/v3.30.3...v3.30.4) (2026-11-07)
 
 ### Bug Fixes
