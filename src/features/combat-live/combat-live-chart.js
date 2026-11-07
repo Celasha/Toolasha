@@ -6,6 +6,7 @@
  * so they can be tested without a canvas; only drawHitTape touches the DOM.
  */
 
+import config from '../../core/config.js';
 import { TAPE_WINDOW_MS } from './battle-stats.js';
 
 export const TAPE_WIDTH = 296;
@@ -220,7 +221,7 @@ export function drawSparkline(canvas, model, width = SPARK_WIDTH) {
 // The colours handed out so far, shared by the panel and the labels under the units
 export const sharedPlayerColors = new Map();
 
-// One colour per party member, kept apart from the ability colours, and without green (the accent)
+// One colour per party member (the defaults of the color_player_N settings), kept apart from the ability colours, and without green (the accent)
 export const PLAYER_PALETTE = [
     '#4fc3ff',
     '#ff9f4a',
@@ -243,7 +244,8 @@ export const PLAYER_PALETTE = [
  */
 export function playerColor(assigned, name) {
     if (!assigned.has(name)) assigned.set(name, assigned.size);
-    return PLAYER_PALETTE[assigned.get(name) % PLAYER_PALETTE.length];
+    const slot = assigned.get(name) % PLAYER_PALETTE.length;
+    return config.getSetting(`color_player_${slot + 1}`) || PLAYER_PALETTE[slot];
 }
 
 /**

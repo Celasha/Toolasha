@@ -3960,6 +3960,21 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Combat Live: Show buff and debuff icons under each unit',
                 help: 'Icons with a countdown under each character and monster for the buffs, debuffs, damage over time and stun, blind and silence effects on them. Which effects a cast applies comes from the game data; the countdowns are predicted from when the cast was seen, so they can drift a little from the server.',
             },
+            combatLive_iconSize: {
+                label: 'Combat Live: Buff and debuff icon size',
+                help: 'How big the buff and debuff icons under each unit are.',
+                options: { small: 'Small', medium: 'Medium', large: 'Large' },
+            },
+            combatLive_playerEffects: {
+                label: 'Combat Live: Effects shown on party members',
+                help: 'Which effects get an icon under your party members. Debuffs include damage over time and stun, blind and silence.',
+                options: { all: 'Buffs and debuffs', debuffs: 'Debuffs only', none: 'None' },
+            },
+            combatLive_monsterEffects: {
+                label: 'Combat Live: Effects shown on monsters',
+                help: "Which effects get an icon under the monsters. Debuffs only hides the monsters' own buffs and keeps what you put on them, such as curse.",
+                options: { all: 'Buffs and debuffs', debuffs: 'Debuffs only', none: 'None' },
+            },
             combatLive_unitBadges: {
                 label: 'Combat Live: Show DPS and HPS under each party member',
                 help: 'A small label under each character on the combat screen with their damage per second, and healing per second if they heal, in their colour from the ranking.',
@@ -4266,6 +4281,46 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             color_accent: {
                 label: 'Script Accent Color',
                 help: 'Primary accent color for script UI elements (buttons, headers, zone numbers, XP percentages, etc.)',
+            },
+            color_player_1: {
+                label: 'Combat Live: Player 1',
+                help: 'Color of the first party member seen in Combat Live (damage bars, charts and the label under their card)',
+            },
+            color_player_2: {
+                label: 'Combat Live: Player 2',
+                help: 'Color of the second party member seen in Combat Live (damage bars, charts and the label under their card)',
+            },
+            color_player_3: {
+                label: 'Combat Live: Player 3',
+                help: 'Color of the third party member seen in Combat Live (damage bars, charts and the label under their card)',
+            },
+            color_player_4: {
+                label: 'Combat Live: Player 4',
+                help: 'Color of the fourth party member seen in Combat Live (damage bars, charts and the label under their card)',
+            },
+            color_player_5: {
+                label: 'Combat Live: Player 5',
+                help: 'Color of the fifth party member seen in Combat Live (damage bars, charts and the label under their card)',
+            },
+            color_player_6: {
+                label: 'Combat Live: Player 6',
+                help: 'Color of the sixth party member seen in Combat Live (damage bars, charts and the label under their card)',
+            },
+            color_player_7: {
+                label: 'Combat Live: Player 7',
+                help: 'Color of the seventh party member seen in Combat Live (damage bars, charts and the label under their card)',
+            },
+            color_player_8: {
+                label: 'Combat Live: Player 8',
+                help: 'Color of the eighth party member seen in Combat Live (damage bars, charts and the label under their card)',
+            },
+            color_player_9: {
+                label: 'Combat Live: Player 9',
+                help: 'Color of the ninth party member seen in Combat Live (damage bars, charts and the label under their card)',
+            },
+            color_player_10: {
+                label: 'Combat Live: Player 10',
+                help: 'Color of the tenth party member seen in Combat Live (damage bars, charts and the label under their card)',
             },
             color_remaining_xp: {
                 label: 'Remaining XP Text',

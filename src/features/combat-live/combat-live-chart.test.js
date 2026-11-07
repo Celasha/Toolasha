@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
+import config from '../../core/config.js';
 import {
     OTHER_KEY,
     abilityColor,
@@ -238,6 +239,17 @@ describe('playerColor', () => {
         expect(first).not.toBe(second);
         expect(playerColor(assigned, 'Alice')).toBe(first);
         expect(playerColor(assigned, 'Bob')).toBe(second);
+    });
+
+    test('uses the colour set for that slot in the colour settings', () => {
+        const spy = vi
+            .spyOn(config, 'getSetting')
+            .mockImplementation((key) => (key === 'color_player_2' ? '#123456' : null));
+        const assigned = new Map();
+        playerColor(assigned, 'Alice');
+
+        expect(playerColor(assigned, 'Bob')).toBe('#123456');
+        spy.mockRestore();
     });
 
     test('wraps around after the palette runs out', () => {

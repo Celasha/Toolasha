@@ -6,7 +6,7 @@ vi.mock('../../core/config.js', () => ({ default: { Z_HUD: 50, getSetting: (key)
 vi.mock('../../core/i18n.js', () => ({ t: (key) => key }));
 vi.mock('../../utils/game-i18n.js', () => ({ getAbilityName: (hrid, fallback) => fallback }));
 
-const { UnitOverlay, countdownText, findAbilitySprite } = await import('./unit-overlay.js');
+const { UnitOverlay, countdownText, filterEffects, findAbilitySprite } = await import('./unit-overlay.js');
 
 function buildBattle(players = 2, monsters = 2) {
     document.body.innerHTML = `
@@ -37,6 +37,17 @@ describe('countdownText', () => {
         expect(countdownText(61000)).toBe('2m');
         expect(countdownText(null)).toBe('');
         expect(countdownText(-50)).toBe('0');
+    });
+});
+
+describe('filterEffects', () => {
+    const list = [{ kind: 'buff' }, { kind: 'debuff' }, { kind: 'dot' }, { kind: 'status' }];
+
+    test('all keeps everything, debuffs keeps the harmful kinds, none keeps nothing', () => {
+        expect(filterEffects(list, 'all')).toHaveLength(4);
+        expect(filterEffects(list, undefined)).toHaveLength(4);
+        expect(filterEffects(list, 'debuffs').map((b) => b.kind)).toEqual(['debuff', 'dot', 'status']);
+        expect(filterEffects(list, 'none')).toEqual([]);
     });
 });
 
@@ -253,6 +264,58 @@ describe('UnitOverlay', () => {
             overlay.update();
             expect(displays().every((display) => display === 'none')).toBe(true);
         });
+    });
+
+    describe('covered units', () => {
+        afterEach(() => {
+            delete document.elementFromPoint;
+            settings.combatLive_iconSize = undefined;
+            settings.combatLive_playerEffects = undefined;
+            settings.combatLive_monsterEffects = undefined;
+        });
+
+        test('a row with another element drawn over it is hidden, and shown again when it clears', () => {
+            const chat = document.createElement('div');
+            document.body.appendChild(chat);
+            document.elementFromPoint = vi.fn(() => chat);
+            overlay.update();
+            expect(layer().children[0].style.display).toBe('none');
+
+            document.elementFromPoint = vi.fn(() => document.querySelector('[class*="CombatUnit_status"]'));
+            overlay.update();
+            expect(layer().children[0].style.display).toBe('flex');
+        });
+    });
+
+    test('the badge fills the row and the icons sit underneath it', () => {
+        overlay.update(0);
+
+        const row = layer().children[0];
+        expect(row.style.flexDirection).toBe('column');
+        expect(row.children[0].style.width).toBe('100%');
+        expect(row.children[0].style.borderRadius).toBe('0 0 3px 3px');
+        expect(row.children[1].querySelector('svg')).not.toBeNull();
+    });
+
+    test('the icon size setting resizes the icons that are already there', () => {
+        overlay.update(0);
+        expect(layer().children[0].querySelector('span').style.width).toBe('16px');
+
+        settings.combatLive_iconSize = 'large';
+        overlay.update(0);
+        expect(layer().children[0].querySelector('span').style.width).toBe('28px');
+        settings.combatLive_iconSize = undefined;
+    });
+
+    test('the effects setting of a side hides its buffs', () => {
+        settings.combatLive_playerEffects = 'debuffs';
+        overlay.update(0);
+        expect(layer().children[0].querySelectorAll('svg')).toHaveLength(0);
+
+        settings.combatLive_playerEffects = 'all';
+        overlay.update(0);
+        expect(layer().children[0].querySelectorAll('svg')).toHaveLength(1);
+        settings.combatLive_playerEffects = undefined;
     });
 
     test('cleanup removes the layer', () => {

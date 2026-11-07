@@ -18,7 +18,7 @@ import { getAbilityName } from '../../utils/game-i18n.js';
 
 const LAYER_ID = 'toolasha-combat-live-units';
 const TICK_MS = 250;
-const ICON_SIZE = 16;
+const ICON_SIZES = { small: 16, medium: 22, large: 28 };
 const SIDES = [
     { side: 'p', area: '[class*="BattlePanel_playersArea"]' },
     { side: 'm', area: '[class*="BattlePanel_monstersArea"]' },
@@ -27,6 +27,8 @@ const UNIT_SELECTOR = '[class*="CombatUnit_combatUnit"]';
 const STATUS_SELECTOR = '[class*="CombatUnit_status"]';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const STATUS_ICONS = { stunned: '💫', blinded: '🙈', silenced: '🤐', enraged: '😡' };
+// Effects that hurt the unit they are on; the rest are buffs
+const HARMFUL_KINDS = new Set(['debuff', 'dot', 'status']);
 const KIND_COLORS = { buff: '#4ade80', debuff: '#f87171', dot: '#fb923c', status: '#facc15' };
 
 /**
@@ -76,6 +78,34 @@ export function isOutOfView(el, rect) {
         if (clipsY && (rect.top < box.top - TOLERANCE || rect.bottom > box.bottom + TOLERANCE)) return true;
     }
     return false;
+}
+
+/**
+ * Whether something else is drawn over a unit's status row (chat, a panel, a window). The labels live in a fixed
+ * layer on top of the page and ignore the mouse, so the element found at a point is whatever the game shows there.
+ * @param {Element} unit
+ * @param {DOMRect} rect - The status row's box
+ * @returns {boolean} True when a point of the row shows an element that is not part of the unit
+ */
+export function isCovered(unit, rect) {
+    if (typeof document.elementFromPoint !== 'function') return false;
+    const y = rect.top + rect.height / 2;
+    for (const x of [rect.left + 4, rect.left + rect.width / 2, rect.right - 4]) {
+        const top = document.elementFromPoint(x, y);
+        if (top && !unit.contains(top) && !top.contains(unit)) return true;
+    }
+    return false;
+}
+
+/**
+ * @param {Object[]} buffs
+ * @param {string} mode - 'all' | 'debuffs' | 'none'
+ * @returns {Object[]} The effects the setting lets through
+ */
+export function filterEffects(buffs, mode) {
+    if (mode === 'none') return [];
+    if (mode === 'debuffs') return buffs.filter((buff) => HARMFUL_KINDS.has(buff.kind));
+    return buffs;
 }
 
 class UnitOverlay {
@@ -135,20 +165,19 @@ class UnitOverlay {
         let entry = this.rows.get(key);
         if (!entry) {
             const row = document.createElement('div');
-            row.style.cssText =
-                'position:absolute; display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; justify-content:center; gap:2px;';
+            row.style.cssText = 'position:absolute; display:flex; flex-direction:column; align-items:stretch; gap:2px;';
             const badge = document.createElement('div');
             badge.style.cssText =
-                'font-size:11px; font-weight:700; line-height:1.3; padding:0 4px; flex:0 1 auto; min-width:0; border-radius:3px; white-space:nowrap; text-align:center; overflow:hidden; color:#000;';
+                'font-size:11px; font-weight:700; line-height:1.3; padding:2px 4px; box-sizing:border-box; width:100%; min-width:0; border-radius:0 0 3px 3px; white-space:nowrap; text-align:center; overflow:hidden; color:#000;';
             const icons = document.createElement('div');
-            icons.style.cssText = 'display:flex; flex-wrap:wrap; justify-content:center; gap:2px; flex:0 0 auto;';
+            icons.style.cssText = 'display:flex; flex-wrap:wrap; justify-content:center; gap:2px;';
             row.append(badge, icons);
             this.layer.appendChild(row);
             entry = { row, badge, iconBox: icons, icons: new Map() };
             this.rows.set(key, entry);
         }
 
-        if (!(rect.width > 0 && rect.height > 0) || isOutOfView(anchor, rect)) {
+        if (!(rect.width > 0 && rect.height > 0) || isOutOfView(anchor, rect) || isCovered(unit, rect)) {
             entry.row.style.display = 'none';
             return;
         }
@@ -165,7 +194,10 @@ class UnitOverlay {
             entry.badge.style.background = badge.color;
         }
 
-        const buffs = config.getSetting('combatLive_buffIcons') ? this.deps.getBuffs(side, index, now) : [];
+        const mode = config.getSetting(side === 'p' ? 'combatLive_playerEffects' : 'combatLive_monsterEffects');
+        const buffs = config.getSetting('combatLive_buffIcons')
+            ? filterEffects(this.deps.getBuffs(side, index, now), mode)
+            : [];
         this.syncIcons(entry, buffs, sprite);
     }
 
@@ -176,6 +208,13 @@ class UnitOverlay {
      * @param {?string} sprite
      */
     syncIcons(entry, buffs, sprite) {
+        const size = ICON_SIZES[config.getSetting('combatLive_iconSize')] || ICON_SIZES.small;
+        // A new size means new icons
+        if (entry.iconSize !== size) {
+            for (const icon of entry.icons.values()) icon.wrap.remove();
+            entry.icons.clear();
+            entry.iconSize = size;
+        }
         const wanted = new Set(buffs.map((buff) => buff.id));
         for (const [id, icon] of entry.icons) {
             if (!wanted.has(id)) {
@@ -186,7 +225,7 @@ class UnitOverlay {
         for (const buff of buffs) {
             let icon = entry.icons.get(buff.id);
             if (!icon) {
-                icon = this.buildIcon(buff, sprite);
+                icon = this.buildIcon(buff, sprite, size);
                 entry.icons.set(buff.id, icon);
             }
             // Curse is judged by its stacks, which matter more than a timer that every hit resets
@@ -203,11 +242,11 @@ class UnitOverlay {
         }
     }
 
-    buildIcon(buff, sprite) {
+    buildIcon(buff, sprite, size = ICON_SIZES.small) {
         const wrap = document.createElement('span');
-        wrap.style.cssText = `position:relative; width:${ICON_SIZE}px; height:${ICON_SIZE}px; box-sizing:border-box; border:2px solid ${
+        wrap.style.cssText = `position:relative; width:${size}px; height:${size}px; box-sizing:border-box; border:2px solid ${
             KIND_COLORS[buff.kind] || '#999'
-        }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; font-size:10px; overflow:visible;`;
+        }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; font-size:${Math.round(size * 0.6)}px; overflow:visible;`;
         // The tooltip is set once, so it does not flicker while a countdown ticks
         wrap.title = buff.symbol
             ? t('combatLive.curse')
@@ -221,8 +260,8 @@ class UnitOverlay {
             wrap.append(STATUS_ICONS[buff.status] || '•');
         } else if (sprite) {
             const svg = document.createElementNS(SVG_NS, 'svg');
-            svg.setAttribute('width', String(ICON_SIZE - 4));
-            svg.setAttribute('height', String(ICON_SIZE - 4));
+            svg.setAttribute('width', String(size - 4));
+            svg.setAttribute('height', String(size - 4));
             const use = document.createElementNS(SVG_NS, 'use');
             use.setAttribute('href', `${sprite}#${buff.abilityHrid.split('/').pop()}`);
             svg.appendChild(use);
@@ -232,8 +271,7 @@ class UnitOverlay {
         }
 
         const label = document.createElement('span');
-        label.style.cssText =
-            'position:absolute; right:-2px; bottom:-3px; font-size:9px; font-weight:700; color:#fff; text-shadow:0 0 2px #000, 0 0 2px #000;';
+        label.style.cssText = `position:absolute; right:-2px; bottom:-3px; font-size:${Math.round(size * 0.4) + 3}px; font-weight:700; color:#fff; text-shadow:0 0 2px #000, 0 0 2px #000;`;
         wrap.appendChild(label);
         return { wrap, label };
     }
