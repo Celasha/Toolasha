@@ -2,10 +2,9 @@
 
 ## [3.30.8](https://github.com/Celasha/Toolasha/compare/v3.30.7...v3.30.8) (2026-11-07)
 
-
 ### Bug Fixes
 
-* make the Curse skull in Combat Live readable with a white colour ([c0347de](https://github.com/Celasha/Toolasha/commit/c0347de20500f413e9866b9a26587f1cf02f8c77))
+- make the Curse skull in Combat Live readable with a white colour ([c0347de](https://github.com/Celasha/Toolasha/commit/c0347de20500f413e9866b9a26587f1cf02f8c77))
 
 ## [3.30.7](https://github.com/Celasha/Toolasha/compare/v3.30.6...v3.30.7) (2026-11-07)
 
