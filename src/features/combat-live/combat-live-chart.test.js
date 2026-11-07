@@ -243,7 +243,7 @@ describe('playerColor', () => {
 
     test('uses the colour set for that slot in the colour settings', () => {
         const spy = vi
-            .spyOn(config, 'getSetting')
+            .spyOn(config, 'getSettingValue')
             .mockImplementation((key) => (key === 'color_player_2' ? '#123456' : null));
         const assigned = new Map();
         playerColor(assigned, 'Alice');

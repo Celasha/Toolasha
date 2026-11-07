@@ -2,7 +2,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const { settings } = vi.hoisted(() => ({ settings: { combatLive_buffIcons: true, combatLive_unitBadges: true } }));
-vi.mock('../../core/config.js', () => ({ default: { Z_HUD: 50, getSetting: (key) => settings[key] } }));
+vi.mock('../../core/config.js', () => ({
+    default: {
+        Z_HUD: 50,
+        getSetting: (key) => settings[key],
+        getSettingValue: (key, fallback) => settings[key] ?? fallback,
+    },
+}));
 vi.mock('../../core/i18n.js', () => ({ t: (key) => key }));
 vi.mock('../../utils/game-i18n.js', () => ({ getAbilityName: (hrid, fallback) => fallback }));
 

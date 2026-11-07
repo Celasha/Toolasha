@@ -194,7 +194,10 @@ class UnitOverlay {
             entry.badge.style.background = badge.color;
         }
 
-        const mode = config.getSetting(side === 'p' ? 'combatLive_playerEffects' : 'combatLive_monsterEffects');
+        const mode = config.getSettingValue(
+            side === 'p' ? 'combatLive_playerEffects' : 'combatLive_monsterEffects',
+            'all'
+        );
         const buffs = config.getSetting('combatLive_buffIcons')
             ? filterEffects(this.deps.getBuffs(side, index, now), mode)
             : [];
@@ -208,7 +211,7 @@ class UnitOverlay {
      * @param {?string} sprite
      */
     syncIcons(entry, buffs, sprite) {
-        const size = ICON_SIZES[config.getSetting('combatLive_iconSize')] || ICON_SIZES.small;
+        const size = ICON_SIZES[config.getSettingValue('combatLive_iconSize', 'small')] || ICON_SIZES.small;
         // A new size means new icons
         if (entry.iconSize !== size) {
             for (const icon of entry.icons.values()) icon.wrap.remove();

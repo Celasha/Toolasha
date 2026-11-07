@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-vi.mock('../../core/config.js', () => ({ default: { Z_FLOATING_PANEL: 1000, Z_HUD: 50, getSetting: vi.fn() } }));
+vi.mock('../../core/config.js', () => ({
+    default: { Z_FLOATING_PANEL: 1000, Z_HUD: 50, getSetting: vi.fn(), getSettingValue: vi.fn() },
+}));
 vi.mock('../../core/storage.js', () => ({ default: { get: vi.fn(), set: vi.fn() } }));
 vi.mock('../../core/i18n.js', () => ({
     t: (key, params) => (params ? `${key}:${JSON.stringify(params)}` : key),

@@ -245,7 +245,7 @@ export const PLAYER_PALETTE = [
 export function playerColor(assigned, name) {
     if (!assigned.has(name)) assigned.set(name, assigned.size);
     const slot = assigned.get(name) % PLAYER_PALETTE.length;
-    return config.getSetting(`color_player_${slot + 1}`) || PLAYER_PALETTE[slot];
+    return config.getSettingValue(`color_player_${slot + 1}`, null) || PLAYER_PALETTE[slot];
 }
 
 /**
