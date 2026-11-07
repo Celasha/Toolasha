@@ -13,6 +13,7 @@ import {
     formatKMB3Digits,
     formatItemCount,
     coinFormatter,
+    formatMarketplacePrice,
     formatRelativeTime,
     networthFormatter,
     formatPercentage,
@@ -492,5 +493,31 @@ describe('formatItemCount', () => {
         expect(formatItemCount(159746.4)).toBe('159.7K');
         expect(formatItemCount(5000000)).toBe('5.0M');
         expect(formatItemCount(null)).toBeNull();
+    });
+});
+
+describe('formatMarketplacePrice', () => {
+    test('writes whole numbers below 100,000 with no separator', () => {
+        expect(formatMarketplacePrice(4528)).toBe('4528');
+        expect(formatMarketplacePrice(80100)).toBe('80100');
+        expect(formatMarketplacePrice(99999.9)).toBe('99999');
+    });
+
+    test('abbreviates from 100,000 with fewer decimals as the number grows, rounding down', () => {
+        expect(formatMarketplacePrice(100000)).toBe('100K');
+        expect(formatMarketplacePrice(150500)).toBe('150.5K');
+        expect(formatMarketplacePrice(2720000)).toBe('2720K');
+        expect(formatMarketplacePrice(2800000)).toBe('2800K');
+        expect(formatMarketplacePrice(9999999)).toBe('9999K');
+        expect(formatMarketplacePrice(10000000)).toBe('10M');
+        expect(formatMarketplacePrice(12345678)).toBe('12.34M');
+        expect(formatMarketplacePrice(12345678901)).toBe('12.34B');
+        expect(formatMarketplacePrice(25e12)).toBe('25T');
+    });
+
+    test('handles nothing, negatives and the top of the range', () => {
+        expect(formatMarketplacePrice(null)).toBeNull();
+        expect(formatMarketplacePrice(-150500)).toBe('-150.5K');
+        expect(formatMarketplacePrice(2e15)).toBe('Lots!');
     });
 });

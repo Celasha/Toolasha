@@ -1367,6 +1367,17 @@ export const settingsGroups = {
                 ],
                 help: 'Choose how to display listing creation times',
             },
+            market_listingPriceFormat: {
+                id: 'market_listingPriceFormat',
+                label: 'My Listings: Top Order Price and Total Price number format',
+                type: 'select',
+                default: 'game',
+                options: [
+                    { value: 'game', label: "Match the game's Price column (80100, 2800K)" },
+                    { value: 'setting', label: 'Follow the Number format mode setting' },
+                ],
+                help: 'How the Top Order Price and Total Price columns we add to My Listings write their numbers. Matching the game puts them on the same scale as its Price column.',
+            },
             market_listingTimeFormat: {
                 id: 'market_listingTimeFormat',
                 label: 'Time format for date/time display',

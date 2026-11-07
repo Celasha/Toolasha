@@ -546,6 +546,35 @@ export function formatLargeNumber(value, decimals) {
 }
 
 /**
+ * Format a price the way the game's marketplace does: whole numbers below 100,000, then K / M / B / T with two
+ * decimals below 100, one below 1,000 and none above, always rounded down and without trailing zeros.
+ * @param {number} num
+ * @returns {?string} e.g. 80100 -> "80100", 150500 -> "150.5K", 2800000 -> "2800K"; "Lots!" past 1,000T
+ */
+export function formatMarketplacePrice(num) {
+    if (num === null || num === undefined) {
+        return null;
+    }
+
+    const EPSILON = 1e-9;
+    const absNum = Math.abs(num);
+    const sign = num < 0 ? -1 : 1;
+    if (absNum < 1e5) return String(sign * Math.floor(absNum + EPSILON));
+
+    let scaled;
+    let suffix;
+    if (absNum < 1e7) [scaled, suffix] = [absNum / 1e3, 'K'];
+    else if (absNum < 1e10) [scaled, suffix] = [absNum / 1e6, 'M'];
+    else if (absNum < 1e13) [scaled, suffix] = [absNum / 1e9, 'B'];
+    else if (absNum <= 1e15) [scaled, suffix] = [absNum / 1e12, 'T'];
+    else return 'Lots!';
+
+    const decimals = scaled < 100 ? 2 : scaled < 1000 ? 1 : 0;
+    const factor = Math.pow(10, decimals);
+    return String((sign * Math.floor((scaled + EPSILON) * factor)) / factor) + suffix;
+}
+
+/**
  * Format a Date using the user's date/time format settings.
  * @param {Date} date - The date to format
  * @param {Object} [options]

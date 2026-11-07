@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 vi.mock('../../core/data-manager.js', () => ({ default: { getMarketListings: vi.fn(() => []) } }));
 vi.mock('../../core/dom-observer.js', () => ({ default: { register: vi.fn() } }));
-vi.mock('../../core/config.js', () => ({ default: { getSetting: vi.fn(() => false) } }));
+vi.mock('../../core/config.js', () => ({
+    default: { getSetting: vi.fn(() => false), getSettingValue: vi.fn((key, fallback) => fallback) },
+}));
 vi.mock('../../core/i18n.js', () => ({ t: (key) => key }));
 vi.mock('../../api/marketplace.js', () => ({
     default: { getPricesBatch: vi.fn(() => new Map()), on: vi.fn(), off: vi.fn() },
@@ -20,6 +22,7 @@ vi.mock('./estimated-listing-age.js', () => ({
 
 import listingPriceDisplay from './listing-price-display.js';
 import estimatedListingAge from './estimated-listing-age.js';
+import config from '../../core/config.js';
 
 describe('ListingPriceDisplay - outlier guard propagation (Top Order Price)', () => {
     beforeEach(() => {
@@ -88,5 +91,19 @@ describe('ListingPriceDisplay - outlier guard propagation (Top Order Price)', ()
         );
 
         expect(cell.textContent).not.toContain('⚠');
+    });
+
+    test('the injected price columns follow the game Price column format, or the Number format mode setting', () => {
+        const priceCache = new Map([['/items/ore:0', { ask: 80100, bid: 80100 }]]);
+        const build = () =>
+            listingPriceDisplay.createTopOrderPriceCell('/items/ore', 0, true, 450, priceCache, new Set(), new Set());
+
+        expect(build().textContent).toContain('80100');
+
+        config.getSettingValue.mockImplementation((key, fallback) =>
+            key === 'market_listingPriceFormat' ? 'setting' : fallback
+        );
+        expect(build().textContent).toContain('80.10K');
+        config.getSettingValue.mockImplementation((key, fallback) => fallback);
     });
 });

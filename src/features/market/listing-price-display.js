@@ -13,7 +13,12 @@ import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import estimatedListingAge from './estimated-listing-age.js';
-import { coinFormatter, formatKMB, formatRelativeTime } from '../../utils/formatters.js';
+import {
+    coinFormatter,
+    formatLargeNumber,
+    formatMarketplacePrice,
+    formatRelativeTime,
+} from '../../utils/formatters.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
@@ -52,6 +57,18 @@ function createStyledCell(content, color, options = {}) {
 
     cell.appendChild(span);
     return cell;
+}
+
+/**
+ * A price for the injected columns: as the game's own Price column writes it, or as the Number format mode
+ * setting says.
+ * @param {?number} value
+ * @returns {?string}
+ */
+function formatListingPrice(value) {
+    return config.getSettingValue('market_listingPriceFormat', 'game') === 'setting'
+        ? formatLargeNumber(value)
+        : formatMarketplacePrice(value);
 }
 
 class ListingPriceDisplay {
@@ -1126,7 +1143,7 @@ class ListingPriceDisplay {
               : '#00FF00';
         const title = lastUpdated ? estimatedListingAge.getStalenessTooltip(lastUpdated) : undefined;
 
-        return createStyledCell(formatKMB(topOrderPrice, 1) + (isOutlier ? ' ⚠' : ''), color, { title });
+        return createStyledCell(formatListingPrice(topOrderPrice) + (isOutlier ? ' ⚠' : ''), color, { title });
     }
 
     /**
@@ -1188,7 +1205,7 @@ class ListingPriceDisplay {
             unclaimedCoinCount,
             unclaimedItemCount
         );
-        return createStyledCell(formatKMB(totalPrice, 1), this.getAmountColor(totalPrice));
+        return createStyledCell(formatListingPrice(totalPrice), this.getAmountColor(totalPrice));
     }
 
     /**

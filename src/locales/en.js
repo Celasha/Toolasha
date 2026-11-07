@@ -3553,6 +3553,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     datetime: 'Date/Time (e.g., "01-13 14:30")',
                 },
             },
+            market_listingPriceFormat: {
+                label: 'My Listings: Top Order Price and Total Price number format',
+                help: 'How the Top Order Price and Total Price columns we add to My Listings write their numbers. Matching the game puts them on the same scale as its Price column.',
+                options: {
+                    game: "Match the game's Price column (80100, 2800K)",
+                    setting: 'Follow the Number format mode setting',
+                },
+            },
             market_listingTimeFormat: {
                 label: 'Time format for date/time display',
                 help: 'Time format used in marketplace listings, action completion times, and chat timestamps',

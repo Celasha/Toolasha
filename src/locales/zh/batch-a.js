@@ -580,6 +580,14 @@ export default {
                     datetime: '日期/时间（例如“01-13 14:30”）',
                 },
             },
+            market_listingPriceFormat: {
+                label: '我的挂牌：最优订单价格和总价的数字格式',
+                help: '我们在“我的挂牌”中添加的最优订单价格和总价两列的数字写法。与游戏一致可使其与游戏自带的价格列处于同一刻度。',
+                options: {
+                    game: '与游戏价格列一致（80100、2800K）',
+                    setting: '遵循“数字格式模式”设置',
+                },
+            },
             market_listingTimeFormat: {
                 label: '时间显示格式',
                 help: '用于市场挂单、动作完成时间和聊天时间戳的时间格式',
