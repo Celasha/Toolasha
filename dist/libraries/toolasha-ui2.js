@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.30.5
+ * Version: 3.30.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2498,7 +2498,7 @@
     function playerColor(assigned, name) {
         if (!assigned.has(name)) assigned.set(name, assigned.size);
         const slot = assigned.get(name) % PLAYER_PALETTE.length;
-        return config.getSetting(`color_player_${slot + 1}`) || PLAYER_PALETTE[slot];
+        return config.getSettingValue(`color_player_${slot + 1}`, null) || PLAYER_PALETTE[slot];
     }
 
     /**
@@ -2866,7 +2866,10 @@
                 entry.badge.style.background = badge.color;
             }
 
-            const mode = config.getSetting(side === 'p' ? 'combatLive_playerEffects' : 'combatLive_monsterEffects');
+            const mode = config.getSettingValue(
+                side === 'p' ? 'combatLive_playerEffects' : 'combatLive_monsterEffects',
+                'all'
+            );
             const buffs = config.getSetting('combatLive_buffIcons')
                 ? filterEffects(this.deps.getBuffs(side, index, now), mode)
                 : [];
@@ -2880,7 +2883,7 @@
          * @param {?string} sprite
          */
         syncIcons(entry, buffs, sprite) {
-            const size = ICON_SIZES[config.getSetting('combatLive_iconSize')] || ICON_SIZES.small;
+            const size = ICON_SIZES[config.getSettingValue('combatLive_iconSize', 'small')] || ICON_SIZES.small;
             // A new size means new icons
             if (entry.iconSize !== size) {
                 for (const icon of entry.icons.values()) icon.wrap.remove();
