@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.30.7](https://github.com/Celasha/Toolasha/compare/v3.30.6...v3.30.7) (2026-11-07)
+
+### Bug Fixes
+
+- format My Listings Top Order and Total price columns like the game's Price column ([5689971](https://github.com/Celasha/Toolasha/commit/56899715c8b10c353112a47f049cfafdfb0b150e))
+
 ## [3.30.6](https://github.com/Celasha/Toolasha/compare/v3.30.5...v3.30.6) (2026-11-07)
 
 ### Bug Fixes
