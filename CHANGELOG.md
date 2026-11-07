@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.30.6](https://github.com/Celasha/Toolasha/compare/v3.30.5...v3.30.6) (2026-11-07)
+
+
+### Bug Fixes
+
+* read Combat Live icon size, effect filters and player colours as values, not booleans ([7950eff](https://github.com/Celasha/Toolasha/commit/7950effee201fcf35106dc3f9c185c3076563fa5))
+
 ## [3.30.5](https://github.com/Celasha/Toolasha/compare/v3.30.4...v3.30.5) (2026-11-07)
 
 ### Bug Fixes
