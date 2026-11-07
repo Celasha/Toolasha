@@ -249,7 +249,7 @@ class UnitOverlay {
         const wrap = document.createElement('span');
         wrap.style.cssText = `position:relative; width:${size}px; height:${size}px; box-sizing:border-box; border:2px solid ${
             KIND_COLORS[buff.kind] || '#999'
-        }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; font-size:${Math.round(size * 0.6)}px; overflow:visible;`;
+        }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:${Math.round(size * 0.6)}px; overflow:visible;`;
         // The tooltip is set once, so it does not flicker while a countdown ticks
         wrap.title = buff.symbol
             ? t('combatLive.curse')
@@ -258,7 +258,10 @@ class UnitOverlay {
               : getAbilityName(buff.abilityHrid, buff.abilityHrid.split('/').pop());
 
         if (buff.symbol) {
-            wrap.append(buff.symbol);
+            const symbol = document.createElement('span');
+            symbol.textContent = buff.symbol;
+            symbol.style.cssText = `font-size:${Math.round(size * 0.75)}px; line-height:1;`;
+            wrap.appendChild(symbol);
         } else if (buff.kind === 'status') {
             wrap.append(STATUS_ICONS[buff.status] || '•');
         } else if (sprite) {

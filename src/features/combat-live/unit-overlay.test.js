@@ -200,6 +200,8 @@ describe('UnitOverlay', () => {
         const icon = layer().children[2].querySelector('span[title]');
         expect(icon.textContent).toBe('☠3');
         expect(icon.title).toBe('combatLive.curseTooltip');
+        // The skull is text, so it needs its own colour or it takes the page's dark one
+        expect(icon.style.color).toBe('rgb(255, 255, 255)');
     });
 
     test('a side whose roster does not match the screen is left alone', () => {
