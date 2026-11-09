@@ -2,10 +2,9 @@
 
 ## [3.30.9](https://github.com/Celasha/Toolasha/compare/v3.30.8...v3.30.9) (2026-11-09)
 
-
 ### Bug Fixes
 
-* price enhancement upgrades as the cheaper of buying the target or enhancing ([953c4b3](https://github.com/Celasha/Toolasha/commit/953c4b314f03b5b40c30a9028c75f8fc1cd992f8))
+- price enhancement upgrades as the cheaper of buying the target or enhancing ([953c4b3](https://github.com/Celasha/Toolasha/commit/953c4b314f03b5b40c30a9028c75f8fc1cd992f8))
 
 ## [3.30.8](https://github.com/Celasha/Toolasha/compare/v3.30.7...v3.30.8) (2026-11-07)
 
