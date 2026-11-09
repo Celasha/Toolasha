@@ -1048,27 +1048,33 @@ export function calculateUpgradeCost(candidate, gameData) {
     }
 
     if (candidate.type === 'enhancement') {
-        // Primary: market price delta (buy at target level - sell at current level)
-        // Only use if BOTH levels have actual market listings
-        const upgradedMarket = getItemPrices(candidate.currentHrid, candidate.upgradeLevel);
-        const currentMarket = getItemPrices(candidate.currentHrid, candidate.currentLevel);
-
-        if (upgradedMarket?.ask > 0 && currentMarket?.bid > 0) {
-            return {
-                cost: Math.max(0, upgradedMarket.ask - currentMarket.bid),
-                costIsIncomplete: false,
-                isOutlier: upgradedMarket.askOutlier || currentMarket.bidOutlier,
-            };
-        }
-
-        // Fallback: enhancement cost estimate with protection
-        const cost = calculateEnhancementCost(
+        // Enhancing it yourself (materials + protection), versus buying the target level and selling
+        // the current one. The cheaper way is the real cost of the upgrade.
+        const enhanceCost = calculateEnhancementCost(
             candidate.currentHrid,
             candidate.currentLevel,
             candidate.upgradeLevel,
             gameData,
             { slot: candidate.slot }
         );
+        const buyResolved = resolveItemPrice(candidate.currentHrid, {
+            side: 'buy',
+            enhancementLevel: candidate.upgradeLevel,
+        });
+        const sellResolved = resolveItemPrice(candidate.currentHrid, {
+            side: 'sell',
+            enhancementLevel: candidate.currentLevel,
+        });
+
+        if (!buyResolved.missing && !sellResolved.missing) {
+            const marketCost = Math.max(0, buyResolved.price - sellResolved.price);
+            const marketIsOutlier = Boolean(buyResolved.isOutlier || sellResolved.isOutlier);
+            if (enhanceCost <= 0 || marketCost <= enhanceCost) {
+                return { cost: marketCost, costIsIncomplete: false, isOutlier: marketIsOutlier };
+            }
+        }
+
+        const cost = enhanceCost;
         return { cost, costIsIncomplete: false, isOutlier: false };
     }
 

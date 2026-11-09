@@ -136,4 +136,44 @@ describe('calculateUpgradeCost - missing-price propagation (CSIM-AUD-013)', () =
         expect(levelResult.costIsIncomplete).toBe(false);
         expect(swapResult.costIsIncomplete).toBe(false);
     });
+
+    test('an enhancement upgrade is priced as buy-target minus sell-current through resolveItemPrice', () => {
+        mocks.resolveItemPrice.mockImplementation((hrid, { side, enhancementLevel }) =>
+            side === 'buy' && enhancementLevel === 5
+                ? { price: 17_700_000, missing: false }
+                : { price: 7_950_000, missing: false }
+        );
+
+        const result = calculateUpgradeCost(
+            {
+                type: 'enhancement',
+                currentHrid: '/items/x',
+                currentLevel: 1,
+                upgradeLevel: 5,
+                slot: '/equipment_types/ring',
+            },
+            { itemDetailMap: {} }
+        );
+
+        expect(result.cost).toBe(9_750_000);
+        expect(mocks.resolveItemPrice).toHaveBeenCalledWith('/items/x', { side: 'buy', enhancementLevel: 5 });
+        expect(mocks.resolveItemPrice).toHaveBeenCalledWith('/items/x', { side: 'sell', enhancementLevel: 1 });
+    });
+
+    test('an enhancement upgrade with an unpriced level and no estimate costs nothing rather than a made-up price', () => {
+        mocks.resolveItemPrice.mockReturnValue({ price: 0, missing: true });
+
+        const result = calculateUpgradeCost(
+            {
+                type: 'enhancement',
+                currentHrid: '/items/x',
+                currentLevel: 1,
+                upgradeLevel: 5,
+                slot: '/equipment_types/ring',
+            },
+            { itemDetailMap: {} }
+        );
+
+        expect(result.cost).toBe(0);
+    });
 });
