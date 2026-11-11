@@ -563,13 +563,6 @@ export default {
         totalExpPerHour: (p) => `总经验/时：${p.value}`,
         totalRevenue: (p) => `总收益：${p.ask} / ${p.bid}`,
     },
-    combatSimIntegration: {
-        importButtonLabel: '从 Toolasha 导入',
-        errorNoCharacterDataLabel: '错误：无角色数据',
-        noCharacterDataAlert: '未找到角色数据。请：\n1. 刷新游戏页面\n2. 等待页面完全加载\n3. 重新尝试',
-        importedLabel: '✓ 已导入',
-        importFailedLabel: '导入失败',
-    },
     combatSimIntegrationMetz: {
         noCharacterDataAlert: '未找到角色数据。请：\n1. 刷新游戏页面\n2. 等待页面完全加载\n3. 重新尝试',
     },

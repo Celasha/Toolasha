@@ -275,13 +275,6 @@ class Config {
                 description: 'Floating panel with live party damage, damage taken and mana during combat',
                 settingKey: 'combatLive',
             },
-            combatSimIntegration: {
-                enabled: true,
-                name: 'Combat Simulator Integration',
-                category: 'Combat',
-                description: 'Auto-import character/party data into Shykai Combat Simulator',
-                settingKey: null, // New feature, no legacy setting
-            },
             enhancementSimulator: {
                 enabled: true,
                 name: 'Enhancement Simulator',

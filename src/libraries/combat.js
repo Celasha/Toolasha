@@ -22,7 +22,6 @@ import labyrinthShopPrices from '../features/combat/labyrinth-shop-prices.js';
 import labyrinthClearRate from '../features/combat/labyrinth-clear-rate.js';
 import labyrinthMissingSupplies from '../features/combat/labyrinth-missing-supplies.js';
 import labyrinthGridScale from '../features/combat/labyrinth-grid-scale.js';
-import * as combatSimIntegration from '../features/combat/combat-sim-integration.js';
 import * as combatSimIntegrationMetz from '../features/combat/combat-sim-integration-metz.js';
 import { constructExportObject } from '../features/combat/combat-sim-export.js';
 import {
@@ -73,7 +72,6 @@ toolashaRoot.Combat = {
     labyrinthClearRate,
     labyrinthMissingSupplies,
     labyrinthGridScale,
-    combatSimIntegration,
     combatSimIntegrationMetz,
     startMetzLoadoutPublisher,
     combatSimExport: {

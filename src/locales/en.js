@@ -2008,14 +2008,6 @@ export default {
         xpGuildShrineLine: 'Guild Shrine: +{{value}}%',
         actionsToLevelResult: '{{actions}} actions → Level {{level}} ({{percent}}% to next) | {{time}}',
     },
-    combatSimIntegration: {
-        importButtonLabel: 'Import from Toolasha',
-        errorNoCharacterDataLabel: 'Error: No character data',
-        noCharacterDataAlert:
-            'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again',
-        importedLabel: '✓ Imported',
-        importFailedLabel: 'Import Failed',
-    },
     marketSort: {
         sortByProfitButton: 'Sort by Profit',
         resetOrderButton: 'Reset Order',
