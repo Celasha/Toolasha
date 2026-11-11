@@ -43,7 +43,6 @@ class InventorySort {
         this.currentMode = 'none'; // 'ask', 'bid', 'none'
         this.modeChangeListeners = [];
         this.unregisterHandlers = [];
-        this.controlsContainer = null;
         this.currentInventoryElem = null;
         this.warnedItems = new Set(); // Track items we've already warned about
         this.isCalculating = false; // Guard flag to prevent recursive calls
@@ -110,10 +109,12 @@ class InventorySort {
         );
 
         // Check if inventory is already open
-        const existingInv = document.querySelector('[class*="Inventory_items"]');
-        if (existingInv) {
-            this.currentInventoryElem = existingInv;
-            this.injectSortControls(existingInv);
+        // The game can have more than one inventory in the page at once (a hidden copy in the side
+        // panel and a visible one in the main panel, depending on the window width), so every copy
+        // gets its own controls.
+        const existingInventories = document.querySelectorAll('[class*="Inventory_items"]');
+        if (existingInventories.length > 0) {
+            existingInventories.forEach((existingInv) => this.injectSortControls(existingInv));
             this.applyCurrentSort();
         }
 
@@ -231,15 +232,15 @@ class InventorySort {
         // Set current inventory element
         this.currentInventoryElem = inventoryElem;
 
-        // Check if controls already exist
-        if (this.controlsContainer && document.body.contains(this.controlsContainer)) {
+        // Check if this inventory already has its controls
+        if (inventoryElem.previousElementSibling?.classList.contains('mwi-inventory-sort-controls')) {
             return;
         }
 
         // Create controls container
-        this.controlsContainer = document.createElement('div');
-        this.controlsContainer.className = 'mwi-inventory-sort-controls';
-        this.controlsContainer.style.cssText = `
+        const controlsContainer = document.createElement('div');
+        controlsContainer.className = 'mwi-inventory-sort-controls';
+        controlsContainer.style.cssText = `
             color: ${config.COLOR_ACCENT};
             font-size: 0.875rem;
             text-align: left;
@@ -259,13 +260,13 @@ class InventorySort {
         const noneButton = this.createSortButton(t('inventorySort.noneButtonLabel'), 'none');
 
         // Assemble controls
-        this.controlsContainer.appendChild(sortLabel);
-        this.controlsContainer.appendChild(askButton);
-        this.controlsContainer.appendChild(bidButton);
-        this.controlsContainer.appendChild(noneButton);
+        controlsContainer.appendChild(sortLabel);
+        controlsContainer.appendChild(askButton);
+        controlsContainer.appendChild(bidButton);
+        controlsContainer.appendChild(noneButton);
 
         // Insert before inventory
-        inventoryElem.insertAdjacentElement('beforebegin', this.controlsContainer);
+        inventoryElem.insertAdjacentElement('beforebegin', controlsContainer);
 
         // Update button states
         this.updateButtonStates();
@@ -301,9 +302,7 @@ class InventorySort {
      * Update button visual states based on current mode
      */
     updateButtonStates() {
-        if (!this.controlsContainer) return;
-
-        const buttons = this.controlsContainer.querySelectorAll('button');
+        const buttons = document.querySelectorAll('.mwi-inventory-sort-controls button');
         buttons.forEach((button) => {
             const isActive = button.dataset.mode === this.currentMode;
 
@@ -362,17 +361,28 @@ class InventorySort {
         if (this.isCalculating) return;
         this.isCalculating = true;
 
-        const inventoryElem = this.currentInventoryElem;
-
         // Trigger badge manager to calculate prices and render badges
         await inventoryBadgeManager.renderAllBadges();
 
-        // Skip order assignments when custom tabs has taken over the layout —
-        // badges are still updated above, but tile order is managed by custom tabs.
-        if (inventoryElem.classList.contains('toolasha-ct-active')) {
-            this.isCalculating = false;
-            return;
+        // Every inventory in the page, not just the last one seen: the visible copy is not always
+        // the one that was found last.
+        const inventoryElems = [...document.querySelectorAll('[class*="Inventory_items"]')];
+        for (const inventoryElem of inventoryElems) {
+            this.sortInventoryElem(inventoryElem);
         }
+
+        // Clear guard flag
+        this.isCalculating = false;
+    }
+
+    /**
+     * Apply the current sort mode to one inventory element
+     * @param {Element} inventoryElem - Inventory items container
+     */
+    sortInventoryElem(inventoryElem) {
+        // Skip order assignments when custom tabs has taken over the layout -
+        // badges are still updated, but tile order is managed by custom tabs.
+        if (inventoryElem.classList.contains('toolasha-ct-active')) return;
 
         // Process each category
         for (const categoryDiv of inventoryElem.children) {
@@ -411,9 +421,6 @@ class InventorySort {
                 });
             }
         }
-
-        // Clear guard flag
-        this.isCalculating = false;
     }
 
     /**
@@ -534,9 +541,9 @@ class InventorySort {
      */
     refresh() {
         // Update controls container color
-        if (this.controlsContainer) {
-            this.controlsContainer.style.color = config.COLOR_ACCENT;
-        }
+        document.querySelectorAll('.mwi-inventory-sort-controls').forEach((controls) => {
+            controls.style.color = config.COLOR_ACCENT;
+        });
 
         // Update button states (which includes colors)
         this.updateButtonStates();
@@ -573,10 +580,7 @@ class InventorySort {
         inventoryBadgeManager.unregisterProvider('inventory-stack-price');
 
         // Remove controls
-        if (this.controlsContainer) {
-            this.controlsContainer.remove();
-            this.controlsContainer = null;
-        }
+        document.querySelectorAll('.mwi-inventory-sort-controls').forEach((controls) => controls.remove());
 
         // Remove all badges
         const badges = document.querySelectorAll('.mwi-stack-price');
