@@ -1976,3 +1976,44 @@ describe('DataManager cross-domain characterData snapshot refresh (GM storage)',
         expect(() => wildcardHandler({ type: 'items_updated' })).not.toThrow();
     });
 });
+
+describe('DataManager client data for the combat sim exports', () => {
+    afterEach(() => {
+        delete globalThis.GM_setValue;
+        delete globalThis.GM_getValue;
+        delete globalThis.localStorageUtil;
+    });
+
+    const loadWith = async (clientData, savedVersion) => {
+        const store = savedVersion ? { toolasha_init_client_data_version: savedVersion } : {};
+        globalThis.GM_getValue = vi.fn((key, fallback) => store[key] ?? fallback);
+        globalThis.GM_setValue = vi.fn((key, value) => {
+            store[key] = value;
+        });
+        globalThis.localStorageUtil = { getInitClientData: () => clientData };
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.tryLoadStaticData();
+        return store;
+    };
+
+    test('saves the game cache for the sim pages, which the WebSocket never re-sends', async () => {
+        const clientData = { versionTimestamp: '2026-11-01T00:00:00Z', guildBuffDetailMap: { a: 1 } };
+
+        const store = await loadWith(clientData, null);
+
+        expect(JSON.parse(store.toolasha_init_client_data)).toEqual(clientData);
+        expect(store.toolasha_init_client_data_version).toBe('2026-11-01T00:00:00Z');
+    });
+
+    test('does not rewrite the large copy while its version is unchanged', async () => {
+        await loadWith({ versionTimestamp: 'v1' }, 'v1');
+
+        expect(globalThis.GM_setValue).not.toHaveBeenCalled();
+    });
+
+    test('rewrites it when the game data version changed', async () => {
+        const store = await loadWith({ versionTimestamp: 'v2', guildBuffDetailMap: { a: 1 } }, 'v1');
+
+        expect(store.toolasha_init_client_data_version).toBe('v2');
+    });
+});
