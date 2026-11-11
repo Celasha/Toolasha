@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.30.9
+ * Version: 3.30.10
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14170,6 +14170,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         // Build monster sort index map for task sorting
                         this.buildMonsterSortIndexMap();
 
+                        this._saveClientDataForCrossDomain(data);
+
                         return true;
                     }
                 }
@@ -14177,6 +14179,29 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             } catch (error) {
                 console.error('[Data Manager] Failed to load init_client_data:', error);
                 return false;
+            }
+        }
+
+        /**
+         * Keep the cross-domain copy of init_client_data (read by the Shykai/Metz sim pages, where
+         * dataManager is empty) in step with the game's own cache. The game replays its cached copy
+         * to itself instead of re-sending it over the WebSocket unless its data version changed, so
+         * the WebSocket hook alone leaves this copy missing or out of date. Rewritten only when the
+         * version changes, as the data is large.
+         * @param {Object} data - init_client_data as loaded from the game's local storage
+         * @private
+         */
+        _saveClientDataForCrossDomain(data) {
+            if (typeof GM_setValue === 'undefined' || typeof GM_getValue === 'undefined') return;
+
+            try {
+                const version = String(data.versionTimestamp ?? '');
+                if (!version || GM_getValue('toolasha_init_client_data_version', null) === version) return;
+
+                GM_setValue('toolasha_init_client_data', JSON.stringify(data));
+                GM_setValue('toolasha_init_client_data_version', version);
+            } catch (error) {
+                console.error('[Data Manager] Failed to save client data for the combat sim exports:', error);
             }
         }
 
