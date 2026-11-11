@@ -57,3 +57,11 @@ describe('market order totals - Brynless Mode', () => {
         expect(el.textContent).toContain('💰');
     });
 });
+
+describe('market order totals - narrow header', () => {
+    test('wraps within its header column instead of spilling over the game queue box', () => {
+        const el = render();
+        expect(el.style.flexWrap).toBe('wrap');
+        expect(el.style.whiteSpace).toBe('nowrap');
+    });
+});
