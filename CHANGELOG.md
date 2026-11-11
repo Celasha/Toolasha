@@ -2,15 +2,13 @@
 
 ## [3.30.11](https://github.com/Celasha/Toolasha/compare/v3.30.10...v3.30.11) (2026-11-11)
 
-
 ### Bug Fixes
 
-* show the inventory sort buttons on every inventory copy in the page ([3a0cd47](https://github.com/Celasha/Toolasha/commit/3a0cd4741bf56917b283bbdd5a7b3b95a3940773))
-
+- show the inventory sort buttons on every inventory copy in the page ([3a0cd47](https://github.com/Celasha/Toolasha/commit/3a0cd4741bf56917b283bbdd5a7b3b95a3940773))
 
 ### Miscellaneous Chores
 
-* remove the Shykai/Szerra combat simulator import button and matches ([ac5fd85](https://github.com/Celasha/Toolasha/commit/ac5fd8506e1ba1658f9f27bc247b9a39c72ff570))
+- remove the Shykai/Szerra combat simulator import button and matches ([ac5fd85](https://github.com/Celasha/Toolasha/commit/ac5fd8506e1ba1658f9f27bc247b9a39c72ff570))
 
 ## [3.30.10](https://github.com/Celasha/Toolasha/compare/v3.30.9...v3.30.10) (2026-11-11)
 
