@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.30.10
+ * Version: 3.30.11
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1153,7 +1153,7 @@
         removeOverlays();
     }
 
-    function initialize$6() {
+    function initialize$5() {
         if (!settingChangeHandler$1) {
             settingChangeHandler$1 = (enabled) => {
                 if (enabled) {
@@ -1180,7 +1180,7 @@
 
     var loadoutEnhancementDisplay = {
         name: 'Loadout Enhancement Display',
-        initialize: initialize$6,
+        initialize: initialize$5,
         cleanup: cleanup$3,
     };
 
@@ -1811,7 +1811,7 @@
         popup.close();
     }
 
-    function initialize$5() {
+    function initialize$4() {
         if (!settingChangeHandler) {
             settingChangeHandler = (enabled) => {
                 if (enabled) {
@@ -1835,7 +1835,7 @@
         popup.open(null);
     }
 
-    function disable$2() {
+    function disable$1() {
         deactivate();
         if (settingChangeHandler) {
             config.offSettingChange('simulateScrollEffects', settingChangeHandler);
@@ -1845,9 +1845,9 @@
 
     var scrollSimulatorUI = {
         name: 'Scroll Simulator UI',
-        initialize: initialize$5,
+        initialize: initialize$4,
         openDefaultsPopup,
-        disable: disable$2,
+        disable: disable$1,
     };
 
     /**
@@ -12159,10 +12159,10 @@
     let activeSessionId = null;
     let activeMaterials = null;
     const currentTabs = [];
-    const timerRegistry$3 = timerRegistry_js.createTimerRegistry();
+    const timerRegistry$2 = timerRegistry_js.createTimerRegistry();
     const autofillManager = createAutofillManager('LabyrinthMissingSupplies');
 
-    function initialize$4() {
+    function initialize$3() {
         if (!config.getSetting('labyrinthMissingSuppliesButton')) {
             return;
         }
@@ -12201,7 +12201,7 @@
                 label.style.gap = '';
             }
         });
-        timerRegistry$3.clearAll();
+        timerRegistry$2.clearAll();
     }
 
     /**
@@ -12379,7 +12379,7 @@
 
             await new Promise((resolve) => {
                 const delayTimeout = setTimeout(resolve, delayMs);
-                timerRegistry$3.registerTimeout(delayTimeout);
+                timerRegistry$2.registerTimeout(delayTimeout);
             });
         }
 
@@ -12526,7 +12526,7 @@
     }
 
     var labyrinthMissingSupplies = {
-        initialize: initialize$4,
+        initialize: initialize$3,
         cleanup: cleanup$2,
     };
 
@@ -12630,7 +12630,7 @@
         updateControls();
     }
 
-    function initialize$3() {
+    function initialize$2() {
         if (!config.getSetting(CONTROL_SETTING)) {
             return;
         }
@@ -12663,9 +12663,45 @@
     }
 
     var labyrinthGridScale = {
-        initialize: initialize$3,
+        initialize: initialize$2,
         cleanup: cleanup$1,
     };
+
+    /**
+     * Native Timestamp Normalization (TLA-025C)
+     * Character Activity's native date-like fields (`character.lastOfflineTime`,
+     * `characterInfo.mooPassExpireTime`) are not guaranteed to already be epoch-ms numbers - the
+     * official MWI client explicitly wraps them in `new Date(...)` before any arithmetic/comparison.
+     * This is the one narrow, pure, fail-closed boundary Character Activity normalizes them through
+     * before any stale comparison, offline-cap arithmetic, or MooPass-window comparison.
+     */
+
+    /**
+     * Normalize a native date-like value to a finite epoch-ms number, or null if it cannot be
+     * trusted. Never relies on implicit numeric/string coercion.
+     * @param {number|string|Date|null|undefined} value
+     * @returns {number|null}
+     */
+    function normalizeNativeTimestamp(value) {
+        if (value == null) return null;
+
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : null;
+        }
+
+        if (value instanceof Date) {
+            const ms = value.getTime();
+            return Number.isFinite(ms) ? ms : null;
+        }
+
+        if (typeof value === 'string') {
+            if (value.trim() === '') return null;
+            const ms = new Date(value).getTime();
+            return Number.isFinite(ms) ? ms : null;
+        }
+
+        return null;
+    }
 
     /**
      * Combat constants shared across bundles
@@ -13364,1139 +13400,6 @@
             difficultyTier,
             isParty,
         };
-    }
-
-    /**
-     * Skill Calculator Logic
-     * Calculation functions for skill progression and combat level
-     */
-
-    /**
-     * Calculate time required to reach target level
-     * @param {number} currentExp - Current experience
-     * @param {number} targetLevel - Target level to reach
-     * @param {number} expPerHour - Experience gained per hour
-     * @param {Object} levelExpTable - Level experience table from init_client_data
-     * @returns {Object|null} { hours, days, remainingHours, readable } or null if invalid
-     */
-    function calculateTimeToLevel(currentExp, targetLevel, expPerHour, levelExpTable) {
-        if (!levelExpTable || expPerHour <= 0 || targetLevel < 1) {
-            return null;
-        }
-
-        const targetExp = levelExpTable[targetLevel];
-        if (targetExp === undefined) {
-            return null;
-        }
-
-        const expNeeded = targetExp - currentExp;
-        if (expNeeded <= 0) {
-            return { hours: 0, days: 0, remainingHours: 0, readable: 'Already achieved' };
-        }
-
-        const hoursNeeded = expNeeded / expPerHour;
-        const days = Math.floor(hoursNeeded / 24);
-        const remainingHours = Math.floor(hoursNeeded % 24);
-        const remainingMinutes = Math.floor((hoursNeeded % 1) * 60);
-
-        return {
-            hours: hoursNeeded,
-            days,
-            remainingHours,
-            remainingMinutes,
-            readable: formatTime(days, remainingHours, remainingMinutes),
-        };
-    }
-
-    /**
-     * Calculate projected levels after X days
-     * @param {Object} skills - Character skills object (from dataManager)
-     * @param {Object} expRates - Exp/hour rates for each skill
-     * @param {number} days - Number of days to project
-     * @param {Object} levelExpTable - Level experience table
-     * @returns {Object} Projected levels and combat level
-     */
-    function calculateLevelsAfterDays(skills, expRates, days, levelExpTable) {
-        if (!skills || !expRates || !levelExpTable || days < 0) {
-            return null;
-        }
-
-        const results = {};
-        const skillNames = ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic'];
-
-        for (const skillName of skillNames) {
-            const skill = skills.find((s) => s.skillHrid.includes(skillName));
-            if (!skill) {
-                results[skillName] = { level: 1, exp: 0, percentage: 0 };
-                continue;
-            }
-
-            const currentExp = skill.experience;
-            const expRate = expRates[skillName] || 0;
-            const expGained = expRate * days * 24;
-            const finalExp = currentExp + expGained;
-
-            // Find level from exp table
-            let level = 1;
-            while (level < 200 && levelExpTable[level + 1] <= finalExp) {
-                level++;
-            }
-
-            // Calculate percentage through current level
-            const minExpAtLevel = levelExpTable[level];
-            const maxExpAtLevel = levelExpTable[level + 1] - 1;
-            const expSpanInLevel = maxExpAtLevel - minExpAtLevel;
-            const percentage = expSpanInLevel > 0 ? ((finalExp - minExpAtLevel) / expSpanInLevel) * 100 : 0;
-
-            results[skillName] = {
-                level,
-                exp: finalExp,
-                percentage: Number(percentage.toFixed(1)),
-            };
-        }
-
-        // Calculate combat level
-        results.combatLevel = calculateCombatLevel(results);
-
-        return results;
-    }
-
-    /**
-     * Calculate combat level from skill levels
-     * Formula: 0.1 * (Stamina + Intelligence + Attack + Defense + MAX(Melee, Ranged, Magic)) + 0.5 * MAX(Attack, Defense, Melee, Ranged, Magic)
-     * @param {Object} skills - Skill levels object
-     * @returns {number} Combat level
-     */
-    function calculateCombatLevel(skills) {
-        if (!skills.stamina) console.error('[SkillCalculatorLogic] Skill not found: stamina');
-        if (!skills.intelligence) console.error('[SkillCalculatorLogic] Skill not found: intelligence');
-        if (!skills.attack) console.error('[SkillCalculatorLogic] Skill not found: attack');
-        if (!skills.melee) console.error('[SkillCalculatorLogic] Skill not found: melee');
-        if (!skills.defense) console.error('[SkillCalculatorLogic] Skill not found: defense');
-        if (!skills.ranged) console.error('[SkillCalculatorLogic] Skill not found: ranged');
-        if (!skills.magic) console.error('[SkillCalculatorLogic] Skill not found: magic');
-        const stamina = skills.stamina?.level || 1;
-        const intelligence = skills.intelligence?.level || 1;
-        const attack = skills.attack?.level || 1;
-        const melee = skills.melee?.level || 1;
-        const defense = skills.defense?.level || 1;
-        const ranged = skills.ranged?.level || 1;
-        const magic = skills.magic?.level || 1;
-
-        const maxCombatSkill = Math.max(melee, ranged, magic);
-        const maxAllCombat = Math.max(attack, defense, melee, ranged, magic);
-
-        return 0.1 * (stamina + intelligence + attack + defense + maxCombatSkill) + 0.5 * maxAllCombat;
-    }
-
-    /**
-     * Format time as readable string
-     * @param {number} days - Number of days
-     * @param {number} hours - Remaining hours
-     * @param {number} minutes - Remaining minutes
-     * @returns {string} Formatted time string
-     */
-    function formatTime(days, hours, minutes) {
-        const parts = [];
-
-        if (days > 0) {
-            parts.push(`${days} day${days !== 1 ? 's' : ''}`);
-        }
-        if (hours > 0) {
-            parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
-        }
-        if (minutes > 0 || parts.length === 0) {
-            parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
-        }
-
-        return parts.join(' ');
-    }
-
-    /**
-     * Get current level from experience
-     * @param {number} exp - Current experience
-     * @param {Object} levelExpTable - Level experience table
-     * @returns {number} Current level
-     */
-    function getLevelFromExp(exp, levelExpTable) {
-        let level = 1;
-        while (level < 200 && levelExpTable[level + 1] <= exp) {
-            level++;
-        }
-        return level;
-    }
-
-    /**
-     * Skill Calculator UI
-     * UI generation and management for combat sim skill calculator
-     */
-
-
-    const SKILL_NAME_KEYS = {
-        stamina: 'simEditor.skillStamina',
-        intelligence: 'simEditor.skillIntelligence',
-        attack: 'simEditor.skillAttack',
-        melee: 'simEditor.skillMelee',
-        defense: 'simEditor.skillDefense',
-        ranged: 'simEditor.skillRanged',
-        magic: 'simEditor.skillMagic',
-    };
-
-    /**
-     * Create the skill calculator UI
-     * @param {HTMLElement} container - Container element to append to
-     * @param {Array} characterSkills - Character skills from dataManager
-     * @param {Object} expRates - Exp/hour rates for each skill
-     * @param {Object} levelExpTable - Level experience table
-     * @returns {Object} UI elements for later updates
-     */
-    function createCalculatorUI(container, characterSkills, expRates, levelExpTable) {
-        const wrapper = document.createElement('div');
-        wrapper.id = 'mwi-skill-calculator';
-        wrapper.style.cssText = `
-        background: rgba(0, 0, 0, 0.4);
-        color: #ffffff;
-        padding: 12px;
-        border: 1px solid #555;
-        border-radius: 4px;
-        margin-top: 10px;
-        font-family: inherit;
-    `;
-
-        const skillOrder = ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic'];
-        const skillData = {};
-
-        // Build skill data map
-        for (const skillName of skillOrder) {
-            const skill = characterSkills.find((s) => s.skillHrid.includes(skillName));
-            if (skill) {
-                // If skill has experience, calculate level from exp
-                // If skill only has level (from simulator extraction), use that directly
-                const currentLevel = skill.experience ? getLevelFromExp(skill.experience, levelExpTable) : skill.level;
-                const currentExp = skill.experience || 0;
-
-                skillData[skillName] = {
-                    displayName: getSkillDisplayName(skillName),
-                    currentLevel,
-                    currentExp,
-                };
-            }
-        }
-
-        // Create skill input rows
-        const skillInputs = {};
-        for (const skillName of skillOrder) {
-            if (!skillData[skillName]) continue;
-
-            const row = document.createElement('div');
-            row.style.cssText = 'display: flex; justify-content: flex-end; margin-bottom: 4px; align-items: center;';
-
-            const label = document.createElement('span');
-            label.textContent = i18n_js.t('skillCalculatorUi.skillToLevelLabel', { skillName: skillData[skillName].displayName });
-            label.style.marginRight = '6px';
-
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.value = skillData[skillName].currentLevel + 1;
-            input.min = skillData[skillName].currentLevel + 1;
-            input.max = 200;
-            input.style.cssText =
-                'width: 60px; padding: 4px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 3px;';
-            input.dataset.skill = skillName;
-
-            skillInputs[skillName] = input;
-
-            row.appendChild(label);
-            row.appendChild(input);
-            wrapper.appendChild(row);
-        }
-
-        // Create days input row
-        const daysRow = document.createElement('div');
-        daysRow.style.cssText =
-            'display: flex; justify-content: flex-end; margin-bottom: 8px; margin-top: 8px; align-items: center;';
-
-        const daysInput = document.createElement('input');
-        daysInput.type = 'number';
-        daysInput.id = 'mwi-days-input';
-        daysInput.value = 1;
-        daysInput.min = 0;
-        daysInput.max = 200;
-        daysInput.style.cssText = 'width: 60px; padding: 2px 4px; margin-right: 6px;';
-
-        const daysLabel = document.createElement('span');
-        daysLabel.textContent = i18n_js.t('skillCalculatorUi.daysAfterLabel');
-
-        daysRow.appendChild(daysInput);
-        daysRow.appendChild(daysLabel);
-        wrapper.appendChild(daysRow);
-
-        // Create results display divs
-        const resultsHeader = document.createElement('div');
-        resultsHeader.id = 'mwi-calc-results-header';
-        resultsHeader.style.cssText = 'margin-top: 8px; font-weight: bold; border-top: 1px solid #ccc; padding-top: 8px;';
-        wrapper.appendChild(resultsHeader);
-
-        const resultsContent = document.createElement('div');
-        resultsContent.id = 'mwi-calc-results-content';
-        resultsContent.style.cssText = 'margin-top: 4px;';
-        wrapper.appendChild(resultsContent);
-
-        container.appendChild(wrapper);
-
-        // Attach event handlers
-        const updateHandler = () => {
-            updateCalculatorResults(
-                skillInputs,
-                daysInput,
-                skillData,
-                expRates,
-                levelExpTable,
-                resultsHeader,
-                resultsContent,
-                characterSkills
-            );
-        };
-
-        for (const input of Object.values(skillInputs)) {
-            input.addEventListener('input', updateHandler);
-            input.addEventListener('change', updateHandler);
-        }
-
-        daysInput.addEventListener('input', updateHandler);
-        daysInput.addEventListener('change', updateHandler);
-
-        // Initial calculation for "After 1 days"
-        updateCalculatorResults(
-            skillInputs,
-            daysInput,
-            skillData,
-            expRates,
-            levelExpTable,
-            resultsHeader,
-            resultsContent,
-            characterSkills
-        );
-
-        return {
-            wrapper,
-            skillInputs,
-            daysInput,
-            resultsHeader,
-            resultsContent,
-        };
-    }
-
-    /**
-     * Update calculator results based on current inputs
-     * @param {Object} skillInputs - Skill input elements
-     * @param {HTMLElement} daysInput - Days input element
-     * @param {Object} skillData - Skill data (levels, exp)
-     * @param {Object} expRates - Exp/hour rates
-     * @param {Object} levelExpTable - Level experience table
-     * @param {HTMLElement} resultsHeader - Results header element
-     * @param {HTMLElement} resultsContent - Results content element
-     * @param {Array} characterSkills - Character skills array
-     */
-    function updateCalculatorResults(
-        skillInputs,
-        daysInput,
-        skillData,
-        expRates,
-        levelExpTable,
-        resultsHeader,
-        resultsContent,
-        characterSkills
-    ) {
-        // Check which mode: individual skill or days projection
-        let hasIndividualTarget = false;
-        let activeSkill = null;
-        let activeInput = null;
-
-        for (const [skillName, input] of Object.entries(skillInputs)) {
-            if (document.activeElement === input) {
-                hasIndividualTarget = true;
-                activeSkill = skillName;
-                activeInput = input;
-                break;
-            }
-        }
-
-        if (hasIndividualTarget && activeSkill && activeInput) {
-            // Calculate time to reach specific level
-            const targetLevel = Number(activeInput.value);
-            const currentLevel = skillData[activeSkill].currentLevel;
-            const currentExp = skillData[activeSkill].currentExp;
-            const expRate = expRates[activeSkill] || 0;
-
-            resultsHeader.textContent = i18n_js.t('skillCalculatorUi.resultsHeaderToLevel', {
-                skillName: skillData[activeSkill].displayName,
-                level: targetLevel,
-            });
-
-            if (expRate === 0) {
-                resultsContent.innerHTML = `<div>${i18n_js.t('skillCalculatorUi.noExperienceGainMessage')}</div>`;
-            } else if (targetLevel <= currentLevel) {
-                resultsContent.innerHTML = `<div>${i18n_js.t('skillCalculatorUi.alreadyAchievedMessage')}</div>`;
-            } else {
-                const timeResult = calculateTimeToLevel(currentExp, targetLevel, expRate, levelExpTable);
-                if (timeResult) {
-                    resultsContent.innerHTML = `<div>[${timeResult.readable}]</div>`;
-                } else {
-                    resultsContent.innerHTML = `<div>${i18n_js.t('skillCalculatorUi.invalidTargetLevelMessage')}</div>`;
-                }
-            }
-        } else {
-            // Calculate levels after X days
-            const days = Number(daysInput.value);
-            resultsHeader.textContent = i18n_js.t('skillCalculatorUi.resultsHeaderAfterDays', { days });
-
-            const projected = calculateLevelsAfterDays(characterSkills, expRates, days, levelExpTable);
-
-            if (projected) {
-                let html = '';
-                const skillOrder = ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic'];
-
-                for (const skillName of skillOrder) {
-                    if (projected[skillName]) {
-                        html += `<div>${i18n_js.t('skillCalculatorUi.skillLevelPercentLine', {
-                        skillName: getSkillDisplayName(skillName),
-                        level: projected[skillName].level,
-                        percentage: projected[skillName].percentage,
-                    })}</div>`;
-                    }
-                }
-
-                html += `<div style="margin-top: 4px; font-weight: bold;">${i18n_js.t('skillCalculatorUi.combatLevelLine', {
-                level: projected.combatLevel.toFixed(1),
-            })}</div>`;
-                resultsContent.innerHTML = html;
-            } else {
-                resultsContent.innerHTML = `<div>${i18n_js.t('skillCalculatorUi.unableToCalculateProjectionMessage')}</div>`;
-            }
-        }
-    }
-
-    /**
-     * Get the translated display name for a skill.
-     * @param {string} skillName - Internal skill name (e.g. 'attack')
-     * @returns {string} Translated display name
-     */
-    function getSkillDisplayName(skillName) {
-        const key = SKILL_NAME_KEYS[skillName];
-        return key ? i18n_js.t(key) : skillName;
-    }
-
-    /**
-     * Extract exp/hour rates from combat sim DOM
-     * @returns {Object|null} Exp rates object or null if not found
-     */
-    function extractExpRates() {
-        const expDiv = document.querySelector('#simulationResultExperienceGain');
-        if (!expDiv) {
-            return null;
-        }
-
-        const rates = {};
-        const rows = expDiv.querySelectorAll('.row');
-
-        for (const row of rows) {
-            if (row.children.length >= 2) {
-                const skillText = row.children[0]?.textContent?.toLowerCase() || '';
-                const expText = row.children[1]?.textContent || '';
-                const expValue = Number(expText);
-
-                // Match skill names
-                if (skillText.includes('stamina')) {
-                    rates.stamina = expValue;
-                } else if (skillText.includes('intelligence')) {
-                    rates.intelligence = expValue;
-                } else if (skillText.includes('attack')) {
-                    rates.attack = expValue;
-                } else if (skillText.includes('melee')) {
-                    rates.melee = expValue;
-                } else if (skillText.includes('defense')) {
-                    rates.defense = expValue;
-                } else if (skillText.includes('ranged')) {
-                    rates.ranged = expValue;
-                } else if (skillText.includes('magic')) {
-                    rates.magic = expValue;
-                }
-            }
-        }
-
-        return rates;
-    }
-
-    /**
-     * Combat Simulator Integration Module
-     * Injects import button on Shykai Combat Simulator page
-     * Adds skill calculator box to simulation results
-     *
-     * Automatically fills character/party data from game into simulator
-     */
-
-
-    const timerRegistry$2 = timerRegistry_js.createTimerRegistry();
-    const IMPORT_CONTAINER_ID = 'toolasha-import-container';
-
-    /**
-     * Build the import button's default label markup, including a hidden span with the fixed
-     * English string "Import solo/group" that must NOT be translated - JIGS searches the DOM for
-     * that exact text to detect this button (see comment at the original call site).
-     * @returns {string}
-     */
-    function getImportButtonHtml() {
-        return `${i18n_js.t('combatSimIntegration.importButtonLabel')}<span style="display:none;">Import solo/group</span>`;
-    }
-
-    // Skill calculator state
-    let calculatorObserver = null;
-    let calculatorUIElements = null;
-
-    /**
-     * Initialize combat sim integration (runs on sim page only)
-     */
-    function initialize$2() {
-        disable$1();
-
-        // Wait for simulator UI to load
-        waitForSimulatorUI();
-
-        // Initialize skill calculator
-        initializeSkillCalculator();
-    }
-
-    /**
-     * Disable combat sim integration and cleanup injected UI
-     */
-    function disable$1() {
-        timerRegistry$2.clearAll();
-
-        const container = document.getElementById(IMPORT_CONTAINER_ID);
-        if (container) {
-            container.remove();
-        }
-
-        // Cleanup skill calculator
-        if (calculatorObserver) {
-            calculatorObserver.disconnect();
-            calculatorObserver = null;
-        }
-
-        if (calculatorUIElements?.wrapper) {
-            calculatorUIElements.wrapper.remove();
-        }
-
-        calculatorUIElements = null;
-    }
-
-    /**
-     * Wait for simulator's import/export button to appear
-     */
-    function waitForSimulatorUI() {
-        const checkInterval = setInterval(() => {
-            const exportButton = document.querySelector('button#buttonImportExport');
-            if (exportButton) {
-                clearInterval(checkInterval);
-                injectImportButton$1(exportButton);
-            }
-        }, 200);
-
-        timerRegistry$2.registerInterval(checkInterval);
-
-        // Stop checking after 10 seconds
-        const stopTimeout = setTimeout(() => clearInterval(checkInterval), 10000);
-        timerRegistry$2.registerTimeout(stopTimeout);
-    }
-
-    /**
-     * Inject "Import from Toolasha" button
-     * @param {Element} exportButton - Reference element to insert after
-     */
-    function injectImportButton$1(exportButton) {
-        // Check if button already exists
-        if (document.getElementById('toolasha-import-button')) {
-            return;
-        }
-
-        // Create container div
-        const container = document.createElement('div');
-        container.id = IMPORT_CONTAINER_ID;
-        container.style.marginTop = '10px';
-
-        // Create import button
-        const button = document.createElement('button');
-        button.id = 'toolasha-import-button';
-        // Include hidden text for JIGS compatibility (JIGS searches for "Import solo/group")
-        button.innerHTML = getImportButtonHtml();
-        button.style.backgroundColor = config.COLOR_ACCENT;
-        button.style.color = 'white';
-        button.style.padding = '10px 20px';
-        button.style.border = 'none';
-        button.style.borderRadius = '4px';
-        button.style.cursor = 'pointer';
-        button.style.fontWeight = 'bold';
-        button.style.width = '100%';
-
-        // Add hover effect
-        button.addEventListener('mouseenter', () => {
-            button.style.opacity = '0.8';
-        });
-        button.addEventListener('mouseleave', () => {
-            button.style.opacity = '1';
-        });
-
-        // Add click handler
-        button.addEventListener('click', () => {
-            importDataToSimulator(button);
-        });
-
-        container.appendChild(button);
-
-        // Insert after export button's parent container
-        exportButton.parentElement.parentElement.insertAdjacentElement('afterend', container);
-    }
-
-    /**
-     * Import character/party data into simulator
-     * @param {Element} button - Button element to update status
-     */
-    async function importDataToSimulator(button) {
-        try {
-            // Get export data from storage
-            const exportData = await constructExportObject();
-
-            if (!exportData) {
-                button.textContent = i18n_js.t('combatSimIntegration.errorNoCharacterDataLabel');
-                button.style.backgroundColor = '#dc3545'; // Red
-                const resetTimeout = setTimeout(() => {
-                    button.innerHTML = getImportButtonHtml();
-                    button.style.backgroundColor = config.COLOR_ACCENT;
-                }, 3000);
-                timerRegistry$2.registerTimeout(resetTimeout);
-                console.error('[Toolasha Combat Sim] No export data available');
-                alert(i18n_js.t('combatSimIntegration.noCharacterDataAlert'));
-                return;
-            }
-
-            const { exportObj, playerIDs, importedPlayerPositions, zone, isZoneDungeon, difficultyTier, isParty } =
-                exportData;
-
-            // Step 1: Switch to Group Combat tab
-            const groupTab = document.querySelector('a#group-combat-tab');
-            if (groupTab) {
-                groupTab.click();
-            } else {
-                console.warn('[Toolasha Combat Sim] Group combat tab not found');
-            }
-
-            // Small delay to let tab switch complete
-            const importTimeout = setTimeout(() => {
-                // Step 2: Fill import field with JSON data
-                const importInput = document.querySelector('input#inputSetGroupCombatAll');
-                if (importInput) {
-                    // exportObj already has JSON strings for each slot, just stringify once
-                    reactInput_js.setReactInputValue(importInput, JSON.stringify(exportObj), { focus: false });
-                } else {
-                    console.error('[Toolasha Combat Sim] Import input field not found');
-                }
-
-                // Step 3: Click import button
-                const importButton = document.querySelector('button#buttonImportSet');
-                if (importButton) {
-                    importButton.click();
-                } else {
-                    console.error('[Toolasha Combat Sim] Import button not found');
-                }
-
-                // Step 4: Toggle dungeon mode BEFORE setting player names.
-                // Toggling from 3-player to 5-player mode causes a re-render that adds
-                // fresh "Player 4"/"Player 5" entries and overwrites any names already set.
-                // Party play needs dungeon mode enabled to show all 5 player slots even on
-                // non-dungeon zones.
-                const dungeonToggle = document.querySelector('input#simDungeonToggle');
-                if (dungeonToggle) {
-                    const needDungeon = isParty || isZoneDungeon;
-                    if (dungeonToggle.checked !== needDungeon) {
-                        dungeonToggle.checked = needDungeon;
-                        dungeonToggle.dispatchEvent(new Event('change'));
-                    }
-                }
-
-                // Step 5: Set player names in tabs AND labels AFTER dungeon re-render
-                for (let i = 0; i < 5; i++) {
-                    const tab = document.querySelector(`a#player${i + 1}-tab`);
-                    if (tab) tab.textContent = playerIDs[i];
-                    const label = document.querySelector(`label[for="player${i + 1}"]`);
-                    if (label) label.textContent = playerIDs[i];
-                }
-
-                // Step 6: Select zone or dungeon dropdown (toggle already handled above)
-                if (zone) {
-                    selectZone(zone, isZoneDungeon);
-                }
-
-                // Step 7: Set difficulty tier
-                const difficultyTimeout = setTimeout(() => {
-                    // Try both input and select elements
-                    const difficultyElement =
-                        document.querySelector('input#inputDifficulty') ||
-                        document.querySelector('select#inputDifficulty') ||
-                        document.querySelector('[id*="ifficulty"]');
-
-                    if (difficultyElement) {
-                        const tierValue = 'T' + difficultyTier;
-
-                        // Handle select dropdown (set by value)
-                        if (difficultyElement.tagName === 'SELECT') {
-                            // Try to find option by value or text
-                            for (let i = 0; i < difficultyElement.options.length; i++) {
-                                const option = difficultyElement.options[i];
-                                if (
-                                    option.value === tierValue ||
-                                    option.value === String(difficultyTier) ||
-                                    option.text === tierValue ||
-                                    option.text.includes('T' + difficultyTier)
-                                ) {
-                                    difficultyElement.selectedIndex = i;
-                                    break;
-                                }
-                            }
-                        } else {
-                            // Handle text input
-                            difficultyElement.value = tierValue;
-                        }
-
-                        difficultyElement.dispatchEvent(new Event('change'));
-                        difficultyElement.dispatchEvent(new Event('input'));
-                    } else {
-                        console.warn('[Toolasha Combat Sim] Difficulty element not found');
-                    }
-                }, 250); // Increased delay to ensure zone loads first
-                timerRegistry$2.registerTimeout(difficultyTimeout);
-
-                // Step 8: Enable/disable player checkboxes
-                for (let i = 0; i < 5; i++) {
-                    const checkbox = document.querySelector(`input#player${i + 1}.form-check-input.player-checkbox`);
-                    if (checkbox) {
-                        checkbox.checked = importedPlayerPositions[i];
-                        checkbox.dispatchEvent(new Event('change'));
-                    }
-                }
-
-                // Step 9: Set simulation time to 24 hours (standard)
-                const simTimeInput = document.querySelector('input#inputSimulationTime');
-                if (simTimeInput) {
-                    reactInput_js.setReactInputValue(simTimeInput, '24', { focus: false });
-                }
-
-                // Step 10: Get prices (refresh market data)
-                const getPriceButton = document.querySelector('button#buttonGetPrices');
-                if (getPriceButton) {
-                    getPriceButton.click();
-                }
-
-                // Update button status
-                button.textContent = i18n_js.t('combatSimIntegration.importedLabel');
-                button.style.backgroundColor = '#28a745'; // Green
-                const successResetTimeout = setTimeout(() => {
-                    button.innerHTML = getImportButtonHtml();
-                    button.style.backgroundColor = config.COLOR_ACCENT;
-                }, 3000);
-                timerRegistry$2.registerTimeout(successResetTimeout);
-            }, 100);
-            timerRegistry$2.registerTimeout(importTimeout);
-        } catch (error) {
-            console.error('[Toolasha Combat Sim] Import failed:', error);
-            button.textContent = i18n_js.t('combatSimIntegration.importFailedLabel');
-            button.style.backgroundColor = '#dc3545'; // Red
-            const failResetTimeout = setTimeout(() => {
-                button.innerHTML = getImportButtonHtml();
-                button.style.backgroundColor = config.COLOR_ACCENT;
-            }, 3000);
-            timerRegistry$2.registerTimeout(failResetTimeout);
-        }
-    }
-
-    /**
-     * Select zone or dungeon dropdown in simulator
-     * Dungeon toggle is handled separately before this is called.
-     * @param {string} zoneHrid - Zone action HRID
-     * @param {boolean} isDungeon - Whether it's a dungeon
-     */
-    function selectZone(zoneHrid, isDungeon) {
-        if (isDungeon) {
-            const dungeonTimeout = setTimeout(() => {
-                const selectDungeon = document.querySelector('select#selectDungeon');
-                if (selectDungeon) {
-                    for (let i = 0; i < selectDungeon.options.length; i++) {
-                        if (selectDungeon.options[i].value === zoneHrid) {
-                            selectDungeon.options[i].selected = true;
-                            selectDungeon.dispatchEvent(new Event('change'));
-                            break;
-                        }
-                    }
-                }
-            }, 100);
-            timerRegistry$2.registerTimeout(dungeonTimeout);
-        } else {
-            const zoneTimeout = setTimeout(() => {
-                const selectZoneEl = document.querySelector('select#selectZone');
-                if (selectZoneEl) {
-                    for (let i = 0; i < selectZoneEl.options.length; i++) {
-                        if (selectZoneEl.options[i].value === zoneHrid) {
-                            selectZoneEl.options[i].selected = true;
-                            selectZoneEl.dispatchEvent(new Event('change'));
-                            break;
-                        }
-                    }
-                }
-            }, 100);
-            timerRegistry$2.registerTimeout(zoneTimeout);
-        }
-    }
-
-    /**
-     * Initialize skill calculator - waits for results panel and sets up observer
-     */
-    async function initializeSkillCalculator() {
-        try {
-            // Wait for sim results panel to exist
-            const resultsPanel = await waitForSimResults();
-            if (!resultsPanel) {
-                console.warn('[Toolasha Combat Sim Calculator] Results panel not found');
-                return;
-            }
-
-            // Wait for experience gain div to exist
-            const expDiv = await waitForExpDiv();
-            if (!expDiv) {
-                console.warn('[Toolasha Combat Sim Calculator] Experience div not found');
-                return;
-            }
-
-            // Apply result section highlights
-            applyResultHighlights();
-
-            // Setup mutation observer to watch for sim results
-            setupSkillCalculatorObserver(expDiv, resultsPanel);
-        } catch (error) {
-            console.error('[Toolasha Combat Sim Calculator] Failed to initialize:', error);
-        }
-    }
-
-    /**
-     * Wait for sim results panel to appear
-     * @returns {Promise<HTMLElement|null>} Results panel element
-     */
-    async function waitForSimResults() {
-        return new Promise((resolve) => {
-            let attempts = 0;
-            const maxAttempts = 100; // 10 seconds
-
-            const check = () => {
-                attempts++;
-
-                const resultsPanel = document.getElementById('simulationResultExperienceGain')?.closest('.col-md-5');
-
-                if (resultsPanel) {
-                    resolve(resultsPanel);
-                } else if (attempts >= maxAttempts) {
-                    resolve(null);
-                } else {
-                    setTimeout(check, 100);
-                }
-            };
-
-            check();
-        });
-    }
-
-    /**
-     * Wait for experience gain div to appear
-     * @returns {Promise<HTMLElement|null>} Experience div element
-     */
-    async function waitForExpDiv() {
-        return new Promise((resolve) => {
-            let attempts = 0;
-            const maxAttempts = 100; // 10 seconds
-
-            const check = () => {
-                attempts++;
-                const expDiv = document.querySelector('#simulationResultExperienceGain');
-
-                if (expDiv) {
-                    resolve(expDiv);
-                } else if (attempts >= maxAttempts) {
-                    resolve(null);
-                } else {
-                    setTimeout(check, 100);
-                }
-            };
-
-            check();
-        });
-    }
-
-    /**
-     * Apply background color highlights to the three key result sections.
-     */
-    function applyResultHighlights() {
-        const highlights = [
-            { id: 'simulationResultPlayerDeaths', background: '#FFEAE9' },
-            { id: 'simulationResultExperienceGain', background: '#CDFFDD' },
-            { id: 'simulationResultConsumablesUsed', background: '#F0F8FF' },
-        ];
-
-        for (const { id, background } of highlights) {
-            const el = document.getElementById(id);
-            if (el) {
-                el.style.backgroundColor = background;
-                el.style.color = 'black';
-            }
-        }
-    }
-
-    /**
-     * Setup mutation observer to watch for sim results
-     * @param {HTMLElement} expDiv - Experience gain div
-     * @param {HTMLElement} resultsPanel - Results panel container
-     */
-    function setupSkillCalculatorObserver(expDiv, resultsPanel) {
-        let debounceTimer = null;
-
-        calculatorObserver = new MutationObserver((mutations) => {
-            let hasSignificantChange = false;
-
-            for (const mutation of mutations) {
-                // Check if exp div now has content (sim completed)
-                if (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
-                    hasSignificantChange = true;
-                }
-            }
-
-            if (hasSignificantChange) {
-                // Check if exp div has actual skill data
-                const rows = expDiv.querySelectorAll('.row');
-
-                if (rows.length > 0) {
-                    // Debounce to avoid multiple rapid calls
-                    if (debounceTimer) {
-                        clearTimeout(debounceTimer);
-                    }
-
-                    debounceTimer = setTimeout(() => {
-                        handleSimResults(resultsPanel);
-                    }, 100);
-                }
-            }
-        });
-
-        calculatorObserver.observe(expDiv, {
-            childList: true,
-            subtree: true,
-        });
-    }
-
-    /**
-     * Extract skill levels from simulator's active player tab
-     * @returns {Array|null} Character skills array matching dataManager format, or null if not found
-     */
-    function extractSimulatorSkillLevels() {
-        // The player tab structure is complex - find the actual container with the inputs
-        // First, find which player tab is active
-        const activeTabLink = document.querySelector('.nav-link.active[id*="player"]');
-
-        if (!activeTabLink) {
-            return null;
-        }
-
-        // Try finding the inputs by exact ID (they should be global/unique)
-        const skillLevels = {
-            stamina: document.querySelector('input#inputLevel_stamina')?.value,
-            intelligence: document.querySelector('input#inputLevel_intelligence')?.value,
-            attack: document.querySelector('input#inputLevel_attack')?.value,
-            melee: document.querySelector('input#inputLevel_melee')?.value,
-            defense: document.querySelector('input#inputLevel_defense')?.value,
-            ranged: document.querySelector('input#inputLevel_ranged')?.value,
-            magic: document.querySelector('input#inputLevel_magic')?.value,
-        };
-
-        // Check if we got valid values
-        const hasValidValues = Object.values(skillLevels).some((val) => val !== undefined && val !== null);
-
-        if (!hasValidValues) {
-            return null;
-        }
-
-        // Convert to characterSkills array format (matching dataManager structure)
-        const characterSkills = [
-            { skillHrid: '/skills/stamina', level: Number(skillLevels.stamina) || 1, experience: 0 },
-            { skillHrid: '/skills/intelligence', level: Number(skillLevels.intelligence) || 1, experience: 0 },
-            { skillHrid: '/skills/attack', level: Number(skillLevels.attack) || 1, experience: 0 },
-            { skillHrid: '/skills/melee', level: Number(skillLevels.melee) || 1, experience: 0 },
-            { skillHrid: '/skills/defense', level: Number(skillLevels.defense) || 1, experience: 0 },
-            { skillHrid: '/skills/ranged', level: Number(skillLevels.ranged) || 1, experience: 0 },
-            { skillHrid: '/skills/magic', level: Number(skillLevels.magic) || 1, experience: 0 },
-        ];
-
-        return characterSkills;
-    }
-
-    /**
-     * Handle sim results update - inject or update calculator
-     * @param {HTMLElement} resultsPanel - Results panel container
-     */
-    async function handleSimResults(resultsPanel) {
-        try {
-            // Extract exp rates from sim results
-            const expRates = extractExpRates();
-
-            if (!expRates || Object.keys(expRates).length === 0) {
-                console.warn('[Toolasha Combat Sim Calculator] No exp rates found');
-                return;
-            }
-
-            // Extract skill levels from simulator's active player tab
-            let characterSkills = extractSimulatorSkillLevels();
-
-            // Fallback to real character data if simulator extraction fails
-            if (!characterSkills) {
-                const characterData = getCharacterDataFromStorage();
-
-                if (!characterData) {
-                    console.warn('[Toolasha Combat Sim Calculator] No character data available');
-                    return;
-                }
-
-                characterSkills = characterData.characterSkills;
-            }
-
-            if (!characterSkills) {
-                console.warn('[Toolasha Combat Sim Calculator] No character skills data');
-                return;
-            }
-
-            // Get level exp table from storage (cross-domain)
-            const clientData = getClientDataFromStorage();
-
-            if (!clientData) {
-                console.warn('[Toolasha Combat Sim Calculator] No client data available');
-                return;
-            }
-
-            const levelExpTable = clientData.levelExperienceTable;
-
-            if (!levelExpTable) {
-                console.warn('[Toolasha Combat Sim Calculator] No level exp table');
-                return;
-            }
-
-            // Convert simulator-extracted levels to experience values
-            // (simulator extraction sets experience: 0, but we need actual exp for projections)
-            characterSkills = characterSkills.map((skill) => {
-                if (skill.experience === 0 && skill.level > 1) {
-                    return {
-                        ...skill,
-                        experience: levelExpTable[skill.level] || 0,
-                    };
-                }
-                return skill;
-            });
-
-            // Remove existing calculator if present
-            const existing = document.getElementById('mwi-skill-calculator');
-            if (existing) {
-                existing.remove();
-            }
-
-            // Create new calculator UI
-            calculatorUIElements = createCalculatorUI(resultsPanel, characterSkills, expRates, levelExpTable);
-        } catch (error) {
-            console.error('[Toolasha Combat Sim Calculator] Failed to handle sim results:', error);
-        }
-    }
-
-    /**
-     * Get character data from dataManager (in-memory, always current).
-     * Falls back to GM storage when running on the Shykai page (dataManager is empty cross-domain).
-     * @returns {Object|null}
-     */
-    function getCharacterDataFromStorage() {
-        const data = dataManager.characterData;
-        if (data) return data;
-        if (typeof GM_getValue !== 'undefined') {
-            try {
-                const raw = GM_getValue('toolasha_init_character_data', null);
-                if (raw) return JSON.parse(raw);
-            } catch {
-                /* ignore */
-            }
-        }
-        console.error('[Toolasha Combat Sim Calculator] No character data. Please refresh game page.');
-        return null;
-    }
-
-    /**
-     * Get init_client_data from dataManager (in-memory, always current).
-     * Falls back to GM storage when running on the Shykai page (dataManager is empty cross-domain).
-     * @returns {Object|null}
-     */
-    function getClientDataFromStorage() {
-        const data = dataManager.getInitClientData();
-        if (data) return data;
-        if (typeof GM_getValue !== 'undefined') {
-            try {
-                const raw = GM_getValue('toolasha_init_client_data', null);
-                if (raw) return JSON.parse(raw);
-            } catch {
-                /* ignore */
-            }
-        }
-        return null;
-    }
-
-    var combatSimIntegration = /*#__PURE__*/Object.freeze({
-        __proto__: null,
-        disable: disable$1,
-        initialize: initialize$2
-    });
-
-    /**
-     * Native Timestamp Normalization (TLA-025C)
-     * Character Activity's native date-like fields (`character.lastOfflineTime`,
-     * `characterInfo.mooPassExpireTime`) are not guaranteed to already be epoch-ms numbers - the
-     * official MWI client explicitly wraps them in `new Date(...)` before any arithmetic/comparison.
-     * This is the one narrow, pure, fail-closed boundary Character Activity normalizes them through
-     * before any stale comparison, offline-cap arithmetic, or MooPass-window comparison.
-     */
-
-    /**
-     * Normalize a native date-like value to a finite epoch-ms number, or null if it cannot be
-     * trusted. Never relies on implicit numeric/string coercion.
-     * @param {number|string|Date|null|undefined} value
-     * @returns {number|null}
-     */
-    function normalizeNativeTimestamp(value) {
-        if (value == null) return null;
-
-        if (typeof value === 'number') {
-            return Number.isFinite(value) ? value : null;
-        }
-
-        if (value instanceof Date) {
-            const ms = value.getTime();
-            return Number.isFinite(ms) ? ms : null;
-        }
-
-        if (typeof value === 'string') {
-            if (value.trim() === '') return null;
-            const ms = new Date(value).getTime();
-            return Number.isFinite(ms) ? ms : null;
-        }
-
-        return null;
     }
 
     /**
@@ -36914,7 +35817,6 @@ self.onmessage = function (e) {
         labyrinthClearRate,
         labyrinthMissingSupplies,
         labyrinthGridScale,
-        combatSimIntegration,
         combatSimIntegrationMetz,
         startMetzLoadoutPublisher,
         combatSimExport: {

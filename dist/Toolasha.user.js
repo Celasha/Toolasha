@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      3.30.10
+// @version      3.30.11
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -13,8 +13,6 @@
 // @match        https://test.milkywayidle.com/*
 // @match        https://www.milkywayidlecn.com/*
 // @match        https://milkywayidlecn.com/*
-// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @match        https://szerra.github.io/mwi-shrine-combat-simulator/*
 // @match        https://metzlii.github.io/metz-combat-simulator/*
 // @grant        GM_addStyle
 // @grant        GM.xmlHttpRequest
@@ -26,14 +24,14 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8f5886f170210aa6eb0117da5bd326bc579c05a6/dist/libraries/toolasha-core.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8f5886f170210aa6eb0117da5bd326bc579c05a6/dist/libraries/toolasha-utils.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8f5886f170210aa6eb0117da5bd326bc579c05a6/dist/libraries/toolasha-market.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8f5886f170210aa6eb0117da5bd326bc579c05a6/dist/libraries/toolasha-sim.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8f5886f170210aa6eb0117da5bd326bc579c05a6/dist/libraries/toolasha-actions.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8f5886f170210aa6eb0117da5bd326bc579c05a6/dist/libraries/toolasha-combat.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8f5886f170210aa6eb0117da5bd326bc579c05a6/dist/libraries/toolasha-ui.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8f5886f170210aa6eb0117da5bd326bc579c05a6/dist/libraries/toolasha-ui2.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-sim.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui2.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
@@ -200,16 +198,10 @@
 
     /**
      * Detect if running on a supported Combat Simulator page.
-     * @returns {'shykai'|'metz'|null}
+     * @returns {'metz'|null}
      */
     function getCombatSimulatorSite() {
         const url = window.location.href;
-        if (
-            url.includes('shykai.github.io/MWICombatSimulatorTest/dist/') ||
-            url.includes('szerra.github.io/mwi-shrine-combat-simulator/')
-        ) {
-            return 'shykai';
-        }
         if (url.includes('metzlii.github.io/metz-combat-simulator/')) {
             return 'metz';
         }
@@ -1076,12 +1068,7 @@
 
     const combatSimSite = getCombatSimulatorSite();
 
-    if (combatSimSite === 'shykai') {
-        // Initialize combat sim integration only
-        Combat.combatSimIntegration.initialize();
-
-        // Skip all other initialization
-    } else if (combatSimSite === 'metz') {
+    if (combatSimSite === 'metz') {
         Combat.combatSimIntegrationMetz.initialize();
 
         // Skip all other initialization
@@ -1243,7 +1230,7 @@
         // Expose minimal user-facing API
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-        targetWindow.Toolasha.version = '3.30.10';
+        targetWindow.Toolasha.version = '3.30.11';
 
         // Feature toggle API (for users to manage settings via console)
         targetWindow.Toolasha.features = {

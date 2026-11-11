@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.30.10
+ * Version: 3.30.11
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2687,14 +2687,6 @@
             xpScrollOfWisdomLine: 'Scroll of Wisdom: +{{value}}%',
             xpGuildShrineLine: 'Guild Shrine: +{{value}}%',
             actionsToLevelResult: '{{actions}} actions → Level {{level}} ({{percent}}% to next) | {{time}}',
-        },
-        combatSimIntegration: {
-            importButtonLabel: 'Import from Toolasha',
-            errorNoCharacterDataLabel: 'Error: No character data',
-            noCharacterDataAlert:
-                'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again',
-            importedLabel: '✓ Imported',
-            importFailedLabel: 'Import Failed',
         },
         marketSort: {
             sortByProfitButton: 'Sort by Profit',
@@ -7020,13 +7012,6 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             totalExp: (p) => `总经验：${p.value}`,
             totalExpPerHour: (p) => `总经验/时：${p.value}`,
             totalRevenue: (p) => `总收益：${p.ask} / ${p.bid}`,
-        },
-        combatSimIntegration: {
-            importButtonLabel: '从 Toolasha 导入',
-            errorNoCharacterDataLabel: '错误：无角色数据',
-            noCharacterDataAlert: '未找到角色数据。请：\n1. 刷新游戏页面\n2. 等待页面完全加载\n3. 重新尝试',
-            importedLabel: '✓ 已导入',
-            importFailedLabel: '导入失败',
         },
         combatSimIntegrationMetz: {
             noCharacterDataAlert: '未找到角色数据。请：\n1. 刷新游戏页面\n2. 等待页面完全加载\n3. 重新尝试',
@@ -16118,13 +16103,6 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     category: 'Combat',
                     description: 'Floating panel with live party damage, damage taken and mana during combat',
                     settingKey: 'combatLive',
-                },
-                combatSimIntegration: {
-                    enabled: true,
-                    name: 'Combat Simulator Integration',
-                    category: 'Combat',
-                    description: 'Auto-import character/party data into Shykai Combat Simulator',
-                    settingKey: null, // New feature, no legacy setting
                 },
                 enhancementSimulator: {
                     enabled: true,
