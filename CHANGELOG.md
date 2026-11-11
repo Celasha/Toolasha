@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.30.10](https://github.com/Celasha/Toolasha/compare/v3.30.9...v3.30.10) (2026-11-11)
+
+
+### Bug Fixes
+
+* save the game's client data for the combat sim exports on every load ([a027a9f](https://github.com/Celasha/Toolasha/commit/a027a9f1bf4921f5057d2b644338ec1d47e52162))
+
 ## [3.30.9](https://github.com/Celasha/Toolasha/compare/v3.30.8...v3.30.9) (2026-11-09)
 
 ### Bug Fixes
