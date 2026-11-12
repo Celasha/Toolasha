@@ -2,15 +2,13 @@
 
 ## [3.31.0](https://github.com/Celasha/Toolasha/compare/v3.30.11...v3.31.0) (2026-11-12)
 
-
 ### Features
 
-* show how much crafting saves versus buying in the Best Crafting Plan ([bbb2507](https://github.com/Celasha/Toolasha/commit/bbb25079ea96686d52bf3bf39ddc7c1a435599ca))
-
+- show how much crafting saves versus buying in the Best Crafting Plan ([bbb2507](https://github.com/Celasha/Toolasha/commit/bbb25079ea96686d52bf3bf39ddc7c1a435599ca))
 
 ### Bug Fixes
 
-* wrap the BO/SO totals so they stay clear of the Queued Actions box ([84c283a](https://github.com/Celasha/Toolasha/commit/84c283a6fb3d3c65a1229746d00272fd0b6ee2d2))
+- wrap the BO/SO totals so they stay clear of the Queued Actions box ([84c283a](https://github.com/Celasha/Toolasha/commit/84c283a6fb3d3c65a1229746d00272fd0b6ee2d2))
 
 ## [3.30.11](https://github.com/Celasha/Toolasha/compare/v3.30.10...v3.30.11) (2026-11-11)
 
