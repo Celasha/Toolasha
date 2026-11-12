@@ -288,6 +288,12 @@ export default {
         totalLine: (p) => `总计：${p.value}`,
         bestCraftingPlanTitle: '最佳制作方案',
         buyMissingMaterialsButton: '购买缺少材料',
+        savingsHeader: (p) => `与直接购买相比的节省（×${p.quantity}）`,
+        savingsBuyLabel: '从市场购买',
+        savingsCraftLabel: '自己制作',
+        savingsYouSaveLabel: '节省',
+        savingsYouLoseLabel: '亏损',
+        savingsTimeCostTooltip: '包含你设置的时间成本，因此不只是材料成本。',
     },
     missingMaterialsButton: {
         enterQuantityTooltip: '输入数量以检查缺少的材料',

@@ -71,7 +71,11 @@ vi.mock('../../utils/efficiency.js', () => ({ calculateEfficiencyMultiplier: moc
 vi.mock('../../utils/experience-calculator.js', () => ({ calculateExpPerHour: mockCalculateExpPerHour }));
 vi.mock('../actions/production-tools-layout.js', () => ({ compactActionPanelSection: vi.fn((section) => section) }));
 
-import { calculateCraftingPlanMetrics, formatCraftingPlanSummary } from './crafting-plan-display.js';
+import {
+    calculateCraftingPlanMetrics,
+    calculateCraftingSavings,
+    formatCraftingPlanSummary,
+} from './crafting-plan-display.js';
 
 const ACTION_HRID = '/actions/cooking/marsberry_cake';
 
@@ -129,5 +133,34 @@ describe('formatCraftingPlanSummary', () => {
     test('omits the total when the plan cannot be priced', () => {
         const plan = { strategy: 'craft', unitCost: Infinity, quantity: 3, totalCost: Infinity };
         expect(formatCraftingPlanSummary(plan, 0)).toBe('?');
+    });
+});
+
+describe('calculateCraftingSavings', () => {
+    const craftPlan = (overrides = {}) => ({
+        strategy: 'craft',
+        buyPrice: 1000,
+        quantity: 10,
+        totalCost: 7000,
+        ...overrides,
+    });
+
+    test('compares the market price for the whole quantity with the plan total', () => {
+        expect(calculateCraftingSavings(craftPlan())).toEqual({
+            buyTotal: 10000,
+            craftTotal: 7000,
+            saving: 3000,
+            percent: 0.3,
+        });
+    });
+
+    test('goes negative when a forced craft costs more than buying', () => {
+        expect(calculateCraftingSavings(craftPlan({ totalCost: 12000 })).saving).toBe(-2000);
+    });
+
+    test('is null when the best plan is to buy, or either side has no price', () => {
+        expect(calculateCraftingSavings(craftPlan({ strategy: 'buy' }))).toBeNull();
+        expect(calculateCraftingSavings(craftPlan({ buyPrice: null }))).toBeNull();
+        expect(calculateCraftingSavings(craftPlan({ totalCost: Infinity }))).toBeNull();
     });
 });

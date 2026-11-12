@@ -14,12 +14,13 @@ import { computeInventoryAwareMissingMaterials } from './inventory-aware-fulfill
 import {
     collectCraftSteps,
     calculateCraftingPlanMetrics,
+    createRow,
     formatCraftingPlanSummary,
     renderCraftingPlanBreakdown,
 } from './crafting-plan-tree-renderer.js';
 import { ARTISAN_MATERIAL_MODE, getArtisanMaterialMode } from '../../utils/material-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
-import { formatWithSeparator } from '../../utils/formatters.js';
+import { formatPercentage, formatWithSeparator } from '../../utils/formatters.js';
 import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { getPricingMode as resolveMarketPricingMode } from '../../utils/market-data.js';
 import { findActionInput, attachInputListeners } from '../../utils/action-panel-helper.js';
@@ -166,6 +167,66 @@ function createModePillRow(label, currentLabel, onClick, title = '') {
 }
 
 /**
+ * How much crafting the plan's item saves compared with buying the same quantity from the market.
+ * Uses the plan's own totals, so it follows the active pricing mode, artisan mode and time cost.
+ * @param {Object} plan - Root CraftingPlanNode
+ * @returns {{ buyTotal: number, craftTotal: number, saving: number, percent: number }|null}
+ *   null when the best plan is to buy, or either side cannot be priced
+ */
+export function calculateCraftingSavings(plan) {
+    if (plan.strategy !== 'craft' || plan.buyPrice === null || !Number.isFinite(plan.totalCost)) return null;
+    const buyTotal = plan.buyPrice * plan.quantity;
+    const saving = buyTotal - plan.totalCost;
+    return { buyTotal, craftTotal: plan.totalCost, saving, percent: buyTotal > 0 ? saving / buyTotal : 0 };
+}
+
+/**
+ * Build the "Your savings" block shown at the bottom of the expanded plan.
+ * @param {Object} savings - Result of calculateCraftingSavings
+ * @param {number} quantity - Items the totals cover
+ * @param {boolean} timeCostEnabled - Whether the craft total includes the time cost
+ * @returns {HTMLElement}
+ */
+function buildSavingsSection(savings, quantity, timeCostEnabled) {
+    const container = document.createElement('div');
+
+    const header = document.createElement('div');
+    header.style.cssText = 'font-weight: 500; color: var(--text-color-primary, #fff); margin-bottom: 4px;';
+    header.textContent = t('craftingPlanDisplay.savingsHeader', { quantity: formatWithSeparator(quantity) });
+    container.appendChild(header);
+
+    container.appendChild(
+        createRow(t('craftingPlanDisplay.savingsBuyLabel'), formatWithSeparator(Math.round(savings.buyTotal)))
+    );
+    container.appendChild(
+        createRow(
+            t('craftingPlanDisplay.savingsCraftLabel'),
+            formatWithSeparator(Math.round(savings.craftTotal)),
+            timeCostEnabled ? { title: t('craftingPlanDisplay.savingsTimeCostTooltip') } : {}
+        )
+    );
+
+    const saved = savings.saving >= 0;
+    const sign = saved ? '' : '-';
+    const amount = formatWithSeparator(Math.abs(Math.round(savings.saving)));
+    const percent = formatPercentage(Math.abs(savings.percent));
+    const totalRow = createRow(
+        saved ? t('craftingPlanDisplay.savingsYouSaveLabel') : t('craftingPlanDisplay.savingsYouLoseLabel'),
+        `${sign}${amount} (${percent})`,
+        {
+            leftColor: 'var(--text-color-primary, #fff)',
+            rightColor: saved ? '#4ade80' : '#f87171',
+        }
+    );
+    totalRow.style.borderTop = '1px solid var(--border-color, #333)';
+    totalRow.style.marginTop = '4px';
+    totalRow.style.paddingTop = '4px';
+    container.appendChild(totalRow);
+
+    return container;
+}
+
+/**
  * Build the full crafting plan UI for an action.
  * @param {string} actionHrid
  * @param {HTMLElement} panel - The action detail panel (used to read the quantity input)
@@ -194,12 +255,14 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
     const timeCostEnabled = config.getSetting('actionPanel_craftingPlanTimeCost');
     const goldPerHour = Number(config.getSettingValue('actionPanel_craftingPlanGoldPerHour', 0)) || 0;
 
-    let requestedQuantity = 1;
+    // The panel input counts actions; the plan counts items, and one action can make several
+    let requestedActions = 1;
     if (matchQuantity) {
         const inputField = findActionInput(panel);
         const parsed = parseInt(inputField?.value, 10);
-        requestedQuantity = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+        requestedActions = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
     }
+    const requestedQuantity = requestedActions * (output.count || 1);
 
     let plan;
     try {
@@ -609,6 +672,14 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
         divider.style.cssText = 'border-top: 1px solid var(--border-color, #333); margin: 6px 0;';
         content.appendChild(divider);
         content.appendChild(breakdown);
+    }
+
+    const savings = calculateCraftingSavings(plan);
+    if (savings) {
+        const divider = document.createElement('div');
+        divider.style.cssText = 'border-top: 1px solid var(--border-color, #333); margin: 6px 0;';
+        content.appendChild(divider);
+        content.appendChild(buildSavingsSection(savings, requestedQuantity, timeCostEnabled));
     }
 
     const costText = formatCraftingPlanSummary(plan, craftMetrics.totalCraftSeconds);

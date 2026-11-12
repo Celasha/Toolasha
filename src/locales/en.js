@@ -2054,6 +2054,12 @@ export default {
         totalLine: (p) => `Total: ${p.value}`,
         bestCraftingPlanTitle: 'Best Crafting Plan',
         buyMissingMaterialsButton: 'Buy Missing Materials',
+        savingsHeader: (p) => `Savings vs buying (×${p.quantity})`,
+        savingsBuyLabel: 'Buy it from the market',
+        savingsCraftLabel: 'Craft it yourself',
+        savingsYouSaveLabel: 'You save',
+        savingsYouLoseLabel: 'You lose',
+        savingsTimeCostTooltip: 'Includes the time cost you set, so this is not materials alone.',
     },
     abilityBookCalculator: {
         currentLevelLabel: 'Current level:',
