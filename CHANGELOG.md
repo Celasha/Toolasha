@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.31.0](https://github.com/Celasha/Toolasha/compare/v3.30.11...v3.31.0) (2026-11-14)
+
+
+### Features
+
+* add a Collapse all / Expand all button to the inventory sort bar ([49b8448](https://github.com/Celasha/Toolasha/commit/49b8448cc0ae1ab0b64a6f8772c01057b72194dc))
+* show how much crafting saves versus buying in the Best Crafting Plan ([bbb2507](https://github.com/Celasha/Toolasha/commit/bbb25079ea96686d52bf3bf39ddc7c1a435599ca))
+* warn in Buy Now and Sell Now when the best offers are more than one price step apart ([cd1706d](https://github.com/Celasha/Toolasha/commit/cd1706df0f701f0f497e1e3b31d3e8ff48b855f8))
+
+
+### Bug Fixes
+
+* put Combat Live enemy effect icons in their own row under the card like players' ([f26de54](https://github.com/Celasha/Toolasha/commit/f26de543f6cb3bd9e43d6118a2a879b52fa82826))
+* sort Combat Live effects with auras first and statuses last, longest-lasting leading ([f13e62b](https://github.com/Celasha/Toolasha/commit/f13e62bb9e6f662cc815f7449f8296c063a0bc3f))
+* wrap the BO/SO totals so they stay clear of the Queued Actions box ([84c283a](https://github.com/Celasha/Toolasha/commit/84c283a6fb3d3c65a1229746d00272fd0b6ee2d2))
+
 ## [3.30.11](https://github.com/Celasha/Toolasha/compare/v3.30.10...v3.30.11) (2026-11-11)
 
 ### Bug Fixes
