@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.30.11
+ * Version: 3.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12733,6 +12733,201 @@ self.onmessage = function (e) {
     const queueLengthEstimator = new QueueLengthEstimator();
 
     /**
+     * Instant Order Gap
+     *
+     * A Buy Now / Sell Now order fills at the other side's best price, so when the best sell offer and the best
+     * buy offer are more than one price step apart, listing instead would have done noticeably better. This adds
+     * a line to those dialogs saying how many steps apart the two are and what the gap costs, and stays out of
+     * the way when they are adjacent.
+     *
+     * The step is the game's own price bin (`binGap` in the client), which grows with the price and is five times
+     * wider for enhanced items, so the same gold amount can be one step on one item and ten on another.
+     */
+
+
+    // The game's price bins: [upper bound of the leading two digits, step unit]; 40 above the last bound
+    const BIN_GAP_UNIT_TIERS = [
+        [12, 4],
+        [15, 5],
+        [18, 6],
+        [24, 8],
+        [30, 10],
+        [36, 12],
+        [48, 16],
+        [60, 20],
+        [75, 25],
+        [90, 30],
+    ];
+    const BIN_GAP_UNIT_TOP = 40;
+    // A bad book can put the two prices very far apart; there is no point counting every step
+    const MAX_STEPS = 999;
+    const SHOW_DELAY_MS = 150;
+
+    /**
+     * @param {number} price
+     * @param {number} enhancementLevel
+     * @returns {number} The price step the game uses at this price
+     */
+    function binGap(price, enhancementLevel) {
+        const digits = String(price);
+        const length = digits.length;
+        if (length <= 2) return 1;
+        if (length === 3) {
+            const lead = digits[0];
+            if (enhancementLevel > 0) return lead === '1' ? 2 : lead <= '3' ? 5 : lead <= '7' ? 10 : 20;
+            return lead <= '3' ? 1 : lead <= '7' ? 2 : 4;
+        }
+        const lead = parseInt(digits.slice(0, 2), 10);
+        const unit = (BIN_GAP_UNIT_TIERS.find(([bound]) => lead < bound) || [0, BIN_GAP_UNIT_TOP])[1];
+        const step = unit * Math.pow(10, length - 4);
+        return enhancementLevel > 0 ? 5 * step : step;
+    }
+
+    /**
+     * The price one click of the game's "+" button up from this one.
+     * @param {number} price
+     * @param {number} enhancementLevel
+     * @returns {number}
+     */
+    function nextPrice(price, enhancementLevel) {
+        const target = price + 1;
+        const gap = binGap(target, enhancementLevel);
+        return Math.ceil(target / gap) * gap;
+    }
+
+    /**
+     * @param {number} low - The lower price
+     * @param {number} high - The higher price
+     * @param {number} [enhancementLevel]
+     * @returns {number} How many "+" clicks it takes to get from low to high, capped at MAX_STEPS
+     */
+    function countPriceSteps(low, high, enhancementLevel = 0) {
+        let steps = 0;
+        let price = low;
+        while (price < high && steps < MAX_STEPS) {
+            price = nextPrice(price, enhancementLevel);
+            steps += 1;
+        }
+        return steps;
+    }
+
+    /**
+     * @param {string} text - What is typed in the quantity box, which accepts compact values like 5k
+     * @returns {number} The quantity, 0 when it is empty or not a number
+     */
+    function parseQuantity(text) {
+        const match = String(text || '')
+            .trim()
+            .toLowerCase()
+            .replace(/,/g, '')
+            .match(/^(\d+(?:\.\d+)?)([kmb]?)$/);
+        if (!match) return 0;
+        const unit = { '': 1, k: 1e3, m: 1e6, b: 1e9 }[match[2]];
+        return Math.floor(parseFloat(match[1]) * unit);
+    }
+
+    /**
+     * @param {{asks?: Array<{price: number}>, bids?: Array<{price: number}>}|undefined} book - One enhancement
+     *     level of an item's order book
+     * @param {number} enhancementLevel
+     * @returns {{ask: number, bid: number, steps: number}|null} The gap between the best offers, null when either
+     *     side is empty
+     */
+    function measureGap(book, enhancementLevel) {
+        const ask = book?.asks?.[0]?.price;
+        const bid = book?.bids?.[0]?.price;
+        if (!(ask > 0) || !(bid > 0) || ask <= bid) return null;
+        return { ask, bid, steps: countPriceSteps(bid, ask, enhancementLevel) };
+    }
+
+    class InstantOrderGap {
+        constructor() {
+            this.isInitialized = false;
+            this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
+            this.processedModals = new WeakSet();
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('market_instantOrderGap')) return;
+
+            this.isInitialized = true;
+            const unregister = domObserver.onClass('instant-order-gap', 'Modal_modalContainer', (modal) => {
+                this.handleModal(modal);
+            });
+            this.cleanupRegistry.registerCleanup(unregister);
+        }
+
+        /**
+         * @param {HTMLElement} modal - Modal container element
+         */
+        handleModal(modal) {
+            if (this.processedModals.has(modal)) return;
+            if (!modal.querySelector('div[class*="MarketplacePanel_header"]')) return;
+            this.processedModals.add(modal);
+
+            // Let the dialog finish rendering before reading its state
+            this.cleanupRegistry.registerTimeout(setTimeout(() => this.show(modal), SHOW_DELAY_MS));
+        }
+
+        /**
+         * @param {HTMLElement} modal
+         */
+        show(modal) {
+            if (!modal.isConnected || modal.querySelector('.mwi-instant-order-gap')) return;
+
+            // The live Marketplace state says whether this is an instant order, locale-independent, and carries
+            // the order book the game is showing for this very item
+            const state = getMarketplaceRuntimeComponentFromElement(modal)?.state;
+            if (!state?.isInstantOrder) return;
+            const books = state.marketItemOrderBooks;
+            if (!books || books.itemHrid !== state.itemHrid) return;
+
+            const level = state.enhancementLevelInput || 0;
+            const gap = measureGap(books.orderBooks?.[level], level);
+            if (!gap || gap.steps < 2) return;
+
+            const el = document.createElement('div');
+            el.className = 'mwi-instant-order-gap';
+            el.style.cssText = `text-align: center; font-size: 13px; margin: 4px 0; color: ${config.COLOR_WARNING};`;
+
+            const quantityInput = modal.querySelector('[class*="MarketplacePanel_quantityInputs"] input');
+            const render = () => {
+                const quantity = parseQuantity(quantityInput?.value);
+                const each = gap.ask - gap.bid;
+                const params = {
+                    steps: gap.steps,
+                    each: formatters_js.formatWithSeparator(each),
+                    quantity: formatters_js.formatWithSeparator(quantity),
+                    total: formatters_js.formatWithSeparator(each * quantity),
+                };
+                const key = state.isSell ? 'instantOrderGap.sell' : 'instantOrderGap.buy';
+                el.textContent = i18n_js.t(key, params) + (quantity > 1 ? i18n_js.t('instantOrderGap.totalSuffix', params) : '');
+            };
+            render();
+            // The listener goes with the dialog when the game removes it
+            quantityInput?.addEventListener('input', render);
+
+            const quantityRow = quantityInput?.closest('div')?.parentElement?.parentElement;
+            if (quantityRow) quantityRow.insertAdjacentElement('beforebegin', el);
+            else modal.appendChild(el);
+        }
+
+        disable() {
+            document.querySelectorAll('.mwi-instant-order-gap').forEach((el) => el.remove());
+            this.cleanupRegistry.cleanupAll();
+            this.processedModals = new WeakSet();
+            this.isInitialized = false;
+        }
+
+        cleanup() {
+            this.disable();
+        }
+    }
+
+    const instantOrderGap = new InstantOrderGap();
+
+    /**
      * Market Depth Cap
      *
      * Live widget shown on the native marketplace order-book panel: given the last cost-per-action
@@ -13086,7 +13281,8 @@ self.onmessage = function (e) {
             this.displayElement.classList.add('mwi-market-order-totals');
             this.displayElement.style.cssText = `
             display: flex;
-            gap: 8px;
+            flex-wrap: wrap;
+            gap: 2px 8px;
             font-size: 0.85em;
             color: #aaa;
             margin-top: 4px;
@@ -28122,6 +28318,15 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                 }
             });
 
+            config.onSettingChange('invSort_collapseAll', (value) => {
+                if (!this.isInitialized) return;
+                document.querySelectorAll('.mwi-inventory-sort-controls').forEach((controls) => {
+                    controls.querySelector('.mwi-inventory-collapse-all')?.remove();
+                    const inventoryElem = controls.nextElementSibling;
+                    if (value && inventoryElem) controls.appendChild(this.createCollapseButton(inventoryElem));
+                });
+            });
+
             config.onSettingChange('invSort_badgesOnNone', () => {
                 if (this.isInitialized) {
                     this.refresh();
@@ -28307,6 +28512,9 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             controlsContainer.appendChild(askButton);
             controlsContainer.appendChild(bidButton);
             controlsContainer.appendChild(noneButton);
+            if (config.getSetting('invSort_collapseAll')) {
+                controlsContainer.appendChild(this.createCollapseButton(inventoryElem));
+            }
 
             // Insert before inventory
             inventoryElem.insertAdjacentElement('beforebegin', controlsContainer);
@@ -28342,10 +28550,73 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         }
 
         /**
+         * The game's own category headings in the tab being shown, split by whether they are folded. A folded
+         * heading reads "+ Name (count)" in the game's own text. Headings that are hidden (Toolasha's flattened
+         * custom-tab layout hides them) are left out, so folding never changes what that layout shows.
+         * @param {Element} inventoryElem - Inventory items container
+         * @returns {{expanded: Element[], collapsed: Element[]}}
+         */
+        getCategoryToggles(inventoryElem) {
+            const headings = inventoryElem.querySelectorAll(
+                '[class*="TabPanel_tabPanel"]:not([class*="TabPanel_hidden"]) [class*="Inventory_categoryButton"]'
+            );
+            const toggles = { expanded: [], collapsed: [] };
+            for (const heading of headings) {
+                if (window.getComputedStyle(heading).display === 'none') continue;
+                // The "+ " is hard-coded in the game's client, not a translated string
+                const isCollapsed = heading.textContent.trim().startsWith('+');
+                (isCollapsed ? toggles.collapsed : toggles.expanded).push(heading);
+            }
+            return toggles;
+        }
+
+        /**
+         * A button that folds every open category heading, or opens them all again once none is open. It clicks
+         * the game's own headings, so the game keeps the folded state itself (saved in the browser, not sent
+         * anywhere).
+         * @param {Element} inventoryElem - Inventory items container
+         * @returns {Element} Button element
+         */
+        createCollapseButton(inventoryElem) {
+            const button = document.createElement('button');
+            button.className = 'mwi-inventory-collapse-all';
+            button.style.cssText = `
+            border-radius: 4px;
+            padding: 2px 8px;
+            margin-left: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            background-color: #444;
+            color: #aaa;
+        `;
+
+            const updateLabel = () => {
+                const { expanded, collapsed } = this.getCategoryToggles(inventoryElem);
+                const opens = expanded.length === 0 && collapsed.length > 0;
+                button.textContent = i18n_js.t(
+                    opens ? 'inventorySort.expandAllButtonLabel' : 'inventorySort.collapseAllButtonLabel'
+                );
+            };
+            updateLabel();
+
+            button.addEventListener('mouseenter', updateLabel);
+            button.addEventListener('click', () => {
+                const { expanded, collapsed } = this.getCategoryToggles(inventoryElem);
+                const targets = expanded.length > 0 ? expanded : collapsed;
+                targets.forEach((heading) => heading.click());
+                // The game redraws the headings a moment after the clicks
+                this.timerRegistry.registerTimeout(setTimeout(updateLabel, 100));
+            });
+
+            return button;
+        }
+
+        /**
          * Update button visual states based on current mode
          */
         updateButtonStates() {
-            const buttons = document.querySelectorAll('.mwi-inventory-sort-controls button');
+            const buttons = document.querySelectorAll('.mwi-inventory-sort-controls button[data-mode]');
             buttons.forEach((button) => {
                 const isActive = button.dataset.mode === this.currentMode;
 
@@ -38843,6 +39114,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         estimatedListingAge,
         queueLengthEstimator,
         marketDepthCap,
+        instantOrderGap,
         marketOrderTotals,
         marketHistoryViewer,
         listingRefreshNavigator,

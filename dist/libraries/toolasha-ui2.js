@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.30.11
+ * Version: 3.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1991,6 +1991,9 @@
     const KIND_DOT = 'dot';
     const KIND_STATUS = 'status';
 
+    // The five aura abilities (speed, critical, fierce, guardian, mystic): 120 s buffs for the whole party
+    const AURA_HRID = /_aura$/;
+
     const opposite = (side) => (side === SIDE_PLAYER ? SIDE_MONSTER : SIDE_PLAYER);
     const unitKey = (side, index) => `${side}:${index}`;
 
@@ -2209,7 +2212,7 @@
          * @param {number} index
          * @param {number} now - Timestamp in ms
          * @returns {Array<{id: string, kind: string, status?: string, abilityHrid: string, remainingMs: ?number, durationMs: ?number, symbol?: string, stacks?: number, value?: number}>}
-         *     What is on that unit, buffs first and the ones running out soonest leading
+         *     What is on that unit: auras, buffs, debuffs, damage over time, then statuses, the longest-lasting leading each group
          */
         getUnit(side, index, now) {
             const entries = this.units.get(unitKey(side, index));
@@ -2246,10 +2249,12 @@
                 });
             }
             const out = [...grouped.values()];
-            const order = { [KIND_BUFF]: 0, [KIND_STATUS]: 1, [KIND_DEBUFF]: 2, [KIND_DOT]: 3 };
-            return out.sort(
-                (a, b) => order[a.kind] - order[b.kind] || (a.remainingMs ?? Infinity) - (b.remainingMs ?? Infinity)
-            );
+            // Auras last longest, then the other buffs, then what is on the unit against its will; statuses are brief
+            const order = { aura: 0, [KIND_BUFF]: 1, [KIND_DEBUFF]: 2, [KIND_DOT]: 3, [KIND_STATUS]: 4 };
+            const rank = (effect) =>
+                effect.kind === KIND_BUFF && AURA_HRID.test(effect.abilityHrid) ? order.aura : order[effect.kind];
+            // Longest first inside a group; an effect with no end time outlasts them all
+            return out.sort((a, b) => rank(a) - rank(b) || (b.remainingMs ?? Infinity) - (a.remainingMs ?? Infinity));
         }
     }
 
@@ -2860,10 +2865,16 @@
             entry.row.style.width = `${rect.width}px`;
 
             const badge = side === 'p' && config.getSetting('combatLive_unitBadges') ? this.deps.getBadge(index) : null;
-            entry.badge.style.display = badge ? 'block' : 'none';
+            // Monsters have no badge, but keep its slot empty so their icons sit in the same row under the card as a
+            // player's, instead of up where the badge would be
+            const keepSlot = !badge && side === 'm';
+            entry.badge.style.display = badge || keepSlot ? 'block' : 'none';
+            entry.badge.style.visibility = keepSlot ? 'hidden' : 'visible';
             if (badge) {
                 entry.badge.textContent = badge.healText ? `${badge.text} · ${badge.healText}` : badge.text;
                 entry.badge.style.background = badge.color;
+            } else if (keepSlot) {
+                entry.badge.textContent = '\u00a0';
             }
 
             const mode = config.getSettingValue(

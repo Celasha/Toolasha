@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.30.11
+ * Version: 3.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2734,6 +2734,12 @@
             totalLine: (p) => `Total: ${p.value}`,
             bestCraftingPlanTitle: 'Best Crafting Plan',
             buyMissingMaterialsButton: 'Buy Missing Materials',
+            savingsHeader: (p) => `Savings vs buying (×${p.quantity})`,
+            savingsBuyLabel: 'Buy it from the market',
+            savingsCraftLabel: 'Craft it yourself',
+            savingsYouSaveLabel: 'You save',
+            savingsYouLoseLabel: 'You lose',
+            savingsTimeCostTooltip: 'Includes the time cost you set, so this is not materials alone.',
         },
         abilityBookCalculator: {
             currentLevelLabel: 'Current level:',
@@ -3183,6 +3189,8 @@
             askButtonLabel: 'Ask',
             bidButtonLabel: 'Bid',
             noneButtonLabel: 'None',
+            collapseAllButtonLabel: 'Collapse all',
+            expandAllButtonLabel: 'Expand all',
         },
         estimatedListingAge: {
             ageColumnHeader: '~Age',
@@ -3193,6 +3201,11 @@
         },
         listingRefreshNavigator: {
             refreshButtonLabel: 'Refresh',
+        },
+        instantOrderGap: {
+            sell: (p) => `Sell Now pays ${p.steps} price steps below the best sell offer (${p.each} less per item)`,
+            buy: (p) => `Buy Now costs ${p.steps} price steps above the best buy offer (${p.each} more per item)`,
+            totalSuffix: (p) => `, ${p.total} for ${p.quantity}`,
         },
         marketDepthCap: {
             sellDepthLabel: (p) => `Sell depth: ${p.hitBookEnd ? 'at least ' : '~'}${p.count} actions`,
@@ -4161,6 +4174,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Marketplace: Show owned count in buy dialogs',
                     help: 'Displays how many of the item you currently own in Buy Now and Buy Listing modals',
                 },
+                market_instantOrderGap: {
+                    label: 'Marketplace: Warn when Buy Now / Sell Now is more than one price step from the best listing',
+                    help: 'Adds a line to Buy Now and Sell Now dialogs when the best sell offer and best buy offer are two or more price steps apart, with what the gap costs per item and for the quantity entered',
+                },
                 market_marketplaceShortcuts: {
                     label: 'Marketplace: Show "Marketplace Action" button on item menus',
                     help: 'Adds a Marketplace Action dropdown to item menus with Sell Now, Buy Now, and listing shortcuts',
@@ -4347,6 +4364,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 invSort_netOfTax: { label: 'Show badge values net of market tax' },
                 invSort_sortEquipment: { label: 'Enable sorting for Equipment category' },
+                invSort_collapseAll: {
+                    label: 'Show a Collapse all / Expand all button in the inventory',
+                    help: 'Adds a button next to the sort buttons that folds every category heading of the inventory tab you are looking at, or opens them all again',
+                },
                 invBadgePrices: {
                     label: 'Show price badges on item icons',
                     help: 'Displays per-item ask and bid prices on inventory items',
@@ -5570,6 +5591,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '市场：在购买窗口显示持有数量',
                     help: '在“立即购买”和“购买挂单”弹窗中显示当前持有该物品的数量',
                 },
+                market_instantOrderGap: {
+                    label: '市场：立即购买/立即出售与最优挂单相差超过一个价格档位时提醒',
+                    help: '当最优卖价与最优买价相差两个或更多价格档位时，在立即购买和立即出售窗口中新增一行，显示每件物品以及所填数量的差价损失',
+                },
                 market_marketplaceShortcuts: {
                     label: '市场：在物品菜单显示“市场操作”按钮',
                     help: '在物品菜单新增“市场操作”下拉菜单，包含立即出售、立即购买及挂单快捷方式',
@@ -5750,6 +5775,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 invSort_netOfTax: { label: '徽标数值显示扣除市场税后的净值' },
                 invSort_sortEquipment: { label: '启用装备类别的排序' },
+                invSort_collapseAll: {
+                    label: '在物品栏显示“全部折叠/全部展开”按钮',
+                    help: '在排序按钮旁新增一个按钮，可折叠当前所查看物品栏标签页中的所有类别标题，或将其全部展开',
+                },
                 invBadgePrices: { label: '在物品图标上显示价格徽标', help: '在物品栏物品上显示单个物品的卖价和买价' },
                 invCategoryTotals: { label: '在物品栏显示类别总计', help: '显示物品栏中每个类别内所有物品的市场总价值' },
                 networth_pricingMode: {
@@ -8248,6 +8277,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             sortingInProgress: (p) => `排序中… ${p.arrow}`,
             sortByProfitWithArrow: (p) => `按利润排序 ${p.arrow}`,
         },
+        instantOrderGap: {
+            sell: (p) => `立即出售的价格比最优卖价低 ${p.steps} 个价格档位（每件少 ${p.each}）`,
+            buy: (p) => `立即购买的价格比最优买价高 ${p.steps} 个价格档位（每件多 ${p.each}）`,
+            totalSuffix: (p) => `，${p.quantity} 件共 ${p.total}`,
+        },
         marketDepthCap: {
             sellDepthLabel: (p) => `出售深度：${p.hitBookEnd ? '至少 ' : '约'}${p.count} 次操作`,
             sellDepthNotApplicable: (p) => `出售深度：不适用——当前最高买单 ${p.bestBid} 低于 ${p.threshold} 的保本价`,
@@ -8295,6 +8329,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             askButtonLabel: '卖价',
             bidButtonLabel: '买价',
             noneButtonLabel: '无',
+            collapseAllButtonLabel: '全部折叠',
+            expandAllButtonLabel: '全部展开',
         },
         requiredMaterials: {
             artisanTeaOutOfStock: '⚠ 工匠茶已耗尽——显示完整材料数量',
@@ -8878,6 +8914,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             totalLine: (p) => `总计：${p.value}`,
             bestCraftingPlanTitle: '最佳制作方案',
             buyMissingMaterialsButton: '购买缺少材料',
+            savingsHeader: (p) => `与直接购买相比的节省（×${p.quantity}）`,
+            savingsBuyLabel: '从市场购买',
+            savingsCraftLabel: '自己制作',
+            savingsYouSaveLabel: '节省',
+            savingsYouLoseLabel: '亏损',
+            savingsTimeCostTooltip: '包含你设置的时间成本，因此不只是材料成本。',
         },
         missingMaterialsButton: {
             enterQuantityTooltip: '输入数量以检查缺少的材料',
@@ -10618,6 +10660,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     default: true,
                     help: 'Displays how many of the item you currently own in Buy Now and Buy Listing modals',
                 },
+                market_instantOrderGap: {
+                    id: 'market_instantOrderGap',
+                    label: 'Marketplace: Warn when Buy Now / Sell Now is more than one price step from the best listing',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a line to Buy Now and Sell Now dialogs when the best sell offer and best buy offer are two or more price steps apart, with what the gap costs per item and for the quantity entered',
+                },
                 market_marketplaceShortcuts: {
                     id: 'market_marketplaceShortcuts',
                     label: 'Marketplace: Show "Marketplace Action" button on item menus',
@@ -10953,6 +11002,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Enable sorting for Equipment category',
                     type: 'checkbox',
                     default: false,
+                },
+                invSort_collapseAll: {
+                    id: 'invSort_collapseAll',
+                    label: 'Show a Collapse all / Expand all button in the inventory',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a button next to the sort buttons that folds every category heading of the inventory tab you are looking at, or opens them all again',
                 },
                 invBadgePrices: {
                     id: 'invBadgePrices',
