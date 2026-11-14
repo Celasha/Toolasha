@@ -2509,6 +2509,8 @@ export default {
         askButtonLabel: 'Ask',
         bidButtonLabel: 'Bid',
         noneButtonLabel: 'None',
+        collapseAllButtonLabel: 'Collapse all',
+        expandAllButtonLabel: 'Expand all',
     },
     estimatedListingAge: {
         ageColumnHeader: '~Age',
@@ -3682,6 +3684,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             invSort_netOfTax: { label: 'Show badge values net of market tax' },
             invSort_sortEquipment: { label: 'Enable sorting for Equipment category' },
+            invSort_collapseAll: {
+                label: 'Show a Collapse all / Expand all button in the inventory',
+                help: 'Adds a button next to the sort buttons that folds every category heading of the inventory tab you are looking at, or opens them all again',
+            },
             invBadgePrices: {
                 label: 'Show price badges on item icons',
                 help: 'Displays per-item ask and bid prices on inventory items',

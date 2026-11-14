@@ -1595,6 +1595,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: false,
             },
+            invSort_collapseAll: {
+                id: 'invSort_collapseAll',
+                label: 'Show a Collapse all / Expand all button in the inventory',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a button next to the sort buttons that folds every category heading of the inventory tab you are looking at, or opens them all again',
+            },
             invBadgePrices: {
                 id: 'invBadgePrices',
                 label: 'Show price badges on item icons',

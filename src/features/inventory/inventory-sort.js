@@ -79,6 +79,15 @@ class InventorySort {
             }
         });
 
+        config.onSettingChange('invSort_collapseAll', (value) => {
+            if (!this.isInitialized) return;
+            document.querySelectorAll('.mwi-inventory-sort-controls').forEach((controls) => {
+                controls.querySelector('.mwi-inventory-collapse-all')?.remove();
+                const inventoryElem = controls.nextElementSibling;
+                if (value && inventoryElem) controls.appendChild(this.createCollapseButton(inventoryElem));
+            });
+        });
+
         config.onSettingChange('invSort_badgesOnNone', () => {
             if (this.isInitialized) {
                 this.refresh();
@@ -264,6 +273,9 @@ class InventorySort {
         controlsContainer.appendChild(askButton);
         controlsContainer.appendChild(bidButton);
         controlsContainer.appendChild(noneButton);
+        if (config.getSetting('invSort_collapseAll')) {
+            controlsContainer.appendChild(this.createCollapseButton(inventoryElem));
+        }
 
         // Insert before inventory
         inventoryElem.insertAdjacentElement('beforebegin', controlsContainer);
@@ -299,10 +311,73 @@ class InventorySort {
     }
 
     /**
+     * The game's own category headings in the tab being shown, split by whether they are folded. A folded
+     * heading reads "+ Name (count)" in the game's own text. Headings that are hidden (Toolasha's flattened
+     * custom-tab layout hides them) are left out, so folding never changes what that layout shows.
+     * @param {Element} inventoryElem - Inventory items container
+     * @returns {{expanded: Element[], collapsed: Element[]}}
+     */
+    getCategoryToggles(inventoryElem) {
+        const headings = inventoryElem.querySelectorAll(
+            '[class*="TabPanel_tabPanel"]:not([class*="TabPanel_hidden"]) [class*="Inventory_categoryButton"]'
+        );
+        const toggles = { expanded: [], collapsed: [] };
+        for (const heading of headings) {
+            if (window.getComputedStyle(heading).display === 'none') continue;
+            // The "+ " is hard-coded in the game's client, not a translated string
+            const isCollapsed = heading.textContent.trim().startsWith('+');
+            (isCollapsed ? toggles.collapsed : toggles.expanded).push(heading);
+        }
+        return toggles;
+    }
+
+    /**
+     * A button that folds every open category heading, or opens them all again once none is open. It clicks
+     * the game's own headings, so the game keeps the folded state itself (saved in the browser, not sent
+     * anywhere).
+     * @param {Element} inventoryElem - Inventory items container
+     * @returns {Element} Button element
+     */
+    createCollapseButton(inventoryElem) {
+        const button = document.createElement('button');
+        button.className = 'mwi-inventory-collapse-all';
+        button.style.cssText = `
+            border-radius: 4px;
+            padding: 2px 8px;
+            margin-left: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            background-color: #444;
+            color: #aaa;
+        `;
+
+        const updateLabel = () => {
+            const { expanded, collapsed } = this.getCategoryToggles(inventoryElem);
+            const opens = expanded.length === 0 && collapsed.length > 0;
+            button.textContent = t(
+                opens ? 'inventorySort.expandAllButtonLabel' : 'inventorySort.collapseAllButtonLabel'
+            );
+        };
+        updateLabel();
+
+        button.addEventListener('mouseenter', updateLabel);
+        button.addEventListener('click', () => {
+            const { expanded, collapsed } = this.getCategoryToggles(inventoryElem);
+            const targets = expanded.length > 0 ? expanded : collapsed;
+            targets.forEach((heading) => heading.click());
+            // The game redraws the headings a moment after the clicks
+            this.timerRegistry.registerTimeout(setTimeout(updateLabel, 100));
+        });
+
+        return button;
+    }
+
+    /**
      * Update button visual states based on current mode
      */
     updateButtonStates() {
-        const buttons = document.querySelectorAll('.mwi-inventory-sort-controls button');
+        const buttons = document.querySelectorAll('.mwi-inventory-sort-controls button[data-mode]');
         buttons.forEach((button) => {
             const isActive = button.dataset.mode === this.currentMode;
 

@@ -131,3 +131,57 @@ describe('InventorySort with more than one inventory in the page', () => {
         expect(orders).toEqual(['1', '0']);
     });
 });
+
+describe('InventorySort collapse all button', () => {
+    const buildCategories = (labels) => {
+        document.body.innerHTML = `<div class="Inventory_items__x"><div class="TabPanel_tabPanel__x">${labels
+            .map(
+                (label) =>
+                    `<div class="Inventory_itemGrid__x"><span class="Inventory_categoryButton__x">${label}</span></div>`
+            )
+            .join('')}</div></div>`;
+        const inventory = document.querySelector('.Inventory_items__x');
+        // The game folds and unfolds a heading by redrawing its text
+        document.querySelectorAll('.Inventory_categoryButton__x').forEach((heading) => {
+            const name = heading.textContent.replace(/^\+ /, '');
+            heading.addEventListener('click', () => {
+                heading.textContent = heading.textContent.startsWith('+') ? name : `+ ${name} (3)`;
+            });
+        });
+        return inventory;
+    };
+    const headings = () => [...document.querySelectorAll('.Inventory_categoryButton__x')];
+
+    test('is not added unless its setting is on', async () => {
+        const config = (await import('../../core/config.js')).default;
+        config.getSetting.mockImplementation(() => false);
+        inventorySort.injectSortControls(buildCategories(['Food']));
+        expect(document.querySelector('.mwi-inventory-collapse-all')).toBeNull();
+        config.getSetting.mockImplementation((key) => key === 'invSort_collapseAll');
+    });
+
+    test('folds every open heading, then opens them all again', () => {
+        const inventory = buildCategories(['Food', 'Drinks', '+ Loots (2)']);
+        inventorySort.injectSortControls(inventory);
+        const button = document.querySelector('.mwi-inventory-collapse-all');
+        expect(button.textContent).toBe('inventorySort.collapseAllButtonLabel');
+
+        button.click();
+        expect(headings().map((heading) => heading.textContent)).toEqual(['+ Food (3)', '+ Drinks (3)', '+ Loots (2)']);
+
+        button.dispatchEvent(new Event('mouseenter'));
+        expect(button.textContent).toBe('inventorySort.expandAllButtonLabel');
+        button.click();
+        expect(headings().map((heading) => heading.textContent)).toEqual(['Food', 'Drinks', 'Loots (2)']);
+    });
+
+    test('leaves out headings that are hidden and tabs that are not showing', () => {
+        const inventory = buildCategories(['Food', 'Drinks']);
+        headings()[0].style.display = 'none';
+        inventorySort.injectSortControls(inventory);
+
+        document.querySelector('.mwi-inventory-collapse-all').click();
+
+        expect(headings().map((heading) => heading.textContent)).toEqual(['Food', '+ Drinks (3)']);
+    });
+});

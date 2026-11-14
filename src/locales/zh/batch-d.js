@@ -469,6 +469,8 @@ export default {
         askButtonLabel: '卖价',
         bidButtonLabel: '买价',
         noneButtonLabel: '无',
+        collapseAllButtonLabel: '全部折叠',
+        expandAllButtonLabel: '全部展开',
     },
     requiredMaterials: {
         artisanTeaOutOfStock: '⚠ 工匠茶已耗尽——显示完整材料数量',

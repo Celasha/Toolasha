@@ -703,6 +703,10 @@ export default {
             },
             invSort_netOfTax: { label: '徽标数值显示扣除市场税后的净值' },
             invSort_sortEquipment: { label: '启用装备类别的排序' },
+            invSort_collapseAll: {
+                label: '在物品栏显示“全部折叠/全部展开”按钮',
+                help: '在排序按钮旁新增一个按钮，可折叠当前所查看物品栏标签页中的所有类别标题，或将其全部展开',
+            },
             invBadgePrices: { label: '在物品图标上显示价格徽标', help: '在物品栏物品上显示单个物品的卖价和买价' },
             invCategoryTotals: { label: '在物品栏显示类别总计', help: '显示物品栏中每个类别内所有物品的市场总价值' },
             networth_pricingMode: {
