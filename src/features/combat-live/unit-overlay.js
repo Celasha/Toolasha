@@ -188,10 +188,16 @@ class UnitOverlay {
         entry.row.style.width = `${rect.width}px`;
 
         const badge = side === 'p' && config.getSetting('combatLive_unitBadges') ? this.deps.getBadge(index) : null;
-        entry.badge.style.display = badge ? 'block' : 'none';
+        // Monsters have no badge, but keep its slot empty so their icons sit in the same row under the card as a
+        // player's, instead of up where the badge would be
+        const keepSlot = !badge && side === 'm';
+        entry.badge.style.display = badge || keepSlot ? 'block' : 'none';
+        entry.badge.style.visibility = keepSlot ? 'hidden' : 'visible';
         if (badge) {
             entry.badge.textContent = badge.healText ? `${badge.text} · ${badge.healText}` : badge.text;
             entry.badge.style.background = badge.color;
+        } else if (keepSlot) {
+            entry.badge.textContent = '\u00a0';
         }
 
         const mode = config.getSettingValue(

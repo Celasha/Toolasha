@@ -134,8 +134,9 @@ describe('UnitOverlay', () => {
 
         expect(layer().children[0].textContent).toContain('100 dps');
         expect(layer().children[1].textContent).toContain('200 dps · 5 hps');
-        // Monsters get no badge
-        expect(layer().children[2].children[0].style.display).toBe('none');
+        // Monsters get no badge, only its empty slot
+        expect(layer().children[2].children[0].textContent).not.toContain('dps');
+        expect(layer().children[2].children[0].style.visibility).toBe('hidden');
     });
 
     test('a buff shows as an icon with its countdown, using the game ability sheet', () => {
@@ -303,6 +304,24 @@ describe('UnitOverlay', () => {
         expect(row.children[0].style.width).toBe('100%');
         expect(row.children[0].style.borderRadius).toBe('0 0 3px 3px');
         expect(row.children[1].querySelector('svg')).not.toBeNull();
+    });
+
+    test("a monster keeps the badge slot so its icons sit under the card like a player's", () => {
+        deps.getBuffs.mockImplementation((side, index) =>
+            side === 'm' && index === 0
+                ? [{ id: 'd', kind: 'debuff', abilityHrid: '/abilities/berserk', remainingMs: 5000, durationMs: 9000 }]
+                : []
+        );
+        overlay.update(0);
+
+        const row = layer().children[2];
+        expect(row.children[0].style.display).toBe('block');
+        expect(row.children[0].style.visibility).toBe('hidden');
+        expect(row.children[1].querySelector('svg')).not.toBeNull();
+        // A player with the badge setting off has no slot to keep
+        settings.combatLive_unitBadges = false;
+        overlay.update(0);
+        expect(layer().children[0].children[0].style.display).toBe('none');
     });
 
     test('the icon size setting resizes the icons that are already there', () => {
