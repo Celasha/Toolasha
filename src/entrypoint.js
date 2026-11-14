@@ -151,6 +151,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'instantOrderGap',
+            name: 'Instant Order Gap',
+            category: 'Market',
+            module: Market.instantOrderGap,
+            async: false,
+        },
+        {
             key: 'marketOrderTotals',
             name: 'Market Order Totals',
             category: 'Market',

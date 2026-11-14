@@ -21,6 +21,7 @@ export const IRON_COW_SETTINGS = new Set([
     'market_autoFillSellStrategy',
     'market_autoFillBuyStrategy',
     'market_autoClickMax',
+    'market_instantOrderGap',
     'market_quickInputButtons',
     'market_marketplaceShortcuts',
     'market_visibleItemCount',

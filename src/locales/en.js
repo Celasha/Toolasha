@@ -2520,6 +2520,11 @@ export default {
     listingRefreshNavigator: {
         refreshButtonLabel: 'Refresh',
     },
+    instantOrderGap: {
+        sell: (p) => `Sell Now pays ${p.steps} price steps below the best sell offer (${p.each} less per item)`,
+        buy: (p) => `Buy Now costs ${p.steps} price steps above the best buy offer (${p.each} more per item)`,
+        totalSuffix: (p) => `, ${p.total} for ${p.quantity}`,
+    },
     marketDepthCap: {
         sellDepthLabel: (p) => `Sell depth: ${p.hitBookEnd ? 'at least ' : '~'}${p.count} actions`,
         sellDepthNotApplicable: (p) =>
@@ -3486,6 +3491,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             market_showOwnedInBuyModal: {
                 label: 'Marketplace: Show owned count in buy dialogs',
                 help: 'Displays how many of the item you currently own in Buy Now and Buy Listing modals',
+            },
+            market_instantOrderGap: {
+                label: 'Marketplace: Warn when Buy Now / Sell Now is more than one price step from the best listing',
+                help: 'Adds a line to Buy Now and Sell Now dialogs when the best sell offer and best buy offer are two or more price steps apart, with what the gap costs per item and for the quantity entered',
             },
             market_marketplaceShortcuts: {
                 label: 'Marketplace: Show "Marketplace Action" button on item menus',

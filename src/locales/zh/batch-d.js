@@ -417,6 +417,11 @@ export default {
         sortingInProgress: (p) => `排序中… ${p.arrow}`,
         sortByProfitWithArrow: (p) => `按利润排序 ${p.arrow}`,
     },
+    instantOrderGap: {
+        sell: (p) => `立即出售的价格比最优卖价低 ${p.steps} 个价格档位（每件少 ${p.each}）`,
+        buy: (p) => `立即购买的价格比最优买价高 ${p.steps} 个价格档位（每件多 ${p.each}）`,
+        totalSuffix: (p) => `，${p.quantity} 件共 ${p.total}`,
+    },
     marketDepthCap: {
         sellDepthLabel: (p) => `出售深度：${p.hitBookEnd ? '至少 ' : '约'}${p.count} 次操作`,
         sellDepthNotApplicable: (p) => `出售深度：不适用——当前最高买单 ${p.bestBid} 低于 ${p.threshold} 的保本价`,
