@@ -9,7 +9,7 @@ const EFFECTS = {
             buffs: [{ uniqueHrid: '/buff_uniques/berserk', typeHrid: '/buff_types/damage', duration: 20 * SEC }],
         },
     ],
-    '/abilities/aura': [
+    '/abilities/speed_aura': [
         {
             targetType: 'allAllies',
             buffs: [{ uniqueHrid: '/buff_uniques/aura', typeHrid: '/buff_types/speed', duration: 120 * SEC }],
@@ -73,7 +73,7 @@ describe('BuffTracker', () => {
 
     test('an aura goes on every living ally and not on the dead', () => {
         const buffs = tracker();
-        buffs.record([cast('p', 0, '/abilities/aura')], 0, roster());
+        buffs.record([cast('p', 0, '/abilities/speed_aura')], 0, roster());
 
         expect(buffs.getUnit('p', 0, 1000)).toHaveLength(1);
         expect(buffs.getUnit('p', 1, 1000)).toHaveLength(1);
@@ -161,14 +161,31 @@ describe('BuffTracker', () => {
         expect(buffs.getUnit('p', 1, 2000)).toHaveLength(1);
     });
 
-    test('buffs come first, then the one running out soonest', () => {
+    test('auras lead, then the other buffs, the longest-lasting first', () => {
         const buffs = tracker();
-        buffs.record([cast('p', 0, '/abilities/aura'), cast('p', 0, '/abilities/berserk')], 0, roster());
+        buffs.record(
+            [
+                cast('p', 0, '/abilities/berserk'),
+                cast('p', 0, '/abilities/invincible'),
+                cast('p', 0, '/abilities/speed_aura'),
+            ],
+            0,
+            roster()
+        );
 
         expect(buffs.getUnit('p', 0, 1000).map((entry) => entry.abilityHrid)).toEqual([
+            '/abilities/speed_aura',
+            '/abilities/invincible',
             '/abilities/berserk',
-            '/abilities/aura',
         ]);
+    });
+
+    test('on a monster, debuffs come before burns, and statuses come last', () => {
+        const buffs = tracker();
+        buffs.record([cast('p', 0, '/abilities/firestorm'), cast('p', 0, '/abilities/crippling')], 0, roster());
+        buffs.record([{ type: 'status', side: 'm', index: 0, status: 'enraged', on: true }], 0, roster());
+
+        expect(buffs.getUnit('m', 0, 1000).map((entry) => entry.kind)).toEqual(['debuff', 'dot', 'status']);
     });
 
     test('an unknown ability, or the auto attack, adds nothing', () => {
