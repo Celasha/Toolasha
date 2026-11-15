@@ -1351,6 +1351,9 @@ export default {
         cancelButton: '取消',
         copySettingsConfirmButton: '复制设置',
         characterFallbackName: (p) => `角色 ${p.id}`,
+        removeCharacterTooltip: '从列表中移除该角色',
+        removeCharacterConfirm: (p) =>
+            `要将 ${p.name}（${p.suffix}）从此列表中移除吗？其已保存的 Toolasha 设置也会被删除。若这是真实存在的角色，下次加载时会以默认设置重新出现。`,
         fetchingStatus: '⏳ 获取中…',
         updatedStatus: '✅ 已更新！',
         failedStatus: '❌ 失败',

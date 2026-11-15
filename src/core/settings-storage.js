@@ -61,8 +61,11 @@ class SettingsStorage {
                 saved = globalTemplate;
                 await storage.setJSON(characterKey, saved, this.storageArea, true);
             }
+        }
 
-            // Add character to known characters list
+        // Every load, not just the first: a character taken off the list by hand (the Copy Settings dialog) comes
+        // back as soon as it is played again. Writes only when the entry is missing or renamed.
+        if (this.currentCharacterId) {
             await this.addToKnownCharacters(this.currentCharacterId, this.currentCharacterName);
         }
 
@@ -283,6 +286,24 @@ class SettingsStorage {
             list.push({ id: characterId, name: characterName || characterId });
             await storage.setJSON(this.knownCharactersKey, list, this.storageArea, true);
         }
+    }
+
+    /**
+     * Take a character off the known list and delete its saved settings, for a character that no longer exists
+     * (deleted and re-created ones keep their old ID in the list). The character in play is never removed. A real
+     * character removed by mistake re-adds itself the next time it loads, with the template settings.
+     * @param {string} characterId
+     * @returns {Promise<boolean>} Whether an entry was removed
+     */
+    async removeKnownCharacter(characterId) {
+        const id = String(characterId);
+        if (id === this.currentCharacterId) return false;
+        const list = await this.getKnownCharacters();
+        const kept = list.filter((c) => c.id !== id);
+        if (kept.length === list.length) return false;
+        await storage.setJSON(this.knownCharactersKey, kept, this.storageArea, true);
+        await storage.delete(`${this.storageKey}_${id}`, this.storageArea);
+        return true;
     }
 
     /**

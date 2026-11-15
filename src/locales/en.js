@@ -26,6 +26,9 @@ export default {
         cancelButton: 'Cancel',
         copySettingsConfirmButton: 'Copy Settings',
         characterFallbackName: (p) => `Character ${p.id}`,
+        removeCharacterTooltip: 'Remove this character from the list',
+        removeCharacterConfirm: (p) =>
+            `Remove ${p.name} (${p.suffix}) from this list? Its saved Toolasha settings are deleted too. If it is a real character, it comes back with default settings the next time it loads.`,
         fetchingStatus: '⏳ Fetching...',
         updatedStatus: '✅ Updated!',
         failedStatus: '❌ Failed',

@@ -17,6 +17,10 @@ vi.mock('./storage.js', () => ({
         setJSON: vi.fn(async (key, value) => {
             storageData[key] = value;
         }),
+        delete: vi.fn(async (key) => {
+            delete storageData[key];
+            return true;
+        }),
     },
 }));
 
@@ -238,5 +242,55 @@ describe('SettingsStorage.syncSettingsToAllCharacters — task data copy', () =>
 
         expect(storageData['taskProtectedHrids_111111']).toEqual(['/monsters/a']);
         expect(storageData['taskProtectedHrids_222222']).toEqual(['/monsters/a']);
+    });
+});
+
+describe('SettingsStorage known characters', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+    });
+
+    test('removing a character drops it from the list and deletes its saved settings', async () => {
+        storageData['known_character_ids'] = [
+            { id: '111111', name: 'Alice' },
+            { id: '222222', name: 'Bob' },
+        ];
+        storageData['script_settingsMap_222222'] = { a: 1 };
+        storageData['script_settingsMap_111111'] = { b: 2 };
+        const { default: s } = await import('./settings-storage.js');
+        s.setCharacterId('111111');
+
+        expect(await s.removeKnownCharacter('222222')).toBe(true);
+
+        expect(storageData['known_character_ids']).toEqual([{ id: '111111', name: 'Alice' }]);
+        expect(storageData['script_settingsMap_222222']).toBeUndefined();
+        expect(storageData['script_settingsMap_111111']).toEqual({ b: 2 });
+    });
+
+    test('the character in play, or one that is not listed, is never removed', async () => {
+        storageData['known_character_ids'] = [{ id: '111111', name: 'Alice' }];
+        storageData['script_settingsMap_111111'] = { b: 2 };
+        const { default: s } = await import('./settings-storage.js');
+        s.setCharacterId('111111');
+
+        expect(await s.removeKnownCharacter('111111')).toBe(false);
+        expect(await s.removeKnownCharacter('999999')).toBe(false);
+        expect(storageData['known_character_ids']).toHaveLength(1);
+        expect(storageData['script_settingsMap_111111']).toEqual({ b: 2 });
+    });
+
+    test('a character that was removed re-adds itself when it loads again', async () => {
+        storageData['known_character_ids'] = [{ id: '222222', name: 'Bob' }];
+        storageData['script_settingsMap_111111'] = {};
+        const { default: s } = await import('./settings-storage.js');
+        s.setCharacterId('111111', 'Alice');
+
+        await s.loadSettings();
+
+        expect(storageData['known_character_ids']).toEqual([
+            { id: '222222', name: 'Bob' },
+            { id: '111111', name: 'Alice' },
+        ]);
     });
 });

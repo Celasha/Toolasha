@@ -745,6 +745,20 @@ class Config {
     }
 
     /**
+     * Remove a character from the known list and delete its saved settings.
+     * @param {string} characterId
+     * @returns {Promise<boolean>} Whether an entry was removed
+     */
+    async removeKnownCharacter(characterId) {
+        try {
+            return await settingsStorage.removeKnownCharacter(characterId);
+        } catch (error) {
+            console.error('[Config] Failed to remove character:', error);
+            return false;
+        }
+    }
+
+    /**
      * Get number of known characters (including current)
      * @returns {Promise<number>} Number of characters
      */

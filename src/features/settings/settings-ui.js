@@ -1402,8 +1402,32 @@ class SettingsUI {
             const nameSpan = document.createElement('span');
             nameSpan.textContent =
                 char.name !== char.id ? char.name : t('settings.characterFallbackName', { id: char.id });
+            // The end of the ID tells apart characters that share a name
+            const idSpan = document.createElement('span');
+            idSpan.style.cssText = 'color:#777;font-size:11px;';
+            idSpan.textContent = `…${char.id.slice(-4)}`;
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.textContent = '×';
+            removeBtn.title = t('settings.removeCharacterTooltip');
+            removeBtn.style.cssText =
+                'margin-left:auto;background:transparent;border:none;color:#888;font-size:16px;line-height:1;cursor:pointer;padding:0 4px;';
+            removeBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (
+                    !confirm(
+                        t('settings.removeCharacterConfirm', { name: nameSpan.textContent, suffix: idSpan.textContent })
+                    )
+                ) {
+                    return;
+                }
+                if (await this.config.removeKnownCharacter(char.id)) row.remove();
+            });
             row.appendChild(cb);
             row.appendChild(nameSpan);
+            row.appendChild(idSpan);
+            row.appendChild(removeBtn);
             dialog.appendChild(row);
             return cb;
         });
@@ -1432,7 +1456,7 @@ class SettingsUI {
         });
 
         copyBtn.addEventListener('click', async () => {
-            const selected = checkboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+            const selected = checkboxes.filter((cb) => cb.isConnected && cb.checked).map((cb) => cb.value);
             if (selected.length === 0) {
                 close();
                 return;
