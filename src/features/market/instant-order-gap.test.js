@@ -124,6 +124,13 @@ describe('InstantOrderGap', () => {
         expect(line.textContent).toContain('instantOrderGap.sell:3:12');
     });
 
+    test('the line wraps inside the dialog instead of widening it', () => {
+        const modal = open();
+        instantOrderGap.show(modal);
+        const { width, minWidth, whiteSpace } = modal.querySelector('.mwi-instant-order-gap').style;
+        expect([width, minWidth, whiteSpace]).toEqual(['0px', '100%', 'normal']);
+    });
+
     test('the buy side gets its own wording', () => {
         runtime.state.isSell = false;
         const modal = open();
