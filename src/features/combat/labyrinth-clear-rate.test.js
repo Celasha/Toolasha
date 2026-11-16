@@ -24,6 +24,10 @@ vi.mock('../../core/config.js', () => ({
     },
 }));
 
+vi.mock('../../core/storage.js', () => ({
+    default: { getJSON: vi.fn(async () => ({})), setJSON: vi.fn(async () => {}) },
+}));
+
 vi.mock('../../core/dom-observer.js', () => ({
     default: { onClass: vi.fn(() => () => {}) },
 }));
@@ -64,11 +68,19 @@ vi.mock('../../core/loadout-state.js', () => ({
     },
 }));
 
-const { LabyrinthClearRate, isClearRateDecisive, isClearRatePrecise } = await import('./labyrinth-clear-rate.js');
+const {
+    LabyrinthClearRate,
+    isClearRateDecisive,
+    isClearRatePrecise,
+    isClearTimeDecisive,
+    parseClearTime,
+    formatClearTimeInput,
+} = await import('./labyrinth-clear-rate.js');
 const dataManager = (await import('../../core/data-manager.js')).default;
 const loadoutState = (await import('../../core/loadout-state.js')).default;
 const webSocketHook = (await import('../../core/websocket.js')).default;
 const config = (await import('../../core/config.js')).default;
+const storage = (await import('../../core/storage.js')).default;
 const domObserver = (await import('../../core/dom-observer.js')).default;
 const combatAdapter = await import('../combat-sim/combat-sim-adapter.js');
 const simRunner = await import('../combat-sim/combat-sim-runner.js');
@@ -1329,7 +1341,8 @@ describe('Automation-tab badge and tile colors', () => {
 
     test('Automation-tab clear rates can be turned off without removing the room tile badges', () => {
         const feature = new LabyrinthClearRate();
-        const spy = vi.spyOn(feature, 'extractRoomHrid').mockReturnValue('/skills/milking');
+        vi.spyOn(feature, 'extractRoomHrid').mockReturnValue('/skills/milking');
+        const spy = vi.spyOn(feature, 'computeSkillingClear');
         document.body.innerHTML =
             '<div class="LabyrinthPanel_skipThreshold__x"><span>≥ 5</span></div>' +
             '<div class="LabyrinthPanel_roomCell__y"></div>';
@@ -1614,5 +1627,135 @@ describe('sim attempts for tile badges and Recommend', () => {
         rateInput.value = '';
         rateInput.dispatchEvent(new Event('change'));
         expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendTargetRate', 1);
+    });
+});
+
+describe('Recommend max time', () => {
+    test('parses m:ss and plain seconds, and treats anything else as no limit', () => {
+        expect(parseClearTime('5:00')).toBe(300);
+        expect(parseClearTime('0:45')).toBe(45);
+        expect(parseClearTime(' 90 ')).toBe(90);
+        expect(parseClearTime('')).toBe(0);
+        expect(parseClearTime('abc')).toBe(0);
+        expect(formatClearTimeInput(300)).toBe('5:00');
+        expect(formatClearTimeInput(75)).toBe('1:15');
+        expect(formatClearTimeInput(0)).toBe('');
+    });
+
+    test('a time near the limit is too close to call, one far from it is not', () => {
+        expect(isClearTimeDecisive({ expectedSeconds: 290 }, 300)).toBe(false);
+        expect(isClearTimeDecisive({ expectedSeconds: 100 }, 300)).toBe(true);
+        expect(isClearTimeDecisive({ expectedSeconds: 290 }, 0)).toBe(true);
+        expect(isClearTimeDecisive({ expectedSeconds: Infinity }, 300)).toBe(true);
+    });
+
+    test('the search stops at the highest threshold that is also inside the time limit', () => {
+        const feature = new LabyrinthClearRate();
+        feature.getEffectiveLevel = () => 100;
+        feature.computeSkillingClear = (_hrid, roomLevel) => ({ clearChance: 1, expectedSeconds: roomLevel });
+
+        feature._recommendMaxSeconds = 0;
+        expect(feature.findRecommendedThreshold('/skills/milking', 0.7)).toBe(300);
+
+        feature._recommendMaxSeconds = 120;
+        // room level = floor(100 + threshold - 1) <= 120
+        expect(feature.findRecommendedThreshold('/skills/milking', 0.7)).toBe(21);
+
+        // Even the easiest room (level 1) takes longer than this
+        feature._recommendMaxSeconds = 0.5;
+        expect(feature.findRecommendedThreshold('/skills/milking', 0.7)).toBeNull();
+    });
+
+    test('editing the Max Time box saves the setting in seconds', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.injectRecommendControls();
+        const timeInput = document.getElementById('mwi-recommend-max-time');
+
+        timeInput.value = '5:00';
+        timeInput.dispatchEvent(new Event('change'));
+        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendMaxSeconds', 300);
+        expect(timeInput.value).toBe('5:00');
+
+        timeInput.value = 'nonsense';
+        timeInput.dispatchEvent(new Event('change'));
+        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendMaxSeconds', 0);
+        expect(timeInput.value).toBe('');
+    });
+});
+
+describe('Recommend per-room offset', () => {
+    function setup() {
+        const feature = new LabyrinthClearRate();
+        const [cell] = buildAutomationTable([
+            { roomHrid: '/skills/enhancing', isSkill: true, settingKey: 'labyrinthSkipEnhancing', currentValue: 5 },
+        ]);
+        feature.recommendations.set('/skills/enhancing', { threshold: 15 });
+        return { feature, cell };
+    }
+
+    test('the offset is added to what the search found, for the badge and for Apply Skip', () => {
+        const { feature, cell } = setup();
+        feature.roomOffsets.set('/skills/enhancing', 10);
+
+        expect(feature.getEffectiveRecommendation('/skills/enhancing')).toBe(25);
+        expect(feature.getRoomsNeedingSkipUpdate()[0].recommendedThreshold).toBe(25);
+
+        feature.injectRecommendationBadges();
+        const badge = cell.querySelector('.mwi-labyrinth-recommend');
+        expect(badge.textContent).toBe('Rec: +25');
+        expect(badge.title).toContain('Searched 15, plus your offset of +10');
+    });
+
+    test('a room with no threshold found stays without one whatever its offset', () => {
+        const { feature, cell } = setup();
+        feature.recommendations.set('/skills/enhancing', { threshold: null });
+        feature.roomOffsets.set('/skills/enhancing', 10);
+
+        expect(feature.getEffectiveRecommendation('/skills/enhancing')).toBeNull();
+        expect(feature.getRoomsNeedingSkipUpdate()).toEqual([]);
+        feature.injectRecommendationBadges();
+        expect(cell.querySelector('.mwi-labyrinth-recommend').textContent).toBe('Rec: none');
+    });
+
+    test('typing an offset saves it, updates the Apply Skip count and needs no new search', () => {
+        const { feature, cell } = setup();
+        feature.getRoomOffsetsKey = () => 'labyrinthRecommendOffsets_1';
+        feature.injectRecommendControls();
+        feature.injectOffsetInputs(document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]'));
+        const input = cell.querySelector('.mwi-labyrinth-offset');
+
+        input.value = '10';
+        input.dispatchEvent(new Event('change'));
+
+        expect(feature.roomOffsets.get('/skills/enhancing')).toBe(10);
+        expect(storage.setJSON).toHaveBeenCalledWith(
+            'labyrinthRecommendOffsets_1',
+            { '/skills/enhancing': 10 },
+            'settings'
+        );
+        expect(feature.getEffectiveRecommendation('/skills/enhancing')).toBe(25);
+
+        input.value = '0';
+        input.dispatchEvent(new Event('change'));
+        expect(feature.roomOffsets.has('/skills/enhancing')).toBe(false);
+        expect(input.value).toBe('');
+    });
+
+    test('the offset box is not mistaken for a room being edited, and survives a redraw of the cell', () => {
+        const { feature, cell } = setup();
+        feature.injectOffsetInputs(document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]'));
+        expect(cell.querySelectorAll('.mwi-labyrinth-offset')).toHaveLength(1);
+
+        // Apply Skip refuses to start while a room's real threshold box is open; ours must not count
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        feature.applyNextRecommendedSkip();
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('already being edited'));
+        warn.mockRestore();
+
+        feature.injectOffsetInputs(document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]'));
+        expect(cell.querySelectorAll('.mwi-labyrinth-offset')).toHaveLength(1);
     });
 });

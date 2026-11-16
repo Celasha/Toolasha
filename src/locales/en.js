@@ -1381,6 +1381,15 @@ export default {
         applySkipSaving: 'Apply Skip (saving...)',
         applySkipButton: 'Apply Skip ({{count}})',
         targetWinPercentLabel: 'Target Win %',
+        maxTimeLabel: 'Max Time',
+        maxTimeTooltip:
+            'Only recommend thresholds whose expected clear time is at most this long (m:ss, or seconds). Blank for no limit.',
+        recommendedBadgeTooltipTime:
+            'Recommended skip threshold for ≥{{percent}}% clear rate and ≤{{time}} expected time',
+        recommendedBadgeOffsetNote: 'Searched {{base}}, plus your offset of {{offset}}',
+        recommendedNoneText: 'Rec: none',
+        recommendedNoneTooltip: 'No skip threshold reaches the target clear rate within the time limit',
+        offsetTooltip: 'Added to the recommended threshold for this room, e.g. +10 to go for harder rooms',
         simAttemptsLabel: 'Sim Attempts',
         liveClearEnhancing: ' [{{pct}}% | +{{current}}/+{{target}} | {{left}} left]',
         liveClearSkilling: ' [{{pct}}% | {{left}} left]',
@@ -3890,6 +3899,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             labyrinthRecommendTargetRate: {
                 label: 'Labyrinth: Recommend target clear rate (%)',
                 help: 'Default target clear rate for labyrinth skip threshold recommendations',
+            },
+            labyrinthRecommendMaxSeconds: {
+                label: 'Labyrinth: Recommend max expected clear time (seconds)',
+                help: 'Recommend only skip thresholds whose expected clear time is at most this long (the same time shown next to the clear rate, failed attempts included). 0 means no limit. Also editable on the Automation tab.',
             },
             labyrinthSimAttempts: {
                 label: 'Labyrinth: Sim attempts for tile clear chance and Recommend',

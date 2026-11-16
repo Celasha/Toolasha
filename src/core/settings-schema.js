@@ -1992,6 +1992,16 @@ export const settingsGroups = {
                 step: 1,
                 help: 'Default target clear rate for labyrinth skip threshold recommendations',
             },
+            labyrinthRecommendMaxSeconds: {
+                id: 'labyrinthRecommendMaxSeconds',
+                label: 'Labyrinth: Recommend max expected clear time (seconds)',
+                type: 'number',
+                default: 0,
+                min: 0,
+                max: 36000,
+                step: 1,
+                help: 'Recommend only skip thresholds whose expected clear time is at most this long (the same time shown next to the clear rate, failed attempts included). 0 means no limit. Also editable on the Automation tab.',
+            },
             labyrinthSimAttempts: {
                 id: 'labyrinthSimAttempts',
                 label: 'Labyrinth: Sim attempts for tile clear chance and Recommend',
