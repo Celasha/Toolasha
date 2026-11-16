@@ -1662,6 +1662,14 @@ class LabyrinthClearRate {
         rateInput.addEventListener('input', () => {
             rateInput.dataset.userEdited = '1';
         });
+        // Same shortcut as the attempts box: a committed edit is saved to the setting (clamped to 1-100)
+        rateInput.addEventListener('change', () => {
+            const parsed = Math.floor(Number(rateInput.value));
+            const rate = Math.min(100, Math.max(1, Number.isFinite(parsed) ? parsed : 1));
+            rateInput.value = String(rate);
+            delete rateInput.dataset.userEdited;
+            config.setSettingValue('labyrinthRecommendTargetRate', rate);
+        });
 
         const attemptsLabel = document.createElement('span');
         attemptsLabel.style.cssText = labelStyle;
@@ -1764,7 +1772,8 @@ class LabyrinthClearRate {
                 container.style.top = `${anchorTop}px`;
                 container.style.left = `${sentinelRect.left}px`;
                 container.style.width = `${sentinelRect.width}px`;
-                container.style.zIndex = '10';
+                // One above the game's sticky table header (10), which comes later in the DOM and wins a tie
+                container.style.zIndex = '11';
             } else {
                 if (container.dataset.fixed) {
                     sentinel.style.height = '0';

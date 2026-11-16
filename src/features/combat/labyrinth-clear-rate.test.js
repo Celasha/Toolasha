@@ -1593,4 +1593,26 @@ describe('sim attempts for tile badges and Recommend', () => {
         expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthSimAttempts', 50);
         expect(attemptsInput.value).toBe('50');
     });
+    test('editing the Target Win % box saves the recommend target setting, clamped to 1-100', () => {
+        const feature = buildFeature();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.injectRecommendControls();
+        const rateInput = document.getElementById('mwi-recommend-target-rate');
+
+        rateInput.value = '50';
+        rateInput.dispatchEvent(new Event('input'));
+        rateInput.dispatchEvent(new Event('change'));
+        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendTargetRate', 50);
+        expect(rateInput.dataset.userEdited).toBeUndefined();
+
+        rateInput.value = '250';
+        rateInput.dispatchEvent(new Event('change'));
+        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendTargetRate', 100);
+
+        rateInput.value = '';
+        rateInput.dispatchEvent(new Event('change'));
+        expect(config.setSettingValue).toHaveBeenLastCalledWith('labyrinthRecommendTargetRate', 1);
+    });
 });
