@@ -1172,7 +1172,11 @@ export class ActionTimeDisplay {
                     parent2.style.setProperty('width', 'auto', 'important');
                     parent2.style.setProperty('overflow', 'visible', 'important');
                 }
+
+                // With the width cap gone, the recent-loot chips would size the bars to their own length
+                this.setLootWidthLock(parent1, true);
             } else {
+                this.setLootWidthLock(actionNameElement.parentElement, false);
                 // COMPACT/MINIMAL: Remove all CSS overrides to restore game defaults
                 actionNameElement.style.removeProperty('overflow');
                 actionNameElement.style.removeProperty('text-overflow');
@@ -1585,6 +1589,26 @@ export class ActionTimeDisplay {
      * Reconnect action name observer after making our changes
      * @param {HTMLElement} actionNameElement - Action name element
      */
+    /**
+     * The game's recent-loot chips sit in a zero-height container inside the current-action block.
+     * Once that block has no width cap, a long run of chips would stretch it (and the HP/MP bars)
+     * to their single-line length and shrink the header column on the right. Zero width with a full
+     * width minimum lets the chips fill the block and wrap inside it without adding to its size.
+     * @param {Element|null} currentAction - The current-action block, parent of the action name
+     * @param {boolean} locked
+     */
+    setLootWidthLock(currentAction, locked) {
+        const lootContainer = currentAction?.querySelector?.('[class*="Header_lootContainer"]');
+        if (!lootContainer) return;
+        if (locked) {
+            lootContainer.style.setProperty('width', '0');
+            lootContainer.style.setProperty('min-width', '100%');
+        } else {
+            lootContainer.style.removeProperty('width');
+            lootContainer.style.removeProperty('min-width');
+        }
+    }
+
     reconnectActionNameObserver(actionNameElement) {
         if (!actionNameElement) {
             return;

@@ -1347,3 +1347,45 @@ describe('ActionTimeDisplay Action Bar profit row clears when the current action
         expect(instance.profitElement.innerHTML).toBe('');
     });
 });
+
+describe('ActionTimeDisplay combat header keeps the loot chips from stretching the bars', () => {
+    const COMBAT = '/actions/combat/zone';
+    let instance;
+    let lootContainer;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        document.body.innerHTML = `
+            <div class="Header_myActions__x"><div class="Header_currentAction__x">
+                <div class="Header_actionName__31-L2">Zone</div>
+                <div class="Header_lootContainer__x"><div class="Header_loot__x">2425 Coin</div></div>
+            </div></div>`;
+        lootContainer = document.querySelector('.Header_lootContainer__x');
+        dataManager.getActionDetails.mockImplementation((hrid) =>
+            hrid === COMBAT ? { name: 'Zone', type: '/action_types/combat' } : undefined
+        );
+        dataManager.getCurrentActions.mockReturnValue([{ actionHrid: COMBAT, ordinal: 0 }]);
+        instance = new ActionTimeDisplay();
+        instance.createDisplayPanel();
+    });
+
+    test('in full width mode the loot container adds nothing to the width but still fills it', () => {
+        config.getSetting.mockImplementation(() => false);
+
+        instance.updateDisplay();
+
+        expect(lootContainer.style.width).toBe('0px');
+        expect(lootContainer.style.minWidth).toBe('100%');
+    });
+
+    test('compact width mode leaves the game layout alone and undoes the lock', () => {
+        config.getSetting.mockImplementation((key) => key === 'actionBar_compactWidth');
+        lootContainer.style.width = '0';
+        lootContainer.style.minWidth = '100%';
+
+        instance.updateDisplay();
+
+        expect(lootContainer.style.width).toBe('');
+        expect(lootContainer.style.minWidth).toBe('');
+    });
+});
