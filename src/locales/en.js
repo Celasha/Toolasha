@@ -2071,6 +2071,7 @@ export default {
         savingsCraftLabel: 'Craft it yourself',
         savingsYouSaveLabel: 'You save',
         savingsYouLoseLabel: 'You lose',
+        savingsPerHourLabel: 'Savings per hour of crafting',
         savingsTimeCostTooltip: 'Includes the time cost you set, so this is not materials alone.',
     },
     abilityBookCalculator: {

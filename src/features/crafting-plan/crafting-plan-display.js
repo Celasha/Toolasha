@@ -20,7 +20,7 @@ import {
 } from './crafting-plan-tree-renderer.js';
 import { ARTISAN_MATERIAL_MODE, getArtisanMaterialMode } from '../../utils/material-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
-import { formatPercentage, formatWithSeparator } from '../../utils/formatters.js';
+import { formatKMB, formatPercentage, formatWithSeparator } from '../../utils/formatters.js';
 import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { getPricingMode as resolveMarketPricingMode } from '../../utils/market-data.js';
 import { findActionInput, attachInputListeners } from '../../utils/action-panel-helper.js';
@@ -181,13 +181,26 @@ export function calculateCraftingSavings(plan) {
 }
 
 /**
+ * The saving expressed per hour of crafting, so plans of different sizes and speeds compare.
+ * It is the same net figure as "You save": when the time cost is on, that cost is already in it.
+ * @param {number} saving - Total saving (negative for a loss)
+ * @param {number} craftSeconds - Total time of every craft step in the plan
+ * @returns {number|null} Gold per hour, null when there is no crafting time to divide by
+ */
+export function calculateSavingsPerHour(saving, craftSeconds) {
+    if (!Number.isFinite(saving) || !Number.isFinite(craftSeconds) || craftSeconds <= 0) return null;
+    return saving / (craftSeconds / 3600);
+}
+
+/**
  * Build the "Your savings" block shown at the bottom of the expanded plan.
  * @param {Object} savings - Result of calculateCraftingSavings
  * @param {number} quantity - Items the totals cover
  * @param {boolean} timeCostEnabled - Whether the craft total includes the time cost
+ * @param {number} craftSeconds - Total crafting time of the plan, for the per-hour row
  * @returns {HTMLElement}
  */
-function buildSavingsSection(savings, quantity, timeCostEnabled) {
+function buildSavingsSection(savings, quantity, timeCostEnabled, craftSeconds) {
     const container = document.createElement('div');
 
     const header = document.createElement('div');
@@ -222,6 +235,21 @@ function buildSavingsSection(savings, quantity, timeCostEnabled) {
     totalRow.style.marginTop = '4px';
     totalRow.style.paddingTop = '4px';
     container.appendChild(totalRow);
+
+    const perHour = calculateSavingsPerHour(savings.saving, craftSeconds);
+    if (perHour !== null) {
+        container.appendChild(
+            createRow(
+                t('craftingPlanDisplay.savingsPerHourLabel'),
+                `${perHour < 0 ? '-' : ''}${formatKMB(Math.abs(Math.round(perHour)))}/hr`,
+                {
+                    leftColor: 'var(--text-color-primary, #fff)',
+                    rightColor: perHour >= 0 ? '#4ade80' : '#f87171',
+                    ...(timeCostEnabled ? { title: t('craftingPlanDisplay.savingsTimeCostTooltip') } : {}),
+                }
+            )
+        );
+    }
 
     return container;
 }
@@ -679,7 +707,9 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
         const divider = document.createElement('div');
         divider.style.cssText = 'border-top: 1px solid var(--border-color, #333); margin: 6px 0;';
         content.appendChild(divider);
-        content.appendChild(buildSavingsSection(savings, requestedQuantity, timeCostEnabled));
+        content.appendChild(
+            buildSavingsSection(savings, requestedQuantity, timeCostEnabled, craftMetrics.totalCraftSeconds)
+        );
     }
 
     const costText = formatCraftingPlanSummary(plan, craftMetrics.totalCraftSeconds);

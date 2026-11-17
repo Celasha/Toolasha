@@ -293,6 +293,7 @@ export default {
         savingsCraftLabel: '自己制作',
         savingsYouSaveLabel: '节省',
         savingsYouLoseLabel: '亏损',
+        savingsPerHourLabel: '每小时制作节省',
         savingsTimeCostTooltip: '包含你设置的时间成本，因此不只是材料成本。',
     },
     missingMaterialsButton: {

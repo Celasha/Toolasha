@@ -74,6 +74,7 @@ vi.mock('../actions/production-tools-layout.js', () => ({ compactActionPanelSect
 import {
     calculateCraftingPlanMetrics,
     calculateCraftingSavings,
+    calculateSavingsPerHour,
     formatCraftingPlanSummary,
 } from './crafting-plan-display.js';
 
@@ -162,5 +163,18 @@ describe('calculateCraftingSavings', () => {
         expect(calculateCraftingSavings(craftPlan({ strategy: 'buy' }))).toBeNull();
         expect(calculateCraftingSavings(craftPlan({ buyPrice: null }))).toBeNull();
         expect(calculateCraftingSavings(craftPlan({ totalCost: Infinity }))).toBeNull();
+    });
+});
+
+describe('calculateSavingsPerHour', () => {
+    test('turns the saving and the total craft time into gold per hour', () => {
+        expect(calculateSavingsPerHour(3000, 1800)).toBe(6000);
+        expect(calculateSavingsPerHour(-500, 900)).toBe(-2000);
+    });
+
+    test('is null when there is no crafting time or the saving is not a number', () => {
+        expect(calculateSavingsPerHour(3000, 0)).toBeNull();
+        expect(calculateSavingsPerHour(3000, NaN)).toBeNull();
+        expect(calculateSavingsPerHour(Infinity, 3600)).toBeNull();
     });
 });
