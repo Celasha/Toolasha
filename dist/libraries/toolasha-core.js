@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.31.0
+ * Version: 3.32.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -706,6 +706,9 @@
             cancelButton: 'Cancel',
             copySettingsConfirmButton: 'Copy Settings',
             characterFallbackName: (p) => `Character ${p.id}`,
+            removeCharacterTooltip: 'Remove this character from the list',
+            removeCharacterConfirm: (p) =>
+                `Remove ${p.name} (${p.suffix}) from this list? Its saved Toolasha settings are deleted too. If it is a real character, it comes back with default settings the next time it loads.`,
             fetchingStatus: '⏳ Fetching...',
             updatedStatus: '✅ Updated!',
             failedStatus: '❌ Failed',
@@ -2058,6 +2061,15 @@
             applySkipSaving: 'Apply Skip (saving...)',
             applySkipButton: 'Apply Skip ({{count}})',
             targetWinPercentLabel: 'Target Win %',
+            maxTimeLabel: 'Max Time',
+            maxTimeTooltip:
+                'Only recommend thresholds whose expected clear time is at most this long (m:ss, or seconds). Blank for no limit.',
+            recommendedBadgeTooltipTime:
+                'Recommended skip threshold for ≥{{percent}}% clear rate and ≤{{time}} expected time',
+            recommendedBadgeOffsetNote: 'Searched {{base}}, plus your offset of {{offset}}',
+            recommendedNoneText: 'Rec: none',
+            recommendedNoneTooltip: 'No skip threshold reaches the target clear rate within the time limit',
+            offsetTooltip: 'Added to the recommended threshold for this room, e.g. +10 to go for harder rooms',
             simAttemptsLabel: 'Sim Attempts',
             liveClearEnhancing: ' [{{pct}}% | +{{current}}/+{{target}} | {{left}} left]',
             liveClearSkilling: ' [{{pct}}% | {{left}} left]',
@@ -4568,6 +4580,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Labyrinth: Recommend target clear rate (%)',
                     help: 'Default target clear rate for labyrinth skip threshold recommendations',
                 },
+                labyrinthRecommendMaxSeconds: {
+                    label: 'Labyrinth: Recommend max expected clear time (seconds)',
+                    help: 'Recommend only skip thresholds whose expected clear time is at most this long (the same time shown next to the clear rate, failed attempts included). 0 means no limit. Also editable on the Automation tab.',
+                },
                 labyrinthSimAttempts: {
                     label: 'Labyrinth: Sim attempts for tile clear chance and Recommend',
                     help: 'Maximum number of simulated attempts per room, used for the tile clear-chance badges and for Recommend. Attempts run in parallel and a room stops early once its clear chance is known to within about 3 points, so clear-cut rooms finish quickly. More attempts means a more stable clear chance on borderline rooms but slower results. Recommend first tries 100 attempts and only runs more on rooms close to the target. Also editable on the Automation tab.',
@@ -5965,6 +5981,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '迷宫：建议目标通关率（%）',
                     help: '迷宫跳过阈值建议所使用的默认目标通关率',
                 },
+                labyrinthRecommendMaxSeconds: {
+                    label: '迷宫：建议最长预期通关时间（秒）',
+                    help: '只建议预期通关时间不超过此值的跳过阈值（即通关率旁显示的时间，包含失败的尝试）。0 表示不限制。也可在自动化标签页中修改。',
+                },
                 labyrinthSimAttempts: {
                     label: '迷宫：格子通关率与建议使用的模拟次数',
                     help: '每个房间的最大战斗模拟次数，用于格子上的通关率徽标和“建议”。模拟会并行运行，当通关率精确到约 3 个百分点以内时该房间会提前结束，因此结果明确的房间很快完成。次数越多，临界房间的通关率越稳定，但结果越慢。“建议”会先尝试 100 次，仅对接近目标的房间运行更多次。也可在自动化标签页中修改。',
@@ -6423,6 +6443,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             cancelButton: '取消',
             copySettingsConfirmButton: '复制设置',
             characterFallbackName: (p) => `角色 ${p.id}`,
+            removeCharacterTooltip: '从列表中移除该角色',
+            removeCharacterConfirm: (p) =>
+                `要将 ${p.name}（${p.suffix}）从此列表中移除吗？其已保存的 Toolasha 设置也会被删除。若这是真实存在的角色，下次加载时会以默认设置重新出现。`,
             fetchingStatus: '⏳ 获取中…',
             updatedStatus: '✅ 已更新！',
             failedStatus: '❌ 失败',
@@ -7155,6 +7178,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             applySkipSaving: '应用跳过（保存中...）',
             applySkipButton: '应用跳过（{{count}}）',
             targetWinPercentLabel: '目标胜率 %',
+            maxTimeLabel: '最长时间',
+            maxTimeTooltip: '只建议预期通关时间不超过此值的阈值（分:秒，或秒数）。留空表示不限制。',
+            recommendedBadgeTooltipTime: '达到 ≥{{percent}}% 通关率且预期时间 ≤{{time}} 的推荐跳过阈值',
+            recommendedBadgeOffsetNote: '搜索结果 {{base}}，加上你设置的偏移 {{offset}}',
+            recommendedNoneText: '推荐：无',
+            recommendedNoneTooltip: '没有任何跳过阈值能在时间限制内达到目标通关率',
+            offsetTooltip: '加到此房间的推荐阈值上，例如 +10 表示挑战更难的房间',
             simAttemptsLabel: '模拟次数',
             liveClearEnhancing: ' [{{pct}}% | +{{current}}/+{{target}} | 剩余 {{left}}]',
             liveClearSkilling: ' [{{pct}}% | 剩余 {{left}}]',
@@ -11400,6 +11430,16 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     step: 1,
                     help: 'Default target clear rate for labyrinth skip threshold recommendations',
                 },
+                labyrinthRecommendMaxSeconds: {
+                    id: 'labyrinthRecommendMaxSeconds',
+                    label: 'Labyrinth: Recommend max expected clear time (seconds)',
+                    type: 'number',
+                    default: 0,
+                    min: 0,
+                    max: 36000,
+                    step: 1,
+                    help: 'Recommend only skip thresholds whose expected clear time is at most this long (the same time shown next to the clear rate, failed attempts included). 0 means no limit. Also editable on the Automation tab.',
+                },
                 labyrinthSimAttempts: {
                     id: 'labyrinthSimAttempts',
                     label: 'Labyrinth: Sim attempts for tile clear chance and Recommend',
@@ -12562,8 +12602,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     saved = globalTemplate;
                     await storage.setJSON(characterKey, saved, this.storageArea, true);
                 }
+            }
 
-                // Add character to known characters list
+            // Every load, not just the first: a character taken off the list by hand (the Copy Settings dialog) comes
+            // back as soon as it is played again. Writes only when the entry is missing or renamed.
+            if (this.currentCharacterId) {
                 await this.addToKnownCharacters(this.currentCharacterId, this.currentCharacterName);
             }
 
@@ -12784,6 +12827,24 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 list.push({ id: characterId, name: characterName || characterId });
                 await storage.setJSON(this.knownCharactersKey, list, this.storageArea, true);
             }
+        }
+
+        /**
+         * Take a character off the known list and delete its saved settings, for a character that no longer exists
+         * (deleted and re-created ones keep their old ID in the list). The character in play is never removed. A real
+         * character removed by mistake re-adds itself the next time it loads, with the template settings.
+         * @param {string} characterId
+         * @returns {Promise<boolean>} Whether an entry was removed
+         */
+        async removeKnownCharacter(characterId) {
+            const id = String(characterId);
+            if (id === this.currentCharacterId) return false;
+            const list = await this.getKnownCharacters();
+            const kept = list.filter((c) => c.id !== id);
+            if (kept.length === list.length) return false;
+            await storage.setJSON(this.knownCharactersKey, kept, this.storageArea, true);
+            await storage.delete(`${this.storageKey}_${id}`, this.storageArea);
+            return true;
         }
 
         /**
@@ -16626,6 +16687,20 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             } catch (error) {
                 console.error('[Config] Failed to get known characters:', error);
                 return [];
+            }
+        }
+
+        /**
+         * Remove a character from the known list and delete its saved settings.
+         * @param {string} characterId
+         * @returns {Promise<boolean>} Whether an entry was removed
+         */
+        async removeKnownCharacter(characterId) {
+            try {
+                return await settingsStorage.removeKnownCharacter(characterId);
+            } catch (error) {
+                console.error('[Config] Failed to remove character:', error);
+                return false;
             }
         }
 

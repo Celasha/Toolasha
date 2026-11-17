@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.31.0
+ * Version: 3.32.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8959,6 +8959,11 @@
     const GRID_BADGE_CLASS = 'mwi-labyrinth-grid-clear';
     const GRID_BADGE_STYLE_ID = 'mwi-labyrinth-grid-clear-style';
     const RECOMMEND_CLASS = 'mwi-labyrinth-recommend';
+    const OFFSET_INPUT_CLASS = 'mwi-labyrinth-offset';
+    // Native MWI accepts skip thresholds from -999 through 999
+    const MAX_SKIP_THRESHOLD = 999;
+    // A quick probe whose expected time is this close to the max time is too noisy to call
+    const TIME_DECISIVE_MARGIN = 0.15;
     const RECOMMEND_CONTROLS_CLASS = 'mwi-labyrinth-recommend-controls';
     const RECOMMEND_CONTROLS_SENTINEL_CLASS = 'mwi-labyrinth-recommend-controls-sentinel';
     const AUTOMATION_ROW_STYLE_ID = 'mwi-labyrinth-automation-row-style';
@@ -9033,6 +9038,9 @@
     min-width: 6.5em;
     text-align: right;
 }
+.${OFFSET_INPUT_CLASS} {
+    order: 97;
+}
 .${RECOMMEND_CLASS} {
     order: 100;
     min-width: 5.5em;
@@ -9075,6 +9083,42 @@
     }
 
     /**
+     * Whether a result is clearly inside or outside the max expected time, so running it longer
+     * cannot change which side it lands on. Always true when there is no limit.
+     * @param {{expectedSeconds?: number}} result
+     * @param {number} maxSeconds - 0 for no limit
+     * @returns {boolean}
+     */
+    function isClearTimeDecisive(result, maxSeconds) {
+        if (!(maxSeconds > 0)) return true;
+        const seconds = result?.expectedSeconds;
+        if (!(seconds >= 0)) return true;
+        if (!Number.isFinite(seconds)) return true;
+        return Math.abs(seconds - maxSeconds) > maxSeconds * TIME_DECISIVE_MARGIN;
+    }
+
+    /**
+     * Parse the Max Time box: m:ss, or plain seconds. Anything else, or blank, means no limit.
+     * @param {string} text
+     * @returns {number} Seconds, 0 for no limit
+     */
+    function parseClearTime(text) {
+        const value = String(text ?? '').trim();
+        const minutes = value.match(/^(\d+):(\d{1,2})$/);
+        if (minutes) return Number(minutes[1]) * 60 + Number(minutes[2]);
+        return /^\d+$/.test(value) ? Number(value) : 0;
+    }
+
+    /**
+     * @param {number} seconds - 0 for no limit
+     * @returns {string} m:ss, or blank for no limit
+     */
+    function formatClearTimeInput(seconds) {
+        if (!(seconds > 0)) return '';
+        return `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+    }
+
+    /**
      * Whether the clear chance is already known tightly enough (95% interval half-width within
      * PRECISION_HALF_WIDTH) that more attempts would not visibly change the badge.
      * @param {{wins?: number, attempts?: number}} result
@@ -9099,6 +9143,9 @@
             this.recommendations = new Map();
             this.recommendRunning = false;
             this._recommendTargetPct = 70;
+            this._recommendMaxSeconds = 0;
+            // roomHrid -> levels added to that room's recommended threshold
+            this.roomOffsets = new Map();
             // Non-null exactly while one Apply Skip save is awaiting its authoritative setting_updated
             // confirmation - doubles as the one-save-in-flight reentrancy guard (TLA-048).
             this._pendingSelfAppliedKey = null;
@@ -9182,6 +9229,7 @@
             this.unregisterHandlers.push(unregister);
 
             setTimeout(() => this.injectOverlays(), 500);
+            this.loadRoomOffsets();
 
             this.isInitialized = true;
         }
@@ -9236,6 +9284,7 @@
             document.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => el.remove());
             document.querySelectorAll(`.${GRID_BADGE_CLASS}`).forEach((el) => el.remove());
             document.querySelectorAll(`.${RECOMMEND_CLASS}`).forEach((el) => el.remove());
+            document.querySelectorAll(`.${OFFSET_INPUT_CLASS}`).forEach((el) => el.remove());
             document.querySelectorAll(`.${RECOMMEND_CONTROLS_CLASS}`).forEach((el) => el.remove());
             document.querySelectorAll(`.${RECOMMEND_CONTROLS_SENTINEL_CLASS}`).forEach((el) => el.remove());
             document.querySelectorAll(`.${LIVE_PROGRESS_CLASS}`).forEach((el) => el.remove());
@@ -10098,6 +10147,19 @@
         }
 
         /**
+         * Whether a room result reaches the target clear rate within the max expected time, if one is set.
+         * Both get worse as the room level rises, so the searches below can still bisect on this.
+         * @param {{clearChance: number, expectedSeconds?: number}} result
+         * @param {number} targetRate - 0..1
+         * @returns {boolean}
+         */
+        meetsRecommendTarget(result, targetRate) {
+            if (!(result.clearChance >= targetRate)) return false;
+            const maxSeconds = this._recommendMaxSeconds;
+            return !(maxSeconds > 0) || result.expectedSeconds <= maxSeconds;
+        }
+
+        /**
          * Binary search for the maximum skip threshold where clear chance >= targetRate
          */
         findRecommendedThreshold(skillHrid, targetRate) {
@@ -10117,7 +10179,7 @@
                 const result = isEnhancing
                     ? this.computeEnhancingClear(roomLevel)
                     : this.computeSkillingClear(skillHrid, roomLevel);
-                if (result.clearChance >= targetRate) {
+                if (this.meetsRecommendTarget(result, targetRate)) {
                     bestThreshold = mid;
                     low = mid + 1;
                 } else {
@@ -10144,7 +10206,7 @@
                     continue;
                 }
                 const result = await this.computeRecommendProbe(monsterHrid, roomLevel, targetRate, maxAttempts);
-                if (result.clearChance >= targetRate) {
+                if (this.meetsRecommendTarget(result, targetRate)) {
                     bestThreshold = mid;
                     low = mid + 1;
                 } else {
@@ -10161,7 +10223,12 @@
         async computeRecommendProbe(monsterHrid, roomLevel, targetRate, maxAttempts) {
             if (maxAttempts > QUICK_PROBE_ATTEMPTS) {
                 const quick = await this.computeCombatClear(monsterHrid, roomLevel, true, QUICK_PROBE_ATTEMPTS);
-                if (quick.error || isClearRateDecisive(quick, targetRate)) return quick;
+                if (
+                    quick.error ||
+                    (isClearRateDecisive(quick, targetRate) && isClearTimeDecisive(quick, this._recommendMaxSeconds))
+                ) {
+                    return quick;
+                }
             }
             return this.computeCombatClear(monsterHrid, roomLevel, true, maxAttempts);
         }
@@ -10181,6 +10248,11 @@
             this._recommendTargetPct =
                 targetPct > 0 && targetPct <= 100 ? targetPct : config.getSetting('labyrinthRecommendTargetRate') || 70;
             const targetRate = this._recommendTargetPct / 100;
+
+            const timeInput = document.getElementById('mwi-recommend-max-time');
+            this._recommendMaxSeconds = timeInput
+                ? parseClearTime(timeInput.value)
+                : Math.max(0, Math.floor(Number(config.getSetting('labyrinthRecommendMaxSeconds')) || 0));
 
             const attemptsInput = document.getElementById('mwi-recommend-sim-attempts');
             const attemptsVal = attemptsInput ? parseInt(attemptsInput.value, 10) : null;
@@ -10240,6 +10312,19 @@
         }
 
         /**
+         * The threshold to show and apply for a room: what the search found plus the room's own offset.
+         * Kept apart from the search result so changing an offset needs no new sims.
+         * @param {string} roomHrid
+         * @returns {number|null} null when there is no recommendation or the search found no threshold
+         */
+        getEffectiveRecommendation(roomHrid) {
+            const rec = this.recommendations.get(roomHrid);
+            if (!rec || rec.threshold === null) return null;
+            const offset = this.roomOffsets.get(roomHrid) || 0;
+            return Math.min(MAX_SKIP_THRESHOLD, Math.max(-MAX_SKIP_THRESHOLD, rec.threshold + offset));
+        }
+
+        /**
          * Inject recommendation badges onto visible cells
          */
         injectRecommendationBadges() {
@@ -10252,23 +10337,46 @@
                 if (!roomHrid) continue;
 
                 const rec = this.recommendations.get(roomHrid);
-                if (!rec || rec.threshold === null) continue;
-
-                const isSkill = roomHrid.startsWith('/skills/');
-                const currentThreshold = isSkill ? this.getSkipThreshold(roomHrid) : this.getCombatSkipThreshold(roomHrid);
+                if (!rec) continue;
 
                 const badge = document.createElement('span');
                 badge.className = RECOMMEND_CLASS;
                 badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; font-weight:bold;';
+
+                const recommended = this.getEffectiveRecommendation(roomHrid);
+                if (recommended === null) {
+                    badge.textContent = i18n_js.t('labyrinthClearRate.recommendedNoneText');
+                    badge.title = i18n_js.t('labyrinthClearRate.recommendedNoneTooltip');
+                    badge.style.color = '#d9534f';
+                    cell.appendChild(badge);
+                    continue;
+                }
+
+                const isSkill = roomHrid.startsWith('/skills/');
+                const currentThreshold = isSkill ? this.getSkipThreshold(roomHrid) : this.getCombatSkipThreshold(roomHrid);
+
                 badge.textContent = i18n_js.t('labyrinthClearRate.recommendedBadgeText', {
-                    value: `${rec.threshold >= 0 ? '+' : ''}${rec.threshold}`,
+                    value: `${recommended >= 0 ? '+' : ''}${recommended}`,
                 });
 
-                badge.title = i18n_js.t('labyrinthClearRate.recommendedBadgeTooltip', { percent: this._recommendTargetPct });
+                badge.title =
+                    this._recommendMaxSeconds > 0
+                        ? i18n_js.t('labyrinthClearRate.recommendedBadgeTooltipTime', {
+                              percent: this._recommendTargetPct,
+                              time: this.formatTime(this._recommendMaxSeconds),
+                          })
+                        : i18n_js.t('labyrinthClearRate.recommendedBadgeTooltip', { percent: this._recommendTargetPct });
+                const offset = this.roomOffsets.get(roomHrid) || 0;
+                if (offset !== 0) {
+                    badge.title += `\n${i18n_js.t('labyrinthClearRate.recommendedBadgeOffsetNote', {
+                    base: rec.threshold,
+                    offset: `${offset > 0 ? '+' : ''}${offset}`,
+                })}`;
+                }
 
-                if (currentThreshold <= rec.threshold) {
+                if (currentThreshold <= recommended) {
                     badge.style.color = '#00c896';
-                } else if (currentThreshold <= rec.threshold + 10) {
+                } else if (currentThreshold <= recommended + 10) {
                     badge.style.color = '#f0ad4e';
                 } else {
                     badge.style.color = '#d9534f';
@@ -10312,14 +10420,14 @@
                 const roomHrid = this.extractRoomHrid(cell);
                 if (!roomHrid) continue;
 
-                const rec = this.recommendations.get(roomHrid);
-                if (!rec || rec.threshold === null) continue;
+                const recommended = this.getEffectiveRecommendation(roomHrid);
+                if (recommended === null) continue;
 
                 const isSkill = roomHrid.startsWith('/skills/');
                 const currentThreshold = isSkill ? this.getSkipThreshold(roomHrid) : this.getCombatSkipThreshold(roomHrid);
-                if (currentThreshold === rec.threshold) continue;
+                if (currentThreshold === recommended) continue;
 
-                rooms.push({ cell, roomHrid, isSkill, recommendedThreshold: rec.threshold });
+                rooms.push({ cell, roomHrid, isSkill, recommendedThreshold: recommended });
             }
 
             return rooms;
@@ -10459,7 +10567,9 @@
                 return;
             }
 
-            const alreadyEditing = document.querySelector('[class*="LabyrinthPanel_skipThreshold"] input[type="number"]');
+            const alreadyEditing = document.querySelector(
+                `[class*="LabyrinthPanel_skipThreshold"] input[type="number"]:not(.${OFFSET_INPUT_CLASS})`
+            );
             if (alreadyEditing) {
                 console.warn(
                     '[Toolasha] Apply Skip: another room is already being edited manually; skipping to avoid discarding unsaved changes.'
@@ -10488,7 +10598,7 @@
             }
             editButton.click();
 
-            const input = cell.querySelector('input[type="number"]');
+            const input = cell.querySelector(`input[type="number"]:not(.${OFFSET_INPUT_CLASS})`);
             if (!input) {
                 console.warn('[Toolasha] Apply Skip: threshold input not found after clicking Edit', roomHrid);
                 return;
@@ -10546,6 +10656,7 @@
         injectRecommendControls() {
             const defaultRate = config.getSettingValue('labyrinthRecommendTargetRate', 70);
             const defaultAttempts = config.getSettingValue('labyrinthSimAttempts', DEFAULT_SIM_ATTEMPTS);
+            const defaultMaxSeconds = Number(config.getSettingValue('labyrinthRecommendMaxSeconds', 0)) || 0;
 
             const table = document.querySelector('[class*="LabyrinthPanel_automationTable"]');
 
@@ -10553,6 +10664,8 @@
             if (existing) {
                 const rateInput = document.getElementById('mwi-recommend-target-rate');
                 const attemptsInput = document.getElementById('mwi-recommend-sim-attempts');
+                const timeInput = document.getElementById('mwi-recommend-max-time');
+                if (timeInput && !timeInput.dataset.userEdited) timeInput.value = formatClearTimeInput(defaultMaxSeconds);
                 if (rateInput && !rateInput.dataset.userEdited) rateInput.value = defaultRate;
                 if (attemptsInput && !attemptsInput.dataset.userEdited) attemptsInput.value = defaultAttempts;
                 this._updateApplyButtonState();
@@ -10596,6 +10709,36 @@
             rateInput.style.cssText = inputStyle;
             rateInput.addEventListener('input', () => {
                 rateInput.dataset.userEdited = '1';
+            });
+            // Same shortcut as the attempts box: a committed edit is saved to the setting (clamped to 1-100)
+            rateInput.addEventListener('change', () => {
+                const parsed = Math.floor(Number(rateInput.value));
+                const rate = Math.min(100, Math.max(1, Number.isFinite(parsed) ? parsed : 1));
+                rateInput.value = String(rate);
+                delete rateInput.dataset.userEdited;
+                config.setSettingValue('labyrinthRecommendTargetRate', rate);
+            });
+
+            const timeLabel = document.createElement('span');
+            timeLabel.style.cssText = labelStyle;
+            timeLabel.textContent = i18n_js.t('labyrinthClearRate.maxTimeLabel');
+            timeLabel.title = i18n_js.t('labyrinthClearRate.maxTimeTooltip');
+
+            const timeInput = document.createElement('input');
+            timeInput.type = 'text';
+            timeInput.id = 'mwi-recommend-max-time';
+            timeInput.placeholder = 'm:ss';
+            timeInput.title = i18n_js.t('labyrinthClearRate.maxTimeTooltip');
+            timeInput.value = formatClearTimeInput(defaultMaxSeconds);
+            timeInput.style.cssText = inputStyle;
+            timeInput.addEventListener('input', () => {
+                timeInput.dataset.userEdited = '1';
+            });
+            timeInput.addEventListener('change', () => {
+                const seconds = Math.min(36000, parseClearTime(timeInput.value));
+                timeInput.value = formatClearTimeInput(seconds);
+                delete timeInput.dataset.userEdited;
+                config.setSettingValue('labyrinthRecommendMaxSeconds', seconds);
             });
 
             const attemptsLabel = document.createElement('span');
@@ -10642,6 +10785,8 @@
 
             container.appendChild(rateLabel);
             container.appendChild(rateInput);
+            container.appendChild(timeLabel);
+            container.appendChild(timeInput);
             container.appendChild(attemptsLabel);
             container.appendChild(attemptsInput);
             container.appendChild(button);
@@ -10699,7 +10844,8 @@
                     container.style.top = `${anchorTop}px`;
                     container.style.left = `${sentinelRect.left}px`;
                     container.style.width = `${sentinelRect.width}px`;
-                    container.style.zIndex = '10';
+                    // One above the game's sticky table header (10), which comes later in the DOM and wins a tie
+                    container.style.zIndex = '11';
                 } else {
                     if (container.dataset.fixed) {
                         sentinel.style.height = '0';
@@ -10960,7 +11106,85 @@
 
             this.processSimQueue();
             this.injectRecommendControls();
+            this.injectOffsetInputs(skipCells);
             this.injectRecommendationBadges();
+        }
+
+        /**
+         * @returns {string|null} Where this character's per-room offsets are saved
+         */
+        getRoomOffsetsKey() {
+            const characterId = dataManager.getCurrentCharacterId?.();
+            return characterId ? `labyrinthRecommendOffsets_${characterId}` : null;
+        }
+
+        async loadRoomOffsets() {
+            const key = this.getRoomOffsetsKey();
+            if (!key) return;
+            try {
+                const saved = await storage.getJSON(key, 'settings', {});
+                this.roomOffsets = new Map(
+                    Object.entries(saved || {}).filter(([, offset]) => Number.isInteger(offset) && offset !== 0)
+                );
+                this.injectOverlays();
+            } catch (error) {
+                console.error('[LabyrinthClearRate] Failed to load room offsets:', error);
+            }
+        }
+
+        async saveRoomOffsets() {
+            const key = this.getRoomOffsetsKey();
+            if (!key) return;
+            try {
+                await storage.setJSON(key, Object.fromEntries(this.roomOffsets), 'settings');
+            } catch (error) {
+                console.error('[LabyrinthClearRate] Failed to save room offsets:', error);
+            }
+        }
+
+        /**
+         * Put a small offset box in each room's skip threshold cell. The game redraws these cells, so a
+         * missing box is simply added again; the saved value is what the box shows.
+         * @param {NodeListOf<Element>} cells
+         */
+        injectOffsetInputs(cells) {
+            for (const cell of cells) {
+                const roomHrid = this.extractRoomHrid(cell);
+                if (!roomHrid) continue;
+                const offset = this.roomOffsets.get(roomHrid) || 0;
+
+                const existing = cell.querySelector(`.${OFFSET_INPUT_CLASS}`);
+                if (existing) {
+                    if (document.activeElement !== existing) existing.value = offset === 0 ? '' : String(offset);
+                    continue;
+                }
+
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = OFFSET_INPUT_CLASS;
+                input.min = String(-MAX_SKIP_THRESHOLD);
+                input.max = String(MAX_SKIP_THRESHOLD);
+                input.step = '1';
+                input.placeholder = '+0';
+                input.title = i18n_js.t('labyrinthClearRate.offsetTooltip');
+                input.value = offset === 0 ? '' : String(offset);
+                input.style.cssText =
+                    'width:3.4em; margin-left:6px; background:#1a1a2e; color:#e0e0e0; border:1px solid #555; border-radius:4px; padding:1px 3px; font-size:0.7rem; text-align:center;';
+                input.addEventListener('change', () => {
+                    const parsed = Math.trunc(Number(input.value));
+                    const next = Math.min(
+                        MAX_SKIP_THRESHOLD,
+                        Math.max(-MAX_SKIP_THRESHOLD, Number.isFinite(parsed) ? parsed : 0)
+                    );
+                    input.value = next === 0 ? '' : String(next);
+                    if (next === 0) this.roomOffsets.delete(roomHrid);
+                    else this.roomOffsets.set(roomHrid, next);
+                    this.saveRoomOffsets();
+                    this.injectRecommendationBadges();
+                    this._updateApplyButtonState();
+                });
+                cell.appendChild(input);
+            }
         }
 
         /**

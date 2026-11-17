@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.31.0
+ * Version: 3.32.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12889,7 +12889,9 @@ self.onmessage = function (e) {
 
             const el = document.createElement('div');
             el.className = 'mwi-instant-order-gap';
-            el.style.cssText = `text-align: center; font-size: 13px; margin: 4px 0; color: ${config.COLOR_WARNING};`;
+            // Zero width with a full-width minimum: the line fills the dialog but adds nothing to the width the
+            // dialog sizes itself by, so a long message wraps instead of widening it
+            el.style.cssText = `text-align: center; font-size: 13px; margin: 4px 0; color: ${config.COLOR_WARNING}; width: 0; min-width: 100%; box-sizing: border-box; white-space: normal; overflow-wrap: anywhere;`;
 
             const quantityInput = modal.querySelector('[class*="MarketplacePanel_quantityInputs"] input');
             const render = () => {
