@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.32.0
+ * Version: 3.32.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2751,6 +2751,7 @@
             savingsCraftLabel: 'Craft it yourself',
             savingsYouSaveLabel: 'You save',
             savingsYouLoseLabel: 'You lose',
+            savingsPerHourLabel: 'Savings per hour of crafting',
             savingsTimeCostTooltip: 'Includes the time cost you set, so this is not materials alone.',
         },
         abilityBookCalculator: {
@@ -8949,6 +8950,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             savingsCraftLabel: '自己制作',
             savingsYouSaveLabel: '节省',
             savingsYouLoseLabel: '亏损',
+            savingsPerHourLabel: '每小时制作节省',
             savingsTimeCostTooltip: '包含你设置的时间成本，因此不只是材料成本。',
         },
         missingMaterialsButton: {
