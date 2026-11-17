@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.32.1](https://github.com/Celasha/Toolasha/compare/v3.32.0...v3.32.1) (2026-11-17)
+
+### Bug Fixes
+
+- show savings per hour of crafting in the Best Crafting Plan savings block ([616d68e](https://github.com/Celasha/Toolasha/commit/616d68e8e35706b83be3175588c5d9845b2dc5ef))
+
 ## [3.32.0](https://github.com/Celasha/Toolasha/compare/v3.31.0...v3.32.0) (2026-11-16)
 
 ### Features
