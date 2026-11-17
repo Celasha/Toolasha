@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.32.0](https://github.com/Celasha/Toolasha/compare/v3.31.0...v3.32.0) (2026-11-16)
+
+### Features
+
+- add a max clear time and per-room offsets to Labyrinth Recommend ([4c98955](https://github.com/Celasha/Toolasha/commit/4c98955f6dfaf18d23b49acf7bc4cb5196401325))
+
+### Bug Fixes
+
+- let stale characters be removed from the Copy Settings dialog ([23af3cb](https://github.com/Celasha/Toolasha/commit/23af3cb960b6e96039a546c249c262679418667f))
+- save the Labyrinth Target Win % box and keep the recommend bar above the game's table header ([d23968e](https://github.com/Celasha/Toolasha/commit/d23968ee3c4d399cf1197ea9861dc122a226e80b))
+- stop the game's loot chips from stretching the combat HP/MP bars ([90a944f](https://github.com/Celasha/Toolasha/commit/90a944fa53811d0e6d676ea6960e246140f82ac2))
+- wrap the Buy Now / Sell Now gap line inside the dialog instead of widening it ([10f041d](https://github.com/Celasha/Toolasha/commit/10f041de8f36bf97365257871209792f5eecec18))
+
 ## [3.31.0](https://github.com/Celasha/Toolasha/compare/v3.30.11...v3.31.0) (2026-11-14)
 
 ### Features
