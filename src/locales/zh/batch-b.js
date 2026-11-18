@@ -677,7 +677,11 @@ export default {
         applySkipButton: '应用跳过（{{count}}）',
         targetWinPercentLabel: '目标胜率 %',
         maxTimeLabel: '最长时间',
-        maxTimeTooltip: '只建议预期通关时间不超过此值的阈值（分:秒，或秒数）。留空表示不限制。',
+        maxTimeTooltip:
+            '只建议预期通关时间不超过此值的阈值（分:秒，或秒数）。留空表示不限制。目标胜率同样适用，以两者中更严格的为准。',
+        recommendedLimitedBy_rate: '{{value}} 会低于目标通关率',
+        recommendedLimitedBy_time: '{{value}} 会超过最长时间',
+        recommendedLimitedBy_both: '{{value}} 既低于目标通关率，也超过最长时间',
         recommendedBadgeTooltipTime: '达到 ≥{{percent}}% 通关率且预期时间 ≤{{time}} 的推荐跳过阈值',
         recommendedBadgeOffsetNote: '搜索结果 {{base}}，加上你设置的偏移 {{offset}}',
         recommendedNoneText: '推荐：无',

@@ -210,6 +210,8 @@ class LabyrinthClearRate {
         this.recommendRunning = false;
         this._recommendTargetPct = 70;
         this._recommendMaxSeconds = 0;
+        // roomHrid -> which limit ('rate', 'time' or 'both') stopped the level just above its recommendation
+        this.recommendLimits = new Map();
         // roomHrid -> levels added to that room's recommended threshold
         this.roomOffsets = new Map();
         // Non-null exactly while one Apply Skip save is awaiting its authoritative setting_updated
@@ -1226,6 +1228,34 @@ class LabyrinthClearRate {
     }
 
     /**
+     * Which limit a result that missed the target fell short of.
+     * @param {{clearChance: number, expectedSeconds?: number}} result
+     * @param {number} targetRate - 0..1
+     * @returns {'rate'|'time'|'both'|null} null when it meets both
+     */
+    getMissedLimit(result, targetRate) {
+        const missesRate = !(result.clearChance >= targetRate);
+        const maxSeconds = this._recommendMaxSeconds;
+        const missesTime = maxSeconds > 0 && !(result.expectedSeconds <= maxSeconds);
+        if (missesRate && missesTime) return 'both';
+        if (missesRate) return 'rate';
+        return missesTime ? 'time' : null;
+    }
+
+    /**
+     * Remember what stopped the level above a room's recommendation, for its badge. The search has
+     * already tested that level (it is the failure that closed the range), so this costs nothing.
+     * @param {string} roomHrid
+     * @param {Map<number, string>} missedAt - Threshold level -> limit missed there
+     * @param {number|null} best - The recommended threshold
+     */
+    recordLimit(roomHrid, missedAt, best) {
+        const limit = best === null ? undefined : missedAt.get(best + 1);
+        if (limit) this.recommendLimits.set(roomHrid, limit);
+        else this.recommendLimits.delete(roomHrid);
+    }
+
+    /**
      * Binary search for the maximum skip threshold where clear chance >= targetRate
      */
     findRecommendedThreshold(skillHrid, targetRate) {
@@ -1234,6 +1264,7 @@ class LabyrinthClearRate {
         let low = -300;
         let high = 300;
         let bestThreshold = null;
+        const missedAt = new Map();
 
         while (low <= high) {
             const mid = Math.floor((low + high) / 2);
@@ -1249,9 +1280,11 @@ class LabyrinthClearRate {
                 bestThreshold = mid;
                 low = mid + 1;
             } else {
+                missedAt.set(mid, this.getMissedLimit(result, targetRate));
                 high = mid - 1;
             }
         }
+        this.recordLimit(skillHrid, missedAt, bestThreshold);
         return bestThreshold;
     }
 
@@ -1263,6 +1296,7 @@ class LabyrinthClearRate {
         let low = -300;
         let high = 300;
         let bestThreshold = null;
+        const missedAt = new Map();
 
         while (low <= high) {
             const mid = Math.floor((low + high) / 2);
@@ -1276,9 +1310,11 @@ class LabyrinthClearRate {
                 bestThreshold = mid;
                 low = mid + 1;
             } else {
+                missedAt.set(mid, this.getMissedLimit(result, targetRate));
                 high = mid - 1;
             }
         }
+        this.recordLimit(monsterHrid, missedAt, bestThreshold);
         return bestThreshold;
     }
 
@@ -1432,6 +1468,13 @@ class LabyrinthClearRate {
                           time: this.formatTime(this._recommendMaxSeconds),
                       })
                     : t('labyrinthClearRate.recommendedBadgeTooltip', { percent: this._recommendTargetPct });
+            const limit = this.recommendLimits.get(roomHrid);
+            if (limit) {
+                const next = rec.threshold + 1;
+                badge.title += `\n${t(`labyrinthClearRate.recommendedLimitedBy_${limit}`, {
+                    value: `${next >= 0 ? '+' : ''}${next}`,
+                })}`;
+            }
             const offset = this.roomOffsets.get(roomHrid) || 0;
             if (offset !== 0) {
                 badge.title += `\n${t('labyrinthClearRate.recommendedBadgeOffsetNote', {

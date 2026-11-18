@@ -1759,3 +1759,55 @@ describe('Recommend per-room offset', () => {
         expect(cell.querySelectorAll('.mwi-labyrinth-offset')).toHaveLength(1);
     });
 });
+
+describe('Recommend badge says which limit stopped the next level', () => {
+    function searchSkill({ maxSeconds, targetRate = 0.7 }) {
+        const feature = new LabyrinthClearRate();
+        feature.getEffectiveLevel = () => 100;
+        // Win rate falls and time rises with the room level
+        feature.computeSkillingClear = (_hrid, level) => ({
+            clearChance: Math.max(0, 1 - (level - 100) / 100),
+            expectedSeconds: level,
+        });
+        feature._recommendMaxSeconds = maxSeconds;
+        const threshold = feature.findRecommendedThreshold('/skills/milking', targetRate);
+        return { feature, threshold };
+    }
+
+    test('names the win rate when that is what the next level misses', () => {
+        const { feature, threshold } = searchSkill({ maxSeconds: 0 });
+        expect(threshold).toBe(31);
+        expect(feature.recommendLimits.get('/skills/milking')).toBe('rate');
+    });
+
+    test('names the time when the time limit bites first', () => {
+        const { feature, threshold } = searchSkill({ maxSeconds: 110 });
+        expect(threshold).toBe(11);
+        expect(feature.recommendLimits.get('/skills/milking')).toBe('time');
+    });
+
+    test('names the time when only the time is missed, and both when both are', () => {
+        const { feature } = searchSkill({ maxSeconds: 125 });
+        // 125 s allows up to level 125 (win rate 0.75 there), so the level above misses only the time
+        expect(feature.recommendLimits.get('/skills/milking')).toBe('time');
+        feature._recommendMaxSeconds = 130;
+        expect(feature.getMissedLimit({ clearChance: 0.1, expectedSeconds: 500 }, 0.7)).toBe('both');
+    });
+
+    test('puts the reason in the badge hover, and nothing when no level above was tested', () => {
+        const { feature } = searchSkill({ maxSeconds: 110 });
+        const [cell] = buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 11 });
+
+        feature.injectRecommendationBadges();
+        expect(cell.querySelector('.mwi-labyrinth-recommend').title).toContain(
+            '+12 would take longer than the max time'
+        );
+
+        feature.recommendLimits.clear();
+        feature.injectRecommendationBadges();
+        expect(cell.querySelector('.mwi-labyrinth-recommend').title).not.toContain('would');
+    });
+});

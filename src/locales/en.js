@@ -1383,7 +1383,10 @@ export default {
         targetWinPercentLabel: 'Target Win %',
         maxTimeLabel: 'Max Time',
         maxTimeTooltip:
-            'Only recommend thresholds whose expected clear time is at most this long (m:ss, or seconds). Blank for no limit.',
+            'Only recommend thresholds whose expected clear time is at most this long (m:ss, or seconds). Blank for no limit. The target win % also applies, and the stricter of the two decides.',
+        recommendedLimitedBy_rate: '{{value}} would fall below the target clear rate',
+        recommendedLimitedBy_time: '{{value}} would take longer than the max time',
+        recommendedLimitedBy_both: '{{value}} would miss both the target clear rate and the max time',
         recommendedBadgeTooltipTime:
             'Recommended skip threshold for ≥{{percent}}% clear rate and ≤{{time}} expected time',
         recommendedBadgeOffsetNote: 'Searched {{base}}, plus your offset of {{offset}}',
