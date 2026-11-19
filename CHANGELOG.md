@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.32.2](https://github.com/Celasha/Toolasha/compare/v3.32.1...v3.32.2) (2026-11-18)
+
+### Bug Fixes
+
+- say which limit stops Labyrinth Recommend, and that win rate and max time both apply ([024bd06](https://github.com/Celasha/Toolasha/commit/024bd0601d4302898b15fb92cee46f4227572ff7))
+
 ## [3.32.1](https://github.com/Celasha/Toolasha/compare/v3.32.0...v3.32.1) (2026-11-17)
 
 ### Bug Fixes
