@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.32.1
+ * Version: 3.32.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2063,7 +2063,10 @@
             targetWinPercentLabel: 'Target Win %',
             maxTimeLabel: 'Max Time',
             maxTimeTooltip:
-                'Only recommend thresholds whose expected clear time is at most this long (m:ss, or seconds). Blank for no limit.',
+                'Only recommend thresholds whose expected clear time is at most this long (m:ss, or seconds). Blank for no limit. The target win % also applies, and the stricter of the two decides.',
+            recommendedLimitedBy_rate: '{{value}} would fall below the target clear rate',
+            recommendedLimitedBy_time: '{{value}} would take longer than the max time',
+            recommendedLimitedBy_both: '{{value}} would miss both the target clear rate and the max time',
             recommendedBadgeTooltipTime:
                 'Recommended skip threshold for ≥{{percent}}% clear rate and ≤{{time}} expected time',
             recommendedBadgeOffsetNote: 'Searched {{base}}, plus your offset of {{offset}}',
@@ -7180,7 +7183,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             applySkipButton: '应用跳过（{{count}}）',
             targetWinPercentLabel: '目标胜率 %',
             maxTimeLabel: '最长时间',
-            maxTimeTooltip: '只建议预期通关时间不超过此值的阈值（分:秒，或秒数）。留空表示不限制。',
+            maxTimeTooltip:
+                '只建议预期通关时间不超过此值的阈值（分:秒，或秒数）。留空表示不限制。目标胜率同样适用，以两者中更严格的为准。',
+            recommendedLimitedBy_rate: '{{value}} 会低于目标通关率',
+            recommendedLimitedBy_time: '{{value}} 会超过最长时间',
+            recommendedLimitedBy_both: '{{value}} 既低于目标通关率，也超过最长时间',
             recommendedBadgeTooltipTime: '达到 ≥{{percent}}% 通关率且预期时间 ≤{{time}} 的推荐跳过阈值',
             recommendedBadgeOffsetNote: '搜索结果 {{base}}，加上你设置的偏移 {{offset}}',
             recommendedNoneText: '推荐：无',
