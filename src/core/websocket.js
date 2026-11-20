@@ -258,6 +258,7 @@ class WebSocketHook {
             messageType === 'market_item_order_books_updated' ||
             messageType === 'market_listings_updated' ||
             messageType === 'profile_shared' ||
+            messageType === 'loadout_shared' ||
             messageType === 'battle_consumable_ability_updated' ||
             messageType === 'battle_unit_fetched' ||
             messageType === 'action_type_consumable_slots_updated' ||

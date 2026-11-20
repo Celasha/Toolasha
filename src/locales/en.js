@@ -1442,6 +1442,7 @@ export default {
         partyExportMissingLabel: 'Missing (open profile)',
         partyExportUnknownMemberLabel: 'Unknown',
         noDataStatus: '✗ No Data',
+        openProfileFirstStatus: '✗ Open their Profile first',
         copiedStatus: '✓ Copied',
         failedStatus: '✗ Failed',
         abilitiesTriggersPanelTitle: (p) => `${p.playerName} - Abilities & Triggers`,

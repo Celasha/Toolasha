@@ -527,6 +527,7 @@ export default {
         partyExportMissingLabel: '缺失（请打开资料页）',
         partyExportUnknownMemberLabel: '未知',
         noDataStatus: '✗ 无数据',
+        openProfileFirstStatus: '✗ 请先打开其资料页',
         copiedStatus: '✓ 已复制',
         failedStatus: '✗ 失败',
         abilitiesTriggersPanelTitle: (p) => `${p.playerName} - 技能与触发器`,

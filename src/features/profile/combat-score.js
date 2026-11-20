@@ -16,6 +16,7 @@ import {
     applyLoadoutOverrideToMetzCharacter,
 } from '../combat/combat-sim-export-metz.js';
 import { getProfileList } from '../combat/combat-sim-export.js';
+import { constructMetzCharacterFromSharedLoadout } from '../combat/combat-shared-loadout-metz.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
 import { handleViewCardClick, handleViewCardFromSnapshot } from './character-card-button.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -44,6 +45,7 @@ class CombatScore {
         this.currentPartyExportPanel = null;
         this.isInitialized = false;
         this.profileSharedHandler = null; // Store handler reference for cleanup
+        this.loadoutSharedHandler = null;
         this.timerRegistry = createTimerRegistry();
         // Bumped on every new profile open; async continuations compare against the live value so
         // a stale profile's resolved Score can never overwrite a newer one (PSP-16).
@@ -94,7 +96,72 @@ class CombatScore {
         // Listen for profile_shared WebSocket messages
         webSocketHook.on('profile_shared', this.profileSharedHandler);
 
+        this.loadoutSharedHandler = (data) => {
+            this.handleLoadoutShared(data);
+        };
+        webSocketHook.on('loadout_shared', this.loadoutSharedHandler);
+
         this.isActive = true;
+    }
+
+    /**
+     * Handle loadout_shared WebSocket message (a party member's "View Loadout"): add a Metz export
+     * button to the loadout window the game opens for it.
+     * @param {Object} data - loadout_shared message ({loadout})
+     */
+    async handleLoadoutShared(data) {
+        const loadout = data?.loadout;
+        if (!loadout) return;
+
+        let container = null;
+        for (let i = 0; i < 20 && !container; i++) {
+            container = document.querySelector('div[class*="SharableProfile_loadoutContainer"]');
+            if (!container) await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (!container || container.parentElement?.querySelector('#mwi-loadout-metz-export-btn')) return;
+
+        const button = document.createElement('button');
+        button.id = 'mwi-loadout-metz-export-btn';
+        button.type = 'button';
+        button.textContent = t('combatScore.metzSimExportButton');
+        button.style.cssText = `display: block; margin: 8px auto 0; padding: 8px 12px; background: ${config.COLOR_ACCENT}; color: black; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.85rem;`;
+        button.addEventListener('click', () => this.handleLoadoutMetzExport(button, loadout));
+        container.insertAdjacentElement('afterend', button);
+    }
+
+    /**
+     * Copy the Metz character for a shared loadout to the clipboard
+     * @param {Element} button - The button, for visual feedback
+     * @param {Object} loadout - The loadout the window is showing
+     */
+    async handleLoadoutMetzExport(button, loadout) {
+        const originalText = button.textContent;
+        const originalBg = button.style.background;
+        let label = t('combatScore.copiedStatus');
+        let background = config.COLOR_PROFIT;
+
+        try {
+            const { character, reason } = await constructMetzCharacterFromSharedLoadout(loadout);
+            if (character) {
+                await navigator.clipboard.writeText(JSON.stringify(character));
+            } else {
+                label =
+                    reason === 'noProfile' ? t('combatScore.openProfileFirstStatus') : t('combatScore.noDataStatus');
+                background = config.COLOR_LOSS;
+            }
+        } catch (error) {
+            console.error('[Combat Score] Metz Sim loadout export failed:', error);
+            label = t('combatScore.failedStatus');
+            background = config.COLOR_LOSS;
+        }
+
+        button.textContent = label;
+        button.style.background = background;
+        const resetTimeout = setTimeout(() => {
+            button.textContent = originalText;
+            button.style.background = originalBg;
+        }, 3000);
+        this.timerRegistry.registerTimeout(resetTimeout);
     }
 
     /**
@@ -1815,6 +1882,10 @@ class CombatScore {
         if (this.profileSharedHandler) {
             webSocketHook.off('profile_shared', this.profileSharedHandler);
             this.profileSharedHandler = null;
+        }
+        if (this.loadoutSharedHandler) {
+            webSocketHook.off('loadout_shared', this.loadoutSharedHandler);
+            this.loadoutSharedHandler = null;
         }
 
         this.timerRegistry.clearAll();
