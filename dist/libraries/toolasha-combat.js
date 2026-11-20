@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.34.0
+ * Version: 3.34.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13943,6 +13943,48 @@
         return sources.find((entry) => entry?.characterID)?.characterID ?? null;
     }
 
+    /**
+     * Reshape a shared loadout into the parameters applyLoadoutOverrideToMetzCharacter takes, for copying
+     * a character with this loadout worn.
+     * @param {Object} loadout - The `loadout` object of a loadout_shared message
+     * @param {Object} [clientObj] - Client data, for ability and item details
+     * @returns {{equipment: Array<Object>, abilities: Array<Object|null>, triggerMap: Object, food: Array<Object>, drinks: Array<Object>}}
+     */
+    function buildOverrideFromSharedLoadout(loadout, clientObj) {
+        const equipment = Object.values(loadout?.wearableItemMap || {})
+            .filter((item) => item?.itemHrid && item.itemLocationHrid)
+            .map((item) => ({
+                itemLocationHrid: item.itemLocationHrid,
+                itemHrid: item.itemHrid,
+                enhancementLevel: item.enhancementLevel || 0,
+            }));
+
+        const abilities = combatSimAdapter_js.mapLoadoutAbilitiesToNativeSlots(
+            (loadout?.equippedAbilities || []).map((ability) => ({ ...ability, slot: ability.slotNumber })),
+            clientObj?.abilityDetailMap || {},
+            (ability) => ({ abilityHrid: ability.abilityHrid, level: ability.level || 1 })
+        );
+
+        const food = [];
+        const drinks = [];
+        for (const consumable of loadout?.combatConsumables || []) {
+            if (!consumable?.itemHrid) continue;
+            const isDrink = clientObj?.itemDetailMap?.[consumable.itemHrid]?.categoryHrid === DRINK_CATEGORY;
+            (isDrink ? drinks : food).push({ itemHrid: consumable.itemHrid });
+        }
+
+        return {
+            equipment,
+            abilities,
+            triggerMap: {
+                ...(loadout?.abilityCombatTriggersMap || {}),
+                ...(loadout?.consumableCombatTriggersMap || {}),
+            },
+            food,
+            drinks,
+        };
+    }
+
     // Short stable id from the loadout's contents, so viewing the same loadout again replaces its entry
     function hashContent(value) {
         const text = JSON.stringify(value);
@@ -14076,6 +14118,23 @@
     }
 
     /**
+     * @param {Object} loadout - The `loadout` object of a loadout_shared message
+     * @returns {Promise<Object|null>} The cached shared profile of the character it belongs to
+     */
+    async function findSharedLoadoutProfile(loadout) {
+        const characterId = getSharedLoadoutCharacterId(loadout);
+        const name = loadout?.sharableCharacter?.name;
+        const profileList = await getProfileList$1();
+        return (
+            profileList.find(
+                (entry) =>
+                    (characterId != null && String(entry.characterID) === String(characterId)) ||
+                    (characterId == null && name && entry.characterName === name)
+            ) || null
+        );
+    }
+
+    /**
      * Store a viewed loadout under its character. Needs the character's cached profile, since the
      * export has nothing to take their levels from otherwise.
      * @param {Object} loadout - The `loadout` object of a loadout_shared message
@@ -14087,14 +14146,7 @@
         const clientObj = getClientData();
         if (!loadout || !clientObj) return { saved: false, reason: 'noData' };
 
-        const characterId = getSharedLoadoutCharacterId(loadout);
-        const name = loadout.sharableCharacter?.name;
-        const profileList = await getProfileList$1();
-        const profile = profileList.find(
-            (entry) =>
-                (characterId != null && String(entry.characterID) === String(characterId)) ||
-                (characterId == null && name && entry.characterName === name)
-        );
+        const profile = await findSharedLoadoutProfile(loadout);
         if (!profile) return { saved: false, reason: 'noProfile' };
 
         const entry = buildSharedMetzLoadout(loadout, clientObj);
@@ -14765,7 +14817,13 @@
             return;
         }
         if (existing) {
-            if (existing.previousElementSibling !== textarea) {
+            // Anywhere after the paste box in its parent will do. Metz's own helper script also inserts its button
+            // right after the box, so insisting on being the very next sibling made the two keep moving past each
+            // other, and a move between mouse down and up drops the click.
+            const isAfterTextarea =
+                existing.parentElement === textarea.parentElement &&
+                !!(textarea.compareDocumentPosition(existing) & Node.DOCUMENT_POSITION_FOLLOWING);
+            if (!isAfterTextarea) {
                 textarea.insertAdjacentElement('afterend', existing);
             }
             return;
@@ -34469,13 +34527,19 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Handle loadout_shared WebSocket message (a party member's "View Loadout"): add a Metz export
-         * button to the loadout window the game opens for it.
+         * Handle loadout_shared WebSocket message (a party member's "View Loadout"): keep the loadout for the
+         * Metz import, and add a button that copies it to the loadout window the game opens for it.
          * @param {Object} data - loadout_shared message ({loadout})
          */
         async handleLoadoutShared(data) {
             const loadout = data?.loadout;
             if (!loadout) return;
+
+            try {
+                await saveSharedLoadoutForMetz(loadout);
+            } catch (error) {
+                console.error('[Combat Score] Failed to keep shared loadout for Metz:', error);
+            }
 
             let container = null;
             for (let i = 0; i < 20 && !container; i++) {
@@ -34494,25 +34558,28 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Keep a shared loadout for the next Metz import, where it shows in that character's loadout picker
+         * Copy the Metz character for a shared loadout to the clipboard: their cached profile with the loadout worn
          * @param {Element} button - The button, for visual feedback
          * @param {Object} loadout - The loadout the window is showing
          */
         async handleLoadoutMetzExport(button, loadout) {
             const originalText = button.textContent;
             const originalBg = button.style.background;
-            let label = i18n_js.t('combatScore.savedForMetzStatus');
+            let label = i18n_js.t('combatScore.copiedStatus');
             let background = config.COLOR_PROFIT;
 
             try {
-                const { saved, reason } = await saveSharedLoadoutForMetz(loadout);
-                if (!saved) {
-                    label =
-                        reason === 'noProfile'
-                            ? i18n_js.t('combatScore.openProfileFirstStatus')
-                            : reason === 'noStorage'
-                              ? i18n_js.t('combatScore.failedStatus')
-                              : i18n_js.t('combatScore.noDataStatus');
+                const profile = await findSharedLoadoutProfile(loadout);
+                const base = profile ? await constructMetzCharacterExport(profile.characterID) : null;
+                const clientObj = getClientData();
+                if (base && clientObj) {
+                    const character = applyLoadoutOverrideToMetzCharacter(
+                        base,
+                        buildOverrideFromSharedLoadout(loadout, clientObj)
+                    );
+                    await navigator.clipboard.writeText(JSON.stringify(character));
+                } else {
+                    label = profile ? i18n_js.t('combatScore.noDataStatus') : i18n_js.t('combatScore.openProfileFirstStatus');
                     background = config.COLOR_LOSS;
                 }
             } catch (error) {

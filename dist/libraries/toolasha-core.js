@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.34.0
+ * Version: 3.34.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2123,7 +2123,6 @@
             partyExportUnknownMemberLabel: 'Unknown',
             noDataStatus: '✗ No Data',
             openProfileFirstStatus: '✗ Open their Profile first',
-            savedForMetzStatus: '✓ Saved for Metz',
             copiedStatus: '✓ Copied',
             failedStatus: '✗ Failed',
             abilitiesTriggersPanelTitle: (p) => `${p.playerName} - Abilities & Triggers`,
@@ -7049,7 +7048,6 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             partyExportUnknownMemberLabel: '未知',
             noDataStatus: '✗ 无数据',
             openProfileFirstStatus: '✗ 请先打开其资料页',
-            savedForMetzStatus: '✓ 已保存至 Metz',
             copiedStatus: '✓ 已复制',
             failedStatus: '✗ 失败',
             abilitiesTriggersPanelTitle: (p) => `${p.playerName} - 技能与触发器`,
