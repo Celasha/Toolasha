@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.34.1](https://github.com/Celasha/Toolasha/compare/v3.34.0...v3.34.1) (2026-11-20)
+
+### Bug Fixes
+
+- save a partymate's viewed loadout for the Metz import when it loads ([70abfce](https://github.com/Celasha/Toolasha/commit/70abfce4fea6e69860fddf926441c4400571ec14))
+- stop the Metz import buttons from moving past another script's button ([455c2a4](https://github.com/Celasha/Toolasha/commit/455c2a46032a8e7e3f34b1dfeaf0697d5bdf4255))
+
 ## [3.34.0](https://github.com/Celasha/Toolasha/compare/v3.33.0...v3.34.0) (2026-11-20)
 
 ### Features
