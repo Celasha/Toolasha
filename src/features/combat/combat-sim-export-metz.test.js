@@ -28,6 +28,7 @@ vi.mock('./combat-sim-loadouts-metz.js', () => ({
 
 vi.mock('./combat-shared-loadout-metz.js', () => ({
     getSharedMetzLoadouts: vi.fn(() => mocks.sharedLoadouts),
+    withOwnGroupLoadout: vi.fn((saved) => saved),
 }));
 
 vi.mock('./combat-sim-export.js', () => ({

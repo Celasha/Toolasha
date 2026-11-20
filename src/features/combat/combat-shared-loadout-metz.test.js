@@ -27,6 +27,9 @@ vi.mock('./combat-sim-export.js', () => ({
 const { buildSharedMetzLoadout, getSharedLoadoutCharacterId, saveSharedLoadoutForMetz, getStoredSharedLoadouts } =
     await import('./combat-shared-loadout-metz.js');
 const {
+    getPartyLoadoutId,
+    isOwnSharedLoadout,
+    withOwnGroupLoadout,
     buildOverrideFromSharedLoadout,
     findSharedLoadoutProfile,
     getSharedMetzLoadouts,
@@ -231,5 +234,156 @@ describe('stored shared loadouts', () => {
             [99, false, 0],
         ]);
         expect(details.members[0].loadouts[0].summary).toContain('Staff');
+    });
+});
+
+describe('group combat loadout', () => {
+    let gm;
+    const party = (selfSlotId, teammateSlotId) => ({
+        character: { id: 28656, name: 'Tester' },
+        partyInfo: {
+            partySlotMap: {
+                1: { characterID: 28656, characterLoadoutID: selfSlotId },
+                2: { characterID: 99, characterLoadoutID: teammateSlotId },
+            },
+        },
+    });
+    const savedLoadout = (id, enhancementLevel, location = '/item_locations/inventory') => ({
+        id,
+        name: `Saved ${id}`,
+        equipment: [{ itemLocationHrid: location, itemHrid: '/items/enchanted_cloak_refined', enhancementLevel }],
+        abilities: [],
+        food: [],
+        drinks: [],
+        triggerMap: {},
+    });
+    const viewed = (enhancementLevel) => ({
+        ...loadout,
+        wearableItemMap: {
+            '/item_locations/back': { ...loadout.wearableItemMap['/item_locations/back'], enhancementLevel },
+        },
+        equippedAbilities: [],
+        combatConsumables: [],
+        abilityCombatTriggersMap: {},
+        consumableCombatTriggersMap: {},
+    });
+
+    beforeEach(() => {
+        gm = {};
+        globalThis.GM_getValue = vi.fn((key, fallback) => gm[key] ?? fallback);
+        globalThis.GM_setValue = vi.fn((key, value) => {
+            gm[key] = value;
+        });
+        mocks.profiles = [{ characterID: 99, characterName: 'Mate', timestamp: Date.now() }];
+        mocks.character = party(500, 600);
+    });
+
+    test('reads the loadout id a party slot names', () => {
+        expect(getPartyLoadoutId(mocks.character, 28656)).toBe(500);
+        expect(getPartyLoadoutId(mocks.character, 99)).toBe(600);
+        expect(getPartyLoadoutId({ partyInfo: null }, 99)).toBeNull();
+    });
+
+    test('exports the newest viewing as the group loadout and the older ones unmarked', async () => {
+        const mate = (level) => ({
+            ...viewed(level),
+            wearableItemMap: {
+                '/item_locations/back': {
+                    characterID: 99,
+                    itemLocationHrid: '/item_locations/back',
+                    itemHrid: '/items/enchanted_cloak_refined',
+                    enhancementLevel: level,
+                },
+            },
+        });
+        await saveSharedLoadoutForMetz(mate(5));
+        await saveSharedLoadoutForMetz(mate(7));
+
+        const [group, older] = getSharedMetzLoadouts(99);
+        expect(group).toMatchObject({ id: 'group-combat', groupCombat: true });
+        expect(group.equipment[0].enhancementLevel).toBe(7);
+        expect(older).not.toHaveProperty('groupCombat');
+        expect(older.id).not.toBe('group-combat');
+        expect(group).not.toHaveProperty('slotLoadoutId');
+        expect(group).not.toHaveProperty('viewedAt');
+    });
+
+    test('keeps the loadout id their slot named at the viewing, and says when it has changed since', async () => {
+        const mate = {
+            ...viewed(5),
+            wearableItemMap: {
+                b: {
+                    characterID: 99,
+                    itemLocationHrid: '/item_locations/back',
+                    itemHrid: '/items/staff',
+                    enhancementLevel: 5,
+                },
+            },
+        };
+        await saveSharedLoadoutForMetz(mate);
+        expect(getStoredSharedLoadouts(99)[0].slotLoadoutId).toBe(600);
+
+        expect((await describeMetzImport()).members[0].loadouts[0].changed).toBe(false);
+        mocks.character = party(500, 601);
+        expect((await describeMetzImport()).members[0].loadouts[0]).toMatchObject({ changed: true, isGroup: true });
+    });
+
+    test('makes no claim of change when either id is unknown', async () => {
+        mocks.character = party(500, null);
+        await saveSharedLoadoutForMetz({
+            ...viewed(5),
+            wearableItemMap: {
+                b: { characterID: 99, itemLocationHrid: '/item_locations/back', itemHrid: '/items/staff' },
+            },
+        });
+        mocks.character = party(500, 601);
+        expect((await describeMetzImport()).members[0].loadouts[0].changed).toBe(false);
+    });
+
+    test('marks your own saved loadout the party slot names', () => {
+        const saved = [savedLoadout('400', 1), savedLoadout('500', 2)];
+        const result = withOwnGroupLoadout(saved, mocks.character);
+        expect(result.map((l) => [l.id, !!l.groupCombat])).toEqual([
+            ['400', false],
+            ['500', true],
+        ]);
+    });
+
+    test('falls back to your own viewing matched by content, ignoring where the item sat', async () => {
+        mocks.character = party(null, 600);
+        await saveSharedLoadoutForMetz(viewed(20));
+        const result = withOwnGroupLoadout([savedLoadout('400', 1), savedLoadout('401', 20)], mocks.character);
+        expect(result.map((l) => [l.id, !!l.groupCombat])).toEqual([
+            ['400', false],
+            ['401', true],
+        ]);
+    });
+
+    test('adds your own viewing when it matches no saved loadout', async () => {
+        mocks.character = party(null, 600);
+        await saveSharedLoadoutForMetz(viewed(20));
+        const result = withOwnGroupLoadout([savedLoadout('400', 1)], mocks.character);
+        expect(result).toHaveLength(2);
+        expect(result[1]).toMatchObject({ id: 'group-combat', groupCombat: true });
+    });
+
+    test('does not use your own viewing once the slot names a different loadout than at the viewing', async () => {
+        mocks.character = party(500, 600);
+        await saveSharedLoadoutForMetz(viewed(20));
+        mocks.character = party(501, 600);
+        const result = withOwnGroupLoadout([savedLoadout('400', 1)], mocks.character);
+        expect(result).toEqual([expect.not.objectContaining({ groupCombat: true })]);
+    });
+
+    test('saves your own viewing without a cached profile', async () => {
+        mocks.profiles = [];
+        expect(isOwnSharedLoadout(loadout)).toBe(true);
+        expect(await saveSharedLoadoutForMetz(loadout)).toEqual({ saved: true, reason: null });
+        expect(getStoredSharedLoadouts(28656)).toHaveLength(1);
+    });
+
+    test('describes which of your loadouts is the group one', async () => {
+        const details = await describeMetzImport();
+        expect(details.self.groupLoadoutName).toBeNull();
     });
 });

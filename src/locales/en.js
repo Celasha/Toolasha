@@ -2390,10 +2390,14 @@ export default {
         savedLoadouts: (p) => `${p.count} saved loadout${p.count === 1 ? '' : 's'}`,
         equippedProfile: (p) => `Equipped gear, profile viewed ${p.age} ago`,
         noProfile: 'Skipped: open their Profile first',
-        noSharedLoadouts: 'No viewed loadouts',
+        noSharedLoadouts: 'No group loadout yet: open their View Loadout',
+        changedSince: 'They have changed their group loadout since: open their View Loadout again',
+        groupTag: 'Group loadout',
+        ownGroupLoadout: (p) => `Group loadout: ${p.name}`,
+        ownGroupLoadoutUnknown: 'Group loadout: not known yet (open your own View Loadout)',
         viewedAgo: (p) => `viewed ${p.age} ago`,
         clear: 'Clear',
-        hint: "Viewed loadouts appear in each teammate's Loadout picker in Metz. Their equipped gear stays the default.",
+        hint: 'View Loadout shows the loadout a teammate has selected for group combat. Metz imports the one you last viewed as their build; their equipped gear from the profile stays in the picker as Profile Loadout.',
     },
     combatSimIntegrationMetz: {
         noCharacterDataAlert:

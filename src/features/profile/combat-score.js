@@ -18,6 +18,7 @@ import {
 import {
     buildOverrideFromSharedLoadout,
     findSharedLoadoutProfile,
+    isOwnSharedLoadout,
     saveSharedLoadoutForMetz,
 } from '../combat/combat-shared-loadout-metz.js';
 import { getClientData, getProfileList } from '../combat/combat-sim-export.js';
@@ -151,8 +152,14 @@ class CombatScore {
         let background = config.COLOR_PROFIT;
 
         try {
-            const profile = await findSharedLoadoutProfile(loadout);
-            const base = profile ? await constructMetzCharacterExport(profile.characterID) : null;
+            // Your own loadout needs no cached profile: the export takes your levels from your own data
+            const own = isOwnSharedLoadout(loadout);
+            const profile = own ? null : await findSharedLoadoutProfile(loadout);
+            const base = own
+                ? await constructMetzCharacterExport(null)
+                : profile
+                  ? await constructMetzCharacterExport(profile.characterID)
+                  : null;
             const clientObj = getClientData();
             if (base && clientObj) {
                 const character = applyLoadoutOverrideToMetzCharacter(
@@ -161,7 +168,7 @@ class CombatScore {
                 );
                 await navigator.clipboard.writeText(JSON.stringify(character));
             } else {
-                label = profile ? t('combatScore.noDataStatus') : t('combatScore.openProfileFirstStatus');
+                label = own || profile ? t('combatScore.noDataStatus') : t('combatScore.openProfileFirstStatus');
                 background = config.COLOR_LOSS;
             }
         } catch (error) {

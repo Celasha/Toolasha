@@ -40,7 +40,7 @@ import {
     constructPartyPlayer,
 } from './combat-sim-export.js';
 import { getMetzLoadouts } from './combat-sim-loadouts-metz.js';
-import { getSharedMetzLoadouts } from './combat-shared-loadout-metz.js';
+import { getSharedMetzLoadouts, withOwnGroupLoadout } from './combat-shared-loadout-metz.js';
 
 const ENHANCING_TOOL_LOCATION = '/item_locations/enhancing_tool';
 const ALCHEMY_TOOL_LOCATION = '/item_locations/alchemy_tool';
@@ -328,8 +328,10 @@ function toMetzCharacter(name, shykaiPlayer, extra = {}) {
 }
 
 /**
- * Attach the loadouts viewed in this character's "View Loadout" window, for Metz's loadout picker. Their
- * equipped gear stays the default build; a shared profile never carries their saved loadouts itself.
+ * Attach the loadouts viewed in this character's "View Loadout" window. The newest is their group combat
+ * loadout, which Metz puts on the player at import; `player.equipment` and the rest of the character stay
+ * the profile's equipped set, which Metz keeps in the picker as "Profile Loadout". A shared profile never
+ * carries their saved loadouts itself.
  * @param {Object} character - A teammate's Metz character
  * @param {string|number} characterId
  * @returns {Object} The character, with `loadouts` when any were viewed
@@ -368,7 +370,8 @@ function buildSelfMetzCharacter(characterObj, clientObj) {
     });
 
     // Saved combat loadouts, for Metz's loadout picker. Your own only; a teammate's come from the loadouts viewed in their window.
-    const loadouts = getMetzLoadouts(characterObj.character?.id);
+    // The one selected for group combat carries Metz's groupCombat mark.
+    const loadouts = withOwnGroupLoadout(getMetzLoadouts(characterObj.character?.id), characterObj);
     if (loadouts.length) {
         character.loadouts = loadouts;
     }

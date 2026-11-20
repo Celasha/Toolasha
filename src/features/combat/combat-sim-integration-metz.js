@@ -202,6 +202,13 @@ async function renderDetails(panel) {
             `${self.name || t('sharedLoadoutsMetz.yourCharacter')}: ${t('sharedLoadoutsMetz.savedLoadouts', { count: self.loadoutCount })}`,
             'font-weight: bold;'
         );
+        addLine(
+            panel,
+            self.groupLoadoutName
+                ? t('sharedLoadoutsMetz.ownGroupLoadout', { name: self.groupLoadoutName })
+                : t('sharedLoadoutsMetz.ownGroupLoadoutUnknown'),
+            'opacity: 0.8;'
+        );
 
         for (const member of members) {
             const block = document.createElement('div');
@@ -227,10 +234,13 @@ async function renderDetails(panel) {
             for (const loadout of member.loadouts) {
                 addLine(
                     block,
-                    `${loadout.name} (${t('sharedLoadoutsMetz.viewedAgo', { age: formatRelativeTime(Date.now() - loadout.viewedAt) })})`,
-                    'margin-left: 10px;'
+                    `${loadout.isGroup ? `${t('sharedLoadoutsMetz.groupTag')} · ` : ''}${loadout.name} (${t('sharedLoadoutsMetz.viewedAgo', { age: formatRelativeTime(Date.now() - loadout.viewedAt) })})`,
+                    `margin-left: 10px;${loadout.isGroup ? ' font-weight: bold;' : ''}`
                 );
                 if (loadout.summary) addLine(block, loadout.summary, 'margin-left: 10px; opacity: 0.7;');
+                if (loadout.changed) {
+                    addLine(block, t('sharedLoadoutsMetz.changedSince'), 'margin-left: 10px; color: #e0a030;');
+                }
             }
 
             if (member.loadouts.length) {
