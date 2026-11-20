@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.33.0
+ * Version: 3.34.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2123,6 +2123,7 @@
             partyExportUnknownMemberLabel: 'Unknown',
             noDataStatus: '✗ No Data',
             openProfileFirstStatus: '✗ Open their Profile first',
+            savedForMetzStatus: '✓ Saved for Metz',
             copiedStatus: '✓ Copied',
             failedStatus: '✗ Failed',
             abilitiesTriggersPanelTitle: (p) => `${p.playerName} - Abilities & Triggers`,
@@ -3061,6 +3062,19 @@
             zoneProgressHeader: 'Zone Task Progress',
             zoneProgressRowValue: (p) =>
                 `~${p.fights} fights${p.percentSuffix} | ${p.time} (bottleneck: ${p.bottleneckName})`,
+        },
+        sharedLoadoutsMetz: {
+            loadoutName: (p) => `Shared loadout · ${p.when}`,
+            detailsButton: 'See Import Details',
+            hideDetailsButton: 'Hide Import Details',
+            yourCharacter: 'Your character',
+            savedLoadouts: (p) => `${p.count} saved loadout${p.count === 1 ? '' : 's'}`,
+            equippedProfile: (p) => `Equipped gear, profile viewed ${p.age} ago`,
+            noProfile: 'Skipped: open their Profile first',
+            noSharedLoadouts: 'No viewed loadouts',
+            viewedAgo: (p) => `viewed ${p.age} ago`,
+            clear: 'Clear',
+            hint: "Viewed loadouts appear in each teammate's Loadout picker in Metz. Their equipped gear stays the default.",
         },
         combatSimIntegrationMetz: {
             noCharacterDataAlert:
@@ -7035,6 +7049,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             partyExportUnknownMemberLabel: '未知',
             noDataStatus: '✗ 无数据',
             openProfileFirstStatus: '✗ 请先打开其资料页',
+            savedForMetzStatus: '✓ 已保存至 Metz',
             copiedStatus: '✓ 已复制',
             failedStatus: '✗ 失败',
             abilitiesTriggersPanelTitle: (p) => `${p.playerName} - 技能与触发器`,
@@ -7070,6 +7085,19 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             totalExp: (p) => `总经验：${p.value}`,
             totalExpPerHour: (p) => `总经验/时：${p.value}`,
             totalRevenue: (p) => `总收益：${p.ask} / ${p.bid}`,
+        },
+        sharedLoadoutsMetz: {
+            loadoutName: (p) => `已查看的配装 · ${p.when}`,
+            detailsButton: '查看导入详情',
+            hideDetailsButton: '隐藏导入详情',
+            yourCharacter: '你的角色',
+            savedLoadouts: (p) => `${p.count} 个已保存配装`,
+            equippedProfile: (p) => `当前装备，资料页于 ${p.age} 前查看`,
+            noProfile: '已跳过：请先打开其资料页',
+            noSharedLoadouts: '无已查看的配装',
+            viewedAgo: (p) => `${p.age} 前查看`,
+            clear: '清除',
+            hint: '已查看的配装会出现在 Metz 中该队友的配装选择器里，其当前装备仍为默认。',
         },
         combatSimIntegrationMetz: {
             noCharacterDataAlert: '未找到角色数据。请：\n1. 刷新游戏页面\n2. 等待页面完全加载\n3. 重新尝试',
