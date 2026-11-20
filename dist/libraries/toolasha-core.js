@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.34.1
+ * Version: 3.35.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3070,10 +3070,14 @@
             savedLoadouts: (p) => `${p.count} saved loadout${p.count === 1 ? '' : 's'}`,
             equippedProfile: (p) => `Equipped gear, profile viewed ${p.age} ago`,
             noProfile: 'Skipped: open their Profile first',
-            noSharedLoadouts: 'No viewed loadouts',
+            noSharedLoadouts: 'No group loadout yet: open their View Loadout',
+            changedSince: 'They have changed their group loadout since: open their View Loadout again',
+            groupTag: 'Group loadout',
+            ownGroupLoadout: (p) => `Group loadout: ${p.name}`,
+            ownGroupLoadoutUnknown: 'Group loadout: not known yet (open your own View Loadout)',
             viewedAgo: (p) => `viewed ${p.age} ago`,
             clear: 'Clear',
-            hint: "Viewed loadouts appear in each teammate's Loadout picker in Metz. Their equipped gear stays the default.",
+            hint: 'View Loadout shows the loadout a teammate has selected for group combat. Metz imports the one you last viewed as their build; their equipped gear from the profile stays in the picker as Profile Loadout.',
         },
         combatSimIntegrationMetz: {
             noCharacterDataAlert:
@@ -7092,10 +7096,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             savedLoadouts: (p) => `${p.count} 个已保存配装`,
             equippedProfile: (p) => `当前装备，资料页于 ${p.age} 前查看`,
             noProfile: '已跳过：请先打开其资料页',
-            noSharedLoadouts: '无已查看的配装',
+            noSharedLoadouts: '尚无组队配装：请打开其“查看配装”',
+            changedSince: '对方此后已更换组队配装：请重新打开其“查看配装”',
+            groupTag: '组队配装',
+            ownGroupLoadout: (p) => `组队配装：${p.name}`,
+            ownGroupLoadoutUnknown: '组队配装：暂未知（请打开你自己的“查看配装”）',
             viewedAgo: (p) => `${p.age} 前查看`,
             clear: '清除',
-            hint: '已查看的配装会出现在 Metz 中该队友的配装选择器里，其当前装备仍为默认。',
+            hint: '“查看配装”显示的是队友为组队战斗选定的配装。Metz 会把你最近查看的那一套作为其默认配置导入；其资料页中的当前装备仍可在配装选择器中以“资料页配装”选用。',
         },
         combatSimIntegrationMetz: {
             noCharacterDataAlert: '未找到角色数据。请：\n1. 刷新游戏页面\n2. 等待页面完全加载\n3. 重新尝试',
