@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.33.0](https://github.com/Celasha/Toolasha/compare/v3.32.2...v3.33.0) (2026-11-20)
+
+
+### Features
+
+* add Metz export to a party member's View Loadout window ([7dd61b9](https://github.com/Celasha/Toolasha/commit/7dd61b96e9972cd42bda512ea50e06b922ee8367))
+
 ## [3.32.2](https://github.com/Celasha/Toolasha/compare/v3.32.1...v3.32.2) (2026-11-18)
 
 ### Bug Fixes
