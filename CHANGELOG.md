@@ -2,10 +2,9 @@
 
 ## [3.34.0](https://github.com/Celasha/Toolasha/compare/v3.33.0...v3.34.0) (2026-11-20)
 
-
 ### Features
 
-* keep loadouts viewed in a partymate's window for the Metz import ([bd5d616](https://github.com/Celasha/Toolasha/commit/bd5d61665f47998e8b108c6025caa8b1118018db))
+- keep loadouts viewed in a partymate's window for the Metz import ([bd5d616](https://github.com/Celasha/Toolasha/commit/bd5d61665f47998e8b108c6025caa8b1118018db))
 
 ## [3.33.0](https://github.com/Celasha/Toolasha/compare/v3.32.2...v3.33.0) (2026-11-20)
 
