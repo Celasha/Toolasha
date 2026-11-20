@@ -1443,6 +1443,7 @@ export default {
         partyExportUnknownMemberLabel: 'Unknown',
         noDataStatus: '✗ No Data',
         openProfileFirstStatus: '✗ Open their Profile first',
+        savedForMetzStatus: '✓ Saved for Metz',
         copiedStatus: '✓ Copied',
         failedStatus: '✗ Failed',
         abilitiesTriggersPanelTitle: (p) => `${p.playerName} - Abilities & Triggers`,
@@ -2381,6 +2382,19 @@ export default {
         zoneProgressHeader: 'Zone Task Progress',
         zoneProgressRowValue: (p) =>
             `~${p.fights} fights${p.percentSuffix} | ${p.time} (bottleneck: ${p.bottleneckName})`,
+    },
+    sharedLoadoutsMetz: {
+        loadoutName: (p) => `Shared loadout · ${p.when}`,
+        detailsButton: 'See Import Details',
+        hideDetailsButton: 'Hide Import Details',
+        yourCharacter: 'Your character',
+        savedLoadouts: (p) => `${p.count} saved loadout${p.count === 1 ? '' : 's'}`,
+        equippedProfile: (p) => `Equipped gear, profile viewed ${p.age} ago`,
+        noProfile: 'Skipped: open their Profile first',
+        noSharedLoadouts: 'No viewed loadouts',
+        viewedAgo: (p) => `viewed ${p.age} ago`,
+        clear: 'Clear',
+        hint: "Viewed loadouts appear in each teammate's Loadout picker in Metz. Their equipped gear stays the default.",
     },
     combatSimIntegrationMetz: {
         noCharacterDataAlert:

@@ -12,10 +12,13 @@
 import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import { constructMetzTeamExport } from './combat-sim-export-metz.js';
+import { clearSharedLoadouts, describeMetzImport } from './combat-shared-loadout-metz.js';
+import { formatRelativeTime } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 const timerRegistry = createTimerRegistry();
 const BUTTON_ID = 'toolasha-metz-import-button';
+const CONTAINER_ID = 'toolasha-metz-import-container';
 const DEFAULT_LABEL = 'Import from Toolasha';
 
 let mutationObserver = null;
@@ -56,10 +59,7 @@ export function disable() {
         mountTimeout = null;
     }
 
-    const button = document.getElementById(BUTTON_ID);
-    if (button) {
-        button.remove();
-    }
+    document.getElementById(CONTAINER_ID)?.remove();
 }
 
 function scheduleMount() {
@@ -96,7 +96,7 @@ function findImportTextarea() {
  */
 function mount() {
     const textarea = findImportTextarea();
-    const existing = document.getElementById(BUTTON_ID);
+    const existing = document.getElementById(CONTAINER_ID);
 
     if (!textarea) {
         if (existing) {
@@ -117,6 +117,9 @@ function mount() {
  * @param {HTMLTextAreaElement} textarea
  */
 function injectImportButton(textarea) {
+    const container = document.createElement('div');
+    container.id = CONTAINER_ID;
+
     const button = document.createElement('button');
     button.id = BUTTON_ID;
     button.type = 'button';
@@ -142,7 +145,107 @@ function injectImportButton(textarea) {
         importIntoMetz(button);
     });
 
-    textarea.insertAdjacentElement('afterend', button);
+    const detailsButton = document.createElement('button');
+    detailsButton.type = 'button';
+    detailsButton.textContent = t('sharedLoadoutsMetz.detailsButton');
+    detailsButton.style.cssText =
+        'background: transparent; color: inherit; padding: 4px 12px; border: 1px solid currentColor; border-radius: 4px; cursor: pointer; font-size: 0.85em; margin: 0 0 8px 0; display: block; opacity: 0.8;';
+
+    const panel = document.createElement('div');
+    panel.style.cssText = 'display: none; margin: 0 0 8px 0; font-size: 0.85em; line-height: 1.5;';
+
+    detailsButton.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const opening = panel.style.display === 'none';
+        panel.style.display = opening ? 'block' : 'none';
+        detailsButton.textContent = t(
+            opening ? 'sharedLoadoutsMetz.hideDetailsButton' : 'sharedLoadoutsMetz.detailsButton'
+        );
+        if (opening) await renderDetails(panel);
+    });
+
+    container.append(button, detailsButton, panel);
+    textarea.insertAdjacentElement('afterend', container);
+}
+
+/**
+ * Fill the details panel with what the next import will contain: where each character's gear comes from
+ * and which viewed loadouts will be in their picker.
+ * @param {HTMLElement} panel
+ */
+async function renderDetails(panel) {
+    panel.replaceChildren();
+    const addLine = (parent, text, style = '') => {
+        const line = document.createElement('div');
+        line.textContent = text;
+        line.style.cssText = style;
+        parent.appendChild(line);
+        return line;
+    };
+
+    try {
+        const details = await describeMetzImport();
+        if (!details) {
+            addLine(panel, t('combatSimIntegrationMetz.noCharacterDataAlert'));
+            return;
+        }
+
+        const { self, members } = details;
+        addLine(
+            panel,
+            `${self.name || t('sharedLoadoutsMetz.yourCharacter')}: ${t('sharedLoadoutsMetz.savedLoadouts', { count: self.loadoutCount })}`,
+            'font-weight: bold;'
+        );
+
+        for (const member of members) {
+            const block = document.createElement('div');
+            block.style.cssText = 'margin-top: 6px;';
+            const header = addLine(
+                block,
+                member.name || t('combatScore.partyExportUnknownMemberLabel'),
+                'font-weight: bold;'
+            );
+            addLine(
+                block,
+                member.hasProfile
+                    ? t('sharedLoadoutsMetz.equippedProfile', {
+                          age: formatRelativeTime(Date.now() - (member.profileAt || 0)),
+                      })
+                    : t('sharedLoadoutsMetz.noProfile'),
+                'opacity: 0.8;'
+            );
+
+            if (!member.loadouts.length) {
+                addLine(block, t('sharedLoadoutsMetz.noSharedLoadouts'), 'opacity: 0.6;');
+            }
+            for (const loadout of member.loadouts) {
+                addLine(
+                    block,
+                    `${loadout.name} (${t('sharedLoadoutsMetz.viewedAgo', { age: formatRelativeTime(Date.now() - loadout.viewedAt) })})`,
+                    'margin-left: 10px;'
+                );
+                if (loadout.summary) addLine(block, loadout.summary, 'margin-left: 10px; opacity: 0.7;');
+            }
+
+            if (member.loadouts.length) {
+                const clear = document.createElement('button');
+                clear.type = 'button';
+                clear.textContent = t('sharedLoadoutsMetz.clear');
+                clear.style.cssText = 'margin-left: 6px; cursor: pointer; font-size: 0.85em;';
+                clear.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    clearSharedLoadouts(member.characterID);
+                    await renderDetails(panel);
+                });
+                header.appendChild(clear);
+            }
+            panel.appendChild(block);
+        }
+
+        addLine(panel, t('sharedLoadoutsMetz.hint'), 'margin-top: 8px; opacity: 0.6;');
+    } catch (error) {
+        console.error('[Toolasha Metz Sim] Failed to build import details:', error);
+    }
 }
 
 function resetButton(button) {

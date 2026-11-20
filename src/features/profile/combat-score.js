@@ -16,7 +16,7 @@ import {
     applyLoadoutOverrideToMetzCharacter,
 } from '../combat/combat-sim-export-metz.js';
 import { getProfileList } from '../combat/combat-sim-export.js';
-import { constructMetzCharacterFromSharedLoadout } from '../combat/combat-shared-loadout-metz.js';
+import { saveSharedLoadoutForMetz } from '../combat/combat-shared-loadout-metz.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
 import { handleViewCardClick, handleViewCardFromSnapshot } from './character-card-button.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -130,23 +130,25 @@ class CombatScore {
     }
 
     /**
-     * Copy the Metz character for a shared loadout to the clipboard
+     * Keep a shared loadout for the next Metz import, where it shows in that character's loadout picker
      * @param {Element} button - The button, for visual feedback
      * @param {Object} loadout - The loadout the window is showing
      */
     async handleLoadoutMetzExport(button, loadout) {
         const originalText = button.textContent;
         const originalBg = button.style.background;
-        let label = t('combatScore.copiedStatus');
+        let label = t('combatScore.savedForMetzStatus');
         let background = config.COLOR_PROFIT;
 
         try {
-            const { character, reason } = await constructMetzCharacterFromSharedLoadout(loadout);
-            if (character) {
-                await navigator.clipboard.writeText(JSON.stringify(character));
-            } else {
+            const { saved, reason } = await saveSharedLoadoutForMetz(loadout);
+            if (!saved) {
                 label =
-                    reason === 'noProfile' ? t('combatScore.openProfileFirstStatus') : t('combatScore.noDataStatus');
+                    reason === 'noProfile'
+                        ? t('combatScore.openProfileFirstStatus')
+                        : reason === 'noStorage'
+                          ? t('combatScore.failedStatus')
+                          : t('combatScore.noDataStatus');
                 background = config.COLOR_LOSS;
             }
         } catch (error) {

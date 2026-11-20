@@ -40,6 +40,7 @@ import {
     constructPartyPlayer,
 } from './combat-sim-export.js';
 import { getMetzLoadouts } from './combat-sim-loadouts-metz.js';
+import { getSharedMetzLoadouts } from './combat-shared-loadout-metz.js';
 
 const ENHANCING_TOOL_LOCATION = '/item_locations/enhancing_tool';
 const ALCHEMY_TOOL_LOCATION = '/item_locations/alchemy_tool';
@@ -327,6 +328,18 @@ function toMetzCharacter(name, shykaiPlayer, extra = {}) {
 }
 
 /**
+ * Attach the loadouts viewed in this character's "View Loadout" window, for Metz's loadout picker. Their
+ * equipped gear stays the default build; a shared profile never carries their saved loadouts itself.
+ * @param {Object} character - A teammate's Metz character
+ * @param {string|number} characterId
+ * @returns {Object} The character, with `loadouts` when any were viewed
+ */
+function withSharedLoadouts(character, characterId) {
+    const loadouts = getSharedMetzLoadouts(characterId);
+    return loadouts.length ? { ...character, loadouts } : character;
+}
+
+/**
  * Build the Metz character entry for your own character.
  * @param {Object} characterObj
  * @param {Object} clientObj
@@ -354,7 +367,7 @@ function buildSelfMetzCharacter(characterObj, clientObj) {
         }),
     });
 
-    // Saved combat loadouts, for Metz's loadout picker. Self-only: a shared profile never carries them.
+    // Saved combat loadouts, for Metz's loadout picker. Your own only; a teammate's come from the loadouts viewed in their window.
     const loadouts = getMetzLoadouts(characterObj.character?.id);
     if (loadouts.length) {
         character.loadouts = loadouts;
@@ -423,7 +436,10 @@ export async function constructMetzTeamExport(selfLoadoutOverride = null) {
             // inParty is always true here - this loop only reaches members already pulled out of
             // the live partySlotMap, by construction.
             team.push(
-                toMetzCharacter(profile.characterName, partyPlayer, buildTeammateExtra(profile, clientObj, true))
+                withSharedLoadouts(
+                    toMetzCharacter(profile.characterName, partyPlayer, buildTeammateExtra(profile, clientObj, true)),
+                    profile.characterID
+                )
             );
         }
     }
@@ -455,7 +471,10 @@ export async function constructMetzCharacterExport(externalProfileId = null) {
         const battleObj = getBattleData();
         const partyPlayer = constructPartyPlayer(profile, clientObj, battleObj);
         const inParty = isCurrentPartyMember(characterObj, externalProfileId);
-        return toMetzCharacter(profile.characterName, partyPlayer, buildTeammateExtra(profile, clientObj, inParty));
+        return withSharedLoadouts(
+            toMetzCharacter(profile.characterName, partyPlayer, buildTeammateExtra(profile, clientObj, inParty)),
+            profile.characterID
+        );
     }
 
     return buildSelfMetzCharacter(characterObj, clientObj);
