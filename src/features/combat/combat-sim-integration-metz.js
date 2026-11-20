@@ -105,7 +105,13 @@ function mount() {
         return;
     }
     if (existing) {
-        if (existing.previousElementSibling !== textarea) {
+        // Anywhere after the paste box in its parent will do. Metz's own helper script also inserts its button
+        // right after the box, so insisting on being the very next sibling made the two keep moving past each
+        // other, and a move between mouse down and up drops the click.
+        const isAfterTextarea =
+            existing.parentElement === textarea.parentElement &&
+            !!(textarea.compareDocumentPosition(existing) & Node.DOCUMENT_POSITION_FOLLOWING);
+        if (!isAfterTextarea) {
             textarea.insertAdjacentElement('afterend', existing);
         }
         return;
