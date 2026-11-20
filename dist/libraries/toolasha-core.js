@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.32.2
+ * Version: 3.33.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2122,6 +2122,7 @@
             partyExportMissingLabel: 'Missing (open profile)',
             partyExportUnknownMemberLabel: 'Unknown',
             noDataStatus: '✗ No Data',
+            openProfileFirstStatus: '✗ Open their Profile first',
             copiedStatus: '✓ Copied',
             failedStatus: '✗ Failed',
             abilitiesTriggersPanelTitle: (p) => `${p.playerName} - Abilities & Triggers`,
@@ -7033,6 +7034,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             partyExportMissingLabel: '缺失（请打开资料页）',
             partyExportUnknownMemberLabel: '未知',
             noDataStatus: '✗ 无数据',
+            openProfileFirstStatus: '✗ 请先打开其资料页',
             copiedStatus: '✓ 已复制',
             failedStatus: '✗ 失败',
             abilitiesTriggersPanelTitle: (p) => `${p.playerName} - 技能与触发器`,
@@ -13353,6 +13355,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 messageType === 'market_item_order_books_updated' ||
                 messageType === 'market_listings_updated' ||
                 messageType === 'profile_shared' ||
+                messageType === 'loadout_shared' ||
                 messageType === 'battle_consumable_ability_updated' ||
                 messageType === 'battle_unit_fetched' ||
                 messageType === 'action_type_consumable_slots_updated' ||

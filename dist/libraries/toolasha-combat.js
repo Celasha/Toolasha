@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.32.2
+ * Version: 3.33.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -33307,6 +33307,102 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Metz export for a loadout shared from a party member's window ("View Loadout")
+     *
+     * The game answers "View Loadout" with a `loadout_shared` message: the loadout's gear, abilities,
+     * food, drinks and triggers, but none of the character's skill levels, houses, guild buffs or
+     * achievements. Those come from the character's cached shared profile, so the export is that
+     * profile's Metz character with the shared loadout laid over its gear. Without a cached profile
+     * there is nothing honest to export (levels would be guesses), so it says so instead.
+     */
+
+
+    const DRINK_CATEGORY = '/item_categories/drink';
+
+    /**
+     * @param {Object} loadout - The `loadout` object of a loadout_shared message
+     * @returns {string|number|null} The character id, which only the loadout's items carry
+     */
+    function getSharedLoadoutCharacterId(loadout) {
+        const sources = [
+            ...Object.values(loadout?.wearableItemMap || {}),
+            ...(loadout?.equippedAbilities || []),
+            ...(loadout?.combatConsumables || []),
+        ];
+        return sources.find((entry) => entry?.characterID)?.characterID ?? null;
+    }
+
+    /**
+     * Reshape a shared loadout into the parameters applyLoadoutOverrideToMetzCharacter takes.
+     * @param {Object} loadout - The `loadout` object of a loadout_shared message
+     * @param {Object} [clientObj] - Client data, for ability and item details
+     * @returns {{equipment: Array<Object>, abilities: Array<Object|null>, triggerMap: Object, food: Array<Object>, drinks: Array<Object>}}
+     */
+    function buildOverrideFromSharedLoadout(loadout, clientObj) {
+        const equipment = Object.values(loadout?.wearableItemMap || {})
+            .filter((item) => item?.itemHrid && item.itemLocationHrid)
+            .map((item) => ({
+                itemLocationHrid: item.itemLocationHrid,
+                itemHrid: item.itemHrid,
+                enhancementLevel: item.enhancementLevel || 0,
+            }));
+
+        const abilities = combatSimAdapter_js.mapLoadoutAbilitiesToNativeSlots(
+            (loadout?.equippedAbilities || []).map((ability) => ({ ...ability, slot: ability.slotNumber })),
+            clientObj?.abilityDetailMap || {},
+            (ability) => ({ abilityHrid: ability.abilityHrid, level: ability.level || 1 })
+        );
+
+        const food = [];
+        const drinks = [];
+        for (const consumable of loadout?.combatConsumables || []) {
+            if (!consumable?.itemHrid) continue;
+            const isDrink = clientObj?.itemDetailMap?.[consumable.itemHrid]?.categoryHrid === DRINK_CATEGORY;
+            (isDrink ? drinks : food).push({ itemHrid: consumable.itemHrid });
+        }
+
+        return {
+            equipment,
+            abilities,
+            triggerMap: {
+                ...(loadout?.abilityCombatTriggersMap || {}),
+                ...(loadout?.consumableCombatTriggersMap || {}),
+            },
+            food,
+            drinks,
+        };
+    }
+
+    /**
+     * Build the Metz character for a shared loadout.
+     * @param {Object} loadout - The `loadout` object of a loadout_shared message
+     * @returns {Promise<{character: Object|null, reason: string|null}>} reason is 'noProfile' when the
+     *     character has no cached profile to take levels from, 'noData' when there is no game data
+     */
+    async function constructMetzCharacterFromSharedLoadout(loadout) {
+        const clientObj = getClientData();
+        if (!loadout || !clientObj) return { character: null, reason: 'noData' };
+
+        const characterId = getSharedLoadoutCharacterId(loadout);
+        const name = loadout.sharableCharacter?.name;
+        const profileList = await getProfileList$1();
+        const profile = profileList.find(
+            (entry) =>
+                (characterId != null && String(entry.characterID) === String(characterId)) ||
+                (characterId == null && name && entry.characterName === name)
+        );
+        if (!profile) return { character: null, reason: 'noProfile' };
+
+        const base = await constructMetzCharacterExport(profile.characterID);
+        if (!base) return { character: null, reason: 'noData' };
+
+        return {
+            character: applyLoadoutOverrideToMetzCharacter(base, buildOverrideFromSharedLoadout(loadout, clientObj)),
+            reason: null,
+        };
+    }
+
+    /**
      * Utilities to parse the MWI character share modal into a urpt string
      * for https://tib-san.gitlab.io/mwi-character-sheet/. Food is not present in the modal, so it is
      * emitted as empty entries.
@@ -34043,6 +34139,7 @@ self.onmessage = function (e) {
             this.currentPartyExportPanel = null;
             this.isInitialized = false;
             this.profileSharedHandler = null; // Store handler reference for cleanup
+            this.loadoutSharedHandler = null;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             // Bumped on every new profile open; async continuations compare against the live value so
             // a stale profile's resolved Score can never overwrite a newer one (PSP-16).
@@ -34093,7 +34190,72 @@ self.onmessage = function (e) {
             // Listen for profile_shared WebSocket messages
             webSocketHook.on('profile_shared', this.profileSharedHandler);
 
+            this.loadoutSharedHandler = (data) => {
+                this.handleLoadoutShared(data);
+            };
+            webSocketHook.on('loadout_shared', this.loadoutSharedHandler);
+
             this.isActive = true;
+        }
+
+        /**
+         * Handle loadout_shared WebSocket message (a party member's "View Loadout"): add a Metz export
+         * button to the loadout window the game opens for it.
+         * @param {Object} data - loadout_shared message ({loadout})
+         */
+        async handleLoadoutShared(data) {
+            const loadout = data?.loadout;
+            if (!loadout) return;
+
+            let container = null;
+            for (let i = 0; i < 20 && !container; i++) {
+                container = document.querySelector('div[class*="SharableProfile_loadoutContainer"]');
+                if (!container) await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+            if (!container || container.parentElement?.querySelector('#mwi-loadout-metz-export-btn')) return;
+
+            const button = document.createElement('button');
+            button.id = 'mwi-loadout-metz-export-btn';
+            button.type = 'button';
+            button.textContent = i18n_js.t('combatScore.metzSimExportButton');
+            button.style.cssText = `display: block; margin: 8px auto 0; padding: 8px 12px; background: ${config.COLOR_ACCENT}; color: black; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.85rem;`;
+            button.addEventListener('click', () => this.handleLoadoutMetzExport(button, loadout));
+            container.insertAdjacentElement('afterend', button);
+        }
+
+        /**
+         * Copy the Metz character for a shared loadout to the clipboard
+         * @param {Element} button - The button, for visual feedback
+         * @param {Object} loadout - The loadout the window is showing
+         */
+        async handleLoadoutMetzExport(button, loadout) {
+            const originalText = button.textContent;
+            const originalBg = button.style.background;
+            let label = i18n_js.t('combatScore.copiedStatus');
+            let background = config.COLOR_PROFIT;
+
+            try {
+                const { character, reason } = await constructMetzCharacterFromSharedLoadout(loadout);
+                if (character) {
+                    await navigator.clipboard.writeText(JSON.stringify(character));
+                } else {
+                    label =
+                        reason === 'noProfile' ? i18n_js.t('combatScore.openProfileFirstStatus') : i18n_js.t('combatScore.noDataStatus');
+                    background = config.COLOR_LOSS;
+                }
+            } catch (error) {
+                console.error('[Combat Score] Metz Sim loadout export failed:', error);
+                label = i18n_js.t('combatScore.failedStatus');
+                background = config.COLOR_LOSS;
+            }
+
+            button.textContent = label;
+            button.style.background = background;
+            const resetTimeout = setTimeout(() => {
+                button.textContent = originalText;
+                button.style.background = originalBg;
+            }, 3000);
+            this.timerRegistry.registerTimeout(resetTimeout);
         }
 
         /**
@@ -35814,6 +35976,10 @@ self.onmessage = function (e) {
             if (this.profileSharedHandler) {
                 webSocketHook.off('profile_shared', this.profileSharedHandler);
                 this.profileSharedHandler = null;
+            }
+            if (this.loadoutSharedHandler) {
+                webSocketHook.off('loadout_shared', this.loadoutSharedHandler);
+                this.loadoutSharedHandler = null;
             }
 
             this.timerRegistry.clearAll();
