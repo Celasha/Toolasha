@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.35.0](https://github.com/Celasha/Toolasha/compare/v3.34.1...v3.35.0) (2026-11-20)
+
+### Features
+
+- export the group combat loadout to Metz as the player's baseline ([418d352](https://github.com/Celasha/Toolasha/commit/418d3524944fb80c1b1df8899b6c9f9412225350))
+
 ## [3.34.1](https://github.com/Celasha/Toolasha/compare/v3.34.0...v3.34.1) (2026-11-20)
 
 ### Bug Fixes
