@@ -528,7 +528,6 @@ export default {
         partyExportUnknownMemberLabel: '未知',
         noDataStatus: '✗ 无数据',
         openProfileFirstStatus: '✗ 请先打开其资料页',
-        savedForMetzStatus: '✓ 已保存至 Metz',
         copiedStatus: '✓ 已复制',
         failedStatus: '✗ 失败',
         abilitiesTriggersPanelTitle: (p) => `${p.playerName} - 技能与触发器`,

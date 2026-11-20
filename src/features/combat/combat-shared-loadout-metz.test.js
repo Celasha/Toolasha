@@ -2,6 +2,13 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ profiles: [], character: null }));
 
+vi.mock('../combat-sim/combat-sim-adapter.js', () => ({
+    mapLoadoutAbilitiesToNativeSlots: vi.fn((abilities, _detail, map) => {
+        const slots = [null, null, null, null, null];
+        for (const ability of abilities) slots[ability.slot - 1] = map(ability);
+        return slots;
+    }),
+}));
 vi.mock('../../core/i18n.js', () => ({ t: vi.fn((key, params) => `${key}:${params?.when ?? ''}`) }));
 vi.mock('./combat-sim-export.js', () => ({
     getProfileList: vi.fn(async () => mocks.profiles),
@@ -19,8 +26,13 @@ vi.mock('./combat-sim-export.js', () => ({
 
 const { buildSharedMetzLoadout, getSharedLoadoutCharacterId, saveSharedLoadoutForMetz, getStoredSharedLoadouts } =
     await import('./combat-shared-loadout-metz.js');
-const { getSharedMetzLoadouts, clearSharedLoadouts, describeMetzImport } =
-    await import('./combat-shared-loadout-metz.js');
+const {
+    buildOverrideFromSharedLoadout,
+    findSharedLoadoutProfile,
+    getSharedMetzLoadouts,
+    clearSharedLoadouts,
+    describeMetzImport,
+} = await import('./combat-shared-loadout-metz.js');
 
 const clientObj = {
     itemDetailMap: {
@@ -109,6 +121,36 @@ describe('buildSharedMetzLoadout', () => {
     test('is nothing for a loadout that is not for combat or holds nothing', () => {
         expect(buildSharedMetzLoadout({ ...loadout, actionTypeHrid: '/action_types/foraging' }, clientObj)).toBeNull();
         expect(buildSharedMetzLoadout({ actionTypeHrid: '/action_types/combat' }, clientObj)).toBeNull();
+    });
+});
+
+describe('buildOverrideFromSharedLoadout', () => {
+    const override = buildOverrideFromSharedLoadout(loadout, clientObj);
+
+    test('keeps worn gear with its location and puts abilities in their native slots', () => {
+        expect(override.equipment).toHaveLength(2);
+        expect(override.abilities.map((a) => a?.abilityHrid ?? null)).toEqual([
+            '/abilities/insanity',
+            null,
+            null,
+            null,
+            '/abilities/water_strike',
+        ]);
+    });
+
+    test('splits consumables and merges both trigger maps', () => {
+        expect(override.food).toEqual([{ itemHrid: '/items/spaceberry_cake' }]);
+        expect(override.drinks).toEqual([{ itemHrid: '/items/ultra_magic_coffee' }]);
+        expect(Object.keys(override.triggerMap).sort()).toEqual(['/abilities/insanity', '/items/spaceberry_cake']);
+    });
+});
+
+describe('findSharedLoadoutProfile', () => {
+    test('finds the cached profile by character id, null without one', async () => {
+        mocks.profiles = [{ characterID: 28656, characterName: 'Tester' }];
+        expect((await findSharedLoadoutProfile(loadout)).characterName).toBe('Tester');
+        mocks.profiles = [];
+        expect(await findSharedLoadoutProfile(loadout)).toBeNull();
     });
 });
 

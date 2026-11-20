@@ -12,6 +12,7 @@
 import { t } from '../../core/i18n.js';
 import { getCharacterData, getClientData, getProfileList } from './combat-sim-export.js';
 import { buildMetzLoadouts, getMetzLoadouts } from './combat-sim-loadouts-metz.js';
+import { mapLoadoutAbilitiesToNativeSlots } from '../combat-sim/combat-sim-adapter.js';
 
 const DRINK_CATEGORY = '/item_categories/drink';
 const WEAPON_LOCATIONS = ['/item_locations/two_hand', '/item_locations/main_hand'];
@@ -29,6 +30,48 @@ export function getSharedLoadoutCharacterId(loadout) {
         ...(loadout?.combatConsumables || []),
     ];
     return sources.find((entry) => entry?.characterID)?.characterID ?? null;
+}
+
+/**
+ * Reshape a shared loadout into the parameters applyLoadoutOverrideToMetzCharacter takes, for copying
+ * a character with this loadout worn.
+ * @param {Object} loadout - The `loadout` object of a loadout_shared message
+ * @param {Object} [clientObj] - Client data, for ability and item details
+ * @returns {{equipment: Array<Object>, abilities: Array<Object|null>, triggerMap: Object, food: Array<Object>, drinks: Array<Object>}}
+ */
+export function buildOverrideFromSharedLoadout(loadout, clientObj) {
+    const equipment = Object.values(loadout?.wearableItemMap || {})
+        .filter((item) => item?.itemHrid && item.itemLocationHrid)
+        .map((item) => ({
+            itemLocationHrid: item.itemLocationHrid,
+            itemHrid: item.itemHrid,
+            enhancementLevel: item.enhancementLevel || 0,
+        }));
+
+    const abilities = mapLoadoutAbilitiesToNativeSlots(
+        (loadout?.equippedAbilities || []).map((ability) => ({ ...ability, slot: ability.slotNumber })),
+        clientObj?.abilityDetailMap || {},
+        (ability) => ({ abilityHrid: ability.abilityHrid, level: ability.level || 1 })
+    );
+
+    const food = [];
+    const drinks = [];
+    for (const consumable of loadout?.combatConsumables || []) {
+        if (!consumable?.itemHrid) continue;
+        const isDrink = clientObj?.itemDetailMap?.[consumable.itemHrid]?.categoryHrid === DRINK_CATEGORY;
+        (isDrink ? drinks : food).push({ itemHrid: consumable.itemHrid });
+    }
+
+    return {
+        equipment,
+        abilities,
+        triggerMap: {
+            ...(loadout?.abilityCombatTriggersMap || {}),
+            ...(loadout?.consumableCombatTriggersMap || {}),
+        },
+        food,
+        drinks,
+    };
 }
 
 // Short stable id from the loadout's contents, so viewing the same loadout again replaces its entry
@@ -164,6 +207,23 @@ export function clearSharedLoadouts(characterId) {
 }
 
 /**
+ * @param {Object} loadout - The `loadout` object of a loadout_shared message
+ * @returns {Promise<Object|null>} The cached shared profile of the character it belongs to
+ */
+export async function findSharedLoadoutProfile(loadout) {
+    const characterId = getSharedLoadoutCharacterId(loadout);
+    const name = loadout?.sharableCharacter?.name;
+    const profileList = await getProfileList();
+    return (
+        profileList.find(
+            (entry) =>
+                (characterId != null && String(entry.characterID) === String(characterId)) ||
+                (characterId == null && name && entry.characterName === name)
+        ) || null
+    );
+}
+
+/**
  * Store a viewed loadout under its character. Needs the character's cached profile, since the
  * export has nothing to take their levels from otherwise.
  * @param {Object} loadout - The `loadout` object of a loadout_shared message
@@ -175,14 +235,7 @@ export async function saveSharedLoadoutForMetz(loadout) {
     const clientObj = getClientData();
     if (!loadout || !clientObj) return { saved: false, reason: 'noData' };
 
-    const characterId = getSharedLoadoutCharacterId(loadout);
-    const name = loadout.sharableCharacter?.name;
-    const profileList = await getProfileList();
-    const profile = profileList.find(
-        (entry) =>
-            (characterId != null && String(entry.characterID) === String(characterId)) ||
-            (characterId == null && name && entry.characterName === name)
-    );
+    const profile = await findSharedLoadoutProfile(loadout);
     if (!profile) return { saved: false, reason: 'noProfile' };
 
     const entry = buildSharedMetzLoadout(loadout, clientObj);

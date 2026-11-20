@@ -15,8 +15,12 @@ import {
     constructMetzTeamExport,
     applyLoadoutOverrideToMetzCharacter,
 } from '../combat/combat-sim-export-metz.js';
-import { getProfileList } from '../combat/combat-sim-export.js';
-import { saveSharedLoadoutForMetz } from '../combat/combat-shared-loadout-metz.js';
+import {
+    buildOverrideFromSharedLoadout,
+    findSharedLoadoutProfile,
+    saveSharedLoadoutForMetz,
+} from '../combat/combat-shared-loadout-metz.js';
+import { getClientData, getProfileList } from '../combat/combat-sim-export.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
 import { handleViewCardClick, handleViewCardFromSnapshot } from './character-card-button.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -105,13 +109,19 @@ class CombatScore {
     }
 
     /**
-     * Handle loadout_shared WebSocket message (a party member's "View Loadout"): add a Metz export
-     * button to the loadout window the game opens for it.
+     * Handle loadout_shared WebSocket message (a party member's "View Loadout"): keep the loadout for the
+     * Metz import, and add a button that copies it to the loadout window the game opens for it.
      * @param {Object} data - loadout_shared message ({loadout})
      */
     async handleLoadoutShared(data) {
         const loadout = data?.loadout;
         if (!loadout) return;
+
+        try {
+            await saveSharedLoadoutForMetz(loadout);
+        } catch (error) {
+            console.error('[Combat Score] Failed to keep shared loadout for Metz:', error);
+        }
 
         let container = null;
         for (let i = 0; i < 20 && !container; i++) {
@@ -130,25 +140,28 @@ class CombatScore {
     }
 
     /**
-     * Keep a shared loadout for the next Metz import, where it shows in that character's loadout picker
+     * Copy the Metz character for a shared loadout to the clipboard: their cached profile with the loadout worn
      * @param {Element} button - The button, for visual feedback
      * @param {Object} loadout - The loadout the window is showing
      */
     async handleLoadoutMetzExport(button, loadout) {
         const originalText = button.textContent;
         const originalBg = button.style.background;
-        let label = t('combatScore.savedForMetzStatus');
+        let label = t('combatScore.copiedStatus');
         let background = config.COLOR_PROFIT;
 
         try {
-            const { saved, reason } = await saveSharedLoadoutForMetz(loadout);
-            if (!saved) {
-                label =
-                    reason === 'noProfile'
-                        ? t('combatScore.openProfileFirstStatus')
-                        : reason === 'noStorage'
-                          ? t('combatScore.failedStatus')
-                          : t('combatScore.noDataStatus');
+            const profile = await findSharedLoadoutProfile(loadout);
+            const base = profile ? await constructMetzCharacterExport(profile.characterID) : null;
+            const clientObj = getClientData();
+            if (base && clientObj) {
+                const character = applyLoadoutOverrideToMetzCharacter(
+                    base,
+                    buildOverrideFromSharedLoadout(loadout, clientObj)
+                );
+                await navigator.clipboard.writeText(JSON.stringify(character));
+            } else {
+                label = profile ? t('combatScore.noDataStatus') : t('combatScore.openProfileFirstStatus');
                 background = config.COLOR_LOSS;
             }
         } catch (error) {

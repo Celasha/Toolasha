@@ -1443,7 +1443,6 @@ export default {
         partyExportUnknownMemberLabel: 'Unknown',
         noDataStatus: '✗ No Data',
         openProfileFirstStatus: '✗ Open their Profile first',
-        savedForMetzStatus: '✓ Saved for Metz',
         copiedStatus: '✓ Copied',
         failedStatus: '✗ Failed',
         abilitiesTriggersPanelTitle: (p) => `${p.playerName} - Abilities & Triggers`,
