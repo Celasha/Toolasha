@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.35.0
+ * Version: 3.35.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -30767,6 +30767,9 @@
             if (!gameData?.itemDetailMap) return [];
 
             const results = [];
+            // Rank with the saved alchemy loadout when "Use saved loadouts" is on (current gear otherwise),
+            // the same as the item tooltips
+            const actionContext = resolveActionContext('/action_types/alchemy');
             const calcMethod =
                 alchemyType === 'coinify'
                     ? 'calculateCoinifyProfit'
@@ -30785,9 +30788,9 @@
                 let profitData;
                 try {
                     if (alchemyType === 'transmute') {
-                        profitData = alchemyProfitCalculator[calcMethod](itemHrid);
+                        profitData = alchemyProfitCalculator[calcMethod](itemHrid, false, null, null, actionContext);
                     } else {
-                        profitData = alchemyProfitCalculator[calcMethod](itemHrid, 0);
+                        profitData = alchemyProfitCalculator[calcMethod](itemHrid, 0, false, null, actionContext);
                     }
                 } catch {
                     continue;
