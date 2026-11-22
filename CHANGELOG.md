@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.35.1](https://github.com/Celasha/Toolasha/compare/v3.35.0...v3.35.1) (2026-11-22)
+
+### Bug Fixes
+
+- rank Alchemy Best Items with the saved alchemy loadout ([320dd1b](https://github.com/Celasha/Toolasha/commit/320dd1bc7dc354cd06fc51b182ae49bed3139555))
+
 ## [3.35.0](https://github.com/Celasha/Toolasha/compare/v3.34.1...v3.35.0) (2026-11-20)
 
 ### Features
