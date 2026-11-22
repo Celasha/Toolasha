@@ -896,7 +896,7 @@ export const settingsGroups = {
                 label: 'Enhancement path: Use crafting cost for base item if cheaper',
                 type: 'checkbox',
                 default: false,
-                help: 'When enabled, uses the lower of crafting cost or market price for the base item in enhancement path calculations, applied independently to both the Ask and Bid columns',
+                help: 'When enabled, uses the lower of crafting cost or market price for the base item and for copies of it used as protection in enhancement path calculations, applied independently to both the Ask and Bid columns',
             },
             enhanceSim_autoTargetLevel: {
                 id: 'enhanceSim_autoTargetLevel',

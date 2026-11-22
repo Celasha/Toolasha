@@ -77,6 +77,7 @@ const {
     calculateDirectEnhancementCost,
     calculateEnhancementPath,
     getRealisticBaseItemPrice,
+    getCheapestProtectionPrice,
 } = await import('./tooltip-enhancement.js');
 
 function makeEnhancementData(overrides = {}) {
@@ -743,5 +744,62 @@ describe('buildEnhancementMilestonesHTML - Craft Cost / Enhance Cost columns (it
         const craftCostIndex = html.indexOf('Craft Cost');
         const rowsSection = html.slice(craftCostIndex);
         expect(rowsSection).toContain('1.00K');
+    });
+});
+
+describe('getCheapestProtectionPrice - crafting cost for a copy of the item itself', () => {
+    beforeEach(() => {
+        for (const key of Object.keys(itemDetailMap)) delete itemDetailMap[key];
+        for (const key of Object.keys(actionDetailMap)) delete actionDetailMap[key];
+        for (const key of Object.keys(marketPrices)) delete marketPrices[key];
+        for (const key of Object.keys(settingsMap)) delete settingsMap[key];
+
+        itemDetailMap['/items/ore'] = { name: 'Ore', itemLevel: 1, isTradable: true };
+        itemDetailMap['/items/gadget_body'] = { name: 'Gadget Body', itemLevel: 1, isTradable: true };
+        actionDetailMap['/actions/crafting/gadget_body'] = {
+            type: '/action_types/crafting',
+            category: '/action_categories/crafting/gadget',
+            inputItems: [{ itemHrid: '/items/ore', count: 100 }],
+            outputItems: [{ itemHrid: '/items/gadget_body', count: 1 }],
+        };
+        marketPrices['/items/ore'] = { ask: 10, bid: 9 };
+        marketPrices['/items/gadget_body'] = { ask: 5000, bid: 4900 };
+        getItemPrices.mockImplementation((hrid) => marketPrices[hrid] ?? null);
+    });
+
+    test('buys the copy at market by default', () => {
+        const result = getCheapestProtectionPrice('/items/gadget_body');
+
+        expect(result).toMatchObject({ price: 5000, itemHrid: '/items/gadget_body', isCrafted: false });
+    });
+
+    test('prices the copy at its crafting cost when that is cheaper and the option is on', () => {
+        const result = getCheapestProtectionPrice('/items/gadget_body', { useCraftingCost: true });
+
+        expect(result).toMatchObject({ price: 1000, itemHrid: '/items/gadget_body', isCrafted: true });
+    });
+
+    test('keeps the market price when crafting is dearer', () => {
+        itemDetailMap['/items/pricey_body'] = { name: 'Pricey Body', itemLevel: 1, isTradable: true };
+        actionDetailMap['/actions/crafting/pricey_body'] = {
+            type: '/action_types/crafting',
+            category: '/action_categories/crafting/gadget',
+            inputItems: [{ itemHrid: '/items/ore', count: 1000 }],
+            outputItems: [{ itemHrid: '/items/pricey_body', count: 1 }],
+        };
+        marketPrices['/items/pricey_body'] = { ask: 5000, bid: 4900 };
+
+        const result = getCheapestProtectionPrice('/items/pricey_body', { useCraftingCost: true });
+
+        expect(result).toMatchObject({ price: 5000, isCrafted: false });
+    });
+
+    test('Mirror of Protection still wins when it is cheaper than the crafted copy', () => {
+        itemDetailMap['/items/mirror_of_protection'] = { name: 'Mirror of Protection', itemLevel: 1, isTradable: true };
+        marketPrices['/items/mirror_of_protection'] = { ask: 500, bid: 450 };
+
+        const result = getCheapestProtectionPrice('/items/gadget_body', { useCraftingCost: true });
+
+        expect(result).toMatchObject({ price: 500, itemHrid: '/items/mirror_of_protection', isCrafted: false });
     });
 });

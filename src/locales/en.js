@@ -3403,7 +3403,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             enhanceSim_baseItemCraftingCost: {
                 label: 'Enhancement path: Use crafting cost for base item if cheaper',
-                help: 'When enabled, uses the lower of crafting cost or market price for the base item in enhancement path calculations, applied independently to both the Ask and Bid columns',
+                help: 'When enabled, uses the lower of crafting cost or market price for the base item and for copies of it used as protection in enhancement path calculations, applied independently to both the Ask and Bid columns',
             },
             enhanceSim_autoTargetLevel: {
                 label: 'Enhancement: Auto-fill target level on panel open (0 = disabled)',

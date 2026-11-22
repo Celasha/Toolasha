@@ -409,7 +409,7 @@ export default {
             },
             enhanceSim_baseItemCraftingCost: {
                 label: '强化路径：制作成本更低时以其作为基础物品价格',
-                help: '启用后，强化路径计算中基础物品价格取制作成本与市场价格中的较低者，对卖价和买价两列分别独立应用。',
+                help: '启用后，强化路径计算中基础物品价格及作为保护物品的同款物品价格取制作成本与市场价格中的较低者，对卖价和买价两列分别独立应用。',
             },
             enhanceSim_autoTargetLevel: {
                 label: '强化：打开面板时自动填入目标等级（0 = 禁用）',
