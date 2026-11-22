@@ -16,6 +16,7 @@ import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { isUntradableCape } from '../../utils/untradable-cape.js';
 import { getUntradableCapeValue } from '../enhancement/untradable-cape-value.js';
 import assetManifest from '../../utils/asset-manifest.js';
+import { resolveActionContext } from '../../utils/action-context.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 
@@ -262,6 +263,9 @@ export class AlchemyBestItems {
         if (!gameData?.itemDetailMap) return [];
 
         const results = [];
+        // Rank with the saved alchemy loadout when "Use saved loadouts" is on (current gear otherwise),
+        // the same as the item tooltips
+        const actionContext = resolveActionContext('/action_types/alchemy');
         const calcMethod =
             alchemyType === 'coinify'
                 ? 'calculateCoinifyProfit'
@@ -280,9 +284,9 @@ export class AlchemyBestItems {
             let profitData;
             try {
                 if (alchemyType === 'transmute') {
-                    profitData = alchemyProfitCalculator[calcMethod](itemHrid);
+                    profitData = alchemyProfitCalculator[calcMethod](itemHrid, false, null, null, actionContext);
                 } else {
-                    profitData = alchemyProfitCalculator[calcMethod](itemHrid, 0);
+                    profitData = alchemyProfitCalculator[calcMethod](itemHrid, 0, false, null, actionContext);
                 }
             } catch {
                 continue;

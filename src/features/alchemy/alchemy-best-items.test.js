@@ -49,6 +49,11 @@ vi.mock('../market/alchemy-profit-calculator.js', () => ({
     },
 }));
 
+const savedContext = { equipment: new Map(), drinks: [], source: 'saved-loadout' };
+vi.mock('../../utils/action-context.js', () => ({
+    resolveActionContext: vi.fn(() => savedContext),
+}));
+
 vi.mock('../../utils/experience-parser.js', () => ({
     calculateExperienceMultiplier: vi.fn(() => ({ totalMultiplier: 1 })),
 }));
@@ -226,5 +231,16 @@ describe('AlchemyBestItems untradable items', () => {
         const [cell] = nameCells();
         expect(cell.textContent).toBe('Iron Bar');
         expect(cell.title).toBe('');
+    });
+});
+
+describe('AlchemyBestItems ranking context', () => {
+    test('rankings are calculated with the resolved alchemy action context', async () => {
+        const { default: calculator } = await import('../market/alchemy-profit-calculator.js');
+        mocks.itemDetailMap = {};
+        buildItem('/items/a', { itemLevel: 10 });
+        new AlchemyBestItems().calculateRankings('coinify');
+
+        expect(calculator.calculateCoinifyProfit).toHaveBeenCalledWith('/items/a', 0, false, null, savedContext);
     });
 });
