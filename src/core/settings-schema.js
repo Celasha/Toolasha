@@ -2566,6 +2566,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            loadoutSavedLevelDisplay: {
+                id: 'loadoutSavedLevelDisplay',
+                label: 'Loadout panel: Show the enhancement level each loadout has saved, flagged when you own a higher copy',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['loadoutEnhancementDisplay'],
+            },
             loadoutSnapshot: {
                 id: 'loadoutSnapshot',
                 label: 'Loadouts: Use saved loadouts in profit/action calculations',

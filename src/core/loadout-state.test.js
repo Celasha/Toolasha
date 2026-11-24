@@ -1280,3 +1280,86 @@ describe('effective enhancement resolution contract', () => {
         expect(selection.snapshot.drinks).toEqual([]);
     });
 });
+
+describe('getSavedLevelDisplays (display-only saved level vs ownership)', () => {
+    const inv = (...levels) =>
+        levels.map((enhancementLevel) => ({
+            itemHrid: SWORD,
+            enhancementLevel,
+            count: 1,
+            itemLocationHrid: '/item_locations/inventory',
+        }));
+
+    function statusFor({ savedLevel, useExactEnhancement, owned }) {
+        const state = new LoadoutState();
+        state.rawSnapshots = {
+            one: buildRawLoadoutSnapshot('one', serverLoadout({ name: 'Mine', savedLevel, useExactEnhancement })),
+        };
+        mocks.inventory = owned;
+        const [display] = state.getSavedLevelDisplays('Mine');
+        return display.equipment[0];
+    }
+
+    test('returns nothing for a name no loadout has', () => {
+        const state = new LoadoutState();
+        state.rawSnapshots = { one: buildRawLoadoutSnapshot('one', serverLoadout({ name: 'Mine' })) };
+
+        expect(state.getSavedLevelDisplays('Other')).toEqual([]);
+    });
+
+    test('returns every loadout sharing the name, with the saved level untouched', () => {
+        const state = new LoadoutState();
+        state.rawSnapshots = {
+            a: buildRawLoadoutSnapshot('a', serverLoadout({ name: 'Same', savedLevel: 3 })),
+            b: buildRawLoadoutSnapshot('b', serverLoadout({ name: 'Same', savedLevel: 7 })),
+        };
+        mocks.inventory = inv(7);
+
+        const displays = state.getSavedLevelDisplays('Same');
+
+        expect(displays.map((d) => [d.snapshotId, d.equipment[0].savedLevel])).toEqual([
+            ['a', 3],
+            ['b', 7],
+        ]);
+    });
+
+    test.each([
+        ['no copy owned', { savedLevel: 5, useExactEnhancement: false, owned: [] }, 'notOwned'],
+        ['saved is the best copy', { savedLevel: 5, useExactEnhancement: false, owned: inv(5, 2) }, 'current'],
+        [
+            'highest mode with a higher copy',
+            { savedLevel: 5, useExactEnhancement: false, owned: inv(5, 9) },
+            'higherEquipped',
+        ],
+        [
+            'exact mode with a higher copy',
+            { savedLevel: 5, useExactEnhancement: true, owned: inv(5, 9) },
+            'higherIgnored',
+        ],
+        [
+            'exact mode, saved level not owned',
+            { savedLevel: 5, useExactEnhancement: true, owned: inv(9) },
+            'missingExact',
+        ],
+        [
+            'highest mode, best copy below saved',
+            { savedLevel: 8, useExactEnhancement: false, owned: inv(3) },
+            'lowerOwned',
+        ],
+        [
+            'exact +0 is a valid saved level',
+            { savedLevel: 0, useExactEnhancement: true, owned: inv(0, 4) },
+            'higherIgnored',
+        ],
+    ])('%s', (_label, scenario, expected) => {
+        expect(statusFor(scenario).status).toBe(expected);
+    });
+
+    test('reports the best owned level next to the saved one', () => {
+        expect(statusFor({ savedLevel: 5, useExactEnhancement: false, owned: inv(5, 9) })).toMatchObject({
+            itemHrid: SWORD,
+            savedLevel: 5,
+            highestOwnedLevel: 9,
+        });
+    });
+});

@@ -408,6 +408,53 @@ class LoadoutState {
     }
 
     /**
+     * Display-only view of the enhancement level each saved loadout stored for its equipment, next to what the
+     * character owns now. Loadouts are matched by name, so more than one can come back; the caller picks among
+     * them. This is never an input to calculations: the saved level is historical server state, and `status`
+     * says what the game will actually do with it (so callers never interpret the loadout's enhancement mode).
+     *
+     * status:
+     * - notOwned: no copy of the item is owned
+     * - missingExact: the loadout asks for exactly the saved level and no copy at that level is available
+     * - current: the saved level is the best owned copy
+     * - higherEquipped: a higher copy is owned and the game equips it
+     * - higherIgnored: a higher copy is owned but the game looks for the saved level exactly
+     * - lowerOwned: the saved level is above the best owned copy, which the game equips
+     * @param {string} name - Loadout name
+     * @returns {Array<{snapshotId: string, equipment: Array<{itemHrid: string, itemLocationHrid: string,
+     *     savedLevel: number|null, highestOwnedLevel: number|null, status: string}>}>}
+     */
+    getSavedLevelDisplays(name) {
+        const inventory = dataManager.getInventory?.();
+        const owned = buildOwnedEnhancementIndex(inventory);
+        const displays = [];
+        for (const rawSnapshot of Object.values(this.rawSnapshots)) {
+            if (rawSnapshot?.name !== name) continue;
+            const exact = rawSnapshot.useExactEnhancement === true;
+            const resolved = resolveLoadoutEquipment(rawSnapshot, inventory);
+            const equipment = (rawSnapshot.equipment || []).map((entry, index) => {
+                const savedLevel = normalizeSavedEnhancementLevel(entry.enhancementLevel);
+                const highest = owned.get(entry.itemHrid)?.highestEnhancementLevel ?? null;
+                let status;
+                if (highest === null) status = 'notOwned';
+                else if (exact && resolved[index]?.isAvailable !== true) status = 'missingExact';
+                else if (savedLevel === null || highest === savedLevel) status = 'current';
+                else if (highest > savedLevel) status = exact ? 'higherIgnored' : 'higherEquipped';
+                else status = 'lowerOwned';
+                return {
+                    itemHrid: entry.itemHrid,
+                    itemLocationHrid: entry.itemLocationHrid,
+                    savedLevel,
+                    highestOwnedLevel: highest,
+                    status,
+                };
+            });
+            displays.push({ snapshotId: String(rawSnapshot.snapshotId), equipment });
+        }
+        return displays;
+    }
+
+    /**
      * Fingerprint the inventory-dependent portion of one raw loadout. The signature excludes
      * counts that remain positive and includes only effective equipment levels/availability and
      * consumable availability. Raw/server changes still emit unconditionally.

@@ -584,6 +584,18 @@ export default {
     combatSimIntegrationMetz: {
         noCharacterDataAlert: '未找到角色数据。请：\n1. 刷新游戏页面\n2. 等待页面完全加载\n3. 重新尝试',
     },
+    loadoutSavedLevel: {
+        label: (p) => `已存 +${p.saved}`,
+        notOwned: (p) => `此配装保存的是 +${p.saved}，而你目前没有该物品。`,
+        current: (p) => `此配装保存的是 +${p.saved}，也是你拥有的最佳副本。`,
+        higherEquipped: (p) =>
+            `此配装保存的是 +${p.saved}，你拥有的最佳副本是 +${p.best}。“使用最高强化等级”已开启，因此游戏会装备 +${p.best}。穿着该装备时导入当前配置即可保存新等级。`,
+        higherIgnored: (p) =>
+            `此配装保存的是 +${p.saved}，你拥有的最佳副本是 +${p.best}。此配装未开启“使用最高强化等级”，因此游戏会精确查找 +${p.saved}。`,
+        missingExact: (p) =>
+            `此配装保存的是 +${p.saved}。此配装未开启“使用最高强化等级”，因此游戏会精确查找 +${p.saved}，而你没有该等级的副本。`,
+        lowerOwned: (p) => `此配装保存的是 +${p.saved}，但你拥有的最佳副本是 +${p.best}，游戏会装备该副本。`,
+    },
     scrollSimulatorUi: {
         headingWithDash: (p) => `卷轴模拟 — ${p.contextLabel}`,
         title: '卷轴模拟',

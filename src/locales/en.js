@@ -2403,6 +2403,19 @@ export default {
         noCharacterDataAlert:
             'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again',
     },
+    loadoutSavedLevel: {
+        label: (p) => `saved +${p.saved}`,
+        notOwned: (p) => `This loadout has +${p.saved} saved, and you own no copy of the item now.`,
+        current: (p) => `This loadout has +${p.saved} saved, and that is your best copy.`,
+        higherEquipped: (p) =>
+            `This loadout has +${p.saved} saved and your best copy is +${p.best}. "Use highest enhancement level" is on, so the game equips the +${p.best}. Import Current Setup while wearing it saves the new level.`,
+        higherIgnored: (p) =>
+            `This loadout has +${p.saved} saved and your best copy is +${p.best}. "Use highest enhancement level" is off for this loadout, so the game looks for the +${p.saved} exactly.`,
+        missingExact: (p) =>
+            `This loadout has +${p.saved} saved. "Use highest enhancement level" is off for this loadout, so the game looks for the +${p.saved} exactly, and you have no copy at that level.`,
+        lowerOwned: (p) =>
+            `This loadout has +${p.saved} saved, but your best copy is +${p.best}, which is what the game equips.`,
+    },
     scrollSimulatorUi: {
         headingWithDash: (p) => `Scroll Simulation — ${p.contextLabel}`,
         title: 'Scroll Simulation',
@@ -4208,6 +4221,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             itemIconLevel: { label: 'Bottom left corner of icons: Show equipment level' },
             loadoutEnhancementDisplay: {
                 label: 'Loadout panel: Show highest-owned enhancement level on equipment icons',
+            },
+            loadoutSavedLevelDisplay: {
+                label: 'Loadout panel: Show the enhancement level each loadout has saved, flagged when you own a higher copy',
             },
             loadoutSnapshot: {
                 label: 'Loadouts: Use saved loadouts in profit/action calculations',
