@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.35.1
+ * Version: 3.35.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3083,6 +3083,19 @@
             noCharacterDataAlert:
                 'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again',
         },
+        loadoutSavedLevel: {
+            label: (p) => `saved +${p.saved}`,
+            notOwned: (p) => `This loadout has +${p.saved} saved, and you own no copy of the item now.`,
+            current: (p) => `This loadout has +${p.saved} saved, and that is your best copy.`,
+            higherEquipped: (p) =>
+                `This loadout has +${p.saved} saved and your best copy is +${p.best}. "Use highest enhancement level" is on, so the game equips the +${p.best}. Import Current Setup while wearing it saves the new level.`,
+            higherIgnored: (p) =>
+                `This loadout has +${p.saved} saved and your best copy is +${p.best}. "Use highest enhancement level" is off for this loadout, so the game looks for the +${p.saved} exactly.`,
+            missingExact: (p) =>
+                `This loadout has +${p.saved} saved. "Use highest enhancement level" is off for this loadout, so the game looks for the +${p.saved} exactly, and you have no copy at that level.`,
+            lowerOwned: (p) =>
+                `This loadout has +${p.saved} saved, but your best copy is +${p.best}, which is what the game equips.`,
+        },
         scrollSimulatorUi: {
             headingWithDash: (p) => `Scroll Simulation — ${p.contextLabel}`,
             title: 'Scroll Simulation',
@@ -4083,7 +4096,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 enhanceSim_baseItemCraftingCost: {
                     label: 'Enhancement path: Use crafting cost for base item if cheaper',
-                    help: 'When enabled, uses the lower of crafting cost or market price for the base item in enhancement path calculations, applied independently to both the Ask and Bid columns',
+                    help: 'When enabled, uses the lower of crafting cost or market price for the base item and for copies of it used as protection in enhancement path calculations, applied independently to both the Ask and Bid columns',
                 },
                 enhanceSim_autoTargetLevel: {
                     label: 'Enhancement: Auto-fill target level on panel open (0 = disabled)',
@@ -4889,6 +4902,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 loadoutEnhancementDisplay: {
                     label: 'Loadout panel: Show highest-owned enhancement level on equipment icons',
                 },
+                loadoutSavedLevelDisplay: {
+                    label: 'Loadout panel: Show the enhancement level each loadout has saved, flagged when you own a higher copy',
+                },
                 loadoutSnapshot: {
                     label: 'Loadouts: Use saved loadouts in profit/action calculations',
                     help: "When you queue an action, Toolasha predicts its XP, time, and profit using the current saved game loadout for that skill (skill-default → all-skills-default → matching saved loadout → currently-equipped). 'Use highest enhancement level' is resolved from what you currently own. Unavailable saved equipment makes the prediction fall back to the proven currently-equipped setup; unavailable saved food/drinks do not invalidate the loadout and their missing slots are omitted. Disable to always predict using currently-equipped gear.",
@@ -5519,7 +5535,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 enhanceSim_baseItemCraftingCost: {
                     label: '强化路径：制作成本更低时以其作为基础物品价格',
-                    help: '启用后，强化路径计算中基础物品价格取制作成本与市场价格中的较低者，对卖价和买价两列分别独立应用。',
+                    help: '启用后，强化路径计算中基础物品价格及作为保护物品的同款物品价格取制作成本与市场价格中的较低者，对卖价和买价两列分别独立应用。',
                 },
                 enhanceSim_autoTargetLevel: {
                     label: '强化：打开面板时自动填入目标等级（0 = 禁用）',
@@ -6277,6 +6293,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 itemIconLevel: { label: '图标左下角：显示装备等级' },
                 loadoutEnhancementDisplay: { label: '配装面板：在装备图标上显示拥有的最高强化等级' },
+                loadoutSavedLevelDisplay: { label: '配装面板：显示配装保存的强化等级，低于拥有的最高等级时高亮' },
                 loadoutSnapshot: {
                     label: '配装：在利润/动作计算中使用已保存的配装',
                     help: '当你把一个动作加入队列时，Toolasha 会使用该专业当前已保存的游戏配装（专业默认 → 全部专业默认 → 匹配的已保存配装 → 当前已装备）来预测其经验、时间和利润。“使用最高强化等级”会根据你当前拥有的物品解析。若已保存的装备不可用，预测会回退到当前已装备的配置；若已保存的食物/饮品不可用，配装不会失效，其缺失槽位会被省略。禁用此项将始终使用当前已装备的装备进行预测。',
@@ -7107,6 +7124,18 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         },
         combatSimIntegrationMetz: {
             noCharacterDataAlert: '未找到角色数据。请：\n1. 刷新游戏页面\n2. 等待页面完全加载\n3. 重新尝试',
+        },
+        loadoutSavedLevel: {
+            label: (p) => `已存 +${p.saved}`,
+            notOwned: (p) => `此配装保存的是 +${p.saved}，而你目前没有该物品。`,
+            current: (p) => `此配装保存的是 +${p.saved}，也是你拥有的最佳副本。`,
+            higherEquipped: (p) =>
+                `此配装保存的是 +${p.saved}，你拥有的最佳副本是 +${p.best}。“使用最高强化等级”已开启，因此游戏会装备 +${p.best}。穿着该装备时导入当前配置即可保存新等级。`,
+            higherIgnored: (p) =>
+                `此配装保存的是 +${p.saved}，你拥有的最佳副本是 +${p.best}。此配装未开启“使用最高强化等级”，因此游戏会精确查找 +${p.saved}。`,
+            missingExact: (p) =>
+                `此配装保存的是 +${p.saved}。此配装未开启“使用最高强化等级”，因此游戏会精确查找 +${p.saved}，而你没有该等级的副本。`,
+            lowerOwned: (p) => `此配装保存的是 +${p.saved}，但你拥有的最佳副本是 +${p.best}，游戏会装备该副本。`,
         },
         scrollSimulatorUi: {
             headingWithDash: (p) => `卷轴模拟 — ${p.contextLabel}`,
@@ -10379,7 +10408,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Enhancement path: Use crafting cost for base item if cheaper',
                     type: 'checkbox',
                     default: false,
-                    help: 'When enabled, uses the lower of crafting cost or market price for the base item in enhancement path calculations, applied independently to both the Ask and Bid columns',
+                    help: 'When enabled, uses the lower of crafting cost or market price for the base item and for copies of it used as protection in enhancement path calculations, applied independently to both the Ask and Bid columns',
                 },
                 enhanceSim_autoTargetLevel: {
                     id: 'enhanceSim_autoTargetLevel',
@@ -12048,6 +12077,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Loadout panel: Show highest-owned enhancement level on equipment icons',
                     type: 'checkbox',
                     default: true,
+                },
+                loadoutSavedLevelDisplay: {
+                    id: 'loadoutSavedLevelDisplay',
+                    label: 'Loadout panel: Show the enhancement level each loadout has saved, flagged when you own a higher copy',
+                    type: 'checkbox',
+                    default: true,
+                    dependencies: ['loadoutEnhancementDisplay'],
                 },
                 loadoutSnapshot: {
                     id: 'loadoutSnapshot',
@@ -17765,6 +17801,53 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
          */
         getOwnedEnhancementIndex(characterItems = dataManager.getInventory?.()) {
             return buildOwnedEnhancementIndex(characterItems);
+        }
+
+        /**
+         * Display-only view of the enhancement level each saved loadout stored for its equipment, next to what the
+         * character owns now. Loadouts are matched by name, so more than one can come back; the caller picks among
+         * them. This is never an input to calculations: the saved level is historical server state, and `status`
+         * says what the game will actually do with it (so callers never interpret the loadout's enhancement mode).
+         *
+         * status:
+         * - notOwned: no copy of the item is owned
+         * - missingExact: the loadout asks for exactly the saved level and no copy at that level is available
+         * - current: the saved level is the best owned copy
+         * - higherEquipped: a higher copy is owned and the game equips it
+         * - higherIgnored: a higher copy is owned but the game looks for the saved level exactly
+         * - lowerOwned: the saved level is above the best owned copy, which the game equips
+         * @param {string} name - Loadout name
+         * @returns {Array<{snapshotId: string, equipment: Array<{itemHrid: string, itemLocationHrid: string,
+         *     savedLevel: number|null, highestOwnedLevel: number|null, status: string}>}>}
+         */
+        getSavedLevelDisplays(name) {
+            const inventory = dataManager.getInventory?.();
+            const owned = buildOwnedEnhancementIndex(inventory);
+            const displays = [];
+            for (const rawSnapshot of Object.values(this.rawSnapshots)) {
+                if (rawSnapshot?.name !== name) continue;
+                const exact = rawSnapshot.useExactEnhancement === true;
+                const resolved = resolveLoadoutEquipment(rawSnapshot, inventory);
+                const equipment = (rawSnapshot.equipment || []).map((entry, index) => {
+                    const savedLevel = normalizeSavedEnhancementLevel(entry.enhancementLevel);
+                    const highest = owned.get(entry.itemHrid)?.highestEnhancementLevel ?? null;
+                    let status;
+                    if (highest === null) status = 'notOwned';
+                    else if (exact && resolved[index]?.isAvailable !== true) status = 'missingExact';
+                    else if (savedLevel === null || highest === savedLevel) status = 'current';
+                    else if (highest > savedLevel) status = exact ? 'higherIgnored' : 'higherEquipped';
+                    else status = 'lowerOwned';
+                    return {
+                        itemHrid: entry.itemHrid,
+                        itemLocationHrid: entry.itemLocationHrid,
+                        savedLevel,
+                        highestOwnedLevel: highest,
+                        status,
+                    };
+                });
+                displays.push({ snapshotId: String(rawSnapshot.snapshotId), equipment });
+            }
+            return displays;
         }
 
         /**

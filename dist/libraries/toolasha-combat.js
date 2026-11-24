@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.35.1
+ * Version: 3.35.2
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketplaceSession_js, loadoutState, storage, i18n_js, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, marketData_js, warningIcon_js, combatSimAdapter_js, combatSimRunner_js, reactInput_js, dom, allZonesRunner_js, gameData_js, Player, profitHelpers_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, profitConstants_js, marketValuesAPI, abilityCostCalculator_js, skillingSimHelpers_js, settingsSchema_js, actionCalculator_js, efficiency_js, materialCalculator_js, experienceCalculator_js, tooltipObserver, abilityTimingCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketplaceSession_js, i18n_js, loadoutState, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, marketData_js, warningIcon_js, combatSimAdapter_js, combatSimRunner_js, reactInput_js, dom, allZonesRunner_js, gameData_js, Player, profitHelpers_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, profitConstants_js, marketValuesAPI, abilityCostCalculator_js, skillingSimHelpers_js, settingsSchema_js, actionCalculator_js, efficiency_js, materialCalculator_js, experienceCalculator_js, tooltipObserver, abilityTimingCalculator_js, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -1027,10 +1027,72 @@
      *
      * Uses Core's canonical owned-enhancement index for the highest level per itemHrid,
      * then injects a "+N" overlay (upper-right) on each loadout equipment icon.
+     *
+     * A second overlay (lower-left) shows the level the loadout has saved for the item, flagged when a higher copy
+     * is owned. The saved levels come from Core's display-only accessor, which also says what the game will do
+     * with them, so nothing here interprets the loadout's enhancement mode.
      */
 
 
     const OVERLAY_CLASS = 'script_loadoutEnhLevel';
+    const SAVED_OVERLAY_CLASS = 'script_loadoutSavedLevel';
+    const SAVED_BEHIND_COLOR = '#ffb020';
+
+    /**
+     * The name of the loadout the panel is showing. The metadata row reads: "Name" [skill svg] "<loadout name>" [Edit].
+     * @param {HTMLElement} selectedLoadout
+     * @returns {string|null}
+     */
+    function getShownLoadoutName(selectedLoadout) {
+        const metadata = selectedLoadout.querySelector('[class*="LoadoutsPanel_metadata"]');
+        if (!metadata) return null;
+        let seenSvg = false;
+        for (const child of metadata.childNodes) {
+            if (child.nodeType === Node.ELEMENT_NODE && child.tagName === 'svg') {
+                seenSvg = true;
+            } else if (seenSvg && child.nodeType === Node.TEXT_NODE) {
+                const text = child.textContent.trim();
+                if (text) return text;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Saved level per item for the loadout the panel is showing. Two loadouts can share a name, so among
+     * same-named loadouts the one whose saved items are the icons on screen wins.
+     * @param {HTMLElement} selectedLoadout
+     * @param {string[]} shownItemHrids - item hrids of the icons in the equipment block
+     * @returns {Map<string, {savedLevel: number, highestOwnedLevel: number|null, status: string}>}
+     */
+    function getShownSavedLevels(selectedLoadout, shownItemHrids) {
+        const result = new Map();
+        const name = getShownLoadoutName(selectedLoadout);
+        if (!name) return result;
+
+        const candidates = loadoutState.getSavedLevelDisplays(name);
+        if (candidates.length === 0) return result;
+
+        const shown = new Set(shownItemHrids);
+        const fit = (candidate) => {
+            const here = candidate.equipment.filter((entry) => shown.has(entry.itemHrid)).length;
+            return here - (candidate.equipment.length - here);
+        };
+        const best = candidates.length === 1 ? candidates[0] : [...candidates].sort((a, b) => fit(b) - fit(a))[0];
+
+        for (const entry of best.equipment) {
+            if (entry.savedLevel !== null) result.set(entry.itemHrid, entry);
+        }
+        return result;
+    }
+
+    /**
+     * @param {{savedLevel: number, highestOwnedLevel: number|null, status: string}} entry
+     * @returns {string} Tooltip saying what the game does with the saved level
+     */
+    function getSavedLevelTitle(entry) {
+        return i18n_js.t(`loadoutSavedLevel.${entry.status}`, { saved: entry.savedLevel, best: entry.highestOwnedLevel });
+    }
 
     /**
      * Build a map of itemHrid → highest enhancementLevel across all character items.
@@ -1070,11 +1132,22 @@
         if (allUses.length > 0 && validUses.length === 0) return;
 
         // DOM and data are ready — clear stale overlays and re-inject
-        for (const el of equipDiv.querySelectorAll(`.${OVERLAY_CLASS}`)) {
+        for (const el of equipDiv.querySelectorAll(`.${OVERLAY_CLASS}, .${SAVED_OVERLAY_CLASS}`)) {
             el.remove();
         }
 
         const enhancementMap = buildEnhancementLevelMap();
+
+        // Saved levels: the level each row of THIS loadout was saved at. The game shows no levels on this page, and
+        // a loadout keeps the level an item had when it was saved, so enhancing the item afterwards leaves it stale.
+        let savedLevels = new Map();
+        if (config.getSetting('loadoutSavedLevelDisplay')) {
+            const shownItemHrids = validUses
+                .map((use) => (use.getAttribute('href') || use.getAttribute('xlink:href') || '').split('#')[1])
+                .filter(Boolean)
+                .map((fragment) => `/items/${fragment}`);
+            savedLevels = getShownSavedLevels(selectedLoadout, shownItemHrids);
+        }
 
         for (const use of validUses) {
             const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
@@ -1083,7 +1156,8 @@
             const itemHrid = `/items/${fragment}`;
 
             const enhLevel = enhancementMap.get(itemHrid) ?? 0;
-            if (enhLevel === 0) continue;
+            const saved = savedLevels.get(itemHrid) || null;
+            if (enhLevel === 0 && !saved?.savedLevel) continue;
 
             // DOM: use → svg → Item_iconContainer → Item_item__
             const svg = use.closest('svg');
@@ -1092,9 +1166,37 @@
             if (!itemDiv) continue;
 
             // Skip if already annotated
-            if (itemDiv.querySelector(`.${OVERLAY_CLASS}`)) continue;
+            if (itemDiv.querySelector(`.${OVERLAY_CLASS}, .${SAVED_OVERLAY_CLASS}`)) continue;
 
             itemDiv.style.position = 'relative';
+
+            // Bottom-left: the level this loadout has saved, flagged when a higher copy is owned.
+            if (saved && (saved.savedLevel > 0 || enhLevel > 0)) {
+                const behind = saved.highestOwnedLevel !== null && saved.savedLevel < saved.highestOwnedLevel;
+                const savedLabel = document.createElement('div');
+                savedLabel.className = SAVED_OVERLAY_CLASS;
+                savedLabel.textContent = i18n_js.t('loadoutSavedLevel.label', { saved: saved.savedLevel });
+                savedLabel.title = getSavedLevelTitle(saved);
+                // Unlike the other overlay it has a tooltip, so it takes pointer events; clicks still reach the slot
+                savedLabel.style.cssText = `
+            z-index: 1;
+            position: absolute;
+            left: 1px;
+            bottom: 1px;
+            padding: 1px 3px;
+            border-radius: 3px;
+            background: rgba(10, 14, 24, 0.82);
+            color: ${behind ? SAVED_BEHIND_COLOR : '#9fb0c8'};
+            outline: ${behind ? '1px solid rgba(255, 176, 32, 0.55)' : 'none'};
+            font-size: 9px;
+            font-weight: 600;
+            line-height: 1.2;
+            white-space: nowrap;
+        `;
+                itemDiv.appendChild(savedLabel);
+            }
+
+            if (enhLevel === 0) continue;
             const overlay = document.createElement('div');
             overlay.className = OVERLAY_CLASS;
             overlay.textContent = `+${enhLevel}`;
@@ -1118,13 +1220,15 @@
      * Remove all loadout enhancement overlays from the page.
      */
     function removeOverlays() {
-        for (const el of document.querySelectorAll(`.${OVERLAY_CLASS}`)) {
+        for (const el of document.querySelectorAll(`.${OVERLAY_CLASS}, .${SAVED_OVERLAY_CLASS}`)) {
             el.remove();
         }
     }
 
     let unregisterHandler = null;
     let settingChangeHandler$1 = null;
+    let savedLevelSettingHandler = null;
+    let loadoutUpdateHandler = null;
 
     function enable$1() {
         if (!unregisterHandler) {
@@ -1141,6 +1245,12 @@
             );
         }
 
+        // Saved loadouts and ownership change without any DOM change on this panel
+        if (!loadoutUpdateHandler) {
+            loadoutUpdateHandler = () => annotateLoadout();
+            loadoutState.onUpdate(loadoutUpdateHandler);
+        }
+
         // Run immediately for any already-open loadout.
         annotateLoadout();
     }
@@ -1149,6 +1259,10 @@
         if (unregisterHandler) {
             unregisterHandler();
             unregisterHandler = null;
+        }
+        if (loadoutUpdateHandler) {
+            loadoutState.offUpdate(loadoutUpdateHandler);
+            loadoutUpdateHandler = null;
         }
         removeOverlays();
     }
@@ -1165,6 +1279,11 @@
             config.onSettingChange('loadoutEnhancementDisplay', settingChangeHandler$1);
         }
 
+        if (!savedLevelSettingHandler) {
+            savedLevelSettingHandler = () => annotateLoadout();
+            config.onSettingChange('loadoutSavedLevelDisplay', savedLevelSettingHandler);
+        }
+
         if (config.getSetting('loadoutEnhancementDisplay')) {
             enable$1();
         }
@@ -1175,6 +1294,10 @@
         if (settingChangeHandler$1) {
             config.offSettingChange('loadoutEnhancementDisplay', settingChangeHandler$1);
             settingChangeHandler$1 = null;
+        }
+        if (savedLevelSettingHandler) {
+            config.offSettingChange('loadoutSavedLevelDisplay', savedLevelSettingHandler);
+            savedLevelSettingHandler = null;
         }
     }
 
@@ -16053,11 +16176,39 @@
     }
 
     /**
-     * Get cheapest protection item price
-     * Tests: item itself, mirror of protection, and specific protection items
+     * Cost to craft the base item, as the item tooltip's PROFIT table shows it. Delegates to the
+     * shared helper so the enhancement path's "Craft Item" and the item tooltip's total can never
+     * disagree, whichever tooltip is looked at. Cached until the next price update.
+     * @param {string} itemHrid
+     * @param {'ask'|'bid'} [mode='ask']
      * @private
      */
-    function getCheapestProtectionPrice(itemHrid) {
+    function getTooltipCraftCostCached(itemHrid, mode = 'ask') {
+        const cacheKey = `${itemHrid}|${mode}|${profitHelpers_js.isCraftCostIncludingSubMaterials()}`;
+        if (_craftCostCache.has(cacheKey)) return _craftCostCache.get(cacheKey);
+
+        let result = 0;
+        try {
+            result = profitHelpers_js.calculateTooltipCraftCost(itemHrid, mode);
+        } catch (error) {
+            console.error('[Enhancement Tooltip] craft cost failed for', itemHrid, error);
+        }
+
+        _craftCostCache.set(cacheKey, result);
+        return result;
+    }
+
+    /**
+     * Get cheapest protection item price
+     * Tests: item itself, mirror of protection, and specific protection items
+     * @param {string} itemHrid
+     * @param {Object} [options]
+     * @param {boolean} [options.useCraftingCost=false] - Price a copy of the item itself at its crafting cost when
+     *     that is cheaper than the market, the same as the base item
+     * @returns {{price: number, itemHrid: string|null, isCrafted: boolean}}
+     * @private
+     */
+    function getCheapestProtectionPrice(itemHrid, { useCraftingCost = false } = {}) {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData.itemDetailMap[itemHrid];
 
@@ -16072,17 +16223,28 @@
         // Find cheapest option
         let cheapestPrice = Infinity;
         let cheapestItemHrid = null;
+        let cheapestIsCrafted = false;
         for (const protectionHrid of protectionOptions) {
-            const price = getRealisticBaseItemPrice(protectionHrid);
+            let price = getRealisticBaseItemPrice(protectionHrid);
+            let isCrafted = false;
+            if (useCraftingCost && protectionHrid === itemHrid && !isUntradableCape(itemHrid)) {
+                const craftingCost = getTooltipCraftCostCached(itemHrid, 'ask');
+                if (craftingCost > 0 && (!(price > 0) || craftingCost < price)) {
+                    price = craftingCost;
+                    isCrafted = true;
+                }
+            }
             if (price > 0 && price < cheapestPrice) {
                 cheapestPrice = price;
                 cheapestItemHrid = protectionHrid;
+                cheapestIsCrafted = isCrafted;
             }
         }
 
         return {
             price: cheapestPrice === Infinity ? 0 : cheapestPrice,
             itemHrid: cheapestItemHrid,
+            isCrafted: cheapestIsCrafted,
         };
     }
 
@@ -36759,4 +36921,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Sim.combatSimAdapter, Toolasha.Sim.combatSimRunner, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Sim.allZonesRunner, Toolasha.Sim.engineGameData, Toolasha.Sim.enginePlayer, Toolasha.Utils.profitHelpers, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.abilityCalc, Toolasha.Sim.skillingSimHelpers, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.experienceCalculator, Toolasha.Core.tooltipObserver, Toolasha.Sim.abilityTimingCalculator, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core, Toolasha.Core.i18n, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.warningIcon, Toolasha.Sim.combatSimAdapter, Toolasha.Sim.combatSimRunner, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Sim.allZonesRunner, Toolasha.Sim.engineGameData, Toolasha.Sim.enginePlayer, Toolasha.Utils.profitHelpers, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.abilityCalc, Toolasha.Sim.skillingSimHelpers, Toolasha.Core, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.experienceCalculator, Toolasha.Core.tooltipObserver, Toolasha.Sim.abilityTimingCalculator, Toolasha.Utils.houseCostCalculator);

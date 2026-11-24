@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.35.1
+ * Version: 3.35.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19480,11 +19480,39 @@
     }
 
     /**
-     * Get cheapest protection item price
-     * Tests: item itself, mirror of protection, and specific protection items
+     * Cost to craft the base item, as the item tooltip's PROFIT table shows it. Delegates to the
+     * shared helper so the enhancement path's "Craft Item" and the item tooltip's total can never
+     * disagree, whichever tooltip is looked at. Cached until the next price update.
+     * @param {string} itemHrid
+     * @param {'ask'|'bid'} [mode='ask']
      * @private
      */
-    function getCheapestProtectionPrice(itemHrid) {
+    function getTooltipCraftCostCached(itemHrid, mode = 'ask') {
+        const cacheKey = `${itemHrid}|${mode}|${profitHelpers_js.isCraftCostIncludingSubMaterials()}`;
+        if (_craftCostCache.has(cacheKey)) return _craftCostCache.get(cacheKey);
+
+        let result = 0;
+        try {
+            result = profitHelpers_js.calculateTooltipCraftCost(itemHrid, mode);
+        } catch (error) {
+            console.error('[Enhancement Tooltip] craft cost failed for', itemHrid, error);
+        }
+
+        _craftCostCache.set(cacheKey, result);
+        return result;
+    }
+
+    /**
+     * Get cheapest protection item price
+     * Tests: item itself, mirror of protection, and specific protection items
+     * @param {string} itemHrid
+     * @param {Object} [options]
+     * @param {boolean} [options.useCraftingCost=false] - Price a copy of the item itself at its crafting cost when
+     *     that is cheaper than the market, the same as the base item
+     * @returns {{price: number, itemHrid: string|null, isCrafted: boolean}}
+     * @private
+     */
+    function getCheapestProtectionPrice(itemHrid, { useCraftingCost = false } = {}) {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData.itemDetailMap[itemHrid];
 
@@ -19499,17 +19527,28 @@
         // Find cheapest option
         let cheapestPrice = Infinity;
         let cheapestItemHrid = null;
+        let cheapestIsCrafted = false;
         for (const protectionHrid of protectionOptions) {
-            const price = getRealisticBaseItemPrice(protectionHrid);
+            let price = getRealisticBaseItemPrice(protectionHrid);
+            let isCrafted = false;
+            if (useCraftingCost && protectionHrid === itemHrid && !isUntradableCape(itemHrid)) {
+                const craftingCost = getTooltipCraftCostCached(itemHrid, 'ask');
+                if (craftingCost > 0 && (!(price > 0) || craftingCost < price)) {
+                    price = craftingCost;
+                    isCrafted = true;
+                }
+            }
             if (price > 0 && price < cheapestPrice) {
                 cheapestPrice = price;
                 cheapestItemHrid = protectionHrid;
+                cheapestIsCrafted = isCrafted;
             }
         }
 
         return {
             price: cheapestPrice === Infinity ? 0 : cheapestPrice,
             itemHrid: cheapestItemHrid,
+            isCrafted: cheapestIsCrafted,
         };
     }
 

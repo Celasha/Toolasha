@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.35.1
+ * Version: 3.35.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7690,15 +7690,21 @@
         let protectionBidPrice = 0;
         let protectionBidOutlier = false;
         if (protectFrom > 0 && pathResult.protectionCount > 0) {
-            const protectionInfo = getCheapestProtectionPrice(itemHrid);
+            const protectionInfo = getCheapestProtectionPrice(itemHrid, {
+                useCraftingCost: toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost'),
+            });
             if (protectionInfo.price > 0) {
                 protectionCost = protectionInfo.price * pathResult.protectionCount;
                 protectionItemHrid = protectionInfo.itemHrid;
                 protectionCount = pathResult.protectionCount;
                 protectionAskPrice = protectionInfo.price;
-                const protPrices = marketData_js.getItemPrices(protectionInfo.itemHrid, 0);
-                protectionBidPrice = protPrices?.bid > 0 ? protPrices.bid : protectionInfo.price;
-                protectionBidOutlier = protPrices?.bid > 0 ? protPrices.bidOutlier : false;
+                if (protectionInfo.isCrafted) {
+                    protectionBidPrice = getTooltipCraftCostCached(itemHrid, 'bid') || protectionInfo.price;
+                } else {
+                    const protPrices = marketData_js.getItemPrices(protectionInfo.itemHrid, 0);
+                    protectionBidPrice = protPrices?.bid > 0 ? protPrices.bid : protectionInfo.price;
+                    protectionBidOutlier = protPrices?.bid > 0 ? protPrices.bidOutlier : false;
+                }
             }
         }
 
@@ -7918,9 +7924,14 @@
     /**
      * Get cheapest protection item price
      * Tests: item itself, mirror of protection, and specific protection items
+     * @param {string} itemHrid
+     * @param {Object} [options]
+     * @param {boolean} [options.useCraftingCost=false] - Price a copy of the item itself at its crafting cost when
+     *     that is cheaper than the market, the same as the base item
+     * @returns {{price: number, itemHrid: string|null, isCrafted: boolean}}
      * @private
      */
-    function getCheapestProtectionPrice(itemHrid) {
+    function getCheapestProtectionPrice(itemHrid, { useCraftingCost = false } = {}) {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData.itemDetailMap[itemHrid];
 
@@ -7935,17 +7946,28 @@
         // Find cheapest option
         let cheapestPrice = Infinity;
         let cheapestItemHrid = null;
+        let cheapestIsCrafted = false;
         for (const protectionHrid of protectionOptions) {
-            const price = getRealisticBaseItemPrice(protectionHrid);
+            let price = getRealisticBaseItemPrice(protectionHrid);
+            let isCrafted = false;
+            if (useCraftingCost && protectionHrid === itemHrid && !isUntradableCape(itemHrid)) {
+                const craftingCost = getTooltipCraftCostCached(itemHrid, 'ask');
+                if (craftingCost > 0 && (!(price > 0) || craftingCost < price)) {
+                    price = craftingCost;
+                    isCrafted = true;
+                }
+            }
             if (price > 0 && price < cheapestPrice) {
                 cheapestPrice = price;
                 cheapestItemHrid = protectionHrid;
+                cheapestIsCrafted = isCrafted;
             }
         }
 
         return {
             price: cheapestPrice === Infinity ? 0 : cheapestPrice,
             itemHrid: cheapestItemHrid,
+            isCrafted: cheapestIsCrafted,
         };
     }
 

@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      3.35.1
+// @version      3.35.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
-// @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, qu, and sentientmilk, for providing the basis for a lot of this. Thank you to Shykai, amVoidGuy,  vlad and kuganDev for their immense work on the combat sim. A big special thanks to Paradoxian for the immense bug finding, testing and verbose posts. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, Maarg, SilkyPanda, MekaPyon!, Moonwisp, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Thank you to Tib for his generous contribution of the Character Cards. Thank you SilkyPanda for contributing a few features! Thank you to Sapnas for -deeply- testing and singlehandedly help me improve performance. Special thanks to Zaeter for the name. Thank you also to vidonnus for helping with infrastructure, bug fixes, engineering, issue raising and more. Thank you Vovchigus for bugfixing, process re-engineering, and teaching me Claude. Thank you to Weylan, creator of MWI Insight, whose design ideas helped us catch and fix some real reliability bugs.
+// @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, qu, and sentientmilk, for providing the basis for a lot of this. Thank you to Shykai, amVoidGuy,  vlad and kuganDev for their immense work on the combat sim. A big special thanks to Paradoxian for the immense bug finding, testing and verbose posts. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, Maarg, SilkyPanda, MekaPyon!, Moonwisp, Metzli, creator of the Metz Combat Sim Helper, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Thank you to Tib for his generous contribution of the Character Cards. Thank you SilkyPanda for contributing a few features! Thank you to Sapnas for -deeply- testing and singlehandedly help me improve performance. Special thanks to Zaeter for the name. Thank you also to vidonnus for helping with infrastructure, bug fixes, engineering, issue raising and more. Thank you Vovchigus for bugfixing, process re-engineering, and teaching me Claude. Thank you to Weylan, creator of MWI Insight, whose design ideas helped us catch and fix some real reliability bugs.
 // @license      CC-BY-NC-SA-4.0
 // @run-at       document-start
 // @match        https://www.milkywayidle.com/*
@@ -24,14 +24,14 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@bd935657c274d7b536f072714c458164b3fdc22c/dist/libraries/toolasha-core.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@bd935657c274d7b536f072714c458164b3fdc22c/dist/libraries/toolasha-utils.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@bd935657c274d7b536f072714c458164b3fdc22c/dist/libraries/toolasha-market.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@bd935657c274d7b536f072714c458164b3fdc22c/dist/libraries/toolasha-sim.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@bd935657c274d7b536f072714c458164b3fdc22c/dist/libraries/toolasha-actions.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@bd935657c274d7b536f072714c458164b3fdc22c/dist/libraries/toolasha-combat.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@bd935657c274d7b536f072714c458164b3fdc22c/dist/libraries/toolasha-ui.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@bd935657c274d7b536f072714c458164b3fdc22c/dist/libraries/toolasha-ui2.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-sim.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui2.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
@@ -1237,7 +1237,7 @@
         // Expose minimal user-facing API
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-        targetWindow.Toolasha.version = '3.35.1';
+        targetWindow.Toolasha.version = '3.35.2';
 
         // Feature toggle API (for users to manage settings via console)
         targetWindow.Toolasha.features = {
