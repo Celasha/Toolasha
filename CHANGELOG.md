@@ -2,16 +2,14 @@
 
 ## [3.35.2](https://github.com/Celasha/Toolasha/compare/v3.35.1...v3.35.2) (2026-11-24)
 
-
 ### Bug Fixes
 
-* price protection copies of the item at crafting cost when that option is on ([f3f6638](https://github.com/Celasha/Toolasha/commit/f3f6638975b08393d2c442c47cd7aecc6ae1fb8a))
-* show the enhancement level each loadout has saved on the loadout panel ([98c3580](https://github.com/Celasha/Toolasha/commit/98c3580c41f090e3d67c346d51c414efb096be0a))
-
+- price protection copies of the item at crafting cost when that option is on ([f3f6638](https://github.com/Celasha/Toolasha/commit/f3f6638975b08393d2c442c47cd7aecc6ae1fb8a))
+- show the enhancement level each loadout has saved on the loadout panel ([98c3580](https://github.com/Celasha/Toolasha/commit/98c3580c41f090e3d67c346d51c414efb096be0a))
 
 ### Documentation
 
-* add Metzli to userscript credits ([9038b18](https://github.com/Celasha/Toolasha/commit/9038b1833924133a53bf5568e8b60787793e0f01))
+- add Metzli to userscript credits ([9038b18](https://github.com/Celasha/Toolasha/commit/9038b1833924133a53bf5568e8b60787793e0f01))
 
 ## [3.35.1](https://github.com/Celasha/Toolasha/compare/v3.35.0...v3.35.1) (2026-11-22)
 
