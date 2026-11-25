@@ -48,7 +48,7 @@ function buildPanel(name, itemNames) {
         </div>`;
 }
 
-const savedLabels = () => [...document.querySelectorAll('.script_loadoutSavedLevel')];
+const levelOverlays = () => [...document.querySelectorAll('.script_loadoutEnhLevel')];
 
 beforeEach(() => {
     mocks.settings.loadoutEnhancementDisplay = true;
@@ -58,123 +58,103 @@ beforeEach(() => {
     feature.cleanup();
 });
 
+const RED = 'rgb(255, 90, 90)';
+const entry = (itemHrid, savedLevel, highestOwnedLevel, status) => ({
+    itemHrid,
+    savedLevel,
+    highestOwnedLevel,
+    status,
+});
+const show = (equipment, name = 'Mine', snapshotId = '1') => ({ name, snapshotId, equipment });
+
 describe('Loadout Enhancement Display saved levels', () => {
-    test('labels an icon with the level the loadout saved, amber when a higher copy is owned', () => {
+    test('turns the number red, with a tooltip, when the loadout will not give the saved level', () => {
         buildPanel('Mine', ['sword']);
         mocks.owned = new Map([['/items/sword', { highestEnhancementLevel: 9 }]]);
-        mocks.displays = [
-            {
-                name: 'Mine',
-                snapshotId: '1',
-                equipment: [
-                    { itemHrid: '/items/sword', savedLevel: 5, highestOwnedLevel: 9, status: 'higherEquipped' },
-                ],
-            },
-        ];
+        mocks.displays = [show([entry('/items/sword', 5, 9, 'higherIgnored')])];
 
         feature.initialize();
 
-        const [label] = savedLabels();
-        expect(label.textContent).toBe('loadoutSavedLevel.label|5|');
-        expect(label.title).toBe('loadoutSavedLevel.higherEquipped|5|9');
-        expect(label.style.color).toBe('rgb(255, 176, 32)');
-        expect(document.querySelector('.script_loadoutEnhLevel').textContent).toBe('+9');
+        const [overlay] = levelOverlays();
+        expect(overlay.textContent).toBe('+9');
+        expect(overlay.style.color).toBe(RED);
+        expect(overlay.title).toBe('loadoutSavedLevel.higherIgnored|5|9');
+        expect(overlay.style.pointerEvents).toBe('auto');
     });
 
-    test('is grey when the saved level is the best copy', () => {
+    test.each(['current', 'higherEquipped'])('leaves the number alone for status %s', (status) => {
         buildPanel('Mine', ['sword']);
-        mocks.owned = new Map([['/items/sword', { highestEnhancementLevel: 5 }]]);
-        mocks.displays = [
-            {
-                name: 'Mine',
-                snapshotId: '1',
-                equipment: [{ itemHrid: '/items/sword', savedLevel: 5, highestOwnedLevel: 5, status: 'current' }],
-            },
-        ];
+        mocks.owned = new Map([['/items/sword', { highestEnhancementLevel: 9 }]]);
+        mocks.displays = [show([entry('/items/sword', 5, 9, status)])];
 
         feature.initialize();
 
-        expect(savedLabels()[0].style.color).toBe('rgb(159, 176, 200)');
+        const [overlay] = levelOverlays();
+        expect(overlay.style.color).not.toBe(RED);
+        expect(overlay.title).toBe('');
+        expect(overlay.style.pointerEvents).toBe('none');
     });
 
-    test('shows no label for a +0 saved level on an item owned only at +0', () => {
+    test('shows a red +0 for an item the loadout saved at a level you do not have', () => {
+        buildPanel('Mine', ['sword']);
+        mocks.displays = [show([entry('/items/sword', 3, null, 'notOwned')])];
+
+        feature.initialize();
+
+        const [overlay] = levelOverlays();
+        expect(overlay.textContent).toBe('+0');
+        expect(overlay.style.color).toBe(RED);
+    });
+
+    test('shows nothing for a +0 saved level on an item owned only at +0', () => {
         buildPanel('Mine', ['sword']);
         mocks.owned = new Map([['/items/sword', { highestEnhancementLevel: 0 }]]);
-        mocks.displays = [
-            {
-                name: 'Mine',
-                snapshotId: '1',
-                equipment: [{ itemHrid: '/items/sword', savedLevel: 0, highestOwnedLevel: 0, status: 'current' }],
-            },
-        ];
+        mocks.displays = [show([entry('/items/sword', 0, 0, 'current')])];
 
         feature.initialize();
 
-        expect(savedLabels()).toHaveLength(0);
+        expect(levelOverlays()).toHaveLength(0);
     });
 
     test('among loadouts sharing a name, uses the one whose items are on screen', () => {
         buildPanel('Same', ['sword']);
         mocks.owned = new Map([['/items/sword', { highestEnhancementLevel: 9 }]]);
         mocks.displays = [
-            {
-                name: 'Same',
-                snapshotId: 'other',
-                equipment: [{ itemHrid: '/items/bow', savedLevel: 2, highestOwnedLevel: 9, status: 'current' }],
-            },
-            {
-                name: 'Same',
-                snapshotId: 'this',
-                equipment: [{ itemHrid: '/items/sword', savedLevel: 4, highestOwnedLevel: 9, status: 'current' }],
-            },
+            show([entry('/items/bow', 2, 9, 'higherIgnored')], 'Same', 'other'),
+            show([entry('/items/sword', 4, 9, 'higherIgnored')], 'Same', 'this'),
         ];
 
         feature.initialize();
 
-        expect(savedLabels().map((label) => label.textContent)).toEqual(['loadoutSavedLevel.label|4|']);
+        expect(levelOverlays().map((overlay) => overlay.title)).toEqual(['loadoutSavedLevel.higherIgnored|4|9']);
     });
 
-    test('adds nothing when its setting is off, and keeps the highest-owned overlay', () => {
+    test('keeps the plain highest-owned number when its setting is off', () => {
         mocks.settings.loadoutSavedLevelDisplay = false;
         buildPanel('Mine', ['sword']);
         mocks.owned = new Map([['/items/sword', { highestEnhancementLevel: 9 }]]);
-        mocks.displays = [
-            {
-                name: 'Mine',
-                snapshotId: '1',
-                equipment: [
-                    { itemHrid: '/items/sword', savedLevel: 5, highestOwnedLevel: 9, status: 'higherEquipped' },
-                ],
-            },
-        ];
+        mocks.displays = [show([entry('/items/sword', 5, 9, 'higherIgnored')])];
 
         feature.initialize();
 
-        expect(savedLabels()).toHaveLength(0);
-        expect(document.querySelector('.script_loadoutEnhLevel')).not.toBeNull();
+        const [overlay] = levelOverlays();
+        expect(overlay.textContent).toBe('+9');
+        expect(overlay.style.color).not.toBe(RED);
     });
 
     test('redraws when Core reports a loadout or ownership update, and stops after cleanup', () => {
         buildPanel('Mine', ['sword']);
         feature.initialize();
         expect(mocks.updateListeners.size).toBe(1);
-        expect(savedLabels()).toHaveLength(0);
+        expect(levelOverlays()).toHaveLength(0);
 
         mocks.owned = new Map([['/items/sword', { highestEnhancementLevel: 9 }]]);
-        mocks.displays = [
-            {
-                name: 'Mine',
-                snapshotId: '1',
-                equipment: [
-                    { itemHrid: '/items/sword', savedLevel: 5, highestOwnedLevel: 9, status: 'higherEquipped' },
-                ],
-            },
-        ];
+        mocks.displays = [show([entry('/items/sword', 5, 9, 'higherIgnored')])];
         [...mocks.updateListeners].forEach((listener) => listener());
-        expect(savedLabels()).toHaveLength(1);
+        expect(levelOverlays()[0].style.color).toBe(RED);
 
         feature.cleanup();
         expect(mocks.updateListeners.size).toBe(0);
-        expect(savedLabels()).toHaveLength(0);
+        expect(levelOverlays()).toHaveLength(0);
     });
 });

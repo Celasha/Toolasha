@@ -2568,7 +2568,7 @@ export const settingsGroups = {
             },
             loadoutSavedLevelDisplay: {
                 id: 'loadoutSavedLevelDisplay',
-                label: 'Loadout panel: Show the enhancement level each loadout has saved, flagged when you own a higher copy',
+                label: 'Loadout panel: Show the enhancement level each loadout has saved, shown in red when the loadout will not give it',
                 type: 'checkbox',
                 default: true,
                 dependencies: ['loadoutEnhancementDisplay'],

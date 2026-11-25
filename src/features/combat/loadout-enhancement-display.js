@@ -5,9 +5,9 @@
  * Uses Core's canonical owned-enhancement index for the highest level per itemHrid,
  * then injects a "+N" overlay (upper-right) on each loadout equipment icon.
  *
- * A second overlay (lower-left) shows the level the loadout has saved for the item, flagged when a higher copy
- * is owned. The saved levels come from Core's display-only accessor, which also says what the game will do
- * with them, so nothing here interprets the loadout's enhancement mode.
+ * The number turns red, with a tooltip, when the loadout will not give the level it saved for that item. The
+ * saved levels come from Core's display-only accessor, which also says what the game will do with them, so
+ * nothing here interprets the loadout's enhancement mode.
  */
 
 import config from '../../core/config.js';
@@ -17,8 +17,9 @@ import { t } from '../../core/i18n.js';
 import loadoutState from '../../core/loadout-state.js';
 
 const OVERLAY_CLASS = 'script_loadoutEnhLevel';
-const SAVED_OVERLAY_CLASS = 'script_loadoutSavedLevel';
-const SAVED_BEHIND_COLOR = '#ffb020';
+// Statuses where the loadout cannot give the level it saved (a higher copy in highest mode is not one)
+const MISMATCH_STATUSES = new Set(['notOwned', 'missingExact', 'higherIgnored', 'lowerOwned']);
+const MISMATCH_COLOR = '#ff5a5a';
 
 /**
  * The name of the loadout the panel is showing. The metadata row reads: "Name" [skill svg] "<loadout name>" [Edit].
@@ -114,7 +115,7 @@ function annotateLoadout() {
     if (allUses.length > 0 && validUses.length === 0) return;
 
     // DOM and data are ready — clear stale overlays and re-inject
-    for (const el of equipDiv.querySelectorAll(`.${OVERLAY_CLASS}, .${SAVED_OVERLAY_CLASS}`)) {
+    for (const el of equipDiv.querySelectorAll(`.${OVERLAY_CLASS}`)) {
         el.remove();
     }
 
@@ -139,7 +140,9 @@ function annotateLoadout() {
 
         const enhLevel = enhancementMap.get(itemHrid) ?? 0;
         const saved = savedLevels.get(itemHrid) || null;
-        if (enhLevel === 0 && !saved?.savedLevel) continue;
+        // Red when the loadout will not give you what it saved; the number stays the best copy you own
+        const mismatch = saved !== null && MISMATCH_STATUSES.has(saved.status);
+        if (enhLevel === 0 && !mismatch) continue;
 
         // DOM: use → svg → Item_iconContainer → Item_item__
         const svg = use.closest('svg');
@@ -148,51 +151,26 @@ function annotateLoadout() {
         if (!itemDiv) continue;
 
         // Skip if already annotated
-        if (itemDiv.querySelector(`.${OVERLAY_CLASS}, .${SAVED_OVERLAY_CLASS}`)) continue;
+        if (itemDiv.querySelector(`.${OVERLAY_CLASS}`)) continue;
 
         itemDiv.style.position = 'relative';
 
-        // Bottom-left: the level this loadout has saved, flagged when a higher copy is owned.
-        if (saved && (saved.savedLevel > 0 || enhLevel > 0)) {
-            const behind = saved.highestOwnedLevel !== null && saved.savedLevel < saved.highestOwnedLevel;
-            const savedLabel = document.createElement('div');
-            savedLabel.className = SAVED_OVERLAY_CLASS;
-            savedLabel.textContent = t('loadoutSavedLevel.label', { saved: saved.savedLevel });
-            savedLabel.title = getSavedLevelTitle(saved);
-            // Unlike the other overlay it has a tooltip, so it takes pointer events; clicks still reach the slot
-            savedLabel.style.cssText = `
-            z-index: 1;
-            position: absolute;
-            left: 1px;
-            bottom: 1px;
-            padding: 1px 3px;
-            border-radius: 3px;
-            background: rgba(10, 14, 24, 0.82);
-            color: ${behind ? SAVED_BEHIND_COLOR : '#9fb0c8'};
-            outline: ${behind ? '1px solid rgba(255, 176, 32, 0.55)' : 'none'};
-            font-size: 9px;
-            font-weight: 600;
-            line-height: 1.2;
-            white-space: nowrap;
-        `;
-            itemDiv.appendChild(savedLabel);
-        }
-
-        if (enhLevel === 0) continue;
         const overlay = document.createElement('div');
         overlay.className = OVERLAY_CLASS;
         overlay.textContent = `+${enhLevel}`;
+        // The mismatch tooltip needs the pointer; clicks on the slot are not affected by a title
+        if (mismatch) overlay.title = getSavedLevelTitle(saved);
         overlay.style.cssText = `
             z-index: 1;
             position: absolute;
             top: 2px;
             right: 2px;
             text-align: right;
-            color: ${config.COLOR_ACCENT};
+            color: ${mismatch ? MISMATCH_COLOR : config.COLOR_ACCENT};
             font-size: 10px;
             font-weight: bold;
             text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
-            pointer-events: none;
+            pointer-events: ${mismatch ? 'auto' : 'none'};
         `;
         itemDiv.appendChild(overlay);
     }
@@ -202,7 +180,7 @@ function annotateLoadout() {
  * Remove all loadout enhancement overlays from the page.
  */
 function removeOverlays() {
-    for (const el of document.querySelectorAll(`.${OVERLAY_CLASS}, .${SAVED_OVERLAY_CLASS}`)) {
+    for (const el of document.querySelectorAll(`.${OVERLAY_CLASS}`)) {
         el.remove();
     }
 }
