@@ -6,66 +6,91 @@
 import { t } from '../../core/i18n.js';
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 
+const LARGE_CHART_THRESHOLD = 200;
+const MAX_X_TICKS = 12;
+
 class DungeonTrackerUIChart {
-    constructor(state, formatTimeFunc) {
+    constructor(state) {
         this.state = state;
-        this.formatTime = formatTimeFunc;
         this.chartInstance = null;
-        this.modalChartInstance = null; // Store modal chart for cleanup
+        this.modalChartInstance = null;
+        this.closeModal = null;
     }
 
     /**
      * Render chart with filtered run data
      * @param {HTMLElement} container - Main container element
+     * @param {Function} canRender - Whether this render is still current and visible after the read
      */
-    async render(container) {
+    async render(container, canRender = () => true) {
         const canvas = container.querySelector('#mwi-dt-chart-canvas');
         if (!canvas) return;
 
-        // Get filtered runs based on current filters
         const allRuns = await dungeonTrackerStorage.getAllRuns();
-        let filteredRuns = allRuns;
+        if (!canRender()) return;
 
-        if (this.state.filterDungeon !== 'all') {
-            filteredRuns = filteredRuns.filter((r) => r.dungeonName === this.state.filterDungeon);
+        this.chartInstance?.destroy();
+        this.chartInstance = null;
+        this.chartInstance = this.createChart(canvas, allRuns);
+    }
+
+    /**
+     * Build the chart used by both the panel and the pop-out.
+     * @param {HTMLCanvasElement} canvas
+     * @param {Array} allRuns
+     * @param {boolean} [isModal=false]
+     * @returns {Chart|null}
+     */
+    createChart(canvas, allRuns, isModal = false) {
+        const { filterDungeon, filterTeam } = this.state;
+        const runs = [];
+        for (const run of allRuns) {
+            if (filterDungeon !== 'all' && run.dungeonName !== filterDungeon) continue;
+            if (filterTeam !== 'all' && run.teamKey !== filterTeam) continue;
+            // Failed attempts and unvalidated durations inflated by sleep would skew the trend.
+            if (run.result && run.result !== 'success') continue;
+            if (run.hibernationDetected && !run.validated) continue;
+
+            runs.push({
+                timestamp: typeof run.timestamp === 'number' ? run.timestamp : Date.parse(run.timestamp),
+                minutes: (run.duration || run.totalTime || 0) / 60000,
+            });
         }
-        if (this.state.filterTeam !== 'all') {
-            filteredRuns = filteredRuns.filter((r) => r.teamKey === this.state.filterTeam);
+
+        const count = runs.length;
+        if (count === 0) return null;
+
+        runs.sort((a, b) => a.timestamp - b.timestamp);
+        const largeChart = count > LARGE_CHART_THRESHOLD;
+        const placeholder = '{runNumber}';
+        const [prefix, suffix = ''] = t('dungeonTrackerUi.chartRunLabel', { number: placeholder }).split(placeholder);
+        const labels = new Array(count);
+        const durations = new Array(count);
+        let total = 0;
+        let fastest = Infinity;
+        let slowest = -Infinity;
+        for (let i = 0; i < count; i++) {
+            // In the pop-out, Run 1 is the most recent run, as in the history list.
+            labels[i] = `${prefix}${isModal ? count - i : i + 1}${suffix}`;
+            const duration = runs[i].minutes;
+            durations[i] = duration;
+            total += duration;
+            fastest = Math.min(fastest, duration);
+            slowest = Math.max(slowest, duration);
         }
 
-        // This chart plots run duration as a trend over time - a failed/canceled attempt's
-        // duration isn't comparable to a clear's, so it's excluded rather than shown as a point
-        // on the same line (matches the history/stats views treating fails separately).
-        filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
-
-        // A run's duration is untrustworthy only when it's both unvalidated (wall-clock) AND
-        // flagged for a sleep/background hibernation gap during tracking - a single inflated
-        // point would otherwise dominate the chart's scale and skew avg/fastest/slowest below.
-        filteredRuns = filteredRuns.filter((r) => !r.hibernationDetected || r.validated);
-
-        if (filteredRuns.length === 0) {
-            // Destroy existing chart
-            if (this.chartInstance) {
-                this.chartInstance.destroy();
-                this.chartInstance = null;
-            }
-            return;
-        }
-
-        // Sort by timestamp (oldest to newest)
-        filteredRuns.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-        // Prepare data
-        // Label runs oldest to newest (Run 1 = oldest, Run N = most recent)
-        const labels = filteredRuns.map((_, i) => t('dungeonTrackerUi.chartRunLabel', { number: i + 1 }));
-        const durations = filteredRuns.map((r) => (r.duration || r.totalTime || 0) / 60000); // Convert to minutes
-
-        // Calculate stats
-        const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
-        const fastestDuration = Math.min(...durations);
-        const slowestDuration = Math.max(...durations);
-
-        // Create datasets
+        // Chart.js 3.7 index tooltips look up the same array index in each visible dataset.
+        // Keep the reference lines as plain numbers so every run's tooltip includes them.
+        const referenceLine = (label, value, borderColor) => ({
+            label,
+            data: new Array(count).fill(value),
+            borderColor,
+            borderWidth: 2,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            tension: 0,
+            fill: false,
+        });
         const datasets = [
             {
                 label: t('dungeonTrackerUi.chartRunTimesLabel'),
@@ -73,59 +98,24 @@ class DungeonTrackerUIChart {
                 borderColor: 'rgb(75, 192, 192)',
                 backgroundColor: 'rgba(75, 192, 192, 0.2)',
                 borderWidth: 2,
-                pointRadius: 3,
+                pointRadius: largeChart ? 0 : 3,
                 pointHoverRadius: 5,
-                tension: 0.1,
+                tension: largeChart ? 0 : 0.1,
                 fill: false,
             },
-            {
-                label: t('dungeonTrackerUi.chartAverageLabel'),
-                data: new Array(durations.length).fill(avgDuration),
-                borderColor: 'rgb(255, 159, 64)',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                tension: 0,
-                fill: false,
-            },
-            {
-                label: t('dungeonTrackerUi.chartFastestLabel'),
-                data: new Array(durations.length).fill(fastestDuration),
-                borderColor: 'rgb(75, 192, 75)',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                tension: 0,
-                fill: false,
-            },
-            {
-                label: t('dungeonTrackerUi.chartSlowestLabel'),
-                data: new Array(durations.length).fill(slowestDuration),
-                borderColor: 'rgb(255, 99, 132)',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                tension: 0,
-                fill: false,
-            },
+            referenceLine(t('dungeonTrackerUi.chartAverageLabel'), total / count, 'rgb(255, 159, 64)'),
+            referenceLine(t('dungeonTrackerUi.chartFastestLabel'), fastest, 'rgb(75, 192, 75)'),
+            referenceLine(t('dungeonTrackerUi.chartSlowestLabel'), slowest, 'rgb(255, 99, 132)'),
         ];
 
-        // Destroy existing chart
-        if (this.chartInstance) {
-            this.chartInstance.destroy();
-        }
-
-        // Create new chart
-        const ctx = canvas.getContext('2d');
-        this.chartInstance = new Chart(ctx, {
+        const modalFont = isModal ? { font: { size: 14 } } : {};
+        return new Chart(canvas.getContext('2d'), {
             type: 'line',
-            data: {
-                labels: labels,
-                datasets: datasets,
-            },
+            data: { labels, datasets },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: false,
                 interaction: {
                     mode: 'index',
                     intersect: false,
@@ -138,15 +128,7 @@ class DungeonTrackerUIChart {
                             color: '#ccc',
                             usePointStyle: true,
                             padding: 15,
-                        },
-                        onClick: (e, legendItem, legend) => {
-                            const index = legendItem.datasetIndex;
-                            const ci = legend.chart;
-                            const meta = ci.getDatasetMeta(index);
-
-                            // Toggle visibility
-                            meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
-                            ci.update();
+                            ...modalFont,
                         },
                     },
                     title: {
@@ -154,7 +136,7 @@ class DungeonTrackerUIChart {
                     },
                     tooltip: {
                         callbacks: {
-                            label: function (context) {
+                            label(context) {
                                 const label = context.dataset.label || '';
                                 const value = context.parsed.y;
                                 const minutes = Math.floor(value);
@@ -170,9 +152,11 @@ class DungeonTrackerUIChart {
                             display: true,
                             text: t('dungeonTrackerUi.chartRunNumberAxisLabel'),
                             color: '#ccc',
+                            ...modalFont,
                         },
                         ticks: {
                             color: '#999',
+                            ...(largeChart && { autoSkip: true, maxTicksLimit: MAX_X_TICKS, sampleSize: MAX_X_TICKS }),
                         },
                         grid: {
                             color: '#333',
@@ -183,6 +167,7 @@ class DungeonTrackerUIChart {
                             display: true,
                             text: t('dungeonTrackerUi.chartDurationAxisLabel'),
                             color: '#ccc',
+                            ...modalFont,
                         },
                         ticks: {
                             color: '#999',
@@ -201,11 +186,7 @@ class DungeonTrackerUIChart {
      * Create pop-out modal with larger chart
      */
     createPopoutModal() {
-        // Remove existing modal if any
-        const existingModal = document.getElementById('mwi-dt-chart-modal');
-        if (existingModal) {
-            existingModal.remove();
-        }
+        this.closeModal?.();
 
         // Create modal container
         const modal = document.createElement('div');
@@ -253,12 +234,10 @@ class DungeonTrackerUIChart {
             border-radius: 4px;
             font-weight: bold;
         `;
-        closeBtn.addEventListener('click', () => destroyAndClose());
 
         header.appendChild(title);
         header.appendChild(closeBtn);
 
-        // Create canvas container
         const canvasContainer = document.createElement('div');
         canvasContainer.style.cssText = `
             flex: 1;
@@ -274,193 +253,44 @@ class DungeonTrackerUIChart {
         modal.appendChild(canvasContainer);
         document.body.appendChild(modal);
 
-        // Render chart in modal
-        this.renderModalChart(canvas);
-
-        // Shared teardown for button and Escape — idempotent
-        const destroyAndClose = () => {
-            if (this.modalChartInstance) {
-                this.modalChartInstance.destroy();
-                this.modalChartInstance = null;
-            }
+        const escHandler = (e) => {
+            if (e.key === 'Escape') this.closeModal?.();
+        };
+        this.closeModal = () => {
+            this.modalChartInstance?.destroy();
+            this.modalChartInstance = null;
+            this.closeModal = null;
             modal.remove();
             document.removeEventListener('keydown', escHandler);
         };
-
-        // Close on ESC key
-        const escHandler = (e) => {
-            if (e.key === 'Escape') destroyAndClose();
-        };
+        closeBtn.addEventListener('click', this.closeModal);
         document.addEventListener('keydown', escHandler);
+
+        this.renderModalChart(canvas);
     }
 
     /**
      * Render chart in pop-out modal
-     * @param {HTMLElement} canvas - Canvas element
+     * @param {HTMLCanvasElement} canvas - Canvas element
      */
     async renderModalChart(canvas) {
-        // Get filtered runs (same as main chart)
-        const allRuns = await dungeonTrackerStorage.getAllRuns();
-        let filteredRuns = allRuns;
-
-        if (this.state.filterDungeon !== 'all') {
-            filteredRuns = filteredRuns.filter((r) => r.dungeonName === this.state.filterDungeon);
+        try {
+            const allRuns = await dungeonTrackerStorage.getAllRuns();
+            if (canvas.isConnected) {
+                this.modalChartInstance = this.createChart(canvas, allRuns, true);
+            }
+        } catch (error) {
+            console.error('[Dungeon Tracker UI Chart] Pop-out render failed:', error);
         }
-        if (this.state.filterTeam !== 'all') {
-            filteredRuns = filteredRuns.filter((r) => r.teamKey === this.state.filterTeam);
-        }
+    }
 
-        // Exclude fails/cancels - see render() for why.
-        filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
-
-        // Exclude hibernation-flagged unvalidated runs - see render() for why.
-        filteredRuns = filteredRuns.filter((r) => !r.hibernationDetected || r.validated);
-
-        if (filteredRuns.length === 0) return;
-
-        // Sort by timestamp
-        filteredRuns.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-        // Prepare data (same as main chart)
-        // Label runs in reverse chronological order to match list (newest = Run 1, oldest = Run N)
-        const labels = filteredRuns.map((_, i) =>
-            t('dungeonTrackerUi.chartRunLabel', { number: filteredRuns.length - i })
-        );
-        const durations = filteredRuns.map((r) => (r.duration || r.totalTime || 0) / 60000);
-
-        const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
-        const fastestDuration = Math.min(...durations);
-        const slowestDuration = Math.max(...durations);
-
-        const datasets = [
-            {
-                label: t('dungeonTrackerUi.chartRunTimesLabel'),
-                data: durations,
-                borderColor: 'rgb(75, 192, 192)',
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                borderWidth: 2,
-                pointRadius: 3,
-                pointHoverRadius: 5,
-                tension: 0.1,
-                fill: false,
-            },
-            {
-                label: t('dungeonTrackerUi.chartAverageLabel'),
-                data: new Array(durations.length).fill(avgDuration),
-                borderColor: 'rgb(255, 159, 64)',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                tension: 0,
-                fill: false,
-            },
-            {
-                label: t('dungeonTrackerUi.chartFastestLabel'),
-                data: new Array(durations.length).fill(fastestDuration),
-                borderColor: 'rgb(75, 192, 75)',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                tension: 0,
-                fill: false,
-            },
-            {
-                label: t('dungeonTrackerUi.chartSlowestLabel'),
-                data: new Array(durations.length).fill(slowestDuration),
-                borderColor: 'rgb(255, 99, 132)',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                tension: 0,
-                fill: false,
-            },
-        ];
-
-        // Create chart
-        const ctx = canvas.getContext('2d');
-        this.modalChartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: datasets,
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
-                plugins: {
-                    legend: {
-                        display: true,
-                        position: 'top',
-                        labels: {
-                            color: '#ccc',
-                            usePointStyle: true,
-                            padding: 15,
-                            font: {
-                                size: 14,
-                            },
-                        },
-                        onClick: (e, legendItem, legend) => {
-                            const index = legendItem.datasetIndex;
-                            const ci = legend.chart;
-                            const meta = ci.getDatasetMeta(index);
-
-                            meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
-                            ci.update();
-                        },
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function (context) {
-                                const label = context.dataset.label || '';
-                                const value = context.parsed.y;
-                                const minutes = Math.floor(value);
-                                const seconds = Math.floor((value - minutes) * 60);
-                                return `${label}: ${minutes}m ${seconds}s`;
-                            },
-                        },
-                    },
-                },
-                scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: t('dungeonTrackerUi.chartRunNumberAxisLabel'),
-                            color: '#ccc',
-                            font: {
-                                size: 14,
-                            },
-                        },
-                        ticks: {
-                            color: '#999',
-                        },
-                        grid: {
-                            color: '#333',
-                        },
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: t('dungeonTrackerUi.chartDurationAxisLabel'),
-                            color: '#ccc',
-                            font: {
-                                size: 14,
-                            },
-                        },
-                        ticks: {
-                            color: '#999',
-                        },
-                        grid: {
-                            color: '#333',
-                        },
-                        beginAtZero: false,
-                    },
-                },
-            },
-        });
+    /**
+     * Destroy charts and close the pop-out when the tracker is torn down.
+     */
+    cleanup() {
+        this.chartInstance?.destroy();
+        this.chartInstance = null;
+        this.closeModal?.();
     }
 }
 

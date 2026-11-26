@@ -26,6 +26,9 @@ class DungeonTrackerUI {
         this.updateInterval = null;
         this.isInitialized = false; // Guard against multiple initializations
         this.timerRegistry = createTimerRegistry();
+        this.isChartDirty = true;
+        this.chartRenderRequest = null;
+        this.historyRefreshRequest = null;
 
         // Module references (initialized in initialize())
         this.state = dungeonTrackerUIState;
@@ -51,44 +54,33 @@ class DungeonTrackerUI {
         // Load saved state
         await this.state.load();
 
-        // Initialize modules with formatTime function
-        this.chart = new DungeonTrackerUIChart(this.state, this.formatTime.bind(this));
+        this.chart = new DungeonTrackerUIChart(this.state);
         this.history = new DungeonTrackerUIHistory(this.state, this.formatTime.bind(this));
         this.interactions = new DungeonTrackerUIInteractions(this.state, this.chart, this.history);
 
         // Set up history delete callback
-        this.history.onDelete(() => this.updateRunHistory());
+        this.history.onDelete(() => this.refreshHistoryAndChart());
 
-        // Create UI elements
         this.createUI();
-
-        // Hide UI initially - only show when dungeon is active
-        this.hide();
 
         // Store callback reference for cleanup
         this.dungeonUpdateHandler = (currentRun, completedRun) => {
+            // Failed and canceled runs may end without a completion event.
+            if (completedRun || !currentRun) this.isChartDirty = true;
+
             if (completedRun) {
                 // Dungeon completed - trigger chat annotation update regardless of UI setting
                 const annotateTimeout = setTimeout(() => dungeonTrackerChatAnnotations.annotateAllMessages(), 200);
                 this.timerRegistry.registerTimeout(annotateTimeout);
             }
 
-            // Check if UI is enabled before updating the panel
-            if (!config.isFeatureEnabled('dungeonTrackerUI')) {
+            if (completedRun || !currentRun || !config.isFeatureEnabled('dungeonTrackerUI')) {
                 this.hide();
                 return;
             }
 
-            if (completedRun) {
-                this.hide();
-            } else if (currentRun) {
-                // Dungeon in progress
-                this.show();
-                this.update(currentRun);
-            } else {
-                // No active dungeon
-                this.hide();
-            }
+            this.show();
+            this.update(currentRun);
         };
 
         // Register for dungeon tracker updates
@@ -105,6 +97,7 @@ class DungeonTrackerUI {
         // Create container
         this.container = document.createElement('div');
         this.container.id = 'mwi-dungeon-tracker';
+        this.container.style.display = 'none';
 
         // Apply saved position or default
         this.state.updatePosition(this.container);
@@ -424,12 +417,9 @@ class DungeonTrackerUI {
 
         // Setup all interactions with callbacks
         this.interactions.setupAll(this.container, {
-            onUpdate: () => {
-                const currentRun = dungeonTracker.getCurrentRun();
-                if (currentRun) this.update(currentRun);
-            },
-            onUpdateChart: () => this.updateChart(),
-            onUpdateHistory: () => this.updateRunHistory(),
+            onHistoryChange: () => this.refreshHistoryAndChart(),
+            onChartExpand: () => this.updateChart(),
+            onPanelExpand: () => this.renderPendingChart(),
         });
 
         // Apply initial states
@@ -441,9 +431,16 @@ class DungeonTrackerUI {
      * @param {Object} run - Current run state
      */
     async update(run) {
-        if (!run || !this.container) {
-            return;
-        }
+        this.updateProgress(run);
+        await this.updateRunHistory(run);
+    }
+
+    /**
+     * Update live run fields without reading history.
+     * @param {Object} run - Current run state
+     */
+    updateProgress(run) {
+        if (!run || !this.isVisible()) return;
 
         // Update dungeon name and tier
         const dungeonName = this.container.querySelector('#mwi-dt-dungeon-name');
@@ -476,7 +473,7 @@ class DungeonTrackerUI {
         // Update time label based on hibernation detection
         const timeLabel = this.container.querySelector('#mwi-dt-time-label');
         if (timeLabel) {
-            if (run.hibernationDetected) {
+            if (run.hibernationDetected ?? dungeonTracker.hibernationDetected) {
                 timeLabel.textContent = t('dungeonTrackerUi.chatLabel');
                 timeLabel.title = t('dungeonTrackerUi.chatTooltip');
             } else {
@@ -493,74 +490,55 @@ class DungeonTrackerUI {
             progressBar.style.width = `${percent}%`;
             progressText.textContent = `${percent}%`;
         }
+    }
 
-        // Fetch run statistics - respect ALL filters to match chart exactly
-        let stats, lastRunTime;
+    /**
+     * Update historical stats and key counts after a dungeon event or history change.
+     * @param {Object} run - Current run state
+     * @param {Array} allRuns - Saved history
+     */
+    updateStats(run, allRuns) {
+        const { filterDungeon, filterTeam } = this.state;
+        let totalRuns = 0;
+        let failCount = 0;
+        let total = 0;
+        let failedOrCanceledTotal = 0;
+        let fastestTime = Infinity;
+        let slowestTime = -Infinity;
+        let lastRunTime = 0;
+        let latestTimestamp = -Infinity;
+        for (const attempt of allRuns) {
+            if (filterDungeon !== 'all' && attempt.dungeonName !== filterDungeon) continue;
+            if (filterTeam !== 'all' && attempt.teamKey !== filterTeam) continue;
+            if (attempt.hibernationDetected && !attempt.validated) continue;
 
-        // Get all runs and apply filters (EXACT SAME LOGIC as chart)
-        const allRuns = await dungeonTrackerStorage.getAllRuns();
-        let allAttempts = allRuns;
-
-        // Apply dungeon filter
-        if (this.state.filterDungeon !== 'all') {
-            allAttempts = allAttempts.filter((r) => r.dungeonName === this.state.filterDungeon);
+            const duration = attempt.duration || attempt.totalTime || 0;
+            if (!attempt.result || attempt.result === 'success') {
+                totalRuns++;
+                total += duration;
+                fastestTime = Math.min(fastestTime, duration);
+                slowestTime = Math.max(slowestTime, duration);
+                const timestamp =
+                    typeof attempt.timestamp === 'number' ? attempt.timestamp : Date.parse(attempt.timestamp);
+                if (timestamp > latestTimestamp) {
+                    latestTimestamp = timestamp;
+                    lastRunTime = duration;
+                }
+            } else if (attempt.result === 'fail' || attempt.result === 'cancel') {
+                // Cancels cost time but aren't failures.
+                failedOrCanceledTotal += duration;
+                if (attempt.result === 'fail') failCount++;
+            }
         }
-
-        // Apply team filter
-        if (this.state.filterTeam !== 'all') {
-            allAttempts = allAttempts.filter((r) => r.teamKey === this.state.filterTeam);
-        }
-
-        // A run's duration is untrustworthy only when it's both unvalidated (wall-clock) AND
-        // flagged for a sleep/background hibernation gap during tracking - exclude it from time
-        // math entirely rather than let it skew avg/fastest/slowest/last.
-        allAttempts = allAttempts.filter((r) => !r.hibernationDetected || r.validated);
-
-        // Failed/canceled attempts cost real time but aren't clears - keep the existing
-        // clear-only stats (avg/fastest/slowest/last) unaffected by them. A cancel is a
-        // voluntary withdrawal, not a failure, so it's excluded from failCount/failRate
-        // entirely while still counting toward the time cost in avgTimePerAttempt.
-        const runHistory = allAttempts.filter((r) => !r.result || r.result === 'success');
-        const failedOrCanceledAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
-        const failedAttempts = allAttempts.filter((r) => r.result === 'fail');
-
-        // Calculate stats from filtered runs
-        if (runHistory.length > 0) {
-            // Sort by timestamp (descending for most recent first)
-            runHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-            const durations = runHistory.map((r) => r.duration || r.totalTime || 0);
-            const total = durations.reduce((sum, d) => sum + d, 0);
-            const failedOrCanceledTotal = failedOrCanceledAttempts.reduce(
-                (sum, r) => sum + (r.duration || r.totalTime || 0),
-                0
-            );
-            const totalOutcomes = runHistory.length + failedAttempts.length;
-
-            stats = {
-                totalRuns: runHistory.length,
-                avgTime: Math.floor(total / runHistory.length),
-                fastestTime: Math.min(...durations),
-                slowestTime: Math.max(...durations),
-                avgTimePerAttempt: Math.floor((total + failedOrCanceledTotal) / runHistory.length),
-                failCount: failedAttempts.length,
-                failRate: totalOutcomes > 0 ? failedAttempts.length / totalOutcomes : 0,
-            };
-
-            lastRunTime = durations[0]; // First run after sorting (most recent)
-        } else {
-            // No runs match filters
-            stats = {
-                totalRuns: 0,
-                avgTime: 0,
-                fastestTime: 0,
-                slowestTime: 0,
-                avgTimePerAttempt: 0,
-                failCount: failedAttempts.length,
-                failRate: failedAttempts.length > 0 ? 1 : 0,
-            };
-            lastRunTime = 0;
-        }
+        const stats = {
+            totalRuns,
+            avgTime: totalRuns ? Math.floor(total / totalRuns) : 0,
+            fastestTime: totalRuns ? fastestTime : 0,
+            slowestTime: totalRuns ? slowestTime : 0,
+            avgTimePerAttempt: totalRuns ? Math.floor((total + failedOrCanceledTotal) / totalRuns) : 0,
+            failCount,
+            failRate: failCount / (totalRuns + failCount || 1),
+        };
 
         // Get character name from dataManager
         let characterName = dataManager.characterData?.character?.name;
@@ -635,14 +613,14 @@ class DungeonTrackerUI {
             lastTime.textContent = lastRunTime > 0 ? this.formatTime(lastRunTime) : '--:--';
         }
 
-        const fastestTime = this.container.querySelector('#mwi-dt-fastest-time');
-        if (fastestTime) {
-            fastestTime.textContent = stats.fastestTime > 0 ? this.formatTime(stats.fastestTime) : '--:--';
+        const fastestTimeElement = this.container.querySelector('#mwi-dt-fastest-time');
+        if (fastestTimeElement) {
+            fastestTimeElement.textContent = stats.fastestTime > 0 ? this.formatTime(stats.fastestTime) : '--:--';
         }
 
-        const slowestTime = this.container.querySelector('#mwi-dt-slowest-time');
-        if (slowestTime) {
-            slowestTime.textContent = stats.slowestTime > 0 ? this.formatTime(stats.slowestTime) : '--:--';
+        const slowestTimeElement = this.container.querySelector('#mwi-dt-slowest-time');
+        if (slowestTimeElement) {
+            slowestTimeElement.textContent = stats.slowestTime > 0 ? this.formatTime(stats.slowestTime) : '--:--';
         }
 
         const avgPerAttempt = this.container.querySelector('#mwi-dt-avg-per-attempt');
@@ -659,9 +637,6 @@ class DungeonTrackerUI {
 
         // Update Keys section with party member key counts
         this.updateKeysDisplay(run.keyCountsMap || {}, characterName);
-
-        // Update run history list
-        await this.updateRunHistory();
     }
 
     /**
@@ -727,27 +702,78 @@ class DungeonTrackerUI {
     }
 
     /**
-     * Update run history display
+     * Refresh historical stats and the run list from one storage read.
+     * @param {Object} [run] - Current run state, if already available
      */
-    async updateRunHistory() {
-        await this.history.update(this.container);
-    }
+    async updateRunHistory(run = dungeonTracker.getCurrentRun()) {
+        if (!this.isVisible()) return;
 
-    /**
-     * Update chart display
-     */
-    async updateChart() {
-        if (this.state.isChartExpanded) {
-            await this.chart.render(this.container);
+        const request = {};
+        this.historyRefreshRequest = request;
+        try {
+            const allRuns = await dungeonTrackerStorage.getAllRuns();
+            if (this.historyRefreshRequest !== request || !this.isVisible()) return;
+            this.history.update(this.container, allRuns);
+            if (run) this.updateStats(run, allRuns);
+        } catch (error) {
+            console.error('[Dungeon Tracker UI] History refresh failed:', error);
         }
     }
 
     /**
-     * Show the UI
+     * Refresh stats, history, and the chart after the data or filters change.
+     */
+    async refreshHistoryAndChart() {
+        const container = this.container;
+        await this.updateRunHistory();
+        if (container === this.container) await this.updateChart();
+    }
+
+    /**
+     * Invalidate the chart and update it if visible.
+     */
+    updateChart() {
+        this.isChartDirty = true;
+        return this.renderPendingChart();
+    }
+
+    isVisible() {
+        return this.container && this.container.style.display !== 'none';
+    }
+
+    canRenderChart() {
+        return this.isVisible() && !this.state.isCollapsed && this.state.isChartExpanded;
+    }
+
+    /**
+     * Render only when the panel and chart are both open, including after the async storage read.
+     */
+    async renderPendingChart() {
+        if (!this.isChartDirty || !this.canRenderChart()) return;
+
+        const request = {};
+        this.chartRenderRequest = request;
+        this.isChartDirty = false;
+        try {
+            await this.chart.render(this.container, () => this.chartRenderRequest === request && this.canRenderChart());
+        } catch (error) {
+            if (this.chartRenderRequest === request) this.isChartDirty = true;
+            console.error('[Dungeon Tracker UI] Chart render failed:', error);
+        } finally {
+            if (this.chartRenderRequest === request) {
+                this.chartRenderRequest = null;
+                if (!this.canRenderChart()) this.isChartDirty = true;
+            }
+        }
+    }
+
+    /**
+     * Show the UI and render a pending chart once it can be seen.
      */
     show() {
         if (this.container) {
             this.container.style.display = 'block';
+            this.renderPendingChart();
         }
     }
 
@@ -771,10 +797,7 @@ class DungeonTrackerUI {
 
         // Update every second
         this.updateInterval = setInterval(() => {
-            const currentRun = dungeonTracker.getCurrentRun();
-            if (currentRun) {
-                this.update(currentRun);
-            }
+            if (this.isVisible()) this.updateProgress(dungeonTracker.getCurrentRun());
         }, 1000);
 
         this.timerRegistry.registerInterval(this.updateInterval);
@@ -799,6 +822,10 @@ class DungeonTrackerUI {
         }
 
         this.timerRegistry.clearAll();
+        this.historyRefreshRequest = null;
+        this.chartRenderRequest = null;
+        this.isChartDirty = true;
+        this.chart?.cleanup();
 
         // Force remove ALL dungeon tracker containers (handles duplicates from memory leak)
         const allContainers = document.querySelectorAll('#mwi-dungeon-tracker');
