@@ -49,19 +49,16 @@ class DOMObserver {
                     for (const node of mutation.addedNodes) {
                         if (node.nodeType !== Node.ELEMENT_NODE) continue;
 
-                        // Dispatch to all registered handlers
+                        // Share one lazy descendant snapshot across immediate handlers for this added node.
+                        const classSnapshot = {};
                         this.handlers.forEach((handler) => {
                             try {
                                 // Before the debounce, so a relevant node is never replaced by a later irrelevant one
                                 if (handler.filter && !handler.filter(node)) return;
                                 if (handler.debounce) {
                                     this.debouncedCallback(handler, node, mutation);
-                                } else if (performanceMonitor.enabled) {
-                                    const start = performance.now();
-                                    handler.callback(node, mutation);
-                                    performanceMonitor.record(`dom:${handler.name}`, performance.now() - start);
                                 } else {
-                                    handler.callback(node, mutation);
+                                    this.invokeHandler(handler, node, mutation, classSnapshot);
                                 }
                             } catch (error) {
                                 console.error(`[DOM Observer] Handler error (${handler.name}):`, error);
@@ -157,17 +154,60 @@ class DOMObserver {
             this.debounceTimers.delete(handler);
 
             if (latest) {
-                if (performanceMonitor.enabled) {
-                    const start = performance.now();
-                    handler.callback(latest.node, latest.mutation);
-                    performanceMonitor.record(`dom:${handler.name}`, performance.now() - start);
-                } else {
-                    handler.callback(latest.node, latest.mutation);
+                try {
+                    // Class matching happens when the timer fires, not when the filter accepts the node.
+                    this.invokeHandler(handler, latest.node, latest.mutation);
+                } catch (error) {
+                    console.error(`[DOM Observer] Handler error (${handler.name}):`, error);
                 }
             }
         }, delay);
 
         this.debounceTimers.set(handler, timer);
+    }
+
+    /** @private */
+    invokeHandler(handler, node, mutation, classSnapshot) {
+        const start = performanceMonitor.enabled ? performance.now() : null;
+        if (handler.classNames) {
+            this.matchClasses(handler, node, classSnapshot);
+        } else {
+            handler.callback(node, mutation);
+        }
+        if (start !== null) {
+            performanceMonitor.record(`dom:${handler.name}`, performance.now() - start);
+        }
+    }
+
+    /** @private */
+    matchClasses({ callback, classNames }, node, classSnapshot = {}) {
+        const className = typeof node.className === 'string' ? node.className : '';
+        for (const targetClass of classNames) {
+            if (className.includes(targetClass)) {
+                callback(node);
+                return;
+            }
+        }
+
+        if (!classNames.length) return;
+        if (!classSnapshot.descendants) {
+            if (!node.childElementCount) return;
+            const descendants = [];
+            // The collection is live. Read it before any callbacks can move or add children.
+            for (const element of node.getElementsByTagName('*')) {
+                const classes =
+                    typeof element.className === 'string' ? element.className : element.getAttribute('class');
+                if (classes) descendants.push([element, classes]);
+            }
+            classSnapshot.descendants = descendants;
+        }
+
+        // Preserve target order, including one callback per target for descendants matching multiple targets.
+        for (const targetClass of classNames) {
+            for (const [element, classes] of classSnapshot.descendants) {
+                if (classes.includes(targetClass)) callback(element);
+            }
+        }
     }
 
     /**
@@ -199,9 +239,15 @@ class DOMObserver {
      * @returns {Function} Unregister function
      */
     register(name, callback, options = {}) {
+        return this.registerHandler(name, callback, options);
+    }
+
+    /** @private */
+    registerHandler(name, callback, options, classNames) {
         const handler = {
             name,
             callback,
+            classNames,
             filter: options.filter,
             debounce: options.debounce || false,
             debounceDelay: options.debounceDelay,
@@ -232,38 +278,11 @@ class DOMObserver {
      * @param {Object} options - Optional configuration
      * @param {boolean} options.debounce - Enable debouncing (default: false for immediate response)
      * @param {number} options.debounceDelay - Debounce delay in ms (default: 50)
+     * @param {function(Element): boolean} [options.filter] - Check the added root before scheduling or matching
      * @returns {Function} Unregister function
      */
     onClass(name, classNames, callback, options = {}) {
-        const classArray = Array.isArray(classNames) ? classNames : [classNames];
-
-        return this.register(
-            name,
-            (node) => {
-                // Safely get className as string (handles SVG elements)
-                const className = typeof node.className === 'string' ? node.className : '';
-
-                // Check if node matches any of the target classes
-                for (const targetClass of classArray) {
-                    if (className.includes(targetClass)) {
-                        callback(node);
-                        return; // Only call once per node
-                    }
-                }
-
-                // Also check descendants when a container subtree is inserted.
-                // Only applies when the node has children — leaf nodes are skipped,
-                // which eliminates the bulk of querySelectorAll cost during React's
-                // init burst (thousands of individual leaf additions).
-                if (node.childElementCount > 0) {
-                    for (const targetClass of classArray) {
-                        const matches = node.querySelectorAll(`[class*="${targetClass}"]`);
-                        matches.forEach((match) => callback(match));
-                    }
-                }
-            },
-            options
-        );
+        return this.registerHandler(name, callback, options, Array.isArray(classNames) ? classNames : [classNames]);
     }
 
     /**

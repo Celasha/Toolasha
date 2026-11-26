@@ -4,7 +4,9 @@
 
 /* @vitest-environment jsdom */
 
-import { describe, test, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, test, expect, vi } from 'vitest';
+import dataManager from '../../core/data-manager.js';
+import storage from '../../core/storage.js';
 
 vi.mock('../../core/data-manager.js', () => ({
     default: { on: vi.fn(), off: vi.fn(), getMarketListings: vi.fn(() => []) },
@@ -190,5 +192,150 @@ describe('EstimatedListingAge.addAgeColumn — outside-tradable-range separator 
 
         document.body.innerHTML = '';
         delete estimatedListingAge.orderBooksCache['/items/test_item'];
+    });
+});
+
+describe('EstimatedListingAge history writes', () => {
+    const makeListing = (id, overrides = {}) => ({
+        id,
+        createdTimestamp: '2026-01-02T03:04:05.000Z',
+        itemHrid: '/items/test_item',
+        enhancementLevel: 3,
+        price: 1500,
+        orderQuantity: 5,
+        filledQuantity: 0,
+        isSell: true,
+        ...overrides,
+    });
+    const historyEntry = (listing, status = 'unknown', orderQuantity = listing.orderQuantity) => ({
+        id: listing.id,
+        timestamp: 1767323045000,
+        createdTimestamp: listing.createdTimestamp,
+        itemHrid: listing.itemHrid,
+        enhancementLevel: listing.enhancementLevel,
+        price: listing.price,
+        orderQuantity,
+        filledQuantity: listing.filledQuantity,
+        isSell: listing.isSell,
+        status,
+    });
+    const getHandler = (event) => dataManager.on.mock.calls.find(([name]) => name === event)[1];
+    const expectSavedOnce = (entries) => {
+        expect(estimatedListingAge.knownListings.slice()).toStrictEqual(entries);
+        expect(storage.setJSON).toHaveBeenCalledExactlyOnceWith(
+            'marketListingTimestamps',
+            entries,
+            'marketListings',
+            true
+        );
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        estimatedListingAge.knownListings = [];
+    });
+
+    afterEach(() => {
+        estimatedListingAge.disable();
+        estimatedListingAge.knownListings = [];
+        vi.restoreAllMocks();
+    });
+
+    test('loadInitialListings keeps valid entries and sorts and saves the batch once', () => {
+        const existing = makeListing(20, { price: 2000 });
+        const newListing = makeListing(10);
+        const duplicate = { ...newListing, price: 3000 };
+        const history = estimatedListingAge.knownListings;
+        history.push(historyEntry(makeListing(20), 'active'));
+        const sort = vi.spyOn(history, 'sort');
+        const findIndex = vi.spyOn(history, 'findIndex');
+        dataManager.getMarketListings.mockReturnValueOnce([
+            existing,
+            newListing,
+            makeListing(30, { createdTimestamp: null }),
+            makeListing(undefined),
+            duplicate,
+        ]);
+
+        estimatedListingAge.loadInitialListings();
+
+        expect(findIndex).not.toHaveBeenCalled();
+        expect(sort).toHaveBeenCalledTimes(1);
+        expectSavedOnce([historyEntry(duplicate), historyEntry(existing, 'active')]);
+    });
+
+    test('character_initialized stores new entries and reconciled statuses in one write', () => {
+        const stale = makeListing(15);
+        const first = makeListing(10);
+        const last = makeListing(20);
+        estimatedListingAge.knownListings.push(historyEntry(stale, 'active'));
+        const sort = vi.spyOn(estimatedListingAge.knownListings, 'sort');
+        estimatedListingAge.setupWebSocketListeners();
+        const initialize = getHandler('character_initialized');
+        const payload = { myMarketListings: [last, first] };
+
+        initialize(payload);
+
+        expect(sort).toHaveBeenCalledTimes(1);
+        expectSavedOnce([historyEntry(first), historyEntry(stale), historyEntry(last)]);
+
+        sort.mockClear();
+        storage.setJSON.mockClear();
+        initialize(payload);
+        expect(sort).not.toHaveBeenCalled();
+        expect(storage.setJSON).not.toHaveBeenCalled();
+    });
+
+    test('market_listings_updated saves new, active and ended listings after reconciliation', () => {
+        const stale = makeListing(40);
+        const partial = makeListing(30, { status: '/market_listing_status/cancelled', filledQuantity: 2 });
+        const active = makeListing(20);
+        const created = makeListing(10, { _toolashaStatus: 'active' });
+        const expired = makeListing(50, { status: '/market_listing_status/expired' });
+        estimatedListingAge.knownListings.push(historyEntry(partial, 'active'), historyEntry(stale, 'active'));
+        const sort = vi.spyOn(estimatedListingAge.knownListings, 'sort');
+        estimatedListingAge.setupWebSocketListeners();
+
+        getHandler('market_listings_updated')({
+            newMarketListings: [created],
+            myMarketListings: [active, makeListing(30)],
+            endMarketListings: [expired, partial],
+        });
+
+        expect(sort).toHaveBeenCalledTimes(1);
+        expectSavedOnce([
+            historyEntry(created),
+            historyEntry(active),
+            historyEntry(partial, 'filled', 2),
+            historyEntry(stale),
+            historyEntry(expired, 'expired'),
+        ]);
+    });
+
+    test('an empty active snapshot reconciles stale entries without sorting again', () => {
+        const stale = makeListing(10);
+        estimatedListingAge.knownListings.push(historyEntry(stale, 'active'));
+        const sort = vi.spyOn(estimatedListingAge.knownListings, 'sort');
+        estimatedListingAge.setupWebSocketListeners();
+        const update = getHandler('market_listings_updated');
+
+        update({});
+        expect(storage.setJSON).not.toHaveBeenCalled();
+
+        update({ myMarketListings: [] });
+        expect(sort).not.toHaveBeenCalled();
+        expectSavedOnce([historyEntry(stale)]);
+    });
+
+    test('recordListing still saves a single valid listing immediately', () => {
+        const previous = makeListing(20);
+        const listing = makeListing(10, { _toolashaStatus: 'filled' });
+        estimatedListingAge.knownListings.push(historyEntry(previous));
+
+        estimatedListingAge.recordListing(makeListing(30, { createdTimestamp: null }));
+        expect(storage.setJSON).not.toHaveBeenCalled();
+
+        estimatedListingAge.recordListing(listing);
+        expectSavedOnce([historyEntry(listing, 'filled'), historyEntry(previous)]);
     });
 });
