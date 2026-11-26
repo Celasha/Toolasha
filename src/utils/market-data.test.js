@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     marketPrices: {},
-    customPrices: {},
+    snapshot: {},
+    patches: {},
+    patchRevision: 0,
+    lastFetchTimestamp: 1,
     outlierGuardEnabled: true,
     outlierBandMultiplier: 3,
     referenceValues: {},
@@ -10,6 +13,18 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../api/marketplace.js', () => ({
     default: {
+        get marketData() {
+            return mocks.snapshot;
+        },
+        get pricePatchs() {
+            return mocks.patches;
+        },
+        get pricePatchRevision() {
+            return mocks.patchRevision;
+        },
+        get lastFetchTimestamp() {
+            return mocks.lastFetchTimestamp;
+        },
         getPrice: vi.fn(
             (itemHrid, enhancementLevel = 0) => mocks.marketPrices[`${itemHrid}:${enhancementLevel}`] ?? null
         ),
@@ -18,6 +33,9 @@ vi.mock('../api/marketplace.js', () => ({
 
 vi.mock('../api/market-values.js', () => ({
     default: {
+        get marketItemValues() {
+            return mocks.referenceValues;
+        },
         getValue: vi.fn(
             (itemHrid, enhancementLevel = 0) => mocks.referenceValues[`${itemHrid}:${enhancementLevel}`] ?? null
         ),
@@ -40,18 +58,25 @@ vi.mock('../api/market-values.js', () => ({
 
 vi.mock('../core/config.js', () => ({
     default: {
-        getSetting: vi.fn(() => true),
-        getSettingValue: vi.fn((key, fallback) => fallback),
+        getSetting: vi.fn(() => mocks.outlierGuardEnabled),
+        getSettingValue: vi.fn((key, fallback) =>
+            key === 'marketData_outlierBandMultiplier' ? mocks.outlierBandMultiplier : fallback
+        ),
     },
 }));
 
-vi.mock('../features/settings/custom-price-overrides.js', () => ({
-    getCustomPrice: vi.fn(
-        (itemHrid, enhancementLevel = 0) => mocks.customPrices[`${itemHrid}:${enhancementLevel}`] ?? null
-    ),
+vi.mock('../core/storage.js', () => ({
+    default: { getJSON: vi.fn(async () => ({})), setJSON: vi.fn(async () => {}) },
 }));
 
-import { getItemPrice, getItemPrices, getItemPriceOutlierInfo, getItemPricesBatch } from './market-data.js';
+import { removeCustomPriceOverride, setCustomPriceOverride } from '../features/settings/custom-price-overrides.js';
+import {
+    getItemPrice,
+    getItemPrices,
+    getItemPriceOutlierInfo,
+    getItemPricesBatch,
+    getMarketPriceCacheKey,
+} from './market-data.js';
 
 function setPrice(itemHrid, enhancementLevel, ask, bid) {
     mocks.marketPrices[`${itemHrid}:${enhancementLevel}`] = { ask, bid };
@@ -61,9 +86,9 @@ function setReference(itemHrid, enhancementLevel, value) {
     mocks.referenceValues[`${itemHrid}:${enhancementLevel}`] = value;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     mocks.marketPrices = {};
-    mocks.customPrices = {};
+    await removeCustomPriceOverride('/items/sword', 0);
     mocks.referenceValues = {};
     mocks.outlierGuardEnabled = true;
     mocks.outlierBandMultiplier = 3;
@@ -95,8 +120,8 @@ describe('getItemPrice - normal (non-outlier) resolution unaffected', () => {
         expect(getItemPrice('/items/unknown', { mode: 'ask' })).toBeNull();
     });
 
-    test('custom price overrides bypass the outlier guard entirely', () => {
-        mocks.customPrices['/items/sword:0'] = 55;
+    test('custom price overrides bypass the outlier guard entirely', async () => {
+        await setCustomPriceOverride('/items/sword', 0, null, 55);
         setPrice('/items/sword', 0, 1_000_000_000, 900);
         setReference('/items/sword', 0, 1000);
 
@@ -161,8 +186,8 @@ describe('getItemPriceOutlierInfo', () => {
         expect(info).toEqual({ value: 1000, isOutlier: false });
     });
 
-    test('reports isOutlier: false for a custom price override', () => {
-        mocks.customPrices['/items/sword:0'] = 55;
+    test('reports isOutlier: false for a custom price override', async () => {
+        await setCustomPriceOverride('/items/sword', 0, null, 55);
         setPrice('/items/sword', 0, 1_000_000, 900);
         setReference('/items/sword', 0, 1000);
 
@@ -199,6 +224,68 @@ describe('getItemPrices', () => {
 
     test('returns null when there is no market data, same as before', () => {
         expect(getItemPrices('/items/unknown', 0)).toBeNull();
+    });
+});
+
+describe('getMarketPriceCacheKey', () => {
+    test.each([
+        [
+            'market snapshot',
+            () => {
+                mocks.snapshot = {};
+            },
+        ],
+        [
+            'market timestamp',
+            () => {
+                mocks.lastFetchTimestamp++;
+            },
+        ],
+        [
+            'reloaded patches',
+            () => {
+                mocks.patches = {};
+            },
+        ],
+        [
+            'order book patch',
+            () => {
+                mocks.patchRevision++;
+            },
+        ],
+        [
+            'reference snapshot',
+            () => {
+                mocks.referenceValues = {};
+            },
+        ],
+        [
+            'outlier guard toggle',
+            () => {
+                mocks.outlierGuardEnabled = false;
+            },
+        ],
+        [
+            'outlier band',
+            () => {
+                mocks.outlierBandMultiplier = 10;
+            },
+        ],
+        ['custom price edit', () => setCustomPriceOverride('/items/sword', 0, null, 55)],
+    ])('changes when the %s changes', async (_source, change) => {
+        const previous = getMarketPriceCacheKey();
+        expect(getMarketPriceCacheKey().every((value, i) => Object.is(value, previous[i]))).toBe(true);
+        await change();
+        expect(getMarketPriceCacheKey().every((value, i) => Object.is(value, previous[i]))).toBe(false);
+    });
+
+    test('changes after deleting an override through Settings', async () => {
+        setPrice('/items/sword', 0, 100, 90);
+        await setCustomPriceOverride('/items/sword', 0, null, 55);
+        const previous = getMarketPriceCacheKey();
+        await removeCustomPriceOverride('/items/sword', 0);
+        expect(getMarketPriceCacheKey().every((value, i) => Object.is(value, previous[i]))).toBe(false);
+        expect(getItemPrice('/items/sword', { mode: 'ask' })).toBe(100);
     });
 });
 

@@ -6,10 +6,26 @@
 import marketAPI from '../api/marketplace.js';
 import marketValuesAPI from '../api/market-values.js';
 import config from '../core/config.js';
-import { getCustomPrice } from '../features/settings/custom-price-overrides.js';
+import { getCustomPrice, getCustomPriceOverrides } from './custom-price-overrides.js';
+
+export * from './custom-price-overrides.js';
 
 // Track logged warnings to prevent console spam
 const loggedWarnings = new Set();
+
+/** Snapshot the inputs that affect price lookups with an explicit ask or bid mode. */
+export function getMarketPriceCacheKey() {
+    return [
+        marketAPI.marketData,
+        marketAPI.lastFetchTimestamp,
+        marketAPI.pricePatchs,
+        marketAPI.pricePatchRevision,
+        marketValuesAPI.marketItemValues,
+        config.getSetting('marketData_outlierGuardEnabled'),
+        config.getSettingValue('marketData_outlierBandMultiplier', 3),
+        getCustomPriceOverrides(),
+    ];
+}
 
 /**
  * Get item price based on pricing mode and context

@@ -57,9 +57,10 @@ marketAPI.on(() => {
  * @param {string} itemHrid - Item HRID (e.g., '/items/cheese_sword')
  * @param {number} currentEnhancementLevel - Current enhancement level (1-20)
  * @param {Object} config - Enhancement configuration from enhancement-config.js
+ * @param {Object} [strategyStats] - Worker results indexed by item level, target, and protection level
  * @returns {Object|null} Enhancement analysis or null if not enhanceable
  */
-export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, config) {
+export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, config, strategyStats) {
     // Validate inputs
     if (!itemHrid || currentEnhancementLevel < 1 || currentEnhancementLevel > 20) {
         return null;
@@ -78,6 +79,26 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     }
 
     const itemLevel = itemDetails.itemLevel || 1;
+    const useCraftingCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost');
+    const priceCache = new Map();
+    const readPrices = (hrid) => {
+        if (!priceCache.has(hrid)) priceCache.set(hrid, getItemPrices(hrid, 0));
+        return priceCache.get(hrid);
+    };
+    const realisticPrices = new Map();
+    const realisticPrice = (hrid) => {
+        if (!realisticPrices.has(hrid)) realisticPrices.set(hrid, resolveRealisticBasePrice(hrid, readPrices(hrid)));
+        return realisticPrices.get(hrid);
+    };
+    const pricing = prepareEnhancementPricing(
+        itemHrid,
+        itemDetails,
+        gameData,
+        useCraftingCost,
+        currentEnhancementLevel > 2,
+        readPrices,
+        realisticPrice
+    );
 
     // Step 1: Build 2D matrix like Enhancelator (all_results)
     // For each target level (1 to currentEnhancementLevel)
@@ -90,14 +111,21 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
         const resultsForLevel = [];
 
         // Test "never protect" (0)
-        const neverProtect = calculateCostForStrategy(itemHrid, targetLevel, 0, itemLevel, config);
+        const neverProtect = calculateCostForStrategy(targetLevel, 0, itemLevel, config, pricing, strategyStats);
         if (neverProtect) {
             resultsForLevel.push({ protectFrom: 0, ...neverProtect });
         }
 
         // Test all "protect from X" strategies (2 through targetLevel)
         for (let protectFrom = 2; protectFrom <= targetLevel; protectFrom++) {
-            const result = calculateCostForStrategy(itemHrid, targetLevel, protectFrom, itemLevel, config);
+            const result = calculateCostForStrategy(
+                targetLevel,
+                protectFrom,
+                itemLevel,
+                config,
+                pricing,
+                strategyStats
+            );
             if (result) {
                 resultsForLevel.push({ protectFrom, ...result });
             }
@@ -111,10 +139,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     const targetCosts = new Array(currentEnhancementLevel + 1);
     const targetTimes = new Array(currentEnhancementLevel + 1);
     const targetAttempts = new Array(currentEnhancementLevel + 1);
-    targetCosts[0] = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
-        ? Math.min(getTooltipCraftCostCached(itemHrid) || Infinity, getItemPrices(itemHrid, 0)?.ask || Infinity) ||
-          getRealisticBaseItemPrice(itemHrid)
-        : getRealisticBaseItemPrice(itemHrid); // Level 0: base item
+    targetCosts[0] = pricing.levelZeroCost; // Level 0: base item
     targetTimes[0] = 0; // Level 0: no time needed
     targetAttempts[0] = 0; // Level 0: no attempts needed
 
@@ -133,7 +158,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
 
     // Step 3: Apply Philosopher's Mirror optimization (single pass, in-place)
     // Like Enhancelator lines 456-465
-    const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
+    const mirrorPrice = realisticPrice('/items/philosophers_mirror');
     let mirrorStartLevel = null;
     let refinedFodder = null;
 
@@ -156,25 +181,42 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
 
             let fodderCost, fodderTime, fodderAttempts;
             if (fodderLevel === 0) {
-                fodderCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
+                fodderCost = useCraftingCost
                     ? Math.min(
                           getTooltipCraftCostCached(baseItemHrid) || Infinity,
-                          getItemPrices(baseItemHrid, 0)?.ask || Infinity
-                      ) || getRealisticBaseItemPrice(baseItemHrid)
-                    : getRealisticBaseItemPrice(baseItemHrid);
+                          readPrices(baseItemHrid)?.ask || Infinity
+                      ) || realisticPrice(baseItemHrid)
+                    : realisticPrice(baseItemHrid);
                 fodderTime = 0;
                 fodderAttempts = 0;
-            } else {
+            } else if (baseItemDetails) {
+                const fodderPricing = prepareEnhancementPricing(
+                    baseItemHrid,
+                    baseItemDetails,
+                    gameData,
+                    useCraftingCost,
+                    fodderLevel > 2,
+                    readPrices,
+                    realisticPrice
+                );
                 const fodderResults = [];
-                const neverProtect = calculateCostForStrategy(baseItemHrid, fodderLevel, 0, baseItemLevel, config);
+                const neverProtect = calculateCostForStrategy(
+                    fodderLevel,
+                    0,
+                    baseItemLevel,
+                    config,
+                    fodderPricing,
+                    strategyStats
+                );
                 if (neverProtect) fodderResults.push({ protectFrom: 0, ...neverProtect });
                 for (let protectFrom = 2; protectFrom <= fodderLevel; protectFrom++) {
                     const result = calculateCostForStrategy(
-                        baseItemHrid,
                         fodderLevel,
                         protectFrom,
                         baseItemLevel,
-                        config
+                        config,
+                        fodderPricing,
+                        strategyStats
                     );
                     if (result) fodderResults.push({ protectFrom, ...result });
                 }
@@ -284,17 +326,19 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     let xpPerHour = null;
     let totalExpectedXP = null;
     try {
-        const xpCalc = calculateEnhancement({
-            enhancingLevel: config.enhancingLevel,
-            houseLevel: config.houseLevel,
-            toolBonus: config.toolBonus || 0,
-            speedBonus: config.speedBonus || 0,
-            itemLevel,
-            targetLevel: currentEnhancementLevel,
-            protectFrom: optimalStrategy.protectFrom,
-            blessedTea: config.teas.blessed,
-            guzzlingBonus: config.guzzlingBonus,
-        });
+        const xpCalc = strategyStats
+            ? strategyStats[itemLevel]?.[currentEnhancementLevel]?.[optimalStrategy.protectFrom]
+            : calculateEnhancement({
+                  enhancingLevel: config.enhancingLevel,
+                  houseLevel: config.houseLevel,
+                  toolBonus: config.toolBonus || 0,
+                  speedBonus: config.speedBonus || 0,
+                  itemLevel,
+                  targetLevel: currentEnhancementLevel,
+                  protectFrom: optimalStrategy.protectFrom,
+                  blessedTea: config.teas.blessed,
+                  guzzlingBonus: config.guzzlingBonus,
+              });
 
         if (xpCalc && xpCalc.visitCounts && xpCalc.totalTime > 0) {
             const wisdomDecimal = (config.experienceBonus || 0) / 100;
@@ -330,7 +374,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
  * Calculate cost for a single protection strategy to reach a target level
  * @private
  */
-function calculateCostForStrategy(itemHrid, targetLevel, protectFrom, itemLevel, config) {
+function calculateCostForStrategy(targetLevel, protectFrom, itemLevel, config, pricing, strategyStats) {
     try {
         const params = {
             enhancingLevel: config.enhancingLevel,
@@ -345,7 +389,9 @@ function calculateCostForStrategy(itemHrid, targetLevel, protectFrom, itemLevel,
         };
 
         // Calculate enhancement statistics
-        const result = calculateEnhancement(params);
+        const result = strategyStats
+            ? strategyStats[itemLevel]?.[targetLevel]?.[protectFrom]
+            : calculateEnhancement(params);
 
         if (!result || typeof result.attempts !== 'number' || typeof result.totalTime !== 'number') {
             console.error('[Enhancement Tooltip] Invalid result from calculateEnhancement:', result);
@@ -353,7 +399,7 @@ function calculateCostForStrategy(itemHrid, targetLevel, protectFrom, itemLevel,
         }
 
         // Calculate costs
-        const costs = calculateTotalCost(itemHrid, targetLevel, protectFrom, config);
+        const costs = calculateTotalCost(result, protectFrom, pricing);
 
         return {
             expectedAttempts: result.attempts,
@@ -530,33 +576,18 @@ function buildMirrorOptimizedResult(
     };
 }
 
-/**
- * Calculate total cost for enhancement path
- * Matches original MWI Tools v25.0 cost calculation
- * @private
- */
-function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
-    const gameData = dataManager.getInitClientData();
-    const itemDetails = gameData.itemDetailMap[itemHrid];
-    const itemLevel = itemDetails.itemLevel || 1;
-
-    // Calculate total attempts for full path (0 to targetLevel)
-    const pathResult = calculateEnhancement({
-        enhancingLevel: config.enhancingLevel,
-        houseLevel: config.houseLevel,
-        toolBonus: config.toolBonus || 0,
-        speedBonus: config.speedBonus || 0,
-        itemLevel,
-        targetLevel,
-        protectFrom,
-        blessedTea: config.teas.blessed,
-        guzzlingBonus: config.guzzlingBonus,
-    });
-
-    // Calculate per-action material cost (same for all enhancement levels)
-    // enhancementCosts is a flat array of materials needed per attempt
+/** Resolve prices that do not depend on the target level or protection strategy. */
+function prepareEnhancementPricing(
+    itemHrid,
+    itemDetails,
+    gameData,
+    useCraftingCost,
+    needsProtection,
+    readPrices,
+    realisticPrice
+) {
     let perActionCost = 0;
-    const materialBreakdown = [];
+    const materials = [];
     if (itemDetails.enhancementCosts) {
         for (const material of itemDetails.enhancementCosts) {
             const materialDetail = gameData.itemDetailMap[material.itemHrid];
@@ -573,7 +604,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
                 price = 1; // Coins have face value of 1
                 bidPrice = 1;
             } else {
-                const marketPrice = getItemPrices(material.itemHrid, 0);
+                const marketPrice = readPrices(material.itemHrid);
                 if (marketPrice) {
                     let ask = marketPrice.ask;
                     let bid = marketPrice.bid;
@@ -599,94 +630,91 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
             }
             perActionCost += price * material.count;
 
-            const totalQuantity = material.count * pathResult.attempts;
-            materialBreakdown.push({
+            materials.push({
                 itemHrid: material.itemHrid,
                 name: materialDetail?.name || material.itemHrid,
                 countPerAction: material.count,
-                totalQuantity,
                 unitPrice: price,
                 bidPrice,
-                totalCost: price * totalQuantity,
                 askOutlier,
                 bidOutlier,
             });
         }
     }
 
-    // Total material cost = per-action cost × total attempts
-    const materialCost = perActionCost * pathResult.attempts;
-
-    // Protection cost = cheapest protection option × protection count
-    let protectionCost = 0;
-    let protectionItemHrid = null;
-    let protectionCount = 0;
-    let protectionAskPrice = 0;
-    let protectionBidPrice = 0;
-    let protectionBidOutlier = false;
-    if (protectFrom > 0 && pathResult.protectionCount > 0) {
-        const protectionInfo = getCheapestProtectionPrice(itemHrid, {
-            useCraftingCost: toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost'),
-        });
-        if (protectionInfo.price > 0) {
-            protectionCost = protectionInfo.price * pathResult.protectionCount;
-            protectionItemHrid = protectionInfo.itemHrid;
-            protectionCount = pathResult.protectionCount;
-            protectionAskPrice = protectionInfo.price;
-            if (protectionInfo.isCrafted) {
-                protectionBidPrice = getTooltipCraftCostCached(itemHrid, 'bid') || protectionInfo.price;
-            } else {
-                const protPrices = getItemPrices(protectionInfo.itemHrid, 0);
-                protectionBidPrice = protPrices?.bid > 0 ? protPrices.bid : protectionInfo.price;
-                protectionBidOutlier = protPrices?.bid > 0 ? protPrices.bidOutlier : false;
-            }
-        }
-    }
-
-    // Base item cost (initial investment) — market price or min(crafting, market) per setting
     const craftingCostAsk = getTooltipCraftCostCached(itemHrid, 'ask');
     const craftingCostBid = getTooltipCraftCostCached(itemHrid, 'bid');
-    const baseItemPrices = getItemPrices(itemHrid, 0);
+    const baseItemPrices = readPrices(itemHrid);
     const marketAsk = baseItemPrices?.ask > 0 ? baseItemPrices.ask : 0;
     const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
-    const useCraftingCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost');
+    const protection = needsProtection
+        ? findCheapestProtectionPrice(itemHrid, itemDetails, realisticPrice, useCraftingCost ? craftingCostAsk : 0)
+        : null;
+    const protectionPrices = protection?.itemHrid && !protection.isCrafted ? readPrices(protection.itemHrid) : null;
+    const levelZeroCost = useCraftingCost
+        ? Math.min(craftingCostAsk || Infinity, baseItemPrices?.ask || Infinity) || realisticPrice(itemHrid)
+        : realisticPrice(itemHrid);
     // Ask drives the decision: use crafted if ask is missing OR crafted ask is cheaper
     // An untradable cape is always priced by getRealisticBaseItemPrice so the cape setting applies
     // to its base cape too (the crafting-cost helpers know nothing about it).
     const isUntradable = isUntradableCape(itemHrid);
     const askIsCrafted =
         !isUntradable && useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
-    const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
+    const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || realisticPrice(itemHrid);
     const baseBidPrice = askIsCrafted
         ? craftingCostBid || craftingCostAsk
-        : marketBid ||
-          (isUntradable ? 0 : getTooltipCraftCostCached(itemHrid, 'bid')) ||
-          getRealisticBaseItemPrice(itemHrid);
-    const baseCost = baseAskPrice;
-    const baseAskIsCrafted = askIsCrafted;
-    const baseBidIsCrafted = askIsCrafted;
+        : marketBid || (isUntradable ? 0 : craftingCostBid) || realisticPrice(itemHrid);
     // Outlier flags only apply when the live market value is the one actually displayed -
     // not when a crafted/fallback cost took its place instead.
     const baseAskOutlier = !askIsCrafted && marketAsk > 0 && baseItemPrices?.askOutlier;
     const baseBidOutlier = !askIsCrafted && marketBid > 0 && baseItemPrices?.bidOutlier;
 
     return {
-        baseCost,
-        baseAskPrice,
-        baseBidPrice,
-        baseAskIsCrafted,
-        baseBidIsCrafted,
-        baseAskOutlier,
-        baseBidOutlier,
+        levelZeroCost,
+        base: {
+            baseCost: baseAskPrice,
+            baseAskPrice,
+            baseBidPrice,
+            baseAskIsCrafted: askIsCrafted,
+            baseBidIsCrafted: askIsCrafted,
+            baseAskOutlier,
+            baseBidOutlier,
+        },
+        materials,
+        perActionCost,
+        protection,
+        protectionBidPrice: protection?.isCrafted
+            ? craftingCostBid || protection.price
+            : protectionPrices?.bid > 0
+              ? protectionPrices.bid
+              : protection?.price,
+        protectionBidOutlier: protectionPrices?.bid > 0 ? protectionPrices.bidOutlier : false,
+    };
+}
+
+/** Scale the prepared prices by a strategy's expected attempts and protections. */
+function calculateTotalCost(pathResult, protectFrom, pricing) {
+    const { base, perActionCost, materials, protection } = pricing;
+    const materialCost = perActionCost * pathResult.attempts;
+    const materialBreakdown = materials.map((material) => {
+        const totalQuantity = material.countPerAction * pathResult.attempts;
+        return { ...material, totalQuantity, totalCost: material.unitPrice * totalQuantity };
+    });
+    const usesProtection = protectFrom > 0 && pathResult.protectionCount > 0 && protection?.price > 0;
+    const protectionCount = usesProtection ? pathResult.protectionCount : 0;
+    const protectionCost = usesProtection ? protection.price * protectionCount : 0;
+
+    return {
+        ...base,
         materialCost,
         materialBreakdown,
         protectionCost,
-        protectionItemHrid,
+        protectionItemHrid: usesProtection ? protection.itemHrid : null,
         protectionCount,
-        protectionAskPrice,
-        protectionBidPrice,
-        protectionBidOutlier,
-        totalCost: baseCost + materialCost + protectionCost,
+        protectionAskPrice: usesProtection ? protection.price : 0,
+        protectionBidPrice: usesProtection ? pricing.protectionBidPrice : 0,
+        protectionBidOutlier: usesProtection ? pricing.protectionBidOutlier : false,
+        totalCost: base.baseCost + materialCost + protectionCost,
     };
 }
 
@@ -696,7 +724,10 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
  * @private
  */
 export function getRealisticBaseItemPrice(itemHrid) {
-    const marketPrice = getItemPrices(itemHrid, 0);
+    return resolveRealisticBasePrice(itemHrid, getItemPrices(itemHrid, 0));
+}
+
+function resolveRealisticBasePrice(itemHrid, marketPrice) {
     const ask = marketPrice?.ask > 0 ? marketPrice.ask : 0;
     const bid = marketPrice?.bid > 0 ? marketPrice.bid : 0;
 
@@ -909,7 +940,12 @@ function _computeProductionChainTime(itemHrid) {
 export function getCheapestProtectionPrice(itemHrid, { useCraftingCost = false } = {}) {
     const gameData = dataManager.getInitClientData();
     const itemDetails = gameData.itemDetailMap[itemHrid];
+    const craftingCost =
+        useCraftingCost && !isUntradableCape(itemHrid) ? getTooltipCraftCostCached(itemHrid, 'ask') : 0;
+    return findCheapestProtectionPrice(itemHrid, itemDetails, getRealisticBaseItemPrice, craftingCost);
+}
 
+function findCheapestProtectionPrice(itemHrid, itemDetails, realisticPrice, craftingCost) {
     // Build list of protection options: [item itself, mirror, ...specific items]
     const protectionOptions = [itemHrid, '/items/mirror_of_protection'];
 
@@ -923,14 +959,16 @@ export function getCheapestProtectionPrice(itemHrid, { useCraftingCost = false }
     let cheapestItemHrid = null;
     let cheapestIsCrafted = false;
     for (const protectionHrid of protectionOptions) {
-        let price = getRealisticBaseItemPrice(protectionHrid);
+        let price = realisticPrice(protectionHrid);
         let isCrafted = false;
-        if (useCraftingCost && protectionHrid === itemHrid && !isUntradableCape(itemHrid)) {
-            const craftingCost = getTooltipCraftCostCached(itemHrid, 'ask');
-            if (craftingCost > 0 && (!(price > 0) || craftingCost < price)) {
-                price = craftingCost;
-                isCrafted = true;
-            }
+        if (
+            protectionHrid === itemHrid &&
+            !isUntradableCape(itemHrid) &&
+            craftingCost > 0 &&
+            (!(price > 0) || craftingCost < price)
+        ) {
+            price = craftingCost;
+            isCrafted = true;
         }
         if (price > 0 && price < cheapestPrice) {
             cheapestPrice = price;

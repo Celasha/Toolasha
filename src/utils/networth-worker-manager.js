@@ -4,6 +4,7 @@
  */
 
 import WorkerPool from './worker-pool.js';
+import ENHANCEMENT_WORKER_SCRIPT from './networth-enhancement-worker.js?worker';
 
 // Worker pool instance
 let workerPool = null;
@@ -451,6 +452,9 @@ self.onmessage = function (e) {
         if (action === 'calculateBatch') {
             const results = calculateItemValueBatch(params.items);
             self.postMessage({ taskId, result: results });
+        } else if (action === 'calculateEnhancementStats') {
+            const result = self.calculateNetworthEnhancementStats(params);
+            self.postMessage({ taskId, result });
         } else if (action === 'clearCache') {
             valuationCache.clear();
             self.postMessage({ taskId, result: { success: true, message: 'Cache cleared' } });
@@ -473,7 +477,7 @@ async function getWorkerPool() {
 
     try {
         // Create worker blob from inline script
-        const blob = new Blob([WORKER_SCRIPT], { type: 'application/javascript' });
+        const blob = new Blob([ENHANCEMENT_WORKER_SCRIPT, WORKER_SCRIPT], { type: 'application/javascript' });
 
         // Initialize worker pool with 2-4 workers
         workerPool = new WorkerPool(blob);
@@ -548,6 +552,28 @@ export async function calculateItemValueBatch(items, priceMap, configOptions, ga
 
     // Extract just the values
     return flatResults.map((r) => r.value);
+}
+
+/** Batch the enhancement simulations for listings, leaving their existing pricing on the main thread. */
+export async function calculateEnhancementStatsBatch(items, enhancementParams, itemDetailMap) {
+    const pool = await getWorkerPool();
+    return pool.executeAll(
+        items.map(({ itemHrid, enhancementLevel }) => {
+            const details = itemDetailMap[itemHrid];
+            const itemLevel = details?.itemLevel || 1;
+            const baseItemHrid = itemHrid.includes('_refined') ? details?.baseItemHrids?.[0] : null;
+            const baseItem = itemDetailMap[baseItemHrid];
+            return {
+                action: 'calculateEnhancementStats',
+                params: {
+                    itemLevel,
+                    targetLevel: enhancementLevel,
+                    fodderItemLevel: baseItem ? baseItem.itemLevel || itemLevel : null,
+                    enhancementParams,
+                },
+            };
+        })
+    );
 }
 
 /**

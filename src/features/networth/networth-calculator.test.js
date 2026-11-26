@@ -14,6 +14,9 @@ const {
     mockGetMarketValue,
     mockCheckOutlier,
     mockGetUntradableCapeValue,
+    mockGetMarketPriceCacheKey,
+    mockCalculateEnhancementStatsBatch,
+    mockCalculateEnhancementPath,
 } = vi.hoisted(() => ({
     mockGetInitClientData: vi.fn(),
     mockGetCharacterGuildBuffLevel: vi.fn(),
@@ -28,6 +31,9 @@ const {
     mockGetMarketValue: vi.fn(() => null),
     mockCheckOutlier: vi.fn((_itemHrid, _level, rawValue) => ({ value: rawValue, isOutlier: false })),
     mockGetUntradableCapeValue: vi.fn(),
+    mockGetMarketPriceCacheKey: vi.fn(() => []),
+    mockCalculateEnhancementStatsBatch: vi.fn(),
+    mockCalculateEnhancementPath: vi.fn(() => null),
 }));
 
 vi.mock('../../core/data-manager.js', () => ({
@@ -48,6 +54,7 @@ vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: mockGetItemPrice,
     getItemPriceOutlierInfo: (hrid, opts) => ({ value: mockGetItemPrice(hrid, opts), isOutlier: false }),
     getItemPrices: vi.fn(),
+    getMarketPriceCacheKey: mockGetMarketPriceCacheKey,
 }));
 vi.mock('../../api/marketplace.js', () => ({
     default: {
@@ -80,7 +87,7 @@ vi.mock('../../utils/ability-cost-calculator.js', () => ({
     calculateAbilityCost: vi.fn(() => ({ cost: 0, isOutlier: false })),
 }));
 vi.mock('../../utils/house-cost-calculator.js', () => ({ calculateHouseBuildCost: vi.fn(() => 0) }));
-vi.mock('../enhancement/tooltip-enhancement.js', () => ({ calculateEnhancementPath: vi.fn(() => null) }));
+vi.mock('../enhancement/tooltip-enhancement.js', () => ({ calculateEnhancementPath: mockCalculateEnhancementPath }));
 vi.mock('../../utils/enhancement-config.js', () => ({ getEnhancingParams: vi.fn(() => ({})) }));
 vi.mock('../enhancement/untradable-cape-value.js', () => ({ getUntradableCapeValue: mockGetUntradableCapeValue }));
 vi.mock('../tasks/task-profit-calculator.js', () => ({ calculateTaskTokenValue: vi.fn(() => null) }));
@@ -93,13 +100,16 @@ vi.mock('../../utils/token-valuation.js', () => ({
 vi.mock('../market/expected-value-calculator.js', () => ({
     default: { isInitialized: false, calculateExpectedValue: vi.fn(() => null) },
 }));
-vi.mock('../../utils/networth-worker-manager.js', () => ({ calculateItemValueBatch: vi.fn(() => []) }));
+vi.mock('../../utils/networth-worker-manager.js', () => ({
+    calculateItemValueBatch: vi.fn(() => []),
+    calculateEnhancementStatsBatch: mockCalculateEnhancementStatsBatch,
+}));
 vi.mock('../combat-stats/combat-stats-calculator.js', () => ({ DUNGEON_CHEST_CHEST_KEYS: {} }));
 vi.mock('../../utils/game-lookups.js', () => ({ getShopCoinCost: vi.fn(() => 0) }));
 vi.mock('../../utils/profit-constants.js', () => ({
     MARKET_TAX: 0.02,
     COWBELL_BAG_HRID: '/items/bag_of_10_cowbells',
-    COWBELL_BAG_TAX: 0.02,
+    COWBELL_BAG_TAX: 0.18,
 }));
 import {
     calculateAllGuildShrinesCost,
@@ -695,6 +705,198 @@ describe('calculateItemValue - guild credits', () => {
     test('a credit with no priced source item is worth 0, not a fake value', async () => {
         mockGetItemPrice.mockReturnValue(0);
         expect(await calculateItemValue({ itemHrid: CREDIT, count: 5 })).toBe(0);
+    });
+});
+
+describe('calculateNetworth - Guild Credit table reuse', () => {
+    let gameData;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockGetSetting.mockImplementation(() => undefined);
+        mockGetSettingValue.mockReturnValue('ask');
+        mockGetPricesBatch.mockReturnValue(new Map());
+        mockGetExclusions.mockReturnValue([]);
+        mockIsExcluded.mockReturnValue(false);
+        mockGetMarketPriceCacheKey.mockReturnValue([0]);
+        mockGetItemPrice.mockImplementation((_hrid, { mode }) => (mode === 'ask' ? 100 : 50));
+        gameData = {
+            itemDetailMap: {
+                [CONVERSION_ITEM]: {
+                    guildCreditConversions: [
+                        { creditItemHrid: CREDIT_BROWN, itemCount: 1, creditCount: 1 },
+                        { creditItemHrid: CREDIT_WHITE, itemCount: 1, creditCount: 2 },
+                    ],
+                },
+            },
+            characterItems: [
+                { itemHrid: CREDIT_BROWN, count: 2, itemLocationHrid: '/item_locations/main_hand' },
+                { itemHrid: CREDIT_WHITE, count: 2, itemLocationHrid: '/item_locations/inventory' },
+            ],
+            myMarketListings: [
+                { itemHrid: CREDIT_BROWN, isSell: true, orderQuantity: 1, filledQuantity: 0, unclaimedCoinCount: 0 },
+            ],
+        };
+        mockGetInitClientData.mockReturnValue(gameData);
+        mockGetCombinedData.mockReturnValue(gameData);
+    });
+
+    test('uses one table across equipment, inventory and listings and reuses it on the next pass', async () => {
+        const first = await calculateNetworth();
+        expect(first.currentAssets.equipped.value).toBe(200);
+        expect(first.currentAssets.inventory.value).toBe(100);
+        expect(first.currentAssets.listings.value).toBe(98);
+        expect(mockGetMarketPriceCacheKey).toHaveBeenCalledTimes(1);
+        expect(mockGetItemPrice).toHaveBeenCalledTimes(2);
+
+        mockGetSettingValue.mockReturnValue('bid');
+        expect((await calculateNetworth()).totalNetworth).toBe(first.totalNetworth / 2);
+        expect(mockGetItemPrice).toHaveBeenCalledTimes(2);
+
+        mockGetMarketPriceCacheKey.mockReturnValue([1]);
+        mockGetItemPrice.mockReturnValue(20);
+        expect((await calculateNetworth()).totalNetworth).toBe(79.6);
+        expect(mockGetItemPrice).toHaveBeenCalledTimes(4);
+    });
+
+    test('does not consult the table when there are no held credits', async () => {
+        gameData.characterItems = [
+            { itemHrid: '/items/coin', count: 100, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        gameData.myMarketListings = [];
+        await calculateNetworth();
+        expect(mockGetMarketPriceCacheKey).not.toHaveBeenCalled();
+        expect(mockGetItemPrice).not.toHaveBeenCalled();
+    });
+});
+
+describe('calculateNetworth - market listings', () => {
+    const sword = '/items/sword';
+    const shield = '/items/shield';
+    const cowbells = '/items/bag_of_10_cowbells';
+    const enhancementCosts = [{ itemHrid: '/items/coin', count: 1 }];
+    let gameData;
+    const swordStats = { result: 'sword' };
+    const shieldStats = { result: 'shield' };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockGetSetting.mockImplementation((key) => key === 'networth_highEnhancementUseCost');
+        mockGetSettingValue.mockReturnValue('bid');
+        mockGetExclusions.mockReturnValue([]);
+        mockIsExcluded.mockReturnValue(false);
+        mockCheckOutlier.mockImplementation((hrid, level, raw) => ({
+            value: raw,
+            isOutlier: hrid === sword && level === 15,
+        }));
+        mockGetPricesBatch.mockImplementation(
+            () =>
+                new Map([
+                    [`${sword}:15`, { ask: 1000, bid: 800 }],
+                    [`${shield}:5`, { ask: 100, bid: null }],
+                    [`${sword}:2`, { ask: 40, bid: 30 }],
+                    [`${cowbells}:0`, { ask: 120, bid: 100 }],
+                ])
+        );
+        mockCalculateEnhancementStatsBatch.mockResolvedValue([swordStats, shieldStats]);
+        mockCalculateEnhancementPath.mockImplementation((hrid) => ({
+            optimalStrategy: { totalCost: hrid === sword ? 200 : 50 },
+        }));
+        gameData = {
+            itemDetailMap: {
+                [sword]: { name: 'Sword', enhancementCosts },
+                [shield]: { name: 'Shield', enhancementCosts },
+                [cowbells]: { name: 'Cowbells' },
+            },
+            myMarketListings: [
+                {
+                    itemHrid: sword,
+                    isSell: true,
+                    enhancementLevel: 15,
+                    orderQuantity: 3,
+                    filledQuantity: 1,
+                    unclaimedCoinCount: 12,
+                },
+                {
+                    itemHrid: sword,
+                    isSell: false,
+                    enhancementLevel: 2,
+                    orderQuantity: 5,
+                    filledQuantity: 3,
+                    price: 20,
+                    unclaimedItemCount: 2,
+                },
+                { itemHrid: cowbells, isSell: true, orderQuantity: 3, filledQuantity: 1, unclaimedCoinCount: 10 },
+                {
+                    itemHrid: shield,
+                    isSell: true,
+                    enhancementLevel: 5,
+                    orderQuantity: 1,
+                    filledQuantity: 0,
+                    unclaimedCoinCount: 51,
+                },
+            ],
+        };
+        mockGetInitClientData.mockReturnValue(gameData);
+        mockGetCombinedData.mockReturnValue(gameData);
+    });
+
+    test('batches high enhancement and missing selected-side prices without changing listing valuation or ordering', async () => {
+        const { currentAssets, excluded } = await calculateNetworth();
+        expect(mockCalculateEnhancementStatsBatch).toHaveBeenCalledExactlyOnceWith(
+            [
+                { itemHrid: sword, enhancementLevel: 15, count: 2 },
+                { itemHrid: shield, enhancementLevel: 5, count: 1 },
+            ],
+            {},
+            gameData.itemDetailMap
+        );
+        expect(mockCalculateEnhancementPath.mock.calls).toEqual([
+            [sword, 15, {}, swordStats],
+            [shield, 5, {}, shieldStats],
+        ]);
+        expect(excluded.total).toBe(0);
+        expect(currentAssets.listings).toEqual({
+            value: 778,
+            breakdown: [
+                { itemHrid: sword, enhancementLevel: 15, name: 'Sword', isSell: true, value: 404, isOutlier: true },
+                {
+                    itemHrid: cowbells,
+                    enhancementLevel: 0,
+                    name: 'Cowbells',
+                    isSell: true,
+                    value: 174,
+                    isOutlier: false,
+                },
+                { itemHrid: sword, enhancementLevel: 2, name: 'Sword', isSell: false, value: 100, isOutlier: false },
+                { itemHrid: shield, enhancementLevel: 5, name: 'Shield', isSell: true, value: 100, isOutlier: false },
+            ],
+        });
+    });
+
+    test('keeps the full listing breakdown and attributes the same value to the listings exclusion', async () => {
+        mockIsExcluded.mockImplementation((type, key) => type === 'assetType' && key === 'listings');
+        const result = await calculateNetworth();
+        expect(result.currentAssets.listings.value).toBe(0);
+        expect(result.currentAssets.listings.breakdown).toHaveLength(4);
+        expect(result.excluded).toMatchObject({
+            total: 778,
+            items: [{ type: 'assetType', value: 'listings', amount: 778 }],
+        });
+    });
+
+    test('falls back to the same sequential valuation if the worker is unavailable', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementationOnce(() => {});
+        try {
+            mockCalculateEnhancementStatsBatch.mockRejectedValueOnce(new Error('Worker unavailable'));
+            expect((await calculateNetworth()).currentAssets.listings.value).toBe(778);
+            expect(mockCalculateEnhancementPath.mock.calls).toEqual([
+                [sword, 15, {}, undefined],
+                [shield, 5, {}, undefined],
+            ]);
+        } finally {
+            warn.mockRestore();
+        }
     });
 });
 

@@ -28,6 +28,8 @@ class NetworthFeature {
         this.itemsUpdateHandler = null;
         this.priceUpdateDebounceTimer = null;
         this.itemsUpdateDebounceTimer = null;
+        this.recalculation = null;
+        this.recalculationQueued = false;
     }
 
     /**
@@ -126,7 +128,7 @@ class NetworthFeature {
                     if (this.isActive && connectionState.isConnected()) {
                         this.recalculate();
                     }
-                }, 5000);
+                }, 30_000);
             }
         };
 
@@ -162,6 +164,28 @@ class NetworthFeature {
             return;
         }
 
+        if (this.recalculation) {
+            this.recalculationQueued = true;
+            return this.recalculation;
+        }
+
+        this.recalculation = this.runRecalculations();
+        return this.recalculation;
+    }
+
+    async runRecalculations() {
+        try {
+            // Refresh once more if state changed while a worker was still running.
+            do {
+                this.recalculationQueued = false;
+                await this.updateNetworth();
+            } while (this.recalculationQueued && connectionState.isConnected());
+        } finally {
+            this.recalculation = null;
+        }
+    }
+
+    async updateNetworth() {
         try {
             // Calculate networth
             const networthData = await calculateNetworth();
@@ -227,6 +251,7 @@ class NetworthFeature {
         networthCache.clear();
 
         this.currentData = null;
+        this.recalculationQueued = false;
         this.isActive = false;
     }
 }

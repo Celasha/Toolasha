@@ -63,13 +63,11 @@ class NetworthExclusionPopup {
      * @param {Object} [networthData] - Updated net worth data (optional)
      */
     refresh(networthData) {
-        if (networthData) {
-            this.networthData = networthData;
-            this.searchList = this._buildSearchList(networthData);
-        }
-        if (this.container) {
-            this._refreshContent();
-        }
+        if (networthData) this.networthData = networthData;
+        if (!this.container) return;
+
+        if (networthData) this.searchList = this._buildSearchList(networthData);
+        this._refreshContent();
     }
 
     // ─── Private ────────────────────────────────────────────────
