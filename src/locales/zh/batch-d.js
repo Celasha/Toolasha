@@ -241,6 +241,8 @@ export default {
         status_enraged: '狂暴',
         curse: '诅咒（根据持有诅咒武器的玩家命中次数估算）',
         curseTooltip: (p) => `诅咒 x${p.stacks}：受到的伤害 +${p.percent}%（根据命中次数估算）`,
+        weaken: '削弱（根据持有狮鹫重盾的玩家受到的攻击次数估算）',
+        weakenTooltip: (p) => `削弱 x${p.stacks}：造成的伤害 -${p.percent}%（根据对持有者的攻击次数估算）`,
         sectionGraph: 'DPS 走势',
         graphNow: '现在',
         graphTooltip: '最近5分钟的每秒伤害，按16秒平滑。红色区域为首领战。',

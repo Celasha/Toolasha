@@ -1816,6 +1816,8 @@ export default {
         status_enraged: 'Enraged',
         curse: 'Curse (estimated from the hits of the player with the Cursed Bow)',
         curseTooltip: (p) => `Curse x${p.stacks}: +${p.percent}% damage taken (estimated from landed hits)`,
+        weaken: 'Weaken (estimated from the attacks on the player with the Griffin Bulwark)',
+        weakenTooltip: (p) => `Weaken x${p.stacks}: -${p.percent}% damage dealt (estimated from attacks on the holder)`,
         sectionGraph: 'DPS over time',
         graphNow: 'now',
         graphTooltip: 'Damage per second over the last 5 minutes, smoothed over 16 seconds. Red bands are boss fights.',

@@ -9,7 +9,9 @@
  *   - the stunned / blinded / silenced / enraged flags are exact, and only their length is predicted from
  *     the ability that caused them;
  *   - a unit dying clears what was on it, and a new wave clears the monsters;
- *   - curse is counted from the hits of the player who holds it (their curse stat is in `new_battle`).
+ *   - curse is counted from the hits of the player who holds it (their curse stat is in `new_battle`);
+ *   - weaken is counted from the attacks on the player who holds it, and lands on the monster that attacked
+ *     (their weaken stat is in `new_battle`).
  *
  * The timers are predictions from the moment the cast was seen, so they can drift from the server's by a
  * little. Pure logic: feed it tracker events.
@@ -25,6 +27,12 @@ const STATUS_LINK_MS = 1500;
 const CURSE_ID = 'curse';
 const CURSE_MAX_STACKS = 5;
 const CURSE_DURATION_MS = 15000;
+
+// Weaken (a Griffin Bulwark stat): every attack on its holder adds a stack to the attacker, hit or miss; each
+// attack refreshes the timer of all of them, up to five. Per the game's own description of the stat.
+const WEAKEN_ID = 'weaken';
+const WEAKEN_MAX_STACKS = 5;
+const WEAKEN_DURATION_MS = 15000;
 
 export const KIND_BUFF = 'buff';
 export const KIND_DEBUFF = 'debuff';
@@ -88,6 +96,7 @@ export class BuffTracker {
             if (event.type === 'attack' && event.abilityHrid) this.applyCast(event, at, roster, damaged);
         }
         this.applyCurse(events, at, roster, damaged);
+        this.applyWeaken(events, at, roster);
         for (const event of events) {
             if (event.type === 'status') this.applyStatus(event, at);
         }
@@ -112,23 +121,71 @@ export class BuffTracker {
         const died = new Set(events.filter((e) => e.type === 'death' && e.side === SIDE_MONSTER).map((e) => e.index));
         for (const index of new Set(damaged[SIDE_MONSTER])) {
             if (died.has(index)) continue;
-            const key = unitKey(SIDE_MONSTER, index);
-            const entries = this.units.get(key) || new Map();
-            const current = entries.get(CURSE_ID);
-            const live = current && current.expiresAt > at;
-            entries.set(CURSE_ID, {
+            this.addStacks(SIDE_MONSTER, index, {
                 id: CURSE_ID,
-                kind: KIND_DEBUFF,
-                abilityHrid: '',
                 symbol: '☠',
-                stacks: Math.min(CURSE_MAX_STACKS, (live ? current.stacks : 0) + 1),
                 perStack,
+                maxStacks: CURSE_MAX_STACKS,
                 durationMs: CURSE_DURATION_MS,
                 at,
-                expiresAt: at + CURSE_DURATION_MS,
             });
-            this.units.set(key, entries);
         }
+    }
+
+    /**
+     * Weaken, the mirror of curse: one message has one attacker, so when that monster attacked players, each
+     * one that holds weaken puts a stack on it. A miss counts, as the attack is what triggers it. Damage with
+     * no attacker, or several monsters acting at once, leaves the count alone.
+     * @param {Object[]} events
+     * @param {number} at
+     * @param {Object} roster - Players carry their `weaken` stat
+     */
+    applyWeaken(events, at, roster) {
+        const attackers = events.filter((event) => event.type === 'attack' && event.side === SIDE_MONSTER);
+        if (attackers.length !== 1) return;
+        const attacker = attackers[0].index;
+        // An attacker that died in this message has nothing left to show
+        if (events.some((e) => e.type === 'death' && e.side === SIDE_MONSTER && e.index === attacker)) return;
+
+        const attacked = new Set(
+            events.filter((e) => e.type === 'damage' && e.side === SIDE_PLAYER).map((e) => e.index)
+        );
+        for (const unit of roster?.[SIDE_PLAYER] || []) {
+            if (!attacked.has(unit.index) || !(unit.weaken > 0)) continue;
+            this.addStacks(SIDE_MONSTER, attacker, {
+                id: WEAKEN_ID,
+                symbol: '▼',
+                perStack: unit.weaken,
+                maxStacks: WEAKEN_MAX_STACKS,
+                durationMs: WEAKEN_DURATION_MS,
+                at,
+            });
+        }
+    }
+
+    /**
+     * Add one stack of a stacking debuff to a unit, refreshing the timer of all its stacks.
+     * @param {string} side
+     * @param {number} index
+     * @param {{id: string, symbol: string, perStack: number, maxStacks: number, durationMs: number, at: number}} stack
+     */
+    addStacks(side, index, { id, symbol, perStack, maxStacks, durationMs, at }) {
+        const key = unitKey(side, index);
+        const entries = this.units.get(key) || new Map();
+        const current = entries.get(id);
+        const live = current && current.expiresAt > at;
+        entries.set(id, {
+            id,
+            kind: KIND_DEBUFF,
+            abilityHrid: '',
+            symbol,
+            stacks: Math.min(maxStacks, (live ? current.stacks : 0) + 1),
+            perStack,
+            durationMs,
+            at,
+            expiresAt: at + durationMs,
+        });
+        this.units.set(key, entries);
     }
 
     /**

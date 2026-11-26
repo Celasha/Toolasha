@@ -61,6 +61,8 @@ function unitFromNewBattle(unit, side, index) {
         abilityHaste: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
         // How much damage taken a landed hit adds to its target (a Cursed Bow); 0 for most players
         curse: unit?.combatDetails?.combatStats?.curse ?? 0,
+        // How much damage an attacker loses per stack when it hits this unit (a Griffin Bulwark)
+        weaken: unit?.combatDetails?.combatStats?.weaken ?? 0,
         // How long before the unit enrages; bosses get much longer than ordinary monsters
         enrageTimerNs: unit?.enrageTimerDuration ?? 0,
         // How much faster food comes off cooldown (a pouch bonus)

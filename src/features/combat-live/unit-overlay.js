@@ -237,10 +237,10 @@ class UnitOverlay {
                 icon = this.buildIcon(buff, sprite, size);
                 entry.icons.set(buff.id, icon);
             }
-            // Curse is judged by its stacks, which matter more than a timer that every hit resets
+            // Curse and weaken are judged by their stacks, which matter more than a timer that every hit resets
             icon.label.textContent = buff.stacks ? String(buff.stacks) : countdownText(buff.remainingMs);
             if (buff.stacks) {
-                const title = t('combatLive.curseTooltip', {
+                const title = t(`combatLive.${buff.id}Tooltip`, {
                     stacks: buff.stacks,
                     percent: Number((buff.value * 100).toFixed(1)),
                 });
@@ -258,7 +258,7 @@ class UnitOverlay {
         }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:${Math.round(size * 0.6)}px; overflow:visible;`;
         // The tooltip is set once, so it does not flicker while a countdown ticks
         wrap.title = buff.symbol
-            ? t('combatLive.curse')
+            ? t(`combatLive.${buff.id}`)
             : buff.kind === 'status' && !buff.abilityHrid
               ? t(`combatLive.status_${buff.status}`)
               : getAbilityName(buff.abilityHrid, buff.abilityHrid.split('/').pop());

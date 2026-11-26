@@ -211,7 +211,12 @@ class CombatLive {
         const hits = this.stats.record(events, now);
         ownDamageFilter.noteHits(hits, now);
         this.buffs.record(events, now, {
-            p: this.tracker.players.map((unit) => ({ index: unit.index, hp: unit.hp, curse: unit.curse })),
+            p: this.tracker.players.map((unit) => ({
+                index: unit.index,
+                hp: unit.hp,
+                curse: unit.curse,
+                weaken: unit.weaken,
+            })),
             m: this.tracker.monsters.map((unit) => ({ index: unit.index, hp: unit.hp })),
         });
         this.lastMessageAt = now;

@@ -307,3 +307,87 @@ describe('BuffTracker curse', () => {
         expect(curse(buffs, 1, 2000)).toBeUndefined();
     });
 });
+
+describe('BuffTracker weaken', () => {
+    const SEC_MS = 1000;
+    const swing = (index) => ({ type: 'attack', side: 'm', index, abilityHrid: '', auto: true });
+    const withWeaken = () => ({
+        p: [
+            { index: 0, hp: 100, weaken: 0.03 },
+            { index: 1, hp: 100, weaken: 0 },
+        ],
+        m: [
+            { index: 0, hp: 50 },
+            { index: 1, hp: 50 },
+        ],
+    });
+    const miss = (side, index) => ({ type: 'damage', side, index, amount: 0, miss: true });
+    const weaken = (buffs, index, now) => buffs.getUnit('m', index, now).find((buff) => buff.id === 'weaken');
+
+    test('every attack on the holder adds a stack to the attacker and the value follows', () => {
+        const buffs = tracker();
+        buffs.record([swing(0), hit('p', 0)], 0, withWeaken());
+        buffs.record([swing(0), hit('p', 0)], 2 * SEC_MS, withWeaken());
+
+        const entry = weaken(buffs, 0, 3 * SEC_MS);
+        expect(entry).toMatchObject({ stacks: 2, kind: 'debuff', symbol: '▼' });
+        expect(entry.value).toBeCloseTo(0.06);
+        expect(weaken(buffs, 1, 3 * SEC_MS)).toBeUndefined();
+    });
+
+    test('a miss still counts as an attack on the holder', () => {
+        const buffs = tracker();
+        buffs.record([swing(0), miss('p', 0)], 0, withWeaken());
+
+        expect(weaken(buffs, 0, 1000).stacks).toBe(1);
+    });
+
+    test('an attack on a player without the stat weakens nothing', () => {
+        const buffs = tracker();
+        buffs.record([swing(0), hit('p', 1)], 0, withWeaken());
+
+        expect(weaken(buffs, 0, 1000)).toBeUndefined();
+    });
+
+    test('an attack that hits two holders adds a stack for each', () => {
+        const buffs = tracker();
+        const both = withWeaken();
+        both.p[1].weaken = 0.03;
+        buffs.record([cast('m', 0, '/abilities/spear'), hit('p', 0), hit('p', 1)], 0, both);
+
+        expect(weaken(buffs, 0, 1000).stacks).toBe(2);
+    });
+
+    test('stops at five stacks, refreshes on every attack, and ends after 15 seconds', () => {
+        const buffs = tracker();
+        for (let i = 0; i < 8; i++) buffs.record([swing(0), hit('p', 0)], i * SEC_MS, withWeaken());
+        expect(weaken(buffs, 0, 9 * SEC_MS).stacks).toBe(5);
+        expect(weaken(buffs, 0, 21 * SEC_MS).stacks).toBe(5);
+        expect(weaken(buffs, 0, 23 * SEC_MS)).toBeUndefined();
+
+        buffs.record([swing(0), hit('p', 0)], 30 * SEC_MS, withWeaken());
+        expect(weaken(buffs, 0, 31 * SEC_MS).stacks).toBe(1);
+    });
+
+    test('several monsters acting at once, or damage with no attacker, leave the count alone', () => {
+        const buffs = tracker();
+        buffs.record([swing(0), swing(1), hit('p', 0)], 0, withWeaken());
+        buffs.record([hit('p', 0)], 1000, withWeaken());
+
+        expect(weaken(buffs, 0, 2000)).toBeUndefined();
+        expect(weaken(buffs, 1, 2000)).toBeUndefined();
+    });
+
+    test('a player attacking a monster weakens nothing, and an attacker that dies loses it', () => {
+        const buffs = tracker();
+        buffs.record(
+            [{ type: 'attack', side: 'p', index: 0, abilityHrid: '', auto: true }, hit('m', 0)],
+            0,
+            withWeaken()
+        );
+        buffs.record([swing(1), hit('p', 0), { type: 'death', side: 'm', index: 1 }], 1000, withWeaken());
+
+        expect(weaken(buffs, 0, 2000)).toBeUndefined();
+        expect(weaken(buffs, 1, 2000)).toBeUndefined();
+    });
+});

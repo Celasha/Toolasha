@@ -205,6 +205,31 @@ describe('UnitOverlay', () => {
         expect(icon.style.color).toBe('rgb(255, 255, 255)');
     });
 
+    test('weaken shows its arrow with the stack count and its own tooltip', () => {
+        deps.getBuffs.mockImplementation((side, index) =>
+            side === 'm' && index === 0
+                ? [
+                      {
+                          id: 'weaken',
+                          kind: 'debuff',
+                          abilityHrid: '',
+                          symbol: '▼',
+                          stacks: 2,
+                          value: 0.06,
+                          remainingMs: 9000,
+                          durationMs: 15000,
+                      },
+                  ]
+                : []
+        );
+
+        overlay.update();
+
+        const icon = layer().children[2].querySelector('span[title]');
+        expect(icon.textContent).toBe('▼2');
+        expect(icon.title).toBe('combatLive.weakenTooltip');
+    });
+
     test('a side whose roster does not match the screen is left alone', () => {
         deps.rosterSize.mockImplementation((side) => (side === 'p' ? 5 : 2));
 
