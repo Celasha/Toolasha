@@ -609,6 +609,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'hideGatheringPrompts',
+            name: 'Hide Gathering Prompts',
+            category: 'UI',
+            module: UI.hideGatheringPrompts,
+            async: false,
+        },
+        {
             key: 'tabReorder',
             name: 'Tab Reorder',
             category: 'UI',

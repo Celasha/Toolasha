@@ -863,6 +863,7 @@ class DataManager {
                 // Remove claimed quests
                 this.characterQuests = this.characterQuests.filter((q) => q.status !== '/quest_status/claimed');
             }
+            this.emit('quests_updated', data);
         });
 
         // `loot_opened` is character-scoped, but it has no dedicated DataManager-owned state -
@@ -1578,6 +1579,16 @@ class DataManager {
      */
     getBlockedCharacterMap() {
         return this.characterData?.blockedCharacterMap || {};
+    }
+
+    /**
+     * Whether the character still has an unclaimed tutorial quest
+     * @returns {boolean}
+     */
+    hasTutorialQuest() {
+        return (this.characterQuests || []).some(
+            (quest) => quest.category === '/quest_category/tutorial' && quest.status !== '/quest_status/claimed'
+        );
     }
 
     /**

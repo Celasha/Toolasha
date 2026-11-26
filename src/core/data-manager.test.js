@@ -2017,3 +2017,74 @@ describe('DataManager client data for the combat sim exports', () => {
         expect(store.toolasha_init_client_data_version).toBe('v2');
     });
 });
+
+describe('DataManager quest tracking', () => {
+    const TUTORIAL = '/quest_category/tutorial';
+    const RANDOM_TASK = '/quest_category/random_task';
+
+    async function startCharacter(characterQuests) {
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.activeSocket = null;
+        dataManager.currentCharacterId = null;
+        dataManager.lastCharacterSwitchTime = 0;
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(
+            {
+                character: { id: 7001, name: 'quest-char' },
+                characterActions: [],
+                characterSkills: [],
+                characterItems: [],
+                characterQuests,
+                characterHouseRoomMap: {},
+                actionTypeDrinkSlotsMap: {},
+                characterGuildBuffMap: {},
+                guildBuildingLevelMap: {},
+                achievementActionTypeBuffsMap: {},
+                mooPassBuffs: [],
+                mooPassActionTypeBuffsMap: {},
+                communityBuffs: [],
+                communityActionTypeBuffsMap: {},
+                consumableActionTypeBuffsMap: {},
+                equipmentActionTypeBuffsMap: {},
+                equipmentTaskActionBuffs: {},
+                personalActionTypeBuffsMap: {},
+                characterBuffs: [],
+                guildActionTypeBuffsMap: {},
+            },
+            { socket }
+        );
+        return { dataManager, socket };
+    }
+
+    test('hasTutorialQuest is true only for an unclaimed tutorial quest', async () => {
+        const { dataManager } = await startCharacter([
+            { id: 1, category: RANDOM_TASK, status: '/quest_status/in_progress' },
+        ]);
+        expect(dataManager.hasTutorialQuest()).toBe(false);
+
+        dataManager.characterQuests = [{ id: 2, category: TUTORIAL, status: '/quest_status/new' }];
+        expect(dataManager.hasTutorialQuest()).toBe(true);
+
+        dataManager.characterQuests = [{ id: 2, category: TUTORIAL, status: '/quest_status/claimed' }];
+        expect(dataManager.hasTutorialQuest()).toBe(false);
+    });
+
+    test('quests_updated applies the update, then tells listeners', async () => {
+        const { dataManager, socket } = await startCharacter([
+            { id: 2, category: TUTORIAL, status: '/quest_status/completed' },
+        ]);
+        const seen = [];
+        const listener = () => seen.push(dataManager.hasTutorialQuest());
+        dataManager.on('quests_updated', listener);
+
+        webSocketHandlers.get('quests_updated')(
+            { endCharacterQuests: [{ id: 2, category: TUTORIAL, status: '/quest_status/claimed' }] },
+            { socket }
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // The listener already sees the claimed quest gone
+        expect(seen).toEqual([false]);
+        dataManager.off('quests_updated', listener);
+    });
+});

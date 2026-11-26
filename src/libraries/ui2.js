@@ -17,6 +17,7 @@ import combatLive from '../features/combat-live/combat-live.js';
 import externalLinks from '../features/ui/external-links.js';
 import hideLabyrinthBadge from '../features/ui/hide-labyrinth-badge.js';
 import hideNavBarGlow from '../features/ui/hide-nav-bar-glow.js';
+import hideGatheringPrompts from '../features/ui/hide-gathering-prompts.js';
 import tabReorder from '../features/ui/tab-reorder.js';
 
 // Navigation features
@@ -81,6 +82,7 @@ toolashaRoot.UI = Object.assign(toolashaRoot.UI || {}, {
     externalLinks,
     hideLabyrinthBadge,
     hideNavBarGlow,
+    hideGatheringPrompts,
     tabReorder,
     altClickNavigation,
     tokenShopShortcuts,

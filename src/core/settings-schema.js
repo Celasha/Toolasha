@@ -2534,6 +2534,13 @@ export const settingsGroups = {
                 default: false,
                 help: "Removes the game's pulsing orange glow animation from the currently active skill's icon in the left navigation bar.",
             },
+            hideGatheringPrompts: {
+                id: 'hideGatheringPrompts',
+                label: 'Left sidebar: Hide gathering prompts (Non-Gathering Iron Cow)',
+                type: 'checkbox',
+                default: false,
+                help: 'For characters who never gather. Hides the XP bar, XP percentage and remaining XP on the Milking, Foraging and Woodcutting links, and hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
+            },
             tabReorder: {
                 id: 'tabReorder',
                 label: 'Character panel: Drag-and-drop tab reordering',

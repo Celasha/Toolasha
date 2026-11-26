@@ -4210,6 +4210,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Left sidebar: Hide active skill glow effect',
                 help: "Removes the game's pulsing orange glow animation from the currently active skill's icon in the left navigation bar.",
             },
+            hideGatheringPrompts: {
+                label: 'Left sidebar: Hide gathering prompts (Non-Gathering Iron Cow)',
+                help: 'For characters who never gather. Hides the XP bar, XP percentage and remaining XP on the Milking, Foraging and Woodcutting links, and hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
+            },
             tabReorder: {
                 label: 'Character panel: Drag-and-drop tab reordering',
                 help: 'Drag tabs to rearrange the order of Inventory, Toolasha, Equipment, Houses, Abilities, and Loadout. Order persists through refresh.',
