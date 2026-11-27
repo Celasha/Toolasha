@@ -20,6 +20,8 @@ import wishlistHistory from './wishlist-history.js';
 import { getWishlistPrice, getCoinBalance } from './wishlist-pricing.js';
 import { setNavAlert } from './wishlist-alert.js';
 import WishlistUI from './wishlist-ui.js';
+import wishlistChart from './wishlist-chart.js';
+import { getItemName } from '../../../utils/game-i18n.js';
 
 const SETTING_KEY = 'marketWishlist';
 const SAMPLE_INTERVAL = 60 * 60 * 1000; // 1 hour, like the net worth history
@@ -65,6 +67,8 @@ class MarketWishlist {
             store: wishlistStore,
             getPrice: getWishlistPrice,
             onOpen: () => this.sampleAll(MIN_SAMPLE_GAP),
+            onClose: () => wishlistChart.close(),
+            onOpenChart: (item, price) => this.openChart(item, price),
         });
         this.ui.start();
 
@@ -119,6 +123,20 @@ class MarketWishlist {
         if (added) this.sampleAll();
         this.ui?.render();
         this.refreshAlert();
+    }
+
+    /**
+     * Open the price history chart for a wishlist item
+     * @param {{itemHrid: string, enhancementLevel: number}} item
+     * @param {import('./wishlist-pricing.js').WishlistPrice} price - Its current price
+     */
+    openChart(item, price) {
+        const name = getItemName(item.itemHrid, dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid);
+        wishlistChart.open({
+            title: item.enhancementLevel > 0 ? `${name} +${item.enhancementLevel}` : name,
+            series: wishlistHistory.getSeries(getWishlistKey(item.itemHrid, item.enhancementLevel)),
+            currentPrice: price?.available ? price.price : null,
+        });
     }
 
     /**
@@ -220,6 +238,7 @@ class MarketWishlist {
     cleanup() {
         this.isInitialized = false;
 
+        wishlistChart.close();
         this.ui?.stop();
         this.ui = null;
 

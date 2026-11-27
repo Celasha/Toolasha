@@ -65,6 +65,7 @@ const CSS = `
     .mwi-wishlist-row.mwi-wishlist-drop-before { box-shadow: 0 -2px 0 0 #f59e0b; }
     .mwi-wishlist-row.mwi-wishlist-drop-after { box-shadow: 0 2px 0 0 #f59e0b; }
     .mwi-wishlist-handle { cursor: grab; opacity: 0.6; user-select: none; }
+    .mwi-wishlist-row:hover { background: rgba(255, 255, 255, 0.08); }
     .mwi-wishlist-name { flex: 1 1 auto; min-width: 0; }
     .mwi-wishlist-price { min-width: 110px; text-align: right; }
     .mwi-wishlist-est { opacity: 0.7; font-size: 0.75rem; margin-left: 4px; cursor: help; }
@@ -99,11 +100,15 @@ class WishlistUI {
      * @param {import('./wishlist-store.js').WishlistStore} deps.store
      * @param {Function} deps.getPrice - async (item) => {price, available, estimated}
      * @param {Function} [deps.onOpen] - Called when the wishlist panel becomes active
+     * @param {Function} [deps.onClose] - Called when the wishlist panel is left
+     * @param {Function} [deps.onOpenChart] - Called with (item, price) when a row is clicked
      */
-    constructor({ store, getPrice, onOpen }) {
+    constructor({ store, getPrice, onOpen, onClose, onOpenChart }) {
         this.store = store;
         this.getPrice = getPrice;
         this.onOpen = onOpen;
+        this.onClose = onClose;
+        this.onOpenChart = onOpenChart;
 
         this.active = false;
         this.tablist = null;
@@ -324,6 +329,7 @@ class WishlistUI {
         if (!this.active) return;
         this.active = false;
         this.renderToken++;
+        this.onClose?.();
 
         this.tabsComponent?.classList.remove(ACTIVE_CLASS);
         if (this.tab) {
@@ -420,6 +426,7 @@ class WishlistUI {
         const name = document.createElement('div');
         name.className = 'mwi-wishlist-name';
         name.textContent = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
+        name.title = t('marketWishlist.historyTooltip');
         row.appendChild(name);
 
         const priceEl = document.createElement('div');
@@ -477,6 +484,13 @@ class WishlistUI {
             this.store.remove(item.itemHrid, item.enhancementLevel);
         });
         row.appendChild(remove);
+
+        // A click on the row itself (not its buttons or the drag handle) opens the price history
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', (e) => {
+            if (e.target.closest('button, .mwi-wishlist-handle')) return;
+            this.onOpenChart?.(item, price);
+        });
 
         this.attachDrag(row, key);
         return row;

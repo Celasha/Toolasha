@@ -68,6 +68,8 @@ vi.mock('./wishlist-pricing.js', () => ({
             }
     ),
 }));
+vi.mock('../../../utils/game-i18n.js', () => ({ getItemName: (_hrid, fallback) => fallback }));
+vi.mock('./wishlist-chart.js', () => ({ default: { open: vi.fn(), close: vi.fn() } }));
 vi.mock('./wishlist-ui.js', () => ({
     default: class {
         constructor(deps) {
@@ -88,6 +90,7 @@ vi.mock('../../../core/storage.js', () => ({
 const { MarketWishlist } = await import('./wishlist.js');
 const { default: wishlistStore } = await import('./wishlist-store.js');
 const { default: wishlistHistory } = await import('./wishlist-history.js');
+const { default: wishlistChart } = await import('./wishlist-chart.js');
 
 function buildMenu({ name = 'Sword', enhancement = '' } = {}) {
     document.body.innerHTML = `
@@ -269,6 +272,52 @@ describe('MarketWishlist', () => {
         expect(ui.stop).toHaveBeenCalled();
         expect(menu.querySelector('.mwi-wishlist-menu-btn')).toBeNull();
         expect(feature.isInitialized).toBe(false);
+    });
+
+    describe('price history chart', () => {
+        test('opens the chart with the recorded series, the name and the current price', async () => {
+            await feature.initialize();
+            mocks.details['/items/sword'] = { isTradable: true, name: 'Sword' };
+            await wishlistStore.add('/items/sword', 4);
+            wishlistHistory.record('/items/sword:4', 800, false, 1);
+            wishlistHistory.record('/items/sword:4', 900, true, 2);
+
+            mocks.uiInstances[0].deps.onOpenChart(
+                { itemHrid: '/items/sword', enhancementLevel: 4 },
+                { price: 950, available: true, estimated: false }
+            );
+
+            expect(wishlistChart.open).toHaveBeenLastCalledWith({
+                title: 'Sword +4',
+                series: [
+                    [1, 800, 0],
+                    [2, 900, 1],
+                ],
+                currentPrice: 950,
+            });
+        });
+
+        test('passes no current price when the item could not be priced', async () => {
+            await feature.initialize();
+
+            mocks.uiInstances[0].deps.onOpenChart(
+                { itemHrid: '/items/sword', enhancementLevel: 0 },
+                { price: 0, available: false, estimated: false }
+            );
+
+            expect(wishlistChart.open.mock.lastCall[0].currentPrice).toBeNull();
+        });
+
+        test('leaving the tab and cleanup both close the chart', async () => {
+            await feature.initialize();
+            wishlistChart.close.mockClear();
+
+            mocks.uiInstances[0].deps.onClose();
+            expect(wishlistChart.close).toHaveBeenCalledTimes(1);
+
+            feature.cleanup();
+            expect(wishlistChart.close).toHaveBeenCalledTimes(2);
+        });
     });
 
     describe('affordability alert', () => {

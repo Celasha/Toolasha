@@ -76,6 +76,8 @@ describe('WishlistUI', () => {
     let store;
     let ui;
     let prices;
+    let onOpenChart;
+    let onClose;
 
     const tab = () => document.querySelector(`[${TAB_ATTR}]`);
     const panel = () => document.querySelector(`.${PANEL_CLASS}`);
@@ -95,9 +97,13 @@ describe('WishlistUI', () => {
         await store.load('c');
         await store.add('/items/a', 0);
         await store.add('/items/b', 3);
+        onOpenChart = vi.fn();
+        onClose = vi.fn();
         ui = new WishlistUI({
             store,
             getPrice: async (item) => prices[getWishlistKey(item.itemHrid, item.enhancementLevel)],
+            onOpenChart,
+            onClose,
         });
         ui.start();
     });
@@ -268,6 +274,30 @@ describe('WishlistUI', () => {
         await flush();
 
         expect(store.getItems().map((i) => i.itemHrid)).toEqual(['/items/b', '/items/a']);
+    });
+
+    test('clicking a row opens its price history, but clicking its buttons or handle does not', async () => {
+        tab().click();
+        await flush();
+
+        rows()[1].querySelector('.mwi-wishlist-name').click();
+        expect(onOpenChart).toHaveBeenCalledTimes(1);
+        expect(onOpenChart.mock.calls[0][0]).toMatchObject({ itemHrid: '/items/b', enhancementLevel: 3 });
+        expect(onOpenChart.mock.calls[0][1]).toEqual(prices['/items/b:3']);
+
+        rows()[0].querySelector('.mwi-wishlist-buy').click();
+        rows()[1].querySelector('.mwi-wishlist-handle').click();
+        expect(onOpenChart).toHaveBeenCalledTimes(1);
+    });
+
+    test('leaving the wishlist tab notifies the owner so an open chart can close', async () => {
+        tab().click();
+        await flush();
+        expect(onClose).not.toHaveBeenCalled();
+
+        document.getElementById('t2').click();
+
+        expect(onClose).toHaveBeenCalledTimes(1);
     });
 
     test('a marketplace remount gets a fresh tab and panel', () => {
