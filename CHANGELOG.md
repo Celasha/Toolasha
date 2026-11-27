@@ -2,23 +2,20 @@
 
 ## [3.37.0](https://github.com/Celasha/Toolasha/compare/v3.36.0...v3.37.0) (2026-11-27)
 
-
 ### Features
 
-* add a setting for where the Abilities & Triggers box opens ([e277e56](https://github.com/Celasha/Toolasha/commit/e277e56bf5b5e9a61a08cfff395a57fba6c80d9b))
-* price Opened Loot drops with no bid at their ask ([6be24ed](https://github.com/Celasha/Toolasha/commit/6be24ed74e2290f76eb2e7f9d4b553b4d01ff34d))
-
+- add a setting for where the Abilities & Triggers box opens ([e277e56](https://github.com/Celasha/Toolasha/commit/e277e56bf5b5e9a61a08cfff395a57fba6c80d9b))
+- price Opened Loot drops with no bid at their ask ([6be24ed](https://github.com/Celasha/Toolasha/commit/6be24ed74e2290f76eb2e7f9d4b553b4d01ff34d))
 
 ### Bug Fixes
 
-* also remove the glow and block clicks on gathering skills for NGIC characters ([e7639c0](https://github.com/Celasha/Toolasha/commit/e7639c054a12a5ebd421b7c7ebc3e400e0f18780))
-* clear the Labyrinth attempt counter when the run ends or another action is current ([e8bc1f4](https://github.com/Celasha/Toolasha/commit/e8bc1f45b01cfaecc22249caae2c30b28ce283e4))
-* shrink tall tooltips to fit the screen instead of capping them for scrolling ([4fc0f15](https://github.com/Celasha/Toolasha/commit/4fc0f15939b3f7da22d8501c7ac35585dead1a34))
-
+- also remove the glow and block clicks on gathering skills for NGIC characters ([e7639c0](https://github.com/Celasha/Toolasha/commit/e7639c054a12a5ebd421b7c7ebc3e400e0f18780))
+- clear the Labyrinth attempt counter when the run ends or another action is current ([e8bc1f4](https://github.com/Celasha/Toolasha/commit/e8bc1f45b01cfaecc22249caae2c30b28ce283e4))
+- shrink tall tooltips to fit the screen instead of capping them for scrolling ([4fc0f15](https://github.com/Celasha/Toolasha/commit/4fc0f15939b3f7da22d8501c7ac35585dead1a34))
 
 ### Documentation
 
-* credit Metzli in the code for the Opened Loot and abilities position changes ([0c34a46](https://github.com/Celasha/Toolasha/commit/0c34a4633e9dd7d14c04152b68ae146ff0a54dc1))
+- credit Metzli in the code for the Opened Loot and abilities position changes ([0c34a46](https://github.com/Celasha/Toolasha/commit/0c34a4633e9dd7d14c04152b68ae146ff0a54dc1))
 
 ## [3.36.0](https://github.com/Celasha/Toolasha/compare/v3.35.2...v3.36.0) (2026-11-27)
 
