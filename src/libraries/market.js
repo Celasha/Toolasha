@@ -22,6 +22,7 @@ import instantOrderGap from '../features/market/instant-order-gap.js';
 import marketDepthCap from '../features/market/market-depth-cap.js';
 import marketOrderTotals from '../features/market/market-order-totals.js';
 import marketHistoryViewer from '../features/market/market-history-viewer.js';
+import marketWishlist from '../features/market/wishlist/wishlist.js';
 import listingRefreshNavigator from '../features/market/listing-refresh-navigator.js';
 import listingNextNavigator from '../features/market/listing-next-navigator.js';
 import philoCalculator from '../features/market/philo-calculator.js';
@@ -75,6 +76,7 @@ toolashaRoot.Market = {
     instantOrderGap,
     marketOrderTotals,
     marketHistoryViewer,
+    marketWishlist,
     listingRefreshNavigator,
     listingNextNavigator,
     philoCalculator,

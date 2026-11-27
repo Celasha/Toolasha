@@ -172,6 +172,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'marketWishlist',
+            name: 'Market Wishlist',
+            category: 'Market',
+            module: Market.marketWishlist,
+            async: true,
+        },
+        {
             key: 'listingRefreshNavigator',
             name: 'Listing Refresh Navigator',
             category: 'Market',

@@ -346,6 +346,27 @@ export default {
             "This price was outside the normal range vs. the game's own reference market value, so Toolasha substituted the reference value instead. Adjust or disable this in Settings → Pricing & Profit.",
     },
 
+    marketWishlist: {
+        tabLabel: 'Wishlist',
+        panelTitle: 'Wishlist',
+        coinsLabel: (p) => `You have ${p.coins} coins`,
+        emptyMessage:
+            'Your wishlist is empty. In Market Listings, open an item, click its icon at the top and choose "Add to Wishlist".',
+        addToMenu: 'Add to Wishlist',
+        removeFromMenu: 'Remove from Wishlist',
+        buyButton: 'Buy',
+        buyDisabledTooltip: 'This item cannot be bought on the market',
+        removeTooltip: 'Remove from wishlist',
+        dragTooltip: 'Drag to reorder',
+        estimatedTag: 'est.',
+        estimatedTooltip:
+            'Nothing is listed for sale. Estimated from crafting, shop, enhancement or the game reference value.',
+        noPrice: 'No price',
+        canAfford: '✓ Can afford',
+        needMore: (p) => `Need ${p.amount} more`,
+        alertTooltip: 'You can afford the first item on your wishlist',
+    },
+
     marketHistory: {
         modalTitle: 'Market History',
         searchItemsPlaceholder: 'Search items...',
@@ -3651,6 +3672,18 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             market_showHistoryViewer: {
                 label: 'Market: Show history viewer button in settings',
                 help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
+            },
+            marketWishlist: {
+                label: 'Market: Wishlist tab (track items you want to buy)',
+                help: 'Adds a Wishlist tab to the Marketplace. Add items from the item menu, order them, see their current price (estimated from crafting, shop or reference value when nothing is listed), and see what you can afford. Price history is recorded from the moment you add an item.',
+            },
+            marketWishlist_alertTab: {
+                label: 'Market: Show ❗ on the Wishlist tab when you can afford the first item',
+                help: 'Shows a ❗ on the Wishlist tab (while the Marketplace is open) once your coins cover the price of the first item on your wishlist.',
+            },
+            marketWishlist_alertNav: {
+                label: 'Market: Show ❗ on the Marketplace link when you can afford the first wishlist item',
+                help: 'Shows a ❗ on the Marketplace link in the left sidebar once your coins cover the price of the first item on your wishlist, so you can see it without opening the Marketplace.',
             },
             market_showPhiloCalculator: {
                 label: 'Market: Show Philo Gamba calculator button in settings',

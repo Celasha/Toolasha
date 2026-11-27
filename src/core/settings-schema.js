@@ -1435,6 +1435,27 @@ export const settingsGroups = {
                 default: true,
                 help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
             },
+            marketWishlist: {
+                id: 'marketWishlist',
+                label: 'Market: Wishlist tab (track items you want to buy)',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a Wishlist tab to the Marketplace. Add items from the item menu, order them, see their current price (estimated from crafting, shop or reference value when nothing is listed), and see what you can afford. Price history is recorded from the moment you add an item.',
+            },
+            marketWishlist_alertTab: {
+                id: 'marketWishlist_alertTab',
+                label: 'Market: Show ❗ on the Wishlist tab when you can afford the first item',
+                type: 'checkbox',
+                default: false,
+                help: 'Shows a ❗ on the Wishlist tab (while the Marketplace is open) once your coins cover the price of the first item on your wishlist.',
+            },
+            marketWishlist_alertNav: {
+                id: 'marketWishlist_alertNav',
+                label: 'Market: Show ❗ on the Marketplace link when you can afford the first wishlist item',
+                type: 'checkbox',
+                default: false,
+                help: 'Shows a ❗ on the Marketplace link in the left sidebar once your coins cover the price of the first item on your wishlist, so you can see it without opening the Marketplace.',
+            },
             market_showPhiloCalculator: {
                 id: 'market_showPhiloCalculator',
                 label: 'Market: Show Philo Gamba calculator button in settings',
