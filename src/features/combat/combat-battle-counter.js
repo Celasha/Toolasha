@@ -53,8 +53,39 @@ class CombatBattleCounter {
         this.initialized = true;
     }
 
+    /**
+     * Whether the action currently running (the first not-done entry in the queue, which the data
+     * manager keeps in native queue order) is the labyrinth explore. A labyrinth explore that is
+     * merely queued behind another action does not count.
+     * @returns {boolean}
+     */
+    _isLabyrinthCurrent() {
+        const current = dataManager.getCurrentActions().find((a) => !a.isDone);
+        return current?.actionHrid === '/actions/labyrinth/explore';
+    }
+
+    _clearCounter() {
+        this.battleId = 0;
+        this.currentWave = 0;
+        this.isDungeon = false;
+        this.isLabyrinth = false;
+        this.labyrinthAttempt = 0;
+        document.getElementById(COUNTER_ID)?.remove();
+    }
+
     _checkCombatEnded(data) {
         if (this.battleId === 0 && this.labyrinthAttempt === 0) return;
+
+        // The labyrinth run ended or another action took over. Its explore action is not a
+        // /actions/combat/ one, so the checks below would never notice, and nothing else re-renders
+        // the header when the game reuses the element.
+        if (this.isLabyrinth && !this._isLabyrinthCurrent()) {
+            this._clearCounter();
+            return;
+        }
+        // The labyrinth run is still the current action. The combat-oriented checks below would
+        // clear it for any other action that is queued or updated at count 0.
+        if (this.isLabyrinth) return;
 
         const combatEnded = data.endCharacterActions?.some(
             (a) => a.isDone && a.actionHrid?.startsWith('/actions/combat/')
@@ -67,12 +98,7 @@ class CombatBattleCounter {
         );
 
         if (combatEnded || (hasNewNonCombatAction && !hasCombatAction)) {
-            this.battleId = 0;
-            this.currentWave = 0;
-            this.isDungeon = false;
-            this.isLabyrinth = false;
-            this.labyrinthAttempt = 0;
-            document.getElementById(COUNTER_ID)?.remove();
+            this._clearCounter();
         }
     }
 
@@ -81,12 +107,10 @@ class CombatBattleCounter {
         if (!labyrinth?.isActive) return;
 
         // Cross-check: only trust labyrinth state if the player's current action is
-        // actually the labyrinth explore action. Stale labyrinth_updated messages
-        // can arrive shortly after exiting and otherwise stamp "Attempt #N" onto
-        // the next regular combat zone.
-        const actions = dataManager.getCurrentActions();
-        const activeLabAction = actions.find((a) => a.actionHrid === '/actions/labyrinth/explore' && !a.isDone);
-        if (!activeLabAction) return;
+        // actually the labyrinth explore action (not one merely queued behind another action).
+        // Stale labyrinth_updated messages can arrive shortly after exiting and otherwise stamp
+        // "Attempt #N" onto the next regular combat zone or skilling action.
+        if (!this._isLabyrinthCurrent()) return;
 
         let pathCoords;
         try {
@@ -141,9 +165,7 @@ class CombatBattleCounter {
         // labyrinth explore, clear the labyrinth flags and re-derive what to
         // render from the remaining state.
         if (this.isLabyrinth) {
-            const actions = dataManager.getCurrentActions();
-            const isCurrentlyLab = actions.some((a) => a.actionHrid === '/actions/labyrinth/explore' && !a.isDone);
-            if (!isCurrentlyLab) {
+            if (!this._isLabyrinthCurrent()) {
                 this.isLabyrinth = false;
                 this.labyrinthAttempt = 0;
                 if (this.battleId === 0) {
