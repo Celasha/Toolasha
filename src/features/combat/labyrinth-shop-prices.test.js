@@ -67,6 +67,28 @@ describe('LabyrinthShopPrices - outlier guard propagation', () => {
         expect(askSpan.innerHTML).not.toContain('<span');
     });
 
+    test('explains the warning on hover, and only on the flagged price', () => {
+        const itemEl = shopItemEl('/items/gold_ore');
+        buyableGridDom([itemEl]);
+        mocks.getItemPrices.mockReturnValue({ ask: 100, bid: 90, askOutlier: true, bidOutlier: false });
+
+        labyrinthShopPrices.refreshAll();
+
+        const askSpan = itemEl.querySelector('.mwi-lsp-ask');
+        const bidSpan = itemEl.querySelector('.mwi-lsp-bid');
+        expect(askSpan.title).toContain('reference market value');
+        // The price container is click-through, so the flagged price must be hoverable
+        expect(askSpan.style.pointerEvents).toBe('auto');
+        expect(bidSpan.title).toBe('');
+        expect(bidSpan.style.pointerEvents).toBe('');
+
+        // A refresh that clears the flag clears the explanation too
+        mocks.getItemPrices.mockReturnValue({ ask: 100, bid: 90, askOutlier: false, bidOutlier: false });
+        labyrinthShopPrices.refreshAll();
+        expect(askSpan.title).toBe('');
+        expect(askSpan.style.pointerEvents).toBe('');
+    });
+
     test('flags the bid price independently of the ask price', () => {
         const itemEl = shopItemEl('/items/gold_ore');
         buyableGridDom([itemEl]);

@@ -20,6 +20,17 @@ import { resolveActionContext } from '../../utils/action-context.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 
+/**
+ * Append the ⚠ that marks a price substituted by the outlier guard, with its explanation on hover
+ * @param {Element} line
+ */
+function appendOutlierWarning(line) {
+    const warning = document.createElement('span');
+    warning.textContent = '⚠';
+    warning.title = t('marketData.outlierPriceWarningTooltip');
+    line.append(' ', warning);
+}
+
 const ALCHEMY_TYPES = ['coinify', 'decompose', 'transmute'];
 
 // The alchemy tab labels are the game's action names for these HRIDs
@@ -912,7 +923,7 @@ export class AlchemyBestItems {
                 });
                 const extraStyle = drop.isSelfReturn ? ' text-decoration: line-through; opacity: 0.6;' : '';
                 const line = this._appendLinkedLine(container, text, itemName, drop.itemHrid, extraStyle);
-                if (drop.isOutlier) line.append(' ⚠');
+                if (drop.isOutlier) appendOutlierWarning(line);
             }
         }
 
@@ -942,7 +953,7 @@ export class AlchemyBestItems {
                         cost: formatKMB(Math.round(req.costPerHour)),
                     });
                     const line = this._appendLinkedLine(container, text, itemName, req.itemHrid);
-                    if (req.isOutlier) line.append(' ⚠');
+                    if (req.isOutlier) appendOutlierWarning(line);
                 }
             }
 
@@ -959,7 +970,7 @@ export class AlchemyBestItems {
                     cost: formatKMB(Math.round(profitData.catalystCostPerHour)),
                 });
                 const line = this._appendLinkedLine(container, text, catName, profitData.catalystCost.itemHrid);
-                if (profitData.catalystCost.isOutlier) line.append(' ⚠');
+                if (profitData.catalystCost.isOutlier) appendOutlierWarning(line);
             }
 
             // Tea
@@ -972,7 +983,7 @@ export class AlchemyBestItems {
                         cost: formatKMB(Math.round(tea.costPerHour)),
                     });
                     const line = this._appendLinkedLine(container, text, teaName, tea.itemHrid);
-                    if (tea.isOutlier) line.append(' ⚠');
+                    if (tea.isOutlier) appendOutlierWarning(line);
                 }
             }
         }

@@ -1041,6 +1041,7 @@ class PhiloCalculator {
                     case 'profitPerPhilo':
                     case 'profitPerHour':
                         td.textContent = formatLargeNumber(Math.round(value)) + (row.isOutlier ? ' ⚠' : '');
+                        if (row.isOutlier) td.title = t('marketData.outlierPriceWarningTooltip');
                         td.style.color = value >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                         break;
                     case 'revenuePerHour':

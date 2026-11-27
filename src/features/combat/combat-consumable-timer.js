@@ -14,6 +14,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import combatStatsDataCollector from '../combat-stats/combat-stats-data-collector.js';
@@ -97,6 +98,7 @@ class CombatConsumableTimer {
             label.className = 'mwi-combat-consumable-timer';
             label.style.cssText = `color:${color}; font-size: 10px; text-align: center; line-height: 1.3;`;
             label.textContent = `${prefix}${formatRunway(timeToZeroSeconds)}`;
+            if (prefix) label.title = t('warningHover.lowConsumableSupply');
 
             itemEl.insertAdjacentElement('afterend', label);
         });

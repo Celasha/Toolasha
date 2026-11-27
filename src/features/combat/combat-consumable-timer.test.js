@@ -161,7 +161,26 @@ describe('CombatConsumableTimer runway injection', () => {
         expect(labels.length).toBe(1);
         expect(itemEls[0].nextElementSibling).toBe(labels[0]);
         expect(labels[0].textContent).toBe('⚠ ~1h');
+        expect(labels[0].title).toContain('Running low');
         expect(itemEls[1].nextElementSibling).toBeNull();
+    });
+
+    test('a healthy runway has no warning and no tooltip', () => {
+        mocks.latestData = {
+            players: [
+                {
+                    isCurrentPlayer: true,
+                    consumables: [{ itemHrid: '/items/attack_coffee', timeToZeroSeconds: 100 * 3600 }],
+                },
+            ],
+        };
+        makeConsumablesContainer(['attack_coffee']);
+
+        combatConsumableTimerFeature.initialize();
+
+        const label = document.querySelector('.mwi-combat-consumable-timer');
+        expect(label.textContent).not.toContain('⚠');
+        expect(label.title).toBe('');
     });
 
     test('gives each rendered slot its own caption, even when the same item is slotted twice', () => {

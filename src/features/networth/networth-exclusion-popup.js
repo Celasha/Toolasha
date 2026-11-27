@@ -551,6 +551,7 @@ class NetworthExclusionPopup {
             amountSpan.style.cssText = `color: rgba(255,255,255,0.5); white-space: nowrap; font-size: 0.78rem;`;
             amountSpan.textContent =
                 entry.amount > 0 ? networthFormatter(Math.round(entry.amount)) + (entry.isOutlier ? ' ⚠' : '') : '';
+            if (entry.amount > 0 && entry.isOutlier) amountSpan.title = t('marketData.outlierPriceWarningTooltip');
 
             const actionBtn = document.createElement('button');
             actionBtn.style.cssText = `
@@ -611,6 +612,7 @@ class NetworthExclusionPopup {
                     subVal.style.cssText = `white-space: nowrap; color: rgba(255,255,255,0.4);`;
                     subVal.textContent =
                         sub.value > 0 ? networthFormatter(Math.round(sub.value)) + (sub.isOutlier ? ' ⚠' : '') : '';
+                    if (sub.value > 0 && sub.isOutlier) subVal.title = t('marketData.outlierPriceWarningTooltip');
 
                     subRow.appendChild(subName);
                     subRow.appendChild(subVal);

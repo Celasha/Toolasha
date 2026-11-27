@@ -346,6 +346,17 @@ export default {
             "This price was outside the normal range vs. the game's own reference market value, so Toolasha substituted the reference value instead. Adjust or disable this in Settings → Pricing & Profit.",
     },
 
+    warningHover: {
+        missingPrice:
+            "No price is available for something in this calculation, so this value can't be worked out. This usually means an item has no market listing and no crafting or shop price to estimate from.",
+        estimatedPrice:
+            "This value includes an estimated or substituted price: no live market price was available, or it was far outside the game's own reference market value so the reference value was used instead. Adjust this in Settings → Pricing & Profit.",
+        lowDrinkSupply:
+            'Running low: less of this drink is left than your warning threshold (Settings → Drink timer: warning threshold).',
+        lowConsumableSupply:
+            'Running low: this consumable will run out sooner than your warning threshold (Settings → Combat Statistics: consumable runway warning threshold).',
+    },
+
     marketWishlist: {
         tabLabel: 'Wishlist',
         panelTitle: 'Wishlist',

@@ -616,6 +616,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'warningHoverTips',
+            name: 'Warning Hover Tips',
+            category: 'UI',
+            module: UI.warningHoverTips,
+            async: false,
+        },
+        {
             key: 'hideGatheringPrompts',
             name: 'Hide Gathering Prompts',
             category: 'UI',

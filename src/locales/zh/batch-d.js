@@ -498,6 +498,14 @@ export default {
         outlierPriceWarningTooltip:
             '该价格明显偏离游戏官方参考市场价值的正常区间，因此 Toolasha 已改用参考价值。可在“设置 → 定价与利润”中调整或关闭此功能。',
     },
+    warningHover: {
+        missingPrice:
+            '此计算中有物品缺少价格，因此无法算出该数值。通常是该物品没有市场挂单，也没有可用于估算的制作价或商店价。',
+        estimatedPrice:
+            '该数值包含估算或替换的价格：没有实时市场价格，或实时价格明显偏离游戏官方参考市场价值，因此改用了参考价值。可在“设置 → 定价与利润”中调整。',
+        lowDrinkSupply: '库存偏低：该饮品的剩余量低于你设置的警告阈值（设置 → 饮品计时器：警告阈值）。',
+        lowConsumableSupply: '库存偏低：该消耗品将比你设置的警告阈值更早用完（设置 → 战斗统计：消耗品续航警告阈值）。',
+    },
     listingRefreshNavigator: {
         refreshButtonLabel: '刷新',
     },

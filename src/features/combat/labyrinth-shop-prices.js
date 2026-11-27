@@ -5,6 +5,7 @@
 
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { translateGameName } from '../../utils/game-i18n.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { formatKMB } from '../../utils/formatters.js';
@@ -170,6 +171,19 @@ class LabyrinthShopPrices {
     }
 
     /**
+     * Set a price span's text, and explain the ⚠ on hover when the outlier guard substituted the price.
+     * The span takes pointer events so the hover works inside the (otherwise click-through) container.
+     * @param {Element} span
+     * @param {number} value
+     * @param {boolean} isOutlier
+     */
+    setPriceText(span, value, isOutlier) {
+        span.textContent = formatKMB(value) + (isOutlier ? ' ⚠' : '');
+        span.title = isOutlier ? t('marketData.outlierPriceWarningTooltip') : '';
+        span.style.pointerEvents = isOutlier ? 'auto' : '';
+    }
+
+    /**
      * Inject or update the ask/bid price element inside an item
      * @param {Element} itemEl
      * @param {{ ask: number, bid: number, askOutlier: boolean, bidOutlier: boolean }} price
@@ -178,8 +192,8 @@ class LabyrinthShopPrices {
         const existing = itemEl.querySelector('.mwi-labyrinth-shop-price');
 
         if (existing) {
-            existing.querySelector('.mwi-lsp-ask').textContent = formatKMB(price.ask) + (price.askOutlier ? ' ⚠' : '');
-            existing.querySelector('.mwi-lsp-bid').textContent = formatKMB(price.bid) + (price.bidOutlier ? ' ⚠' : '');
+            this.setPriceText(existing.querySelector('.mwi-lsp-ask'), price.ask, price.askOutlier);
+            this.setPriceText(existing.querySelector('.mwi-lsp-bid'), price.bid, price.bidOutlier);
             return;
         }
 
@@ -196,7 +210,7 @@ class LabyrinthShopPrices {
         const askSpan = document.createElement('span');
         askSpan.className = 'mwi-lsp-ask';
         askSpan.style.color = config.COLOR_INVBADGE_ASK;
-        askSpan.textContent = formatKMB(price.ask) + (price.askOutlier ? ' ⚠' : '');
+        this.setPriceText(askSpan, price.ask, price.askOutlier);
 
         const sepSpan = document.createElement('span');
         sepSpan.style.color = '#888';
@@ -205,7 +219,7 @@ class LabyrinthShopPrices {
         const bidSpan = document.createElement('span');
         bidSpan.className = 'mwi-lsp-bid';
         bidSpan.style.color = config.COLOR_INVBADGE_BID;
-        bidSpan.textContent = formatKMB(price.bid) + (price.bidOutlier ? ' ⚠' : '');
+        this.setPriceText(bidSpan, price.bid, price.bidOutlier);
 
         container.appendChild(askSpan);
         container.appendChild(sepSpan);

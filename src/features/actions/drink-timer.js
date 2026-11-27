@@ -105,8 +105,10 @@ class DrinkTimer {
         const drinkParts = drinks.map(({ itemHrid, name, totalSeconds }) => {
             const color =
                 totalSeconds < SECONDS_PER_HOUR ? '#ef4444' : totalSeconds < thresholdSeconds ? '#f0a830' : '#9ca3af';
-            const prefix = totalSeconds < thresholdSeconds ? '⚠ ' : '';
-            return `<span style="color:${color};">${prefix}${getItemName(itemHrid, name)}: ${this._formatTime(totalSeconds)}</span>`;
+            const low = totalSeconds < thresholdSeconds;
+            const prefix = low ? '⚠ ' : '';
+            const titleAttr = low ? ` title="${t('warningHover.lowDrinkSupply')}"` : '';
+            return `<span style="color:${color};"${titleAttr}>${prefix}${getItemName(itemHrid, name)}: ${this._formatTime(totalSeconds)}</span>`;
         });
         const drinkRow = document.createElement('div');
         drinkRow.innerHTML = drinkParts.join('<span style="color:#4b5563;"> · </span>');
