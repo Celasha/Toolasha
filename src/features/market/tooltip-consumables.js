@@ -45,59 +45,8 @@ class TooltipConsumables {
             await marketAPI.fetch(true);
         }
 
-        // Add CSS to prevent tooltip cutoff (if not already added)
-        this.addTooltipStyles();
-
         // Register with centralized DOM observer
         this.setupObserver();
-    }
-
-    /**
-     * Add CSS styles to prevent tooltip cutoff
-     *
-     * CRITICAL: CSS alone is not enough! MUI uses JavaScript to position tooltips
-     * with transform3d(), which can place them off-screen. We need both:
-     * 1. CSS: Enables scrolling when tooltip is taller than viewport
-     * 2. JavaScript: Repositions tooltip when it extends beyond viewport (see fixTooltipOverflow)
-     */
-    addTooltipStyles() {
-        // Check if styles already exist (might be added by tooltip-prices)
-        if (document.getElementById('mwi-tooltip-fixes')) {
-            return; // Already added
-        }
-
-        const css = `
-            /* Ensure tooltip content is scrollable if too tall */
-            .MuiTooltip-tooltip {
-                max-height: calc(100vh - 20px) !important;
-                overflow-y: auto !important;
-            }
-
-            /* Also target the popper container */
-            .MuiTooltip-popper {
-                max-height: 100vh !important;
-            }
-
-            /* Add subtle scrollbar styling */
-            .MuiTooltip-tooltip::-webkit-scrollbar {
-                width: 6px;
-            }
-
-            .MuiTooltip-tooltip::-webkit-scrollbar-track {
-                background: rgba(0, 0, 0, 0.2);
-            }
-
-            .MuiTooltip-tooltip::-webkit-scrollbar-thumb {
-                background: rgba(255, 255, 255, 0.3);
-                border-radius: 3px;
-            }
-
-            .MuiTooltip-tooltip::-webkit-scrollbar-thumb:hover {
-                background: rgba(255, 255, 255, 0.5);
-            }
-        `;
-
-        dom.addStyles(css, 'mwi-tooltip-fixes');
     }
 
     /**
