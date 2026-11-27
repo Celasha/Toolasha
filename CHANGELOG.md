@@ -2,20 +2,18 @@
 
 ## [3.36.0](https://github.com/Celasha/Toolasha/compare/v3.35.2...v3.36.0) (2026-11-27)
 
-
 ### Features
 
-* add a setting to hide gathering prompts for Non-Gathering Iron Cows ([382e272](https://github.com/Celasha/Toolasha/commit/382e272d7bbd3e60a2c83e9f2982d1bae88081e7))
-
+- add a setting to hide gathering prompts for Non-Gathering Iron Cows ([382e272](https://github.com/Celasha/Toolasha/commit/382e272d7bbd3e60a2c83e9f2982d1bae88081e7))
 
 ### Bug Fixes
 
-* cut Net Worth main-thread stalls and cache Guild Credit values ([#864](https://github.com/Celasha/Toolasha/issues/864)) ([d214537](https://github.com/Celasha/Toolasha/commit/d214537e17ee05d2f3ab4725d8c75146fb7639a6))
-* defer dungeon tracker chart rendering until visible ([#863](https://github.com/Celasha/Toolasha/issues/863)) ([339bcf8](https://github.com/Celasha/Toolasha/commit/339bcf8e3fe365c9239f4ca2e99df931c3748622))
-* flag loadout items that will not get their saved enhancement level ([d46cecc](https://github.com/Celasha/Toolasha/commit/d46ceccb2bd5ceaa5d9a6ea4ac309af2818c00b5))
-* index inventory once during LoadoutState resolution ([#865](https://github.com/Celasha/Toolasha/issues/865)) ([fb21049](https://github.com/Celasha/Toolasha/commit/fb21049cfc5cd75d6c8f29d95e35eb1466336515))
-* share DOM class scans and batch listing history writes ([#866](https://github.com/Celasha/Toolasha/issues/866)) ([220b8dd](https://github.com/Celasha/Toolasha/commit/220b8dd9d59e8e7bf7447efd75c80df0e810d729))
-* show the weaken debuff on monsters in Combat Live ([cd8362a](https://github.com/Celasha/Toolasha/commit/cd8362aef02ef4afb636a147fa3e3c532344a990))
+- cut Net Worth main-thread stalls and cache Guild Credit values ([#864](https://github.com/Celasha/Toolasha/issues/864)) ([d214537](https://github.com/Celasha/Toolasha/commit/d214537e17ee05d2f3ab4725d8c75146fb7639a6))
+- defer dungeon tracker chart rendering until visible ([#863](https://github.com/Celasha/Toolasha/issues/863)) ([339bcf8](https://github.com/Celasha/Toolasha/commit/339bcf8e3fe365c9239f4ca2e99df931c3748622))
+- flag loadout items that will not get their saved enhancement level ([d46cecc](https://github.com/Celasha/Toolasha/commit/d46ceccb2bd5ceaa5d9a6ea4ac309af2818c00b5))
+- index inventory once during LoadoutState resolution ([#865](https://github.com/Celasha/Toolasha/issues/865)) ([fb21049](https://github.com/Celasha/Toolasha/commit/fb21049cfc5cd75d6c8f29d95e35eb1466336515))
+- share DOM class scans and batch listing history writes ([#866](https://github.com/Celasha/Toolasha/issues/866)) ([220b8dd](https://github.com/Celasha/Toolasha/commit/220b8dd9d59e8e7bf7447efd75c80df0e810d729))
+- show the weaken debuff on monsters in Combat Live ([cd8362a](https://github.com/Celasha/Toolasha/commit/cd8362aef02ef4afb636a147fa3e3c532344a990))
 
 ## [3.35.2](https://github.com/Celasha/Toolasha/compare/v3.35.1...v3.35.2) (2026-11-24)
 
