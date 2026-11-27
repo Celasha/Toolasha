@@ -102,13 +102,7 @@ class EstimatedListingAge {
      * Load initial listings from dataManager (already received via init_character_data)
      */
     loadInitialListings() {
-        const listings = dataManager.getMarketListings();
-
-        for (const listing of listings) {
-            if (listing.id && listing.createdTimestamp) {
-                this.recordListing(listing);
-            }
-        }
+        this._recordListings(dataManager.getMarketListings().filter((listing) => listing.id));
     }
 
     /**
@@ -191,68 +185,42 @@ class EstimatedListingAge {
     setupWebSocketListeners() {
         // Handle initial character data
         const initHandler = (data) => {
-            if (data.myMarketListings) {
-                for (const listing of data.myMarketListings) {
-                    this.recordListing(listing);
-                }
-                // Reconcile: any previously-active listing absent from this snapshot is no longer active
-                this._reconcileActiveListings(data.myMarketListings);
-            }
+            this._recordListings([], data.myMarketListings);
         };
 
         // Handle listing updates
         const updateHandler = (data) => {
-            // Handle newly created listings (user just placed an order)
-            if (data.newMarketListings) {
-                for (const listing of data.newMarketListings) {
-                    // New listings should start as 'unknown' (will be marked 'active' by history viewer)
-                    listing._toolashaStatus = 'unknown';
-                    this.recordListing(listing);
-                }
-            }
+            // The history viewer will mark new listings as active.
+            const newListings = data.newMarketListings?.map((listing) => ({ ...listing, _toolashaStatus: 'unknown' }));
 
-            // Update all active listings (if provided)
-            if (data.myMarketListings) {
-                for (const listing of data.myMarketListings) {
-                    // Active listings - record them but don't set status (let history viewer handle it)
-                    this.recordListing(listing);
-                }
-                // Reconcile: any previously-active listing absent from this snapshot is no longer active
-                this._reconcileActiveListings(data.myMarketListings);
-            }
-
-            // Handle endMarketListings (confusing name - contains both new AND ending listings)
-            if (data.endMarketListings) {
-                for (const listing of data.endMarketListings) {
-                    // Use game's status HRID to determine what happened
-                    if (listing.status === '/market_listing_status/active') {
-                        // New listing being created - mark as unknown (history viewer will set to active)
-                        listing._toolashaStatus = 'unknown';
-                    } else if (listing.status === '/market_listing_status/cancelled') {
-                        if (listing.filledQuantity > 0) {
-                            // Partially filled before cancel (e.g. Missing Materials split) — record as filled for the amount received
-                            listing._toolashaStatus = 'filled';
-                            listing.orderQuantity = listing.filledQuantity;
-                        } else {
-                            // User canceled the listing with nothing filled
-                            listing._toolashaStatus = 'canceled';
-                        }
-                    } else if (listing.status === '/market_listing_status/filled') {
-                        // Listing was filled
-                        listing._toolashaStatus = 'filled';
-                    } else if (listing.status === '/market_listing_status/expired') {
-                        // Listing expired
-                        listing._toolashaStatus = 'expired';
-                    } else if (listing.filledQuantity >= listing.orderQuantity) {
-                        // Unknown status - fallback to old logic
-                        listing._toolashaStatus = 'filled';
+            // endMarketListings contains both new and ending listings.
+            const endedListings = data.endMarketListings?.map((listing) => {
+                let status;
+                let orderQuantity = listing.orderQuantity;
+                if (listing.status === '/market_listing_status/active') {
+                    status = 'unknown';
+                } else if (listing.status === '/market_listing_status/cancelled') {
+                    if (listing.filledQuantity > 0) {
+                        // Record a partial fill for the amount received.
+                        status = 'filled';
+                        orderQuantity = listing.filledQuantity;
                     } else {
-                        listing._toolashaStatus = 'canceled';
+                        status = 'canceled';
                     }
-
-                    this.recordListing(listing);
+                } else if (listing.status === '/market_listing_status/expired') {
+                    status = 'expired';
+                } else if (
+                    listing.status === '/market_listing_status/filled' ||
+                    listing.filledQuantity >= orderQuantity
+                ) {
+                    status = 'filled';
+                } else {
+                    status = 'canceled';
                 }
-            }
+                return { ...listing, orderQuantity, _toolashaStatus: status };
+            });
+
+            this._recordListings(newListings, data.myMarketListings, endedListings);
         };
 
         // Handle order book updates (contains listing IDs for ALL listings)
@@ -373,10 +341,47 @@ class EstimatedListingAge {
     }
 
     /**
-     * Reconcile knownListings against a full snapshot of currently active listings.
-     * Any entry with status 'active' or 'unknown' that is absent from the snapshot
-     * is downgraded to 'unknown' — it's no longer active but we don't know why.
+     * Update the history for one payload and save it at most once.
+     * @private
+     */
+    _recordListings(listings = [], activeListings, endedListings = []) {
+        if (!listings.length && !activeListings && !endedListings.length) return;
+
+        const knownById = new Map();
+        this.knownListings.forEach((entry, index) => {
+            // Like findIndex, use the first match if old storage contains duplicate IDs.
+            if (!knownById.has(entry.id)) knownById.set(entry.id, index);
+        });
+
+        let updated = false;
+        const upsert = (batch) => {
+            for (const listing of batch) {
+                if (!listing.createdTimestamp) continue;
+                const index = knownById.get(listing.id) ?? -1;
+                if (this._upsertListing(listing, index)) {
+                    if (index === -1) knownById.set(listing.id, this.knownListings.length - 1);
+                    updated = true;
+                }
+            }
+        };
+
+        upsert(listings);
+        let reconciled = false;
+        if (activeListings) {
+            upsert(activeListings);
+            reconciled = this._reconcileActiveListings(activeListings);
+        }
+        // Final statuses take precedence over the active snapshot.
+        upsert(endedListings);
+
+        if (updated) this.knownListings.sort((a, b) => a.id - b.id);
+        if (updated || reconciled) this.saveHistoricalData();
+    }
+
+    /**
+     * Mark previously active entries absent from the snapshot as unknown.
      * @param {Array} activeListings - Current active listings from the game snapshot
+     * @returns {boolean} Whether reconciliation changed any status
      */
     _reconcileActiveListings(activeListings) {
         const activeIds = new Set(activeListings.map((l) => l.id));
@@ -387,9 +392,7 @@ class EstimatedListingAge {
                 changed = true;
             }
         }
-        if (changed) {
-            this.saveHistoricalData();
-        }
+        return changed;
     }
 
     /**
@@ -397,34 +400,20 @@ class EstimatedListingAge {
      * @param {Object} listing - Full listing object from WebSocket
      */
     recordListing(listing) {
-        if (!listing.createdTimestamp) {
-            return;
-        }
+        if (!listing.createdTimestamp) return;
 
-        const timestamp = new Date(listing.createdTimestamp).getTime();
-
-        // Check if we already have this listing
         const existingIndex = this.knownListings.findIndex((entry) => entry.id === listing.id);
+        this._upsertListing(listing, existingIndex);
+        this.knownListings.sort((a, b) => a.id - b.id);
+        this.saveHistoricalData();
+    }
 
-        // Determine status (NEVER use listing.status from game data - it's an HRID like "/market_listing_status/active")
-        // Priority: new status update from WebSocket > existing status > default unknown
-        let status;
-        if (listing._toolashaStatus) {
-            // Use explicitly set status from updateHandler (canceled/filled detection)
-            // This takes priority over existing status (allows status updates)
-            status = listing._toolashaStatus;
-        } else if (existingIndex !== -1 && this.knownListings[existingIndex].status) {
-            // Preserve existing tracked status if no new update
-            status = this.knownListings[existingIndex].status;
-        } else {
-            // Default to unknown for new listings
-            status = 'unknown';
-        }
-
-        // Add new entry with full data
+    /** @private */
+    _upsertListing(listing, existingIndex) {
+        const existing = this.knownListings[existingIndex];
         const entry = {
             id: listing.id,
-            timestamp: timestamp,
+            timestamp: new Date(listing.createdTimestamp).getTime(),
             createdTimestamp: listing.createdTimestamp, // ISO string for display
             itemHrid: listing.itemHrid,
             enhancementLevel: listing.enhancementLevel || 0, // For accurate row matching
@@ -432,22 +421,20 @@ class EstimatedListingAge {
             orderQuantity: listing.orderQuantity,
             filledQuantity: listing.filledQuantity,
             isSell: listing.isSell,
-            status: status,
+            status: listing._toolashaStatus || existing?.status || 'unknown',
         };
 
-        if (existingIndex !== -1) {
-            // Update existing entry (in case it had incomplete data)
-            this.knownListings[existingIndex] = entry;
-        } else {
-            // Add new entry
+        if (!existing) {
             this.knownListings.push(entry);
+            return true;
         }
 
-        // Re-sort by ID
-        this.knownListings.sort((a, b) => a.id - b.id);
-
-        // Save to storage (debounced)
-        this.saveHistoricalData();
+        const keys = Object.keys(entry);
+        const changed =
+            keys.length !== Object.keys(existing).length ||
+            keys.some((key) => !Object.hasOwn(existing, key) || !Object.is(existing[key], entry[key]));
+        this.knownListings[existingIndex] = entry;
+        return changed;
     }
 
     /**
