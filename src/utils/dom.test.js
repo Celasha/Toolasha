@@ -7,12 +7,12 @@ const VIEWPORT_HEIGHT = 800;
 
 // A popper holding a tooltip, with the layout sizes jsdom cannot compute. `top` is the popper's
 // current on-screen top; the transform's Y follows it like MUI's translate3d positioning does.
-function makeTooltip({ top, contentHeight, popperHeight = contentHeight }) {
+function makeTooltip({ top, contentHeight, popperHeight = contentHeight, transform3d = true }) {
     const popper = document.createElement('div');
     popper.className = 'MuiTooltip-popper';
-    popper.style.transform = `translate3d(100px, ${top}px, 0px)`;
+    popper.style.transform = transform3d ? `translate3d(100px, ${top}px, 0px)` : `translate(100px, ${top}px)`;
     popper.getBoundingClientRect = () => {
-        const y = parseFloat(popper.style.transform.match(/translate3d\([^,]+,\s*([^,]+),/)[1]);
+        const y = parseFloat(popper.style.transform.match(/translate(?:3d)?\([^,]+,\s*([^,)]+)/)[1]);
         return { top: y, bottom: y + popperHeight, height: popperHeight, width: 300, left: 100, right: 400 };
     };
 
@@ -88,6 +88,27 @@ describe('fixTooltipOverflow', () => {
         fixTooltipOverflow(popper);
 
         expect(content.style.transform).toBe('');
+    });
+
+    test('moves a tooltip back into view when Popper used the plain translate() form (devicePixelRatio 1)', () => {
+        const { popper, content } = makeTooltip({ top: 600, contentHeight: 300, transform3d: false });
+
+        fixTooltipOverflow(popper);
+
+        expect(content.style.transform).toBe('');
+        expect(popper.style.transform).toBe('translate(100px, 490px)');
+    });
+
+    test('shrinks AND repositions a tall tooltip under the plain translate() form', () => {
+        const { popper, content } = makeTooltip({ top: 50, contentHeight: 1000, transform3d: false });
+
+        fixTooltipOverflow(popper);
+
+        expect(content.style.transform).toBe('scale(0.78)');
+        const y = parseFloat(popper.style.transform.match(/translate\([^,]+,\s*([^,)]+)/)[1]);
+        expect(popper.style.transform).toMatch(/^translate\(/);
+        expect(y + 1000 * 0.78).toBeLessThanOrEqual(VIEWPORT_HEIGHT);
+        expect(y).toBeGreaterThanOrEqual(0);
     });
 
     test('forceTop pins the tooltip at the top centre and scales a tall one', () => {

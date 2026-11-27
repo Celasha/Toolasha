@@ -19,6 +19,7 @@ import hideLabyrinthBadge from '../features/ui/hide-labyrinth-badge.js';
 import hideNavBarGlow from '../features/ui/hide-nav-bar-glow.js';
 import hideGatheringPrompts from '../features/ui/hide-gathering-prompts.js';
 import warningHoverTips from '../features/ui/warning-hover-tips.js';
+import tooltipFit from '../features/ui/tooltip-fit.js';
 import tabReorder from '../features/ui/tab-reorder.js';
 
 // Navigation features
@@ -85,6 +86,7 @@ toolashaRoot.UI = Object.assign(toolashaRoot.UI || {}, {
     hideNavBarGlow,
     hideGatheringPrompts,
     warningHoverTips,
+    tooltipFit,
     tabReorder,
     altClickNavigation,
     tokenShopShortcuts,

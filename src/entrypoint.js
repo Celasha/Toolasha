@@ -616,6 +616,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'tooltipFit',
+            name: 'Tooltip Fit',
+            category: 'UI',
+            module: UI.tooltipFit,
+            async: false,
+        },
+        {
             key: 'warningHoverTips',
             name: 'Warning Hover Tips',
             category: 'UI',

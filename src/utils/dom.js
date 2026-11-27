@@ -6,7 +6,9 @@
 import config from '../core/config.js';
 
 // Compiled regex pattern (created once, reused for performance)
-const REGEX_TRANSFORM3D = /translate3d\(([^,]+),\s*([^,]+),\s*([^)]+)\)/;
+// Popper.js writes translate3d(x, y, 0) when devicePixelRatio is above 1 and plain translate(x, y)
+// otherwise (e.g. 100% zoom on a standard display), so both forms must be handled.
+const REGEX_POPPER_TRANSFORM = /translate(3d)?\(\s*([^,]+),\s*([^,)]+)(?:,\s*([^)]+))?\)/;
 
 /**
  * Wait for an element to appear in the DOM
@@ -398,13 +400,14 @@ export function fixTooltipOverflow(tooltipElement, { forceTop = false } = {}) {
                     const transformString = tooltipElement.style.transform;
 
                     if (transformString) {
-                        // Parse transform3d(x, y, z)
-                        const match = transformString.match(REGEX_TRANSFORM3D);
+                        // Parse translate3d(x, y, z) or translate(x, y)
+                        const match = transformString.match(REGEX_POPPER_TRANSFORM);
 
                         if (match) {
-                            const x = match[1];
-                            const currentY = parseFloat(match[2]);
-                            const z = match[3];
+                            const is3d = match[1] === '3d';
+                            const x = match[2].trim();
+                            const currentY = parseFloat(match[3]);
+                            const z = (match[4] || '0').trim();
 
                             // Calculate how much to adjust Y
                             let newY;
@@ -423,7 +426,9 @@ export function fixTooltipOverflow(tooltipElement, { forceTop = false } = {}) {
                             if (newY !== undefined) {
                                 // Ensure tooltip never goes above viewport (minimum y=0)
                                 newY = Math.max(0, newY);
-                                tooltipElement.style.transform = `translate3d(${x}, ${newY}px, ${z})`;
+                                tooltipElement.style.transform = is3d
+                                    ? `translate3d(${x}, ${newY}px, ${z})`
+                                    : `translate(${x}, ${newY}px)`;
                             }
                         }
                     }
