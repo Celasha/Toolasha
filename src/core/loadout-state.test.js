@@ -51,6 +51,8 @@ import {
 } from './loadout-state.js';
 
 const MAIN_HAND = '/item_locations/main_hand';
+const OFF_HAND = '/item_locations/off_hand';
+const INVENTORY = '/item_locations/inventory';
 const SWORD = '/items/sword';
 
 function serverLoadout({
@@ -514,6 +516,111 @@ describe('Core LoadoutState ownership and lifecycle', () => {
         expect(listener).toHaveBeenCalledTimes(1);
     });
 
+    test('init, item updates, and saved level displays scan a large inventory only once each', () => {
+        const state = new LoadoutState();
+        state.startCapture();
+        setActiveCharacter('A');
+        const apple = '/items/apple';
+        const tea = '/items/tea';
+        const snapshotCount = 40;
+        const swordHash = `123::${INVENTORY}::${SWORD}::0`;
+        const loadoutMap = Object.fromEntries(
+            Array.from({ length: snapshotCount }, (_, i) => [
+                `loadout-${i}`,
+                {
+                    ...serverLoadout({
+                        name: 'Same Name',
+                        useExactEnhancement: i % 2 === 0,
+                        drinks: ['', tea],
+                        wearableMap: { [MAIN_HAND]: swordHash, [OFF_HAND]: swordHash },
+                    }),
+                    foodItemHrids: [apple, ''],
+                },
+            ])
+        );
+        let unrelatedReads = 0;
+        const unrelatedItems = Array.from({ length: 1000 }, (_, i) => ({
+            get itemHrid() {
+                unrelatedReads += 1;
+                return `/items/unrelated_${i}`;
+            },
+            itemLocationHrid: INVENTORY,
+            count: 1,
+        }));
+        const inInventory = (itemHrid, enhancementLevel, count = 1) => ({
+            itemHrid,
+            enhancementLevel,
+            count,
+            itemLocationHrid: INVENTORY,
+        });
+        const baseSword = inInventory(SWORD, 0);
+        mocks.inventory = [
+            ...unrelatedItems,
+            baseSword,
+            inInventory(SWORD, 8),
+            inInventory(apple, 0),
+            inInventory(tea, 1),
+        ];
+
+        const expectSnapshots = (highest, foodAvailable, drinkAvailable) => {
+            const snapshots = state.getAllSnapshots();
+            expect(snapshots).toHaveLength(snapshotCount);
+            for (const [i, snapshot] of snapshots.entries()) {
+                expect(snapshot).toMatchObject({
+                    snapshotId: `loadout-${i}`,
+                    equipment: [MAIN_HAND, OFF_HAND].map((itemLocationHrid) => ({
+                        itemHrid: SWORD,
+                        itemLocationHrid,
+                        enhancementLevel: i % 2 === 0 ? 0 : highest,
+                        isAvailable: true,
+                    })),
+                    food: [{ itemHrid: foodAvailable ? apple : '' }, { itemHrid: '' }],
+                    drinks: [{ itemHrid: '' }, { itemHrid: drinkAvailable ? tea : '' }],
+                    unavailableFood: foodAvailable ? [] : [{ slotIndex: 0, itemHrid: apple }],
+                    unavailableDrinks: drinkAvailable ? [] : [{ slotIndex: 1, itemHrid: tea }],
+                    isUsableForCalculation: true,
+                });
+            }
+        };
+
+        mocks.wsHandlers.get('init_character_data')(initPayload('A', loadoutMap));
+        expectSnapshots(8, true, false);
+        // Count reads of unrelated entries instead of relying on wall-clock timings.
+        expect(unrelatedReads).toBe(unrelatedItems.length);
+        const rawSnapshots = structuredClone(state.rawSnapshots);
+        const listener = vi.fn();
+        state.onUpdate(listener);
+
+        unrelatedReads = 0;
+        mocks.dataHandlers.get('items_updated')({ endCharacterItems: [{ itemHrid: '/items/unrelated_0' }] });
+        expect(listener).not.toHaveBeenCalled();
+        expect(unrelatedReads).toBe(0);
+
+        const endCharacterItems = [inInventory(SWORD, 12), inInventory(apple, 0, 0), inInventory(tea, 0)];
+        mocks.inventory = [...unrelatedItems, baseSword, ...endCharacterItems];
+        mocks.dataHandlers.get('items_updated')({ endCharacterItems });
+        expect(listener).toHaveBeenCalledTimes(1);
+        expectSnapshots(12, false, true);
+        expect(unrelatedReads).toBe(unrelatedItems.length);
+        expect(state.rawSnapshots).toEqual(rawSnapshots);
+
+        unrelatedReads = 0;
+        const displays = state.getSavedLevelDisplays('Same Name');
+        expect(displays).toHaveLength(snapshotCount);
+        for (const [i, display] of displays.entries()) {
+            expect(display.equipment).toEqual(
+                [MAIN_HAND, OFF_HAND].map((itemLocationHrid) => ({
+                    itemHrid: SWORD,
+                    itemLocationHrid,
+                    savedLevel: 0,
+                    highestOwnedLevel: 12,
+                    status: i % 2 === 0 ? 'higherIgnored' : 'higherEquipped',
+                }))
+            );
+        }
+        expect(unrelatedReads).toBe(unrelatedItems.length);
+    });
+
     test('the cached effective resolution follows Highest downward, not only upward', () => {
         const state = new LoadoutState();
         state.startCapture();
@@ -947,6 +1054,45 @@ describe('effective enhancement resolution contract', () => {
         ]);
 
         expect(result[0]).toMatchObject({ enhancementLevel: 10, isAvailable: true });
+    });
+
+    test.each([
+        [false, [7, 15, 7, null]],
+        [true, [7, 0, null, null]],
+    ])('duplicate equipment HRIDs preserve slot and saved hash eligibility in exact mode %s', (exact, levels) => {
+        const head = '/item_locations/head';
+        const body = '/item_locations/body';
+        const missing = '/items/missing';
+        const savedOtherSlotHash = `123::${head}::${SWORD}::7`;
+        const zeroCountHash = `123::${OFF_HAND}::${SWORD}::20`;
+        const raw = buildRawLoadoutSnapshot(
+            'duplicate-slots',
+            serverLoadout({
+                useExactEnhancement: exact,
+                wearableMap: {
+                    [MAIN_HAND]: savedOtherSlotHash,
+                    [OFF_HAND]: `123::${OFF_HAND}::${SWORD}::0`,
+                    [head]: zeroCountHash,
+                    [body]: `123::${body}::${missing}::4`,
+                },
+            })
+        );
+        const inventory = [
+            { itemHrid: SWORD, itemLocationHrid: head, enhancementLevel: 7, hash: savedOtherSlotHash },
+            { itemHrid: SWORD, itemLocationHrid: MAIN_HAND, enhancementLevel: 5 },
+            { itemHrid: SWORD, itemLocationHrid: OFF_HAND, enhancementLevel: 15 },
+            { itemHrid: SWORD, itemLocationHrid: INVENTORY, enhancementLevel: 0, count: 1 },
+            { itemHrid: SWORD, itemLocationHrid: OFF_HAND, enhancementLevel: 20, count: 0, hash: zeroCountHash },
+        ];
+
+        expect(resolveLoadoutEquipment(raw, inventory)).toEqual(
+            [MAIN_HAND, OFF_HAND, head, body].map((itemLocationHrid, i) => ({
+                itemLocationHrid,
+                itemHrid: i === 3 ? missing : SWORD,
+                enhancementLevel: levels[i],
+                isAvailable: levels[i] !== null,
+            }))
+        );
     });
 
     test('an exact variant equipped only in a different location remains unavailable for the saved slot', () => {

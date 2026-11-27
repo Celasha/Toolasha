@@ -18,6 +18,7 @@ import storage from './storage.js';
 
 const STORAGE_KEY_PREFIX = 'loadout_snapshots';
 const LOADOUT_STATE_IMPLEMENTATION_ID = 'toolasha-core-loadout-state-v1';
+const INVENTORY_LOCATION = '/item_locations/inventory';
 
 function hasOwn(object, key) {
     return Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -34,6 +35,11 @@ function normalizeSavedEnhancementLevel(value) {
     // Enhancement levels are discrete, non-negative indices. A malformed cache/hash must fail
     // closed rather than becoming a plausible exact level through Number/parseInt coercion.
     return Number.isInteger(level) && level >= 0 ? level : null;
+}
+
+function getOwnedEnhancementLevel(item) {
+    const level = Number(item.enhancementLevel);
+    return Number.isFinite(level) ? level : 0;
 }
 
 function getStorageKey(characterId) {
@@ -141,7 +147,7 @@ export function buildOwnedEnhancementIndex(characterItems) {
     for (const item of characterItems || []) {
         if (!item?.itemHrid || item.count === 0) continue;
 
-        const level = Number.isFinite(Number(item.enhancementLevel)) ? Number(item.enhancementLevel) : 0;
+        const level = getOwnedEnhancementLevel(item);
         let entry = index.get(item.itemHrid);
         if (!entry) {
             entry = { highestEnhancementLevel: level, levels: new Set() };
@@ -155,6 +161,24 @@ export function buildOwnedEnhancementIndex(characterItems) {
     return index;
 }
 
+function buildInventoryResolutionIndex(characterItems) {
+    const itemsByHrid = new Map();
+    const inventoryPresence = new Set();
+    for (const item of characterItems || []) {
+        const itemHrid = item?.itemHrid;
+        if (!itemHrid || item.count === 0) continue;
+
+        const ownedItems = itemsByHrid.get(itemHrid);
+        if (ownedItems) ownedItems.push(item);
+        else itemsByHrid.set(itemHrid, [item]);
+
+        if (item.itemLocationHrid === INVENTORY_LOCATION && getOwnedEnhancementLevel(item) === 0) {
+            inventoryPresence.add(itemHrid);
+        }
+    }
+    return { itemsByHrid, inventoryPresence };
+}
+
 /**
  * Resolve saved food/drink slots against the same inventory-only presence semantics used by
  * MWI loadout validation. Empty slots are intentional and never treated as missing.
@@ -165,15 +189,10 @@ export function buildOwnedEnhancementIndex(characterItems) {
  * @returns {Array<{slotIndex:number,itemHrid:string,isAvailable:boolean}>}
  */
 export function resolveLoadoutConsumables(entries, characterItems) {
-    const inventoryPresence = new Set();
-    for (const item of characterItems || []) {
-        if (!item?.itemHrid || item.itemLocationHrid !== '/item_locations/inventory' || item.count === 0) {
-            continue;
-        }
-        const level = Number.isFinite(Number(item.enhancementLevel)) ? Number(item.enhancementLevel) : 0;
-        if (level === 0) inventoryPresence.add(item.itemHrid);
-    }
+    return resolveConsumables(entries, buildInventoryResolutionIndex(characterItems).inventoryPresence);
+}
 
+function resolveConsumables(entries, inventoryPresence) {
     return (entries || []).map((entry, slotIndex) => {
         const itemHrid = entry?.itemHrid || '';
         return {
@@ -193,62 +212,48 @@ export function resolveLoadoutConsumables(entries, characterItems) {
  * @returns {Array<Object>}
  */
 export function resolveLoadoutEquipment(rawSnapshot, characterItems) {
-    const useExactEnhancement = rawSnapshot?.useExactEnhancement === true;
+    return resolveEquipment(rawSnapshot, buildInventoryResolutionIndex(characterItems).itemsByHrid);
+}
 
-    return (rawSnapshot?.equipment || []).map((rawEquipment) => {
-        // Native MWI loadout validation only considers the saved target equipment location
-        // plus Inventory for this slot. The same item equipped in some *other* location is not
-        // a valid source for this saved slot, so do not use the global itemHrid ownership map
-        // here. This matters for equipment types that can appear in more than one location.
-        const eligibleItems = (characterItems || []).filter((item) => {
-            if (item?.itemHrid !== rawEquipment.itemHrid || item.count === 0) return false;
-
-            // Native validation first accepts the exact raw wearable hash that was saved,
-            // even if that item was equipped in a different source slot when the loadout was
-            // authored. Replacement variants are then searched only in the loadout's target
-            // location and Inventory. Preserve the raw hash internally so we can match that
-            // behavior instead of broadening eligibility to arbitrary equipped locations.
-            if (rawEquipment.savedItemHash && item.hash === rawEquipment.savedItemHash) return true;
-            return (
-                item.itemLocationHrid === rawEquipment.itemLocationHrid ||
-                item.itemLocationHrid === '/item_locations/inventory'
-            );
-        });
-        const eligibleOwnership = buildOwnedEnhancementIndex(eligibleItems);
-        const owned = eligibleOwnership.get(rawEquipment.itemHrid);
-        const savedEnhancementLevel = normalizeSavedEnhancementLevel(rawEquipment.enhancementLevel);
-        const hasValidSavedEnhancementLevel = savedEnhancementLevel !== null;
-
-        if (useExactEnhancement) {
-            const isAvailable = hasValidSavedEnhancementLevel && !!owned?.levels.has(savedEnhancementLevel);
-            return {
-                itemLocationHrid: rawEquipment.itemLocationHrid,
-                itemHrid: rawEquipment.itemHrid,
-                enhancementLevel: isAvailable ? savedEnhancementLevel : null,
-                isAvailable,
-            };
-        }
-
-        if (owned) {
-            return {
-                itemLocationHrid: rawEquipment.itemLocationHrid,
-                itemHrid: rawEquipment.itemHrid,
-                enhancementLevel: owned.highestEnhancementLevel,
-                isAvailable: true,
-            };
-        }
-
-        // Fail closed. The historical saved level is raw server metadata, not an
-        // effective level. Do not expose it as a numeric fallback when the item is
-        // unavailable, because downstream `|| 0` / `?? 0` code could silently turn
-        // an unresolved loadout into a plausible-but-false calculation.
+function resolveEquipment(rawSnapshot, itemsByHrid) {
+    const exact = rawSnapshot?.useExactEnhancement === true;
+    return (rawSnapshot?.equipment || []).map((entry) => {
+        const enhancementLevel = resolveEquipmentLevel(entry, exact, itemsByHrid.get(entry.itemHrid));
         return {
-            itemLocationHrid: rawEquipment.itemLocationHrid,
-            itemHrid: rawEquipment.itemHrid,
-            enhancementLevel: null,
-            isAvailable: false,
+            itemLocationHrid: entry.itemLocationHrid,
+            itemHrid: entry.itemHrid,
+            enhancementLevel,
+            isAvailable: enhancementLevel !== null,
         };
     });
+}
+
+function resolveEquipmentLevel(entry, exact, ownedItems = []) {
+    const savedLevel = exact ? normalizeSavedEnhancementLevel(entry.enhancementLevel) : null;
+    if (exact && savedLevel === null) return null;
+
+    let highest = null;
+    for (const item of ownedItems) {
+        // The saved hash can match an item in another equipped slot. Other copies
+        // are eligible only in the target slot or inventory.
+        const matchesSavedHash = entry.savedItemHash && item.hash === entry.savedItemHash;
+        if (
+            !matchesSavedHash &&
+            item.itemLocationHrid !== entry.itemLocationHrid &&
+            item.itemLocationHrid !== INVENTORY_LOCATION
+        ) {
+            continue;
+        }
+
+        const level = getOwnedEnhancementLevel(item);
+        if (exact) {
+            if (level === savedLevel) return savedLevel;
+        } else if (highest === null || level > highest) {
+            highest = level;
+        }
+    }
+    // Keep unavailable items at null rather than exposing a historical level as a fallback.
+    return highest;
 }
 
 function normalizeCachedSnapshots(value) {
@@ -425,19 +430,25 @@ class LoadoutState {
      *     savedLevel: number|null, highestOwnedLevel: number|null, status: string}>}>}
      */
     getSavedLevelDisplays(name) {
-        const inventory = dataManager.getInventory?.();
-        const owned = buildOwnedEnhancementIndex(inventory);
+        let inventoryIndex;
         const displays = [];
         for (const rawSnapshot of Object.values(this.rawSnapshots)) {
             if (rawSnapshot?.name !== name) continue;
+            inventoryIndex ??= buildInventoryResolutionIndex(dataManager.getInventory?.());
+            const { itemsByHrid } = inventoryIndex;
             const exact = rawSnapshot.useExactEnhancement === true;
-            const resolved = resolveLoadoutEquipment(rawSnapshot, inventory);
-            const equipment = (rawSnapshot.equipment || []).map((entry, index) => {
+            const equipment = (rawSnapshot.equipment || []).map((entry) => {
                 const savedLevel = normalizeSavedEnhancementLevel(entry.enhancementLevel);
-                const highest = owned.get(entry.itemHrid)?.highestEnhancementLevel ?? null;
+                const ownedItems = itemsByHrid.get(entry.itemHrid);
+                // The displayed highest level includes all owned copies, even copies ineligible for this slot.
+                let highest = null;
+                for (const item of ownedItems || []) {
+                    const level = getOwnedEnhancementLevel(item);
+                    if (highest === null || level > highest) highest = level;
+                }
                 let status;
                 if (highest === null) status = 'notOwned';
-                else if (exact && resolved[index]?.isAvailable !== true) status = 'missingExact';
+                else if (exact && resolveEquipmentLevel(entry, exact, ownedItems) === null) status = 'missingExact';
                 else if (savedLevel === null || highest === savedLevel) status = 'current';
                 else if (highest > savedLevel) status = exact ? 'higherIgnored' : 'higherEquipped';
                 else status = 'lowerOwned';
@@ -464,7 +475,9 @@ class LoadoutState {
      * @private
      */
     _buildInventoryResolutionSignature(rawSnapshot, inventory = dataManager.getInventory?.()) {
-        return this._buildResolutionSignature(this._resolveRawSnapshot(rawSnapshot, inventory));
+        return this._buildResolutionSignature(
+            this._resolveRawSnapshot(rawSnapshot, buildInventoryResolutionIndex(inventory))
+        );
     }
 
     _buildResolutionSignature(resolvedSnapshot) {
@@ -487,11 +500,12 @@ class LoadoutState {
     }
 
     _refreshResolvedState() {
-        const inventory = dataManager.getInventory?.();
+        const snapshots = Object.entries(this.rawSnapshots);
+        const inventoryIndex = snapshots.length ? buildInventoryResolutionIndex(dataManager.getInventory?.()) : null;
         const nextSignatures = new Map();
         const nextResolved = new Map();
-        for (const [snapshotId, rawSnapshot] of Object.entries(this.rawSnapshots)) {
-            const resolved = this._resolveRawSnapshot(rawSnapshot, inventory);
+        for (const [snapshotId, rawSnapshot] of snapshots) {
+            const resolved = this._resolveRawSnapshot(rawSnapshot, inventoryIndex);
             nextResolved.set(snapshotId, resolved);
             nextSignatures.set(snapshotId, this._buildResolutionSignature(resolved));
         }
@@ -586,7 +600,7 @@ class LoadoutState {
         // Effective highest-owned state changes with inventory/equipment, while raw saved
         // snapshots intentionally do not. Only notify consumers when a changed item is
         // actually referenced by a saved loadout, avoiding noise from normal gathering.
-        const inventory = dataManager.getInventory?.();
+        let inventoryIndex;
         let effectiveStateChanged = false;
 
         for (const [snapshotId, snapshot] of Object.entries(this.rawSnapshots)) {
@@ -596,7 +610,8 @@ class LoadoutState {
                 (snapshot.drinks || []).some((item) => changedHrids.has(item.itemHrid));
             if (!referencesChangedItem) continue;
 
-            const nextResolved = this._resolveRawSnapshot(snapshot, inventory);
+            inventoryIndex ??= buildInventoryResolutionIndex(dataManager.getInventory?.());
+            const nextResolved = this._resolveRawSnapshot(snapshot, inventoryIndex);
             const nextSignature = this._buildResolutionSignature(nextResolved);
             const previousSignature = this.inventoryResolutionSignatures.get(snapshotId);
             if (nextSignature !== previousSignature) {
@@ -733,11 +748,11 @@ class LoadoutState {
         return clone;
     }
 
-    _resolveRawSnapshot(rawSnapshot, inventory = dataManager.getInventory?.()) {
+    _resolveRawSnapshot(rawSnapshot, { itemsByHrid, inventoryPresence }) {
         if (!rawSnapshot) return null;
-        const resolvedEquipment = resolveLoadoutEquipment(rawSnapshot, inventory);
-        const resolvedFood = resolveLoadoutConsumables(rawSnapshot.food, inventory);
-        const resolvedDrinks = resolveLoadoutConsumables(rawSnapshot.drinks, inventory);
+        const resolvedEquipment = resolveEquipment(rawSnapshot, itemsByHrid);
+        const resolvedFood = resolveConsumables(rawSnapshot.food, inventoryPresence);
+        const resolvedDrinks = resolveConsumables(rawSnapshot.drinks, inventoryPresence);
         const unavailableEquipment = resolvedEquipment
             .filter((entry) => entry.isAvailable === false)
             .map((entry) => ({
@@ -827,7 +842,8 @@ class LoadoutState {
 
         let resolved = this.resolvedSnapshotCache.get(snapshotId);
         if (!resolved) {
-            resolved = this._resolveRawSnapshot(this.rawSnapshots[snapshotId]);
+            const inventoryIndex = buildInventoryResolutionIndex(dataManager.getInventory?.());
+            resolved = this._resolveRawSnapshot(this.rawSnapshots[snapshotId], inventoryIndex);
             this.resolvedSnapshotCache.set(snapshotId, resolved);
             this.inventoryResolutionSignatures.set(snapshotId, this._buildResolutionSignature(resolved));
         }
