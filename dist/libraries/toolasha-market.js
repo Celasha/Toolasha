@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.36.0
+ * Version: 3.37.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3061,9 +3061,13 @@ self.onmessage = function (e) {
          * @param {Object} [options] - Options
          * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for
          *     items with no direct market price. Default off keeps existing behavior untouched.
-         * @returns {{value: number, source: string, needsTax: boolean}|null} Resolved value or null
+         * @param {boolean} [options.allowOtherSide=false] - Opt into valuing an item with no price on
+         *     the configured sell side at the other side of the book (bid, then ask). Only consulted
+         *     together with `allowIndirect`. Default off keeps existing behavior untouched.
+         * @returns {{value: number, source: string, needsTax: boolean, otherSide?: string}|null} Resolved
+         *     value or null
          */
-        resolveSellSideValue(itemHrid, enhancementLevel = 0, { allowIndirect = false } = {}) {
+        resolveSellSideValue(itemHrid, enhancementLevel = 0, { allowIndirect = false, allowOtherSide = false } = {}) {
             // Special case: Coin (face value = 1, never taxed)
             if (itemHrid === this.COIN_HRID) {
                 return { value: 1, source: 'coin', needsTax: false, isOutlier: false };
@@ -3121,6 +3125,24 @@ self.onmessage = function (e) {
                 // the caller explicitly passes `allowIndirect` (opt-in: Openable Analytics' calculator
                 // wiring is the intended consumer).
                 if (!allowIndirect) return null;
+                // A drop priced on only one side of the book (e.g. a rare weapon with asks but no buy
+                // orders) is still worth something; without this one such drop leaves a container's
+                // Expected partial and blanks Luck. A market price beats a derived one, so this runs
+                // before the shop chain. (Idea and original patch by Metzli.)
+                if (allowOtherSide) {
+                    for (const otherMode of ['bid', 'ask']) {
+                        const otherSide = marketData_js.getItemPriceOutlierInfo(itemHrid, { enhancementLevel, mode: otherMode });
+                        if (otherSide.value > 0) {
+                            return {
+                                value: otherSide.value,
+                                source: 'market',
+                                needsTax: true,
+                                isOutlier: otherSide.isOutlier,
+                                otherSide: otherMode,
+                            };
+                        }
+                    }
+                }
                 // Tier-3 hook: let the shop chain value openable, unpriced outputs (e.g. task chests)
                 // from the converged container cache - a plain map read, never a recursive valuation.
                 const containerValueLookup = (hrid) => this.containerCache.get(hrid) ?? 0;
@@ -3241,9 +3263,11 @@ self.onmessage = function (e) {
          * @param {Object} [options] - Options
          * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
          *     with no direct market price. Default off keeps existing behavior untouched.
+         * @param {boolean} [options.allowOtherSide=false] - Opt into valuing a drop with no price on the
+         *     sell side at the other side of the book (see resolveSellSideValue).
          * @returns {Object|null} EV data or null
          */
-        calculateExpectedValue(itemHrid, { allowIndirect = false } = {}) {
+        calculateExpectedValue(itemHrid, { allowIndirect = false, allowOtherSide = false } = {}) {
             if (!this.isInitialized) {
                 console.warn('[ExpectedValueCalculator] Not initialized');
                 return null;
@@ -3261,7 +3285,7 @@ self.onmessage = function (e) {
             }
 
             // Get detailed drop breakdown (calculates with fresh market prices)
-            const drops = this.getDropBreakdown(itemHrid, { allowIndirect });
+            const drops = this.getDropBreakdown(itemHrid, { allowIndirect, allowOtherSide });
 
             // Calculate total expected value from fresh drop data
             const expectedReturn = drops.reduce((sum, drop) => sum + drop.expectedValue, 0);
@@ -3290,9 +3314,11 @@ self.onmessage = function (e) {
          * @param {Object} [options] - Options
          * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
          *     with no direct market price. Default off keeps existing behavior untouched.
+         * @param {boolean} [options.allowOtherSide=false] - Opt into valuing a drop with no price on the
+         *     sell side at the other side of the book (see resolveSellSideValue).
          * @returns {Array} Array of drop objects
          */
-        getDropBreakdown(containerHrid, { allowIndirect = false } = {}) {
+        getDropBreakdown(containerHrid, { allowIndirect = false, allowOtherSide = false } = {}) {
             const initData = dataManager.getInitClientData();
             if (!initData || !initData.openableLootDropMap) {
                 return [];
@@ -3325,7 +3351,7 @@ self.onmessage = function (e) {
                 const avgCount = (minCount + maxCount) / 2;
 
                 // Get price
-                const priceInfo = this.getDropPriceInfo(itemHrid, { allowIndirect });
+                const priceInfo = this.getDropPriceInfo(itemHrid, { allowIndirect, allowOtherSide });
                 const price = priceInfo.value;
 
                 // Tax strictly follows the resolver's needsTax contract - never item tradability,
@@ -5535,6 +5561,24 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Whether a drop priced on only one side of the order book (e.g. asks but no buy orders) should be
+     * valued at the side that exists. Only an explicit `false` disables it (default on).
+     * @returns {boolean}
+     */
+    function allowOtherSidePricing() {
+        return config.getSetting('expectedValue_otherSideFallback') !== false;
+    }
+
+    /**
+     * The full set of pricing options Openable Analytics passes to the shared resolver, so Actual,
+     * Expected, variance and the side panel all share one value basis.
+     * @returns {{allowIndirect: boolean, allowOtherSide: boolean}}
+     */
+    function openableValuationOptions() {
+        return { allowIndirect: allowIndirectPricing(), allowOtherSide: allowOtherSidePricing() };
+    }
+
+    /**
      * Gathering Profit Calculator
      *
      * Calculates comprehensive profit/hour for gathering actions (Foraging, Woodcutting, Milking) including:
@@ -6859,59 +6903,8 @@ self.onmessage = function (e) {
                 }
             }
 
-            // Add CSS to prevent tooltip cutoff
-            this.addTooltipStyles();
-
             // Register with centralized DOM observer
             this.setupObserver();
-        }
-
-        /**
-         * Add CSS styles to prevent tooltip cutoff
-         *
-         * CRITICAL: CSS alone is not enough! MUI uses JavaScript to position tooltips
-         * with transform3d(), which can place them off-screen. We need both:
-         * 1. CSS: Enables scrolling when tooltip is taller than viewport
-         * 2. JavaScript: Repositions tooltip when it extends beyond viewport (see fixTooltipOverflow)
-         */
-        addTooltipStyles() {
-            // Check if styles already exist (might be added by tooltip-consumables)
-            if (document.getElementById('mwi-tooltip-fixes')) {
-                return; // Already added
-            }
-
-            const css = `
-            /* Ensure tooltip content is scrollable if too tall */
-            .MuiTooltip-tooltip {
-                max-height: calc(100vh - 20px) !important;
-                overflow-y: auto !important;
-            }
-
-            /* Also target the popper container */
-            .MuiTooltip-popper {
-                max-height: 100vh !important;
-            }
-
-            /* Add subtle scrollbar styling */
-            .MuiTooltip-tooltip::-webkit-scrollbar {
-                width: 6px;
-            }
-
-            .MuiTooltip-tooltip::-webkit-scrollbar-track {
-                background: rgba(0, 0, 0, 0.2);
-            }
-
-            .MuiTooltip-tooltip::-webkit-scrollbar-thumb {
-                background: rgba(255, 255, 255, 0.3);
-                border-radius: 3px;
-            }
-
-            .MuiTooltip-tooltip::-webkit-scrollbar-thumb:hover {
-                background: rgba(255, 255, 255, 0.5);
-            }
-        `;
-
-            dom.addStyles(css, 'mwi-tooltip-fixes');
         }
 
         /**
@@ -8190,59 +8183,8 @@ self.onmessage = function (e) {
                 await marketAPI.fetch(true);
             }
 
-            // Add CSS to prevent tooltip cutoff (if not already added)
-            this.addTooltipStyles();
-
             // Register with centralized DOM observer
             this.setupObserver();
-        }
-
-        /**
-         * Add CSS styles to prevent tooltip cutoff
-         *
-         * CRITICAL: CSS alone is not enough! MUI uses JavaScript to position tooltips
-         * with transform3d(), which can place them off-screen. We need both:
-         * 1. CSS: Enables scrolling when tooltip is taller than viewport
-         * 2. JavaScript: Repositions tooltip when it extends beyond viewport (see fixTooltipOverflow)
-         */
-        addTooltipStyles() {
-            // Check if styles already exist (might be added by tooltip-prices)
-            if (document.getElementById('mwi-tooltip-fixes')) {
-                return; // Already added
-            }
-
-            const css = `
-            /* Ensure tooltip content is scrollable if too tall */
-            .MuiTooltip-tooltip {
-                max-height: calc(100vh - 20px) !important;
-                overflow-y: auto !important;
-            }
-
-            /* Also target the popper container */
-            .MuiTooltip-popper {
-                max-height: 100vh !important;
-            }
-
-            /* Add subtle scrollbar styling */
-            .MuiTooltip-tooltip::-webkit-scrollbar {
-                width: 6px;
-            }
-
-            .MuiTooltip-tooltip::-webkit-scrollbar-track {
-                background: rgba(0, 0, 0, 0.2);
-            }
-
-            .MuiTooltip-tooltip::-webkit-scrollbar-thumb {
-                background: rgba(255, 255, 255, 0.3);
-                border-radius: 3px;
-            }
-
-            .MuiTooltip-tooltip::-webkit-scrollbar-thumb:hover {
-                background: rgba(255, 255, 255, 0.5);
-            }
-        `;
-
-            dom.addStyles(css, 'mwi-tooltip-fixes');
         }
 
         /**
@@ -35113,9 +35055,11 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
      * @returns {{value: number, resolved: boolean}} Value contribution and whether it could be priced
      */
     function valueGainedItemStack(itemHrid, enhancementLevel, count) {
-        const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel || 0, {
-            allowIndirect: allowIndirectPricing(),
-        });
+        const resolved = expectedValueCalculator.resolveSellSideValue(
+            itemHrid,
+            enhancementLevel || 0,
+            openableValuationOptions()
+        );
         if (!resolved) {
             return { value: 0, resolved: false };
         }
@@ -35130,12 +35074,14 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
     const DERIVED_SOURCES = new Set(['shopRedemption', 'specialCurrency', 'dungeonToken']);
 
     /**
-     * Describe how a non-market price was derived, so the UI can explain it. Returns null for
+     * Describe how a non-standard price was derived, so the UI can explain it. Returns null for
      * ordinary market/custom/coin values, which need no explanation.
-     * @param {{source: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}} resolved
+     * @param {{source: string, otherSide?: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}} resolved
      * @returns {{source: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}|null}
      */
     function describeValueSource(resolved) {
+        // A market price taken from the other side of the book (nobody bid / nobody listed)
+        if (resolved.otherSide) return { source: 'otherSide', side: resolved.otherSide };
         if (!DERIVED_SOURCES.has(resolved.source)) return null;
         const info = { source: resolved.source };
         if (resolved.source === 'shopRedemption') {
@@ -35202,7 +35148,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         // Indirect shop-redemption pricing so seal-type items price on both the Actual and Expected
         // sides (Luck stays computable); the variance sampler passes the same flag so E[income] and
         // its stdDev share one value basis.
-        const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, { allowIndirect: allowIndirectPricing() });
+        const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, openableValuationOptions());
         if (!ev || !(ev.expectedValue >= 0)) {
             return { value: null, available: false, complete: false };
         }
@@ -36426,6 +36372,10 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         const info = item.valueSource;
         if (!info || !(item.count > 0)) return '';
         const unit = item.value / item.count;
+
+        if (info.source === 'otherSide') {
+            return i18n_js.t(info.side === 'ask' ? 'openableAnalytics.valueSourceAtAsk' : 'openableAnalytics.valueSourceAtBid');
+        }
 
         if (info.source === 'shopRedemption' && info.tokenCost > 0) {
             const perToken = (unit * (info.outputCount || 1)) / info.tokenCost;
@@ -38338,9 +38288,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         const countVariance = n > 1 ? (n * n - 1) / 12 : 0;
         const avgCount = (minCount + maxCount) / 2;
 
-        const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid, 0, {
-            allowIndirect: allowIndirectPricing(),
-        });
+        const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid, 0, openableValuationOptions());
         if (!resolved) return 0;
 
         // Tax strictly follows the resolver's needsTax contract - never item tradability, which
@@ -38709,11 +38657,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         // Same valuation basis as the Expected income total (calculateExpectedValueForOpening):
         // without `allowIndirect` shop-redemption-priced drops (seals, labyrinth tokens) would show
         // "(no price yet)" here while the total above them was computed from exactly those prices.
-        const drops = mergeDropsByItem(
-            expectedValueCalculator.getDropBreakdown(containerHrid, {
-                allowIndirect: allowIndirectPricing(),
-            })
-        );
+        const drops = mergeDropsByItem(expectedValueCalculator.getDropBreakdown(containerHrid, openableValuationOptions()));
         if (!drops.length) {
             return `<div>${i18n_js.t('openableAnalytics.noDropDataMessage')}</div>`;
         }

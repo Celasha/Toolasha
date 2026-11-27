@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.36.0
+ * Version: 3.37.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8001,8 +8001,39 @@
             this.initialized = true;
         }
 
+        /**
+         * Whether the action currently running (the first not-done entry in the queue, which the data
+         * manager keeps in native queue order) is the labyrinth explore. A labyrinth explore that is
+         * merely queued behind another action does not count.
+         * @returns {boolean}
+         */
+        _isLabyrinthCurrent() {
+            const current = dataManager.getCurrentActions().find((a) => !a.isDone);
+            return current?.actionHrid === '/actions/labyrinth/explore';
+        }
+
+        _clearCounter() {
+            this.battleId = 0;
+            this.currentWave = 0;
+            this.isDungeon = false;
+            this.isLabyrinth = false;
+            this.labyrinthAttempt = 0;
+            document.getElementById(COUNTER_ID)?.remove();
+        }
+
         _checkCombatEnded(data) {
             if (this.battleId === 0 && this.labyrinthAttempt === 0) return;
+
+            // The labyrinth run ended or another action took over. Its explore action is not a
+            // /actions/combat/ one, so the checks below would never notice, and nothing else re-renders
+            // the header when the game reuses the element.
+            if (this.isLabyrinth && !this._isLabyrinthCurrent()) {
+                this._clearCounter();
+                return;
+            }
+            // The labyrinth run is still the current action. The combat-oriented checks below would
+            // clear it for any other action that is queued or updated at count 0.
+            if (this.isLabyrinth) return;
 
             const combatEnded = data.endCharacterActions?.some(
                 (a) => a.isDone && a.actionHrid?.startsWith('/actions/combat/')
@@ -8015,12 +8046,7 @@
             );
 
             if (combatEnded || (hasNewNonCombatAction && !hasCombatAction)) {
-                this.battleId = 0;
-                this.currentWave = 0;
-                this.isDungeon = false;
-                this.isLabyrinth = false;
-                this.labyrinthAttempt = 0;
-                document.getElementById(COUNTER_ID)?.remove();
+                this._clearCounter();
             }
         }
 
@@ -8029,12 +8055,10 @@
             if (!labyrinth?.isActive) return;
 
             // Cross-check: only trust labyrinth state if the player's current action is
-            // actually the labyrinth explore action. Stale labyrinth_updated messages
-            // can arrive shortly after exiting and otherwise stamp "Attempt #N" onto
-            // the next regular combat zone.
-            const actions = dataManager.getCurrentActions();
-            const activeLabAction = actions.find((a) => a.actionHrid === '/actions/labyrinth/explore' && !a.isDone);
-            if (!activeLabAction) return;
+            // actually the labyrinth explore action (not one merely queued behind another action).
+            // Stale labyrinth_updated messages can arrive shortly after exiting and otherwise stamp
+            // "Attempt #N" onto the next regular combat zone or skilling action.
+            if (!this._isLabyrinthCurrent()) return;
 
             let pathCoords;
             try {
@@ -8089,9 +8113,7 @@
             // labyrinth explore, clear the labyrinth flags and re-derive what to
             // render from the remaining state.
             if (this.isLabyrinth) {
-                const actions = dataManager.getCurrentActions();
-                const isCurrentlyLab = actions.some((a) => a.actionHrid === '/actions/labyrinth/explore' && !a.isDone);
-                if (!isCurrentlyLab) {
+                if (!this._isLabyrinthCurrent()) {
                     this.isLabyrinth = false;
                     this.labyrinthAttempt = 0;
                     if (this.battleId === 0) {
@@ -34605,6 +34627,8 @@ self.onmessage = function (e) {
             this.isActive = false;
             this.currentPanel = null;
             this.currentAbilitiesPanel = null;
+            this.abilitiesModal = null; // Profile modal the abilities panel was opened beside
+            this.abilitiesAnchorObserver = null; // ResizeObserver following the score panel (underScore)
             this.currentPartyExportPanel = null;
             this.isInitialized = false;
             this.profileSharedHandler = null; // Store handler reference for cleanup
@@ -34628,9 +34652,15 @@ self.onmessage = function (e) {
             });
 
             config.onSettingChange('abilitiesTriggers', (value) => {
-                if (!value && this.currentAbilitiesPanel) {
-                    this.currentAbilitiesPanel.remove();
-                    this.currentAbilitiesPanel = null;
+                if (!value) {
+                    this.removeAbilitiesPanel();
+                }
+            });
+
+            config.onSettingChange('abilitiesTriggers_position', () => {
+                if (this.currentAbilitiesPanel) {
+                    this.watchScorePanelForAbilities(this.currentAbilitiesPanel);
+                    this.anchorAbilitiesPanel(this.currentAbilitiesPanel);
                 }
             });
 
@@ -35640,10 +35670,7 @@ self.onmessage = function (e) {
          */
         showAbilitiesTriggersPanel(profileData, modalContainer) {
             // Remove existing abilities panel if any
-            if (this.currentAbilitiesPanel) {
-                this.currentAbilitiesPanel.remove();
-                this.currentAbilitiesPanel = null;
-            }
+            this.removeAbilitiesPanel();
 
             // Build abilities and triggers HTML
             const abilitiesTriggersHTML = this.buildAbilitiesTriggersHTML(profileData);
@@ -35736,6 +35763,90 @@ self.onmessage = function (e) {
             // Anchor to bottom of screen
             const bottomGap = 10;
             panel.style.top = Math.max(10, viewportHeight - panelHeight - bottomGap) + 'px';
+
+            // Optional placement (abilitiesTriggers_position): directly under the score panel
+            this.abilitiesModal = modal;
+            this.anchorAbilitiesPanel(panel);
+            this.watchScorePanelForAbilities(panel);
+        }
+
+        /**
+         * Remove the abilities panel and stop following the score panel
+         */
+        removeAbilitiesPanel() {
+            if (this.abilitiesAnchorObserver) {
+                this.abilitiesAnchorObserver.disconnect();
+                this.abilitiesAnchorObserver = null;
+            }
+            if (this.currentAbilitiesPanel) {
+                this.currentAbilitiesPanel.remove();
+                this.currentAbilitiesPanel = null;
+            }
+            this.abilitiesModal = null;
+        }
+
+        /**
+         * Anchor the abilities panel after it (or the score panel) changes size.
+         * 'bottom' (default): bottom of the screen, the original behaviour - only `top` is touched.
+         * 'underScore': directly below the score panel, aligned to the score panel's outer edge (the
+         * side away from the profile) so the box grows away from the profile, never over it. Falls back
+         * to the bottom anchor when the score panel is not shown, and never leaves the viewport.
+         * (Setting idea and original patch by Metzli.)
+         * @param {Element} panel - Abilities panel element
+         */
+        anchorAbilitiesPanel(panel) {
+            if (!panel || !panel.isConnected) return;
+            const margin = 10;
+            const scorePanel = this.currentPanel;
+
+            if (
+                config.getSettingValue('abilitiesTriggers_position', 'bottom') === 'underScore' &&
+                scorePanel &&
+                scorePanel.isConnected
+            ) {
+                const scoreRect = scorePanel.getBoundingClientRect();
+                const width = panel.offsetWidth || 300;
+                const height = panel.offsetHeight || 200;
+                const modal = this.abilitiesModal;
+                const modalRect = modal && modal.isConnected ? modal.getBoundingClientRect() : null;
+
+                // Score panel to the right of the profile: share its left edge and grow rightward.
+                // Otherwise (left of the profile): share its right edge and grow leftward.
+                const scoreOnRight = modalRect !== null && scoreRect.left >= modalRect.right;
+                const left = scoreOnRight ? scoreRect.left : scoreRect.right - width;
+                const top = scoreRect.bottom + SCORE_PANEL_GAP;
+
+                const maxLeft = window.innerWidth - width - margin;
+                const maxTop = window.innerHeight - height - margin;
+                panel.style.left = Math.max(margin, Math.min(left, maxLeft)) + 'px';
+                panel.style.top = Math.max(margin, Math.min(top, maxTop)) + 'px';
+                return;
+            }
+
+            panel.style.top = Math.max(margin, window.innerHeight - panel.offsetHeight - margin) + 'px';
+        }
+
+        /**
+         * In 'underScore' placement, move the abilities panel when the score panel changes size (its
+         * details toggles, the Score arriving after first paint). One observer at a time.
+         * @param {Element} panel - Abilities panel element
+         */
+        watchScorePanelForAbilities(panel) {
+            if (this.abilitiesAnchorObserver) {
+                this.abilitiesAnchorObserver.disconnect();
+                this.abilitiesAnchorObserver = null;
+            }
+
+            const scorePanel = this.currentPanel;
+            if (typeof ResizeObserver === 'undefined' || !scorePanel) return;
+            if (config.getSettingValue('abilitiesTriggers_position', 'bottom') !== 'underScore') return;
+
+            const observer = new ResizeObserver(() => {
+                if (this.currentAbilitiesPanel !== panel || !panel.isConnected) return;
+                this.anchorAbilitiesPanel(panel);
+            });
+            observer.observe(scorePanel);
+            this.abilitiesAnchorObserver = observer;
         }
 
         /**
@@ -35747,8 +35858,11 @@ self.onmessage = function (e) {
             const closeBtn = panel.querySelector('#mwi-abilities-close-btn');
             if (closeBtn) {
                 closeBtn.addEventListener('click', () => {
-                    panel.remove();
-                    this.currentAbilitiesPanel = null;
+                    if (this.currentAbilitiesPanel === panel) {
+                        this.removeAbilitiesPanel();
+                    } else {
+                        panel.remove();
+                    }
                 });
                 closeBtn.addEventListener('mouseover', () => {
                     closeBtn.style.color = '#fff';
@@ -35775,9 +35889,9 @@ self.onmessage = function (e) {
                         if (toggleBtn) toggleBtn.textContent = '- ' + i18n_js.t('combatScore.hideDetailsLabel');
                     }
 
-                    // Anchor bottom of panel to bottom of screen
+                    // Anchor bottom of panel to bottom of screen (or under the score panel, by setting)
                     requestAnimationFrame(() => {
-                        panel.style.top = Math.max(10, window.innerHeight - panel.offsetHeight - 10) + 'px';
+                        this.anchorAbilitiesPanel(panel);
                     });
                 });
                 expandBtn.addEventListener('mouseover', () => {
@@ -35796,10 +35910,9 @@ self.onmessage = function (e) {
                     toggleBtn.textContent =
                         (isCollapsed ? '- ' : '+ ') +
                         (isCollapsed ? i18n_js.t('combatScore.hideDetailsLabel') : i18n_js.t('combatScore.showDetailsLabel'));
-                    // Re-anchor to bottom after size change
+                    // Re-anchor after size change (bottom of screen, or under the score panel, by setting)
                     requestAnimationFrame(() => {
-                        const bottomGap = 10;
-                        panel.style.top = Math.max(10, window.innerHeight - panel.offsetHeight - bottomGap) + 'px';
+                        this.anchorAbilitiesPanel(panel);
                     });
                 });
             }
@@ -35845,8 +35958,11 @@ self.onmessage = function (e) {
                         !document.body.contains(modal) ||
                         !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
                     ) {
-                        panel.remove();
-                        this.currentAbilitiesPanel = null;
+                        if (this.currentAbilitiesPanel === panel) {
+                            this.removeAbilitiesPanel();
+                        } else {
+                            panel.remove();
+                        }
                         cleanupObserver();
                     }
                 },
@@ -36475,10 +36591,7 @@ self.onmessage = function (e) {
                 this.currentPanel = null;
             }
 
-            if (this.currentAbilitiesPanel) {
-                this.currentAbilitiesPanel.remove();
-                this.currentAbilitiesPanel = null;
-            }
+            this.removeAbilitiesPanel();
 
             if (this.currentPartyExportPanel) {
                 this.currentPartyExportPanel.remove();

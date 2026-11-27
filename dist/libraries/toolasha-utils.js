@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.36.0
+ * Version: 3.37.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6515,8 +6515,43 @@
         };
     }
 
+    /** Smallest scale a too-tall tooltip is shrunk to; below this it is unreadable, so the bottom is cut instead */
+    const TOOLTIP_MIN_SCALE = 0.5;
+    const TOOLTIP_VIEWPORT_MARGIN = 10;
+
     /**
-     * Fix tooltip overflow to ensure it stays within viewport
+     * Shrink a tooltip's content so it fits the viewport height. The game's tooltips are
+     * non-interactive (pointer-events: none), so they cannot be scrolled - scaling is the only way to
+     * show all of a tall one. Measured from the layout height, which a scale() does not change, so
+     * calling this again as more content arrives always starts from the true size.
+     * @param {Element|null} tooltipContent - The .MuiTooltip-tooltip element
+     * @param {number} viewportHeight - Viewport height in px
+     * @param {string} origin - CSS transform-origin for the scale
+     * @returns {number} The applied scale (1 when no shrinking is needed)
+     */
+    function fitTooltipContentScale(tooltipContent, viewportHeight, origin) {
+        if (!tooltipContent) return 1;
+
+        const contentHeight = tooltipContent.offsetHeight;
+        const available = viewportHeight - 2 * TOOLTIP_VIEWPORT_MARGIN;
+        const scale =
+            contentHeight > available && contentHeight > 0 ? Math.max(TOOLTIP_MIN_SCALE, available / contentHeight) : 1;
+
+        if (scale < 1) {
+            tooltipContent.style.maxHeight = 'none';
+            tooltipContent.style.overflow = 'visible';
+            tooltipContent.style.transformOrigin = origin;
+            tooltipContent.style.transform = `scale(${scale})`;
+        } else if (tooltipContent.style.transform) {
+            tooltipContent.style.transform = '';
+            tooltipContent.style.transformOrigin = '';
+        }
+        return scale;
+    }
+
+    /**
+     * Fix tooltip overflow to ensure it stays within viewport. A tooltip taller than the viewport is
+     * scaled down to fit (see fitTooltipContentScale) and pinned to the top.
      * @param {Element} tooltipElement - The tooltip popper element
      * @param {Object} [options={}]
      * @param {boolean} [options.forceTop=false] - Pin the tooltip centered at the top of the viewport
@@ -6544,24 +6579,25 @@
                         // Use position:fixed to place tooltip at top-center, bypassing
                         // MUI's transform-based positioning which breaks at low browser
                         // zoom levels (the offset parent may not be at viewport origin).
-                        const targetTop = 10;
+                        fitTooltipContentScale(tooltipContent, viewportHeight, 'top center');
+                        const targetTop = TOOLTIP_VIEWPORT_MARGIN;
                         const targetLeft = Math.round((viewportWidth - bBox.width) / 2);
 
                         tooltipElement.style.position = 'fixed';
                         tooltipElement.style.top = `${targetTop}px`;
                         tooltipElement.style.left = `${targetLeft}px`;
                         tooltipElement.style.transform = 'none';
-
-                        // Cap height if tooltip is taller than viewport
-                        if (tooltipContent && bBox.height >= viewportHeight - 20) {
-                            tooltipContent.style.maxHeight = `${viewportHeight - 20}px`;
-                            tooltipContent.style.overflowY = 'auto';
-                        }
                         return;
                     }
 
+                    const scale = fitTooltipContentScale(tooltipContent, viewportHeight, 'top left');
+                    // The popper's own box keeps its unscaled size; the scaled content is what is visible
+                    const contentHeight = tooltipContent ? tooltipContent.offsetHeight : bBox.height;
+                    const visibleHeight = bBox.height - contentHeight + contentHeight * scale;
+                    const visibleBottom = bBox.top + visibleHeight;
+
                     // Check if tooltip extends beyond viewport
-                    if (bBox.top < 0 || bBox.bottom > viewportHeight) {
+                    if (bBox.top < 0 || visibleBottom > viewportHeight) {
                         // Get current transform
                         const transformString = tooltipElement.style.transform;
 
@@ -6577,21 +6613,15 @@
                                 // Calculate how much to adjust Y
                                 let newY;
 
-                                if (bBox.height >= viewportHeight - 20) {
-                                    // Tooltip is taller than viewport - position at top
+                                if (visibleHeight >= viewportHeight - 2 * TOOLTIP_VIEWPORT_MARGIN) {
+                                    // Still taller than viewport at the smallest scale - position at top
                                     newY = 0;
-
-                                    // Force max-height on the tooltip content to enable scrolling
-                                    if (tooltipContent) {
-                                        tooltipContent.style.maxHeight = `${viewportHeight - 20}px`;
-                                        tooltipContent.style.overflowY = 'auto';
-                                    }
                                 } else if (bBox.top < 0) {
                                     // Tooltip extends above viewport - move it down
                                     newY = currentY - bBox.top;
-                                } else if (bBox.bottom > viewportHeight) {
+                                } else if (visibleBottom > viewportHeight) {
                                     // Tooltip extends below viewport - move it up
-                                    newY = currentY - (bBox.bottom - viewportHeight) - 10;
+                                    newY = currentY - (visibleBottom - viewportHeight) - 10;
                                 }
 
                                 if (newY !== undefined) {
@@ -7911,9 +7941,13 @@ self.onmessage = function (e) {
          * @param {Object} [options] - Options
          * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for
          *     items with no direct market price. Default off keeps existing behavior untouched.
-         * @returns {{value: number, source: string, needsTax: boolean}|null} Resolved value or null
+         * @param {boolean} [options.allowOtherSide=false] - Opt into valuing an item with no price on
+         *     the configured sell side at the other side of the book (bid, then ask). Only consulted
+         *     together with `allowIndirect`. Default off keeps existing behavior untouched.
+         * @returns {{value: number, source: string, needsTax: boolean, otherSide?: string}|null} Resolved
+         *     value or null
          */
-        resolveSellSideValue(itemHrid, enhancementLevel = 0, { allowIndirect = false } = {}) {
+        resolveSellSideValue(itemHrid, enhancementLevel = 0, { allowIndirect = false, allowOtherSide = false } = {}) {
             // Special case: Coin (face value = 1, never taxed)
             if (itemHrid === this.COIN_HRID) {
                 return { value: 1, source: 'coin', needsTax: false, isOutlier: false };
@@ -7971,6 +8005,24 @@ self.onmessage = function (e) {
                 // the caller explicitly passes `allowIndirect` (opt-in: Openable Analytics' calculator
                 // wiring is the intended consumer).
                 if (!allowIndirect) return null;
+                // A drop priced on only one side of the book (e.g. a rare weapon with asks but no buy
+                // orders) is still worth something; without this one such drop leaves a container's
+                // Expected partial and blanks Luck. A market price beats a derived one, so this runs
+                // before the shop chain. (Idea and original patch by Metzli.)
+                if (allowOtherSide) {
+                    for (const otherMode of ['bid', 'ask']) {
+                        const otherSide = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, mode: otherMode });
+                        if (otherSide.value > 0) {
+                            return {
+                                value: otherSide.value,
+                                source: 'market',
+                                needsTax: true,
+                                isOutlier: otherSide.isOutlier,
+                                otherSide: otherMode,
+                            };
+                        }
+                    }
+                }
                 // Tier-3 hook: let the shop chain value openable, unpriced outputs (e.g. task chests)
                 // from the converged container cache - a plain map read, never a recursive valuation.
                 const containerValueLookup = (hrid) => this.containerCache.get(hrid) ?? 0;
@@ -8091,9 +8143,11 @@ self.onmessage = function (e) {
          * @param {Object} [options] - Options
          * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
          *     with no direct market price. Default off keeps existing behavior untouched.
+         * @param {boolean} [options.allowOtherSide=false] - Opt into valuing a drop with no price on the
+         *     sell side at the other side of the book (see resolveSellSideValue).
          * @returns {Object|null} EV data or null
          */
-        calculateExpectedValue(itemHrid, { allowIndirect = false } = {}) {
+        calculateExpectedValue(itemHrid, { allowIndirect = false, allowOtherSide = false } = {}) {
             if (!this.isInitialized) {
                 console.warn('[ExpectedValueCalculator] Not initialized');
                 return null;
@@ -8111,7 +8165,7 @@ self.onmessage = function (e) {
             }
 
             // Get detailed drop breakdown (calculates with fresh market prices)
-            const drops = this.getDropBreakdown(itemHrid, { allowIndirect });
+            const drops = this.getDropBreakdown(itemHrid, { allowIndirect, allowOtherSide });
 
             // Calculate total expected value from fresh drop data
             const expectedReturn = drops.reduce((sum, drop) => sum + drop.expectedValue, 0);
@@ -8140,9 +8194,11 @@ self.onmessage = function (e) {
          * @param {Object} [options] - Options
          * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
          *     with no direct market price. Default off keeps existing behavior untouched.
+         * @param {boolean} [options.allowOtherSide=false] - Opt into valuing a drop with no price on the
+         *     sell side at the other side of the book (see resolveSellSideValue).
          * @returns {Array} Array of drop objects
          */
-        getDropBreakdown(containerHrid, { allowIndirect = false } = {}) {
+        getDropBreakdown(containerHrid, { allowIndirect = false, allowOtherSide = false } = {}) {
             const initData = dataManager.getInitClientData();
             if (!initData || !initData.openableLootDropMap) {
                 return [];
@@ -8175,7 +8231,7 @@ self.onmessage = function (e) {
                 const avgCount = (minCount + maxCount) / 2;
 
                 // Get price
-                const priceInfo = this.getDropPriceInfo(itemHrid, { allowIndirect });
+                const priceInfo = this.getDropPriceInfo(itemHrid, { allowIndirect, allowOtherSide });
                 const price = priceInfo.value;
 
                 // Tax strictly follows the resolver's needsTax contract - never item tradability,

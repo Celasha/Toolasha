@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.36.0
+ * Version: 3.37.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5559,15 +5559,16 @@
 
     /**
      * Hide Gathering Prompts
-     * For Non-Gathering Iron Cow (NGIC) characters, who never gather: hides the experience readouts on the
-     * Milking, Foraging and Woodcutting navigation links, and hides the tutorial quest (header task and
-     * popup) while the tutorial is unfinished.
+     * For Non-Gathering Iron Cow (NGIC) characters, who never gather: on the Milking, Foraging and
+     * Woodcutting navigation links, hides the experience readouts, removes the glow and blocks clicks;
+     * and hides the tutorial quest (header task and popup) while the tutorial is unfinished.
      *
      * Idea from brandlythebozo's "MWI NGIC QoL" userscript.
      *
      * The skill links are told apart by their skill icon, so reordering the sidebar or changing the game
      * language does not matter. Everything is hidden with CSS; the game's own elements are never removed,
-     * so React keeps working with them.
+     * so React keeps working with them. Only the sidebar links are blocked: other routes into a gathering
+     * skill (quest buttons, the action queue, other scripts' links) still work.
      */
 
 
@@ -5583,9 +5584,26 @@
         NAV_TARGETS.map((target) => `[class*="NavigationBar_nav__"]:has(use[href$="#${skill}"]) ${target}`)
     );
 
+    // The whole sidebar link of each gathering skill
+    const LINK_SELECTORS = GATHERING_SKILLS.map(
+        (skill) => `[class*="NavigationBar_navigationLink"]:has(use[href$="#${skill}"])`
+    );
+
+    // The glow is the tutorial pointing at a skill (native `.glowing`, on the link or inside it)
+    const GLOW_SELECTORS = LINK_SELECTORS.flatMap((link) => [`${link}.glowing`, `${link} .glowing`]);
+
     const NAV_CSS = `
     ${NAV_SELECTORS.join(',\n    ')} {
         display: none !important;
+    }
+
+    ${GLOW_SELECTORS.join(',\n    ')} {
+        animation: none !important;
+        box-shadow: none !important;
+    }
+
+    ${LINK_SELECTORS.join(',\n    ')} {
+        pointer-events: none !important;
     }
 `;
 

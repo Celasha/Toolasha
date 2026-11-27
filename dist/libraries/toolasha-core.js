@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.36.0
+ * Version: 3.37.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -940,6 +940,8 @@
             valueSourceShop:
                 'Not sold on the market. Valued through the shop: {{cost}} {{currency}} at {{perToken}} each = {{unit}} per item (no market tax).',
             valueSourceCurrency: 'Valued at its best shop redemption: {{perToken}} per token (no market tax).',
+            valueSourceAtAsk: 'Nobody has bid on this item, so it is valued at its ask price.',
+            valueSourceAtBid: 'Nobody has listed this item, so it is valued at its bid price.',
             openedLabel: 'Opened',
             partialBadgeLabel: '(partial)',
             profitLabel: 'Profit',
@@ -4048,6 +4050,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 expectedValue_respectPricingMode: { label: 'Use pricing mode for expected value calculations' },
                 expectedValue_includeCowbells: { label: 'Include cowbell value in expected value calculations' },
+                expectedValue_otherSideFallback: {
+                    label: 'Opened Loot: price a drop with no bid at its ask (and no ask at its bid)',
+                    help: 'When a drop has no price on the side used for selling, Opened Loot values it at the other side of the market instead of leaving Expected partial and Luck blank. Asking prices are optimistic for something you would have to sell.',
+                },
                 showConsumTips: { label: 'HP/MP consumables: Restore speed, cost performance' },
                 dungeonTokenTooltips: { label: 'Currency tooltips: Show shop values for tokens, seals, and cowbells' },
                 itemTooltip_gathering: {
@@ -4560,6 +4566,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Profile panel: Show abilities & triggers',
                     help: 'Displays equipped abilities, consumables, and their combat triggers below the profile',
                 },
+                abilitiesTriggers_position: {
+                    label: 'Profile panel: Abilities & triggers position',
+                    help: 'Where the abilities & triggers box opens. Bottom of the screen is the original placement. Under the score panel puts it directly below the gear score / export buttons panel beside the profile, and keeps it there as that panel changes size.',
+                    options: {
+                        bottom: 'Bottom of the screen, centered under the profile',
+                        underScore: 'Under the score panel',
+                    },
+                },
                 characterCard: {
                     label: 'Profile panel: Show View Card button',
                     help: 'Adds button to open character sheet in external viewer',
@@ -4892,7 +4906,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 hideGatheringPrompts: {
                     label: 'Left sidebar: Hide gathering prompts (Non-Gathering Iron Cow)',
-                    help: 'For characters who never gather. Hides the XP bar, XP percentage and remaining XP on the Milking, Foraging and Woodcutting links, and hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
+                    help: 'For characters who never gather. On the Milking, Foraging and Woodcutting links, hides the XP bar, XP percentage and remaining XP, removes the glow and blocks clicks. Also hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
                 },
                 tabReorder: {
                     label: 'Character panel: Drag-and-drop tab reordering',
@@ -5491,6 +5505,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 expectedValue_respectPricingMode: { label: '期望值计算使用定价模式' },
                 expectedValue_includeCowbells: { label: '期望值计算包含牛铃价值' },
+                expectedValue_otherSideFallback: {
+                    label: '开箱统计：无买单的掉落按卖单价计（无卖单则按买单价）',
+                    help: '当掉落物在出售所用的一侧没有价格时，开箱统计会按市场另一侧的价格估值，而不是让“预期”显示为部分、“运气”留空。对于需要出售的物品，卖单价偏乐观。',
+                },
                 showConsumTips: { label: 'HP/MP 消耗品：恢复速度、性价比' },
                 dungeonTokenTooltips: { label: '货币提示框：显示代币、封印、牛铃的商店价值' },
                 itemTooltip_gathering: {
@@ -5974,6 +5992,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '资料面板：显示技能与触发器',
                     help: '在资料下方显示已装备的技能、消耗品及其战斗触发条件',
                 },
+                abilitiesTriggers_position: {
+                    label: '资料面板：技能与触发器的位置',
+                    help: '技能与触发器面板的打开位置。“屏幕底部”为原有位置；“评分面板下方”将其放在资料旁的装备评分／导出按钮面板正下方，并在评分面板大小变化时保持在该位置。',
+                    options: {
+                        bottom: '屏幕底部，资料下方居中',
+                        underScore: '评分面板下方',
+                    },
+                },
                 characterCard: { label: '资料面板：显示“查看卡片”按钮', help: '添加按钮，可在外部查看器中打开角色卡' },
                 eliteAchievementReminder: {
                     label: '资料面板：显示精英成就提醒图标',
@@ -6289,7 +6315,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 hideGatheringPrompts: {
                     label: '左侧栏：隐藏采集提示（不采集铁牛）',
-                    help: '适用于从不采集的角色。隐藏挤奶、采摘、伐木导航项上的经验条、经验百分比和剩余经验，并在教程未完成期间隐藏顶部栏的教程任务及其弹窗。',
+                    help: '适用于从不采集的角色。对挤奶、采摘、伐木导航项：隐藏经验条、经验百分比和剩余经验，移除发光效果并禁止点击；同时在教程未完成期间隐藏顶部栏的教程任务及其弹窗。',
                 },
                 tabReorder: {
                     label: '角色面板：拖放重排标签顺序',
@@ -7395,6 +7421,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             valueSourceShop:
                 '市场上不出售，按商店兑换价值估算：{{cost}} 个{{currency}}，每个约 {{perToken}} = 每件 {{unit}}（不计市场税）。',
             valueSourceCurrency: '按其最佳商店兑换价值估算：每个代币 {{perToken}}（不计市场税）。',
+            valueSourceAtAsk: '该物品暂无买单，按其卖单价估算。',
+            valueSourceAtBid: '该物品暂无卖单，按其买单价估算。',
             openedLabel: '已开启',
             partialBadgeLabel: '（部分）',
             profitLabel: '利润',
@@ -10311,6 +10339,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'checkbox',
                     default: true,
                 },
+                expectedValue_otherSideFallback: {
+                    id: 'expectedValue_otherSideFallback',
+                    label: 'Opened Loot: price a drop with no bid at its ask (and no ask at its bid)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'When a drop has no price on the side used for selling, Opened Loot values it at the other side of the market instead of leaving Expected partial and Luck blank. Asking prices are optimistic for something you would have to sell.',
+                },
                 showConsumTips: {
                     id: 'showConsumTips',
                     label: 'HP/MP consumables: Restore speed, cost performance',
@@ -11403,6 +11438,17 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     default: true,
                     help: 'Displays equipped abilities, consumables, and their combat triggers below the profile',
                 },
+                abilitiesTriggers_position: {
+                    id: 'abilitiesTriggers_position',
+                    label: 'Profile panel: Abilities & triggers position',
+                    type: 'select',
+                    default: 'bottom',
+                    options: [
+                        { value: 'bottom', label: 'Bottom of the screen, centered under the profile' },
+                        { value: 'underScore', label: 'Under the score panel' },
+                    ],
+                    help: 'Where the abilities & triggers box opens. Bottom of the screen is the original placement. Under the score panel puts it directly below the gear score / export buttons panel beside the profile, and keeps it there as that panel changes size.',
+                },
                 characterCard: {
                     id: 'characterCard',
                     label: 'Profile panel: Show View Card button',
@@ -12061,7 +12107,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Left sidebar: Hide gathering prompts (Non-Gathering Iron Cow)',
                     type: 'checkbox',
                     default: false,
-                    help: 'For characters who never gather. Hides the XP bar, XP percentage and remaining XP on the Milking, Foraging and Woodcutting links, and hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
+                    help: 'For characters who never gather. On the Milking, Foraging and Woodcutting links, hides the XP bar, XP percentage and remaining XP, removes the glow and blocks clicks. Also hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
                 },
                 tabReorder: {
                     id: 'tabReorder',
