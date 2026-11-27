@@ -162,7 +162,7 @@ if (combatSimSite === 'metz') {
     const toolashaRoot = targetWindow.Toolasha || {};
     targetWindow.Toolasha = toolashaRoot;
 
-    toolashaRoot.version = '3.35.2';
+    toolashaRoot.version = '3.36.0';
 
     toolashaRoot.features = {
         list: () => config.getFeaturesByCategory(),
