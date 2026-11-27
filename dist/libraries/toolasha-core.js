@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.35.2
+ * Version: 3.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2496,6 +2496,8 @@
             status_enraged: 'Enraged',
             curse: 'Curse (estimated from the hits of the player with the Cursed Bow)',
             curseTooltip: (p) => `Curse x${p.stacks}: +${p.percent}% damage taken (estimated from landed hits)`,
+            weaken: 'Weaken (estimated from the attacks on the player with the Griffin Bulwark)',
+            weakenTooltip: (p) => `Weaken x${p.stacks}: -${p.percent}% damage dealt (estimated from attacks on the holder)`,
             sectionGraph: 'DPS over time',
             graphNow: 'now',
             graphTooltip: 'Damage per second over the last 5 minutes, smoothed over 16 seconds. Red bands are boss fights.',
@@ -3084,13 +3086,12 @@
                 'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again',
         },
         loadoutSavedLevel: {
-            label: (p) => `saved +${p.saved}`,
             notOwned: (p) => `This loadout has +${p.saved} saved, and you own no copy of the item now.`,
             current: (p) => `This loadout has +${p.saved} saved, and that is your best copy.`,
             higherEquipped: (p) =>
                 `This loadout has +${p.saved} saved and your best copy is +${p.best}. "Use highest enhancement level" is on, so the game equips the +${p.best}. Import Current Setup while wearing it saves the new level.`,
             higherIgnored: (p) =>
-                `This loadout has +${p.saved} saved and your best copy is +${p.best}. "Use highest enhancement level" is off for this loadout, so the game looks for the +${p.saved} exactly.`,
+                `This loadout has +${p.saved} saved and your best copy is +${p.best}. "Use highest enhancement level" is off for this loadout, so the game looks for the +${p.saved} exactly, and so do profit calculations that use this loadout.`,
             missingExact: (p) =>
                 `This loadout has +${p.saved} saved. "Use highest enhancement level" is off for this loadout, so the game looks for the +${p.saved} exactly, and you have no copy at that level.`,
             lowerOwned: (p) =>
@@ -4889,6 +4890,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Left sidebar: Hide active skill glow effect',
                     help: "Removes the game's pulsing orange glow animation from the currently active skill's icon in the left navigation bar.",
                 },
+                hideGatheringPrompts: {
+                    label: 'Left sidebar: Hide gathering prompts (Non-Gathering Iron Cow)',
+                    help: 'For characters who never gather. Hides the XP bar, XP percentage and remaining XP on the Milking, Foraging and Woodcutting links, and hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
+                },
                 tabReorder: {
                     label: 'Character panel: Drag-and-drop tab reordering',
                     help: 'Drag tabs to rearrange the order of Inventory, Toolasha, Equipment, Houses, Abilities, and Loadout. Order persists through refresh.',
@@ -4903,7 +4908,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Loadout panel: Show highest-owned enhancement level on equipment icons',
                 },
                 loadoutSavedLevelDisplay: {
-                    label: 'Loadout panel: Show the enhancement level each loadout has saved, flagged when you own a higher copy',
+                    label: 'Loadout panel: Show the enhancement level each loadout has saved, shown in red when the loadout will not give it',
                 },
                 loadoutSnapshot: {
                     label: 'Loadouts: Use saved loadouts in profit/action calculations',
@@ -6282,6 +6287,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: '左侧栏：隐藏当前专业光效',
                     help: '移除游戏左侧导航栏中当前激活专业图标上的橙色脉动光效动画。',
                 },
+                hideGatheringPrompts: {
+                    label: '左侧栏：隐藏采集提示（不采集铁牛）',
+                    help: '适用于从不采集的角色。隐藏挤奶、采摘、伐木导航项上的经验条、经验百分比和剩余经验，并在教程未完成期间隐藏顶部栏的教程任务及其弹窗。',
+                },
                 tabReorder: {
                     label: '角色面板：拖放重排标签顺序',
                     help: '拖动标签以重新排列物品栏、Toolasha、装备、房屋、技能和配装的顺序，刷新后仍会保留。',
@@ -6293,7 +6302,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 itemIconLevel: { label: '图标左下角：显示装备等级' },
                 loadoutEnhancementDisplay: { label: '配装面板：在装备图标上显示拥有的最高强化等级' },
-                loadoutSavedLevelDisplay: { label: '配装面板：显示配装保存的强化等级，低于拥有的最高等级时高亮' },
+                loadoutSavedLevelDisplay: { label: '配装面板：显示配装保存的强化等级，配装无法提供该等级时显示为红色' },
                 loadoutSnapshot: {
                     label: '配装：在利润/动作计算中使用已保存的配装',
                     help: '当你把一个动作加入队列时，Toolasha 会使用该专业当前已保存的游戏配装（专业默认 → 全部专业默认 → 匹配的已保存配装 → 当前已装备）来预测其经验、时间和利润。“使用最高强化等级”会根据你当前拥有的物品解析。若已保存的装备不可用，预测会回退到当前已装备的配置；若已保存的食物/饮品不可用，配装不会失效，其缺失槽位会被省略。禁用此项将始终使用当前已装备的装备进行预测。',
@@ -7126,13 +7135,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             noCharacterDataAlert: '未找到角色数据。请：\n1. 刷新游戏页面\n2. 等待页面完全加载\n3. 重新尝试',
         },
         loadoutSavedLevel: {
-            label: (p) => `已存 +${p.saved}`,
             notOwned: (p) => `此配装保存的是 +${p.saved}，而你目前没有该物品。`,
             current: (p) => `此配装保存的是 +${p.saved}，也是你拥有的最佳副本。`,
             higherEquipped: (p) =>
                 `此配装保存的是 +${p.saved}，你拥有的最佳副本是 +${p.best}。“使用最高强化等级”已开启，因此游戏会装备 +${p.best}。穿着该装备时导入当前配置即可保存新等级。`,
             higherIgnored: (p) =>
-                `此配装保存的是 +${p.saved}，你拥有的最佳副本是 +${p.best}。此配装未开启“使用最高强化等级”，因此游戏会精确查找 +${p.saved}。`,
+                `此配装保存的是 +${p.saved}，你拥有的最佳副本是 +${p.best}。此配装未开启“使用最高强化等级”，因此游戏会精确查找 +${p.saved}，使用此配装的利润计算也是如此。`,
             missingExact: (p) =>
                 `此配装保存的是 +${p.saved}。此配装未开启“使用最高强化等级”，因此游戏会精确查找 +${p.saved}，而你没有该等级的副本。`,
             lowerOwned: (p) => `此配装保存的是 +${p.saved}，但你拥有的最佳副本是 +${p.best}，游戏会装备该副本。`,
@@ -8204,6 +8212,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             status_enraged: '狂暴',
             curse: '诅咒（根据持有诅咒武器的玩家命中次数估算）',
             curseTooltip: (p) => `诅咒 x${p.stacks}：受到的伤害 +${p.percent}%（根据命中次数估算）`,
+            weaken: '削弱（根据持有狮鹫重盾的玩家受到的攻击次数估算）',
+            weakenTooltip: (p) => `削弱 x${p.stacks}：造成的伤害 -${p.percent}%（根据对持有者的攻击次数估算）`,
             sectionGraph: 'DPS 走势',
             graphNow: '现在',
             graphTooltip: '最近5分钟的每秒伤害，按16秒平滑。红色区域为首领战。',
@@ -12046,6 +12056,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     default: false,
                     help: "Removes the game's pulsing orange glow animation from the currently active skill's icon in the left navigation bar.",
                 },
+                hideGatheringPrompts: {
+                    id: 'hideGatheringPrompts',
+                    label: 'Left sidebar: Hide gathering prompts (Non-Gathering Iron Cow)',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'For characters who never gather. Hides the XP bar, XP percentage and remaining XP on the Milking, Foraging and Woodcutting links, and hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
+                },
                 tabReorder: {
                     id: 'tabReorder',
                     label: 'Character panel: Drag-and-drop tab reordering',
@@ -12080,7 +12097,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 },
                 loadoutSavedLevelDisplay: {
                     id: 'loadoutSavedLevelDisplay',
-                    label: 'Loadout panel: Show the enhancement level each loadout has saved, flagged when you own a higher copy',
+                    label: 'Loadout panel: Show the enhancement level each loadout has saved, shown in red when the loadout will not give it',
                     type: 'checkbox',
                     default: true,
                     dependencies: ['loadoutEnhancementDisplay'],
@@ -15028,6 +15045,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     // Remove claimed quests
                     this.characterQuests = this.characterQuests.filter((q) => q.status !== '/quest_status/claimed');
                 }
+                this.emit('quests_updated', data);
             });
 
             // `loot_opened` is character-scoped, but it has no dedicated DataManager-owned state -
@@ -15743,6 +15761,16 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
          */
         getBlockedCharacterMap() {
             return this.characterData?.blockedCharacterMap || {};
+        }
+
+        /**
+         * Whether the character still has an unclaimed tutorial quest
+         * @returns {boolean}
+         */
+        hasTutorialQuest() {
+            return (this.characterQuests || []).some(
+                (quest) => quest.category === '/quest_category/tutorial' && quest.status !== '/quest_status/claimed'
+            );
         }
 
         /**
@@ -17161,19 +17189,16 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType !== Node.ELEMENT_NODE) continue;
 
-                            // Dispatch to all registered handlers
+                            // Share one lazy descendant snapshot across immediate handlers for this added node.
+                            const classSnapshot = {};
                             this.handlers.forEach((handler) => {
                                 try {
                                     // Before the debounce, so a relevant node is never replaced by a later irrelevant one
                                     if (handler.filter && !handler.filter(node)) return;
                                     if (handler.debounce) {
                                         this.debouncedCallback(handler, node, mutation);
-                                    } else if (performanceMonitor.enabled) {
-                                        const start = performance.now();
-                                        handler.callback(node, mutation);
-                                        performanceMonitor.record(`dom:${handler.name}`, performance.now() - start);
                                     } else {
-                                        handler.callback(node, mutation);
+                                        this.invokeHandler(handler, node, mutation, classSnapshot);
                                     }
                                 } catch (error) {
                                     console.error(`[DOM Observer] Handler error (${handler.name}):`, error);
@@ -17269,17 +17294,60 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 this.debounceTimers.delete(handler);
 
                 if (latest) {
-                    if (performanceMonitor.enabled) {
-                        const start = performance.now();
-                        handler.callback(latest.node, latest.mutation);
-                        performanceMonitor.record(`dom:${handler.name}`, performance.now() - start);
-                    } else {
-                        handler.callback(latest.node, latest.mutation);
+                    try {
+                        // Class matching happens when the timer fires, not when the filter accepts the node.
+                        this.invokeHandler(handler, latest.node, latest.mutation);
+                    } catch (error) {
+                        console.error(`[DOM Observer] Handler error (${handler.name}):`, error);
                     }
                 }
             }, delay);
 
             this.debounceTimers.set(handler, timer);
+        }
+
+        /** @private */
+        invokeHandler(handler, node, mutation, classSnapshot) {
+            const start = performanceMonitor.enabled ? performance.now() : null;
+            if (handler.classNames) {
+                this.matchClasses(handler, node, classSnapshot);
+            } else {
+                handler.callback(node, mutation);
+            }
+            if (start !== null) {
+                performanceMonitor.record(`dom:${handler.name}`, performance.now() - start);
+            }
+        }
+
+        /** @private */
+        matchClasses({ callback, classNames }, node, classSnapshot = {}) {
+            const className = typeof node.className === 'string' ? node.className : '';
+            for (const targetClass of classNames) {
+                if (className.includes(targetClass)) {
+                    callback(node);
+                    return;
+                }
+            }
+
+            if (!classNames.length) return;
+            if (!classSnapshot.descendants) {
+                if (!node.childElementCount) return;
+                const descendants = [];
+                // The collection is live. Read it before any callbacks can move or add children.
+                for (const element of node.getElementsByTagName('*')) {
+                    const classes =
+                        typeof element.className === 'string' ? element.className : element.getAttribute('class');
+                    if (classes) descendants.push([element, classes]);
+                }
+                classSnapshot.descendants = descendants;
+            }
+
+            // Preserve target order, including one callback per target for descendants matching multiple targets.
+            for (const targetClass of classNames) {
+                for (const [element, classes] of classSnapshot.descendants) {
+                    if (classes.includes(targetClass)) callback(element);
+                }
+            }
         }
 
         /**
@@ -17311,9 +17379,15 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
          * @returns {Function} Unregister function
          */
         register(name, callback, options = {}) {
+            return this.registerHandler(name, callback, options);
+        }
+
+        /** @private */
+        registerHandler(name, callback, options, classNames) {
             const handler = {
                 name,
                 callback,
+                classNames,
                 filter: options.filter,
                 debounce: options.debounce || false,
                 debounceDelay: options.debounceDelay,
@@ -17344,38 +17418,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
          * @param {Object} options - Optional configuration
          * @param {boolean} options.debounce - Enable debouncing (default: false for immediate response)
          * @param {number} options.debounceDelay - Debounce delay in ms (default: 50)
+         * @param {function(Element): boolean} [options.filter] - Check the added root before scheduling or matching
          * @returns {Function} Unregister function
          */
         onClass(name, classNames, callback, options = {}) {
-            const classArray = Array.isArray(classNames) ? classNames : [classNames];
-
-            return this.register(
-                name,
-                (node) => {
-                    // Safely get className as string (handles SVG elements)
-                    const className = typeof node.className === 'string' ? node.className : '';
-
-                    // Check if node matches any of the target classes
-                    for (const targetClass of classArray) {
-                        if (className.includes(targetClass)) {
-                            callback(node);
-                            return; // Only call once per node
-                        }
-                    }
-
-                    // Also check descendants when a container subtree is inserted.
-                    // Only applies when the node has children — leaf nodes are skipped,
-                    // which eliminates the bulk of querySelectorAll cost during React's
-                    // init burst (thousands of individual leaf additions).
-                    if (node.childElementCount > 0) {
-                        for (const targetClass of classArray) {
-                            const matches = node.querySelectorAll(`[class*="${targetClass}"]`);
-                            matches.forEach((match) => callback(match));
-                        }
-                    }
-                },
-                options
-            );
+            return this.registerHandler(name, callback, options, Array.isArray(classNames) ? classNames : [classNames]);
         }
 
         /**
@@ -17414,6 +17461,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
 
     const STORAGE_KEY_PREFIX = 'loadout_snapshots';
     const LOADOUT_STATE_IMPLEMENTATION_ID = 'toolasha-core-loadout-state-v1';
+    const INVENTORY_LOCATION = '/item_locations/inventory';
 
     function hasOwn(object, key) {
         return Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -17430,6 +17478,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         // Enhancement levels are discrete, non-negative indices. A malformed cache/hash must fail
         // closed rather than becoming a plausible exact level through Number/parseInt coercion.
         return Number.isInteger(level) && level >= 0 ? level : null;
+    }
+
+    function getOwnedEnhancementLevel(item) {
+        const level = Number(item.enhancementLevel);
+        return Number.isFinite(level) ? level : 0;
     }
 
     function getStorageKey(characterId) {
@@ -17537,7 +17590,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         for (const item of characterItems || []) {
             if (!item?.itemHrid || item.count === 0) continue;
 
-            const level = Number.isFinite(Number(item.enhancementLevel)) ? Number(item.enhancementLevel) : 0;
+            const level = getOwnedEnhancementLevel(item);
             let entry = index.get(item.itemHrid);
             if (!entry) {
                 entry = { highestEnhancementLevel: level, levels: new Set() };
@@ -17551,25 +17604,25 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         return index;
     }
 
-    /**
-     * Resolve saved food/drink slots against the same inventory-only presence semantics used by
-     * MWI loadout validation. Empty slots are intentional and never treated as missing.
-     * Validation checks the +0 inventory hash for consumables; equipped/non-inventory entries do
-     * not satisfy a saved consumable slot. Only explicit count === 0 is absent.
-     * @param {Array<Object>|null|undefined} entries
-     * @param {Array<Object>|null|undefined} characterItems
-     * @returns {Array<{slotIndex:number,itemHrid:string,isAvailable:boolean}>}
-     */
-    function resolveLoadoutConsumables(entries, characterItems) {
+    function buildInventoryResolutionIndex(characterItems) {
+        const itemsByHrid = new Map();
         const inventoryPresence = new Set();
         for (const item of characterItems || []) {
-            if (!item?.itemHrid || item.itemLocationHrid !== '/item_locations/inventory' || item.count === 0) {
-                continue;
-            }
-            const level = Number.isFinite(Number(item.enhancementLevel)) ? Number(item.enhancementLevel) : 0;
-            if (level === 0) inventoryPresence.add(item.itemHrid);
-        }
+            const itemHrid = item?.itemHrid;
+            if (!itemHrid || item.count === 0) continue;
 
+            const ownedItems = itemsByHrid.get(itemHrid);
+            if (ownedItems) ownedItems.push(item);
+            else itemsByHrid.set(itemHrid, [item]);
+
+            if (item.itemLocationHrid === INVENTORY_LOCATION && getOwnedEnhancementLevel(item) === 0) {
+                inventoryPresence.add(itemHrid);
+            }
+        }
+        return { itemsByHrid, inventoryPresence };
+    }
+
+    function resolveConsumables(entries, inventoryPresence) {
         return (entries || []).map((entry, slotIndex) => {
             const itemHrid = entry?.itemHrid || '';
             return {
@@ -17580,71 +17633,45 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         });
     }
 
-    /**
-     * Resolve raw saved equipment against current ownership.
-     * Missing-item execution semantics are deliberately not guessed; the intended item remains
-     * present with isAvailable=false so callers can surface/handle that state explicitly.
-     * @param {Object} rawSnapshot
-     * @param {Array<Object>|null|undefined} characterItems
-     * @returns {Array<Object>}
-     */
-    function resolveLoadoutEquipment(rawSnapshot, characterItems) {
-        const useExactEnhancement = rawSnapshot?.useExactEnhancement === true;
-
-        return (rawSnapshot?.equipment || []).map((rawEquipment) => {
-            // Native MWI loadout validation only considers the saved target equipment location
-            // plus Inventory for this slot. The same item equipped in some *other* location is not
-            // a valid source for this saved slot, so do not use the global itemHrid ownership map
-            // here. This matters for equipment types that can appear in more than one location.
-            const eligibleItems = (characterItems || []).filter((item) => {
-                if (item?.itemHrid !== rawEquipment.itemHrid || item.count === 0) return false;
-
-                // Native validation first accepts the exact raw wearable hash that was saved,
-                // even if that item was equipped in a different source slot when the loadout was
-                // authored. Replacement variants are then searched only in the loadout's target
-                // location and Inventory. Preserve the raw hash internally so we can match that
-                // behavior instead of broadening eligibility to arbitrary equipped locations.
-                if (rawEquipment.savedItemHash && item.hash === rawEquipment.savedItemHash) return true;
-                return (
-                    item.itemLocationHrid === rawEquipment.itemLocationHrid ||
-                    item.itemLocationHrid === '/item_locations/inventory'
-                );
-            });
-            const eligibleOwnership = buildOwnedEnhancementIndex(eligibleItems);
-            const owned = eligibleOwnership.get(rawEquipment.itemHrid);
-            const savedEnhancementLevel = normalizeSavedEnhancementLevel(rawEquipment.enhancementLevel);
-            const hasValidSavedEnhancementLevel = savedEnhancementLevel !== null;
-
-            if (useExactEnhancement) {
-                const isAvailable = hasValidSavedEnhancementLevel && !!owned?.levels.has(savedEnhancementLevel);
-                return {
-                    itemLocationHrid: rawEquipment.itemLocationHrid,
-                    itemHrid: rawEquipment.itemHrid,
-                    enhancementLevel: isAvailable ? savedEnhancementLevel : null,
-                    isAvailable,
-                };
-            }
-
-            if (owned) {
-                return {
-                    itemLocationHrid: rawEquipment.itemLocationHrid,
-                    itemHrid: rawEquipment.itemHrid,
-                    enhancementLevel: owned.highestEnhancementLevel,
-                    isAvailable: true,
-                };
-            }
-
-            // Fail closed. The historical saved level is raw server metadata, not an
-            // effective level. Do not expose it as a numeric fallback when the item is
-            // unavailable, because downstream `|| 0` / `?? 0` code could silently turn
-            // an unresolved loadout into a plausible-but-false calculation.
+    function resolveEquipment(rawSnapshot, itemsByHrid) {
+        const exact = rawSnapshot?.useExactEnhancement === true;
+        return (rawSnapshot?.equipment || []).map((entry) => {
+            const enhancementLevel = resolveEquipmentLevel(entry, exact, itemsByHrid.get(entry.itemHrid));
             return {
-                itemLocationHrid: rawEquipment.itemLocationHrid,
-                itemHrid: rawEquipment.itemHrid,
-                enhancementLevel: null,
-                isAvailable: false,
+                itemLocationHrid: entry.itemLocationHrid,
+                itemHrid: entry.itemHrid,
+                enhancementLevel,
+                isAvailable: enhancementLevel !== null,
             };
         });
+    }
+
+    function resolveEquipmentLevel(entry, exact, ownedItems = []) {
+        const savedLevel = exact ? normalizeSavedEnhancementLevel(entry.enhancementLevel) : null;
+        if (exact && savedLevel === null) return null;
+
+        let highest = null;
+        for (const item of ownedItems) {
+            // The saved hash can match an item in another equipped slot. Other copies
+            // are eligible only in the target slot or inventory.
+            const matchesSavedHash = entry.savedItemHash && item.hash === entry.savedItemHash;
+            if (
+                !matchesSavedHash &&
+                item.itemLocationHrid !== entry.itemLocationHrid &&
+                item.itemLocationHrid !== INVENTORY_LOCATION
+            ) {
+                continue;
+            }
+
+            const level = getOwnedEnhancementLevel(item);
+            if (exact) {
+                if (level === savedLevel) return savedLevel;
+            } else if (highest === null || level > highest) {
+                highest = level;
+            }
+        }
+        // Keep unavailable items at null rather than exposing a historical level as a fallback.
+        return highest;
     }
 
     function normalizeCachedSnapshots(value) {
@@ -17821,19 +17848,25 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
          *     savedLevel: number|null, highestOwnedLevel: number|null, status: string}>}>}
          */
         getSavedLevelDisplays(name) {
-            const inventory = dataManager.getInventory?.();
-            const owned = buildOwnedEnhancementIndex(inventory);
+            let inventoryIndex;
             const displays = [];
             for (const rawSnapshot of Object.values(this.rawSnapshots)) {
                 if (rawSnapshot?.name !== name) continue;
+                inventoryIndex ??= buildInventoryResolutionIndex(dataManager.getInventory?.());
+                const { itemsByHrid } = inventoryIndex;
                 const exact = rawSnapshot.useExactEnhancement === true;
-                const resolved = resolveLoadoutEquipment(rawSnapshot, inventory);
-                const equipment = (rawSnapshot.equipment || []).map((entry, index) => {
+                const equipment = (rawSnapshot.equipment || []).map((entry) => {
                     const savedLevel = normalizeSavedEnhancementLevel(entry.enhancementLevel);
-                    const highest = owned.get(entry.itemHrid)?.highestEnhancementLevel ?? null;
+                    const ownedItems = itemsByHrid.get(entry.itemHrid);
+                    // The displayed highest level includes all owned copies, even copies ineligible for this slot.
+                    let highest = null;
+                    for (const item of ownedItems || []) {
+                        const level = getOwnedEnhancementLevel(item);
+                        if (highest === null || level > highest) highest = level;
+                    }
                     let status;
                     if (highest === null) status = 'notOwned';
-                    else if (exact && resolved[index]?.isAvailable !== true) status = 'missingExact';
+                    else if (exact && resolveEquipmentLevel(entry, exact, ownedItems) === null) status = 'missingExact';
                     else if (savedLevel === null || highest === savedLevel) status = 'current';
                     else if (highest > savedLevel) status = exact ? 'higherIgnored' : 'higherEquipped';
                     else status = 'lowerOwned';
@@ -17860,7 +17893,9 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
          * @private
          */
         _buildInventoryResolutionSignature(rawSnapshot, inventory = dataManager.getInventory?.()) {
-            return this._buildResolutionSignature(this._resolveRawSnapshot(rawSnapshot, inventory));
+            return this._buildResolutionSignature(
+                this._resolveRawSnapshot(rawSnapshot, buildInventoryResolutionIndex(inventory))
+            );
         }
 
         _buildResolutionSignature(resolvedSnapshot) {
@@ -17883,11 +17918,12 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         }
 
         _refreshResolvedState() {
-            const inventory = dataManager.getInventory?.();
+            const snapshots = Object.entries(this.rawSnapshots);
+            const inventoryIndex = snapshots.length ? buildInventoryResolutionIndex(dataManager.getInventory?.()) : null;
             const nextSignatures = new Map();
             const nextResolved = new Map();
-            for (const [snapshotId, rawSnapshot] of Object.entries(this.rawSnapshots)) {
-                const resolved = this._resolveRawSnapshot(rawSnapshot, inventory);
+            for (const [snapshotId, rawSnapshot] of snapshots) {
+                const resolved = this._resolveRawSnapshot(rawSnapshot, inventoryIndex);
                 nextResolved.set(snapshotId, resolved);
                 nextSignatures.set(snapshotId, this._buildResolutionSignature(resolved));
             }
@@ -17982,7 +18018,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             // Effective highest-owned state changes with inventory/equipment, while raw saved
             // snapshots intentionally do not. Only notify consumers when a changed item is
             // actually referenced by a saved loadout, avoiding noise from normal gathering.
-            const inventory = dataManager.getInventory?.();
+            let inventoryIndex;
             let effectiveStateChanged = false;
 
             for (const [snapshotId, snapshot] of Object.entries(this.rawSnapshots)) {
@@ -17992,7 +18028,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     (snapshot.drinks || []).some((item) => changedHrids.has(item.itemHrid));
                 if (!referencesChangedItem) continue;
 
-                const nextResolved = this._resolveRawSnapshot(snapshot, inventory);
+                inventoryIndex ??= buildInventoryResolutionIndex(dataManager.getInventory?.());
+                const nextResolved = this._resolveRawSnapshot(snapshot, inventoryIndex);
                 const nextSignature = this._buildResolutionSignature(nextResolved);
                 const previousSignature = this.inventoryResolutionSignatures.get(snapshotId);
                 if (nextSignature !== previousSignature) {
@@ -18129,11 +18166,11 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             return clone;
         }
 
-        _resolveRawSnapshot(rawSnapshot, inventory = dataManager.getInventory?.()) {
+        _resolveRawSnapshot(rawSnapshot, { itemsByHrid, inventoryPresence }) {
             if (!rawSnapshot) return null;
-            const resolvedEquipment = resolveLoadoutEquipment(rawSnapshot, inventory);
-            const resolvedFood = resolveLoadoutConsumables(rawSnapshot.food, inventory);
-            const resolvedDrinks = resolveLoadoutConsumables(rawSnapshot.drinks, inventory);
+            const resolvedEquipment = resolveEquipment(rawSnapshot, itemsByHrid);
+            const resolvedFood = resolveConsumables(rawSnapshot.food, inventoryPresence);
+            const resolvedDrinks = resolveConsumables(rawSnapshot.drinks, inventoryPresence);
             const unavailableEquipment = resolvedEquipment
                 .filter((entry) => entry.isAvailable === false)
                 .map((entry) => ({
@@ -18223,7 +18260,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
 
             let resolved = this.resolvedSnapshotCache.get(snapshotId);
             if (!resolved) {
-                resolved = this._resolveRawSnapshot(this.rawSnapshots[snapshotId]);
+                const inventoryIndex = buildInventoryResolutionIndex(dataManager.getInventory?.());
+                resolved = this._resolveRawSnapshot(this.rawSnapshots[snapshotId], inventoryIndex);
                 this.resolvedSnapshotCache.set(snapshotId, resolved);
                 this.inventoryResolutionSignatures.set(snapshotId, this._buildResolutionSignature(resolved));
             }
@@ -19232,6 +19270,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             // Price patches from order book data (fresher than API)
             // Structure: { "itemHrid:enhLevel": { a: ask, b: bid, timestamp: ms } }
             this.pricePatchs = {};
+            this.pricePatchRevision = 0;
 
             // Event listeners for price updates
             this.listeners = [];
@@ -19578,6 +19617,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 b: bid,
                 timestamp: Date.now(),
             };
+            this.pricePatchRevision++;
 
             // Save patches to storage (debounced via storage module)
             this.savePatches();

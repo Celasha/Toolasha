@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.35.2
+ * Version: 3.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2424,19 +2424,30 @@
 
 
     const STORAGE_KEY = 'Toolasha_customPriceOverrides';
+    const EMPTY_OVERRIDES = Object.freeze({});
 
     /** @type {Object|null} In-memory cache of overrides */
     let overridesCache = null;
+    let loadingOverrides = null;
 
     /**
      * Load overrides from storage into cache
      * @returns {Promise<Object>} The overrides object
      */
     async function loadOverrides() {
-        if (overridesCache === null) {
+        if (overridesCache !== null) return overridesCache;
+
+        loadingOverrides ??= readOverrides();
+        return loadingOverrides;
+    }
+
+    async function readOverrides() {
+        try {
             overridesCache = (await storage.getJSON(STORAGE_KEY, 'settings', {})) || {};
+            return overridesCache;
+        } finally {
+            loadingOverrides = null;
         }
-        return overridesCache;
     }
 
     /**
@@ -2447,9 +2458,17 @@
         if (overridesCache === null) {
             // Trigger async load but return empty for now
             loadOverrides();
-            return {};
+            return EMPTY_OVERRIDES;
         }
         return overridesCache;
+    }
+
+    /**
+     * Get all custom price overrides (async version, guaranteed loaded)
+     * @returns {Promise<Object>} The overrides object
+     */
+    async function getCustomPriceOverridesAsync() {
+        return loadOverrides();
     }
 
     /**
@@ -2474,6 +2493,58 @@
     }
 
     /**
+     * Set a custom price override for an item
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level
+     * @param {number|null} buy - Buy price override (null to clear)
+     * @param {number|null} sell - Sell price override (null to clear)
+     */
+    async function setCustomPriceOverride(itemHrid, enhancementLevel, buy, sell) {
+        await loadOverrides();
+        const overrides = { ...overridesCache };
+        const key = `${itemHrid}:${enhancementLevel}`;
+
+        const entry = {};
+        if (buy !== null && buy !== undefined && buy !== '') {
+            entry.buy = Number(buy);
+        }
+        if (sell !== null && sell !== undefined && sell !== '') {
+            entry.sell = Number(sell);
+        }
+
+        if (Object.keys(entry).length === 0) {
+            // Both empty — remove the override
+            delete overrides[key];
+        } else {
+            overrides[key] = entry;
+        }
+
+        overridesCache = overrides;
+        await storage.setJSON(STORAGE_KEY, overrides, 'settings', true);
+    }
+
+    /**
+     * Remove a custom price override
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level
+     */
+    async function removeCustomPriceOverride(itemHrid, enhancementLevel) {
+        await loadOverrides();
+        const overrides = { ...overridesCache };
+        const key = `${itemHrid}:${enhancementLevel}`;
+        delete overrides[key];
+        overridesCache = overrides;
+        await storage.setJSON(STORAGE_KEY, overrides, 'settings', true);
+    }
+
+    /**
+     * Initialize the module by loading overrides from storage
+     */
+    async function initCustomPriceOverrides() {
+        await loadOverrides();
+    }
+
+    /**
      * Market Data Utility
      * Centralized access to market prices with smart pricing mode handling
      */
@@ -2481,6 +2552,20 @@
 
     // Track logged warnings to prevent console spam
     const loggedWarnings = new Set();
+
+    /** Snapshot the inputs that affect price lookups with an explicit ask or bid mode. */
+    function getMarketPriceCacheKey() {
+        return [
+            marketAPI.marketData,
+            marketAPI.lastFetchTimestamp,
+            marketAPI.pricePatchs,
+            marketAPI.pricePatchRevision,
+            marketValuesAPI.marketItemValues,
+            config.getSetting('marketData_outlierGuardEnabled'),
+            config.getSettingValue('marketData_outlierBandMultiplier', 3),
+            getCustomPriceOverrides(),
+        ];
+    }
 
     /**
      * Get item price based on pricing mode and context
@@ -2748,11 +2833,18 @@
         __proto__: null,
         default: marketData,
         formatPrice: formatPrice,
+        getCustomPrice: getCustomPrice,
+        getCustomPriceOverrides: getCustomPriceOverrides,
+        getCustomPriceOverridesAsync: getCustomPriceOverridesAsync,
         getItemPrice: getItemPrice,
         getItemPriceOutlierInfo: getItemPriceOutlierInfo,
         getItemPrices: getItemPrices,
         getItemPricesBatch: getItemPricesBatch,
-        getPricingMode: getPricingMode
+        getMarketPriceCacheKey: getMarketPriceCacheKey,
+        getPricingMode: getPricingMode,
+        initCustomPriceOverrides: initCustomPriceOverrides,
+        removeCustomPriceOverride: removeCustomPriceOverride,
+        setCustomPriceOverride: setCustomPriceOverride
     });
 
     /**

@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.35.2
+ * Version: 3.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -258,7 +258,7 @@
      */
 
 
-    const STORAGE_KEY$1 = 'modalPositions3';
+    const STORAGE_KEY = 'modalPositions3';
     const STORE_NAME$2 = 'settings';
 
     class DraggableModals {
@@ -273,7 +273,7 @@
             if (this.initialized) return;
             if (!config.getSetting('draggableModals', true)) return;
 
-            this.offsets = (await storage.get(STORAGE_KEY$1, STORE_NAME$2, {})) || {};
+            this.offsets = (await storage.get(STORAGE_KEY, STORE_NAME$2, {})) || {};
 
             // Watch Modal_modalContent — unique to the inner dialog content element.
             // Its parentElement is Modal_modal (the box we apply transform to).
@@ -352,7 +352,7 @@
                     this._applyTransform(modalBox, clamped.dx, clamped.dy);
                     if (clamped.dx !== dx || clamped.dy !== dy) {
                         this.offsets[title] = clamped;
-                        storage.set(STORAGE_KEY$1, this.offsets, STORE_NAME$2);
+                        storage.set(STORAGE_KEY, this.offsets, STORE_NAME$2);
                     }
                 });
             }
@@ -398,7 +398,7 @@
                 const dx = isNaN(t.m41) ? 0 : t.m41;
                 const dy = isNaN(t.m42) ? 0 : t.m42;
                 this.offsets[title] = { dx, dy };
-                storage.set(STORAGE_KEY$1, this.offsets, STORE_NAME$2);
+                storage.set(STORAGE_KEY, this.offsets, STORE_NAME$2);
             };
 
             bar.addEventListener('mousedown', onMouseDown);
@@ -18582,100 +18582,6 @@ ${starCSS}
     const pformancePanel = new PFormancePanel();
 
     /**
-     * Custom Price Overrides
-     * Manages user-defined buy/sell price overrides for profit calculations.
-     * Overrides are stored in IndexedDB and cached in memory.
-     */
-
-
-    const STORAGE_KEY = 'Toolasha_customPriceOverrides';
-
-    /** @type {Object|null} In-memory cache of overrides */
-    let overridesCache = null;
-
-    /**
-     * Load overrides from storage into cache
-     * @returns {Promise<Object>} The overrides object
-     */
-    async function loadOverrides() {
-        if (overridesCache === null) {
-            overridesCache = (await storage.getJSON(STORAGE_KEY, 'settings', {})) || {};
-        }
-        return overridesCache;
-    }
-
-    /**
-     * Get all custom price overrides
-     * @returns {Object} The overrides object (may be empty if not yet loaded)
-     */
-    function getCustomPriceOverrides() {
-        if (overridesCache === null) {
-            // Trigger async load but return empty for now
-            loadOverrides();
-            return {};
-        }
-        return overridesCache;
-    }
-
-    /**
-     * Get all custom price overrides (async version, guaranteed loaded)
-     * @returns {Promise<Object>} The overrides object
-     */
-    async function getCustomPriceOverridesAsync() {
-        return loadOverrides();
-    }
-
-    /**
-     * Set a custom price override for an item
-     * @param {string} itemHrid - Item HRID
-     * @param {number} enhancementLevel - Enhancement level
-     * @param {number|null} buy - Buy price override (null to clear)
-     * @param {number|null} sell - Sell price override (null to clear)
-     */
-    async function setCustomPriceOverride(itemHrid, enhancementLevel, buy, sell) {
-        const overrides = await loadOverrides();
-        const key = `${itemHrid}:${enhancementLevel}`;
-
-        const entry = {};
-        if (buy !== null && buy !== undefined && buy !== '') {
-            entry.buy = Number(buy);
-        }
-        if (sell !== null && sell !== undefined && sell !== '') {
-            entry.sell = Number(sell);
-        }
-
-        if (Object.keys(entry).length === 0) {
-            // Both empty — remove the override
-            delete overrides[key];
-        } else {
-            overrides[key] = entry;
-        }
-
-        overridesCache = overrides;
-        await storage.setJSON(STORAGE_KEY, overrides, 'settings', true);
-    }
-
-    /**
-     * Remove a custom price override
-     * @param {string} itemHrid - Item HRID
-     * @param {number} enhancementLevel - Enhancement level
-     */
-    async function removeCustomPriceOverride(itemHrid, enhancementLevel) {
-        const overrides = await loadOverrides();
-        const key = `${itemHrid}:${enhancementLevel}`;
-        delete overrides[key];
-        overridesCache = overrides;
-        await storage.setJSON(STORAGE_KEY, overrides, 'settings', true);
-    }
-
-    /**
-     * Initialize the module by loading overrides from storage
-     */
-    async function initCustomPriceOverrides() {
-        await loadOverrides();
-    }
-
-    /**
      * Settings UI Module
      * Injects Toolasha settings tab into the game's settings panel
      * Based on MWITools Extended approach
@@ -18744,7 +18650,7 @@ ${starCSS}
             }
 
             // Load custom price overrides cache
-            await initCustomPriceOverrides();
+            await marketData_js.initCustomPriceOverrides();
 
             // Load current settings
             this.currentSettings = await settingsStorage.loadSettings();
@@ -19459,7 +19365,7 @@ ${starCSS}
                 }
 
                 case 'customPriceOverrides': {
-                    const overrides = getCustomPriceOverrides();
+                    const overrides = marketData_js.getCustomPriceOverrides();
                     const count = Object.keys(overrides).length;
                     return `
                     <input type="hidden"
@@ -20775,7 +20681,7 @@ ${starCSS}
          * Open custom price overrides editor modal
          */
         async openCustomPriceOverridesEditor() {
-            const overrides = await getCustomPriceOverridesAsync();
+            const overrides = await marketData_js.getCustomPriceOverridesAsync();
             const gameData = dataManager.getInitClientData();
             const itemDetailMap = gameData?.itemDetailMap || {};
 
@@ -21285,20 +21191,20 @@ ${starCSS}
         `;
             saveBtn.addEventListener('click', async () => {
                 // Determine what to add, update, and remove
-                const currentOverrides = getCustomPriceOverrides();
+                const currentOverrides = marketData_js.getCustomPriceOverrides();
 
                 // Remove overrides that are no longer in working copy
                 for (const key of Object.keys(currentOverrides)) {
                     if (!workingOverrides[key]) {
                         const [itemHrid, enhLevel] = key.split(':');
-                        await removeCustomPriceOverride(itemHrid, parseInt(enhLevel) || 0);
+                        await marketData_js.removeCustomPriceOverride(itemHrid, parseInt(enhLevel) || 0);
                     }
                 }
 
                 // Add/update overrides
                 for (const [key, override] of Object.entries(workingOverrides)) {
                     const [itemHrid, enhLevel] = key.split(':');
-                    await setCustomPriceOverride(
+                    await marketData_js.setCustomPriceOverride(
                         itemHrid,
                         parseInt(enhLevel) || 0,
                         override.buy ?? null,

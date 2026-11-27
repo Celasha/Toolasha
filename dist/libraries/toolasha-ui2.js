@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.35.2
+ * Version: 3.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -915,6 +915,8 @@
             abilityHaste: unit?.combatDetails?.combatStats?.abilityHaste ?? 0,
             // How much damage taken a landed hit adds to its target (a Cursed Bow); 0 for most players
             curse: unit?.combatDetails?.combatStats?.curse ?? 0,
+            // How much damage an attacker loses per stack when it hits this unit (a Griffin Bulwark)
+            weaken: unit?.combatDetails?.combatStats?.weaken ?? 0,
             // How long before the unit enrages; bosses get much longer than ordinary monsters
             enrageTimerNs: unit?.enrageTimerDuration ?? 0,
             // How much faster food comes off cooldown (a pouch bonus)
@@ -1970,7 +1972,9 @@
      *   - the stunned / blinded / silenced / enraged flags are exact, and only their length is predicted from
      *     the ability that caused them;
      *   - a unit dying clears what was on it, and a new wave clears the monsters;
-     *   - curse is counted from the hits of the player who holds it (their curse stat is in `new_battle`).
+     *   - curse is counted from the hits of the player who holds it (their curse stat is in `new_battle`);
+     *   - weaken is counted from the attacks on the player who holds it, and lands on the monster that attacked
+     *     (their weaken stat is in `new_battle`).
      *
      * The timers are predictions from the moment the cast was seen, so they can drift from the server's by a
      * little. Pure logic: feed it tracker events.
@@ -1985,6 +1989,12 @@
     const CURSE_ID = 'curse';
     const CURSE_MAX_STACKS = 5;
     const CURSE_DURATION_MS = 15000;
+
+    // Weaken (a Griffin Bulwark stat): every attack on its holder adds a stack to the attacker, hit or miss; each
+    // attack refreshes the timer of all of them, up to five. Per the game's own description of the stat.
+    const WEAKEN_ID = 'weaken';
+    const WEAKEN_MAX_STACKS = 5;
+    const WEAKEN_DURATION_MS = 15000;
 
     const KIND_BUFF = 'buff';
     const KIND_DEBUFF = 'debuff';
@@ -2048,6 +2058,7 @@
                 if (event.type === 'attack' && event.abilityHrid) this.applyCast(event, at, roster, damaged);
             }
             this.applyCurse(events, at, roster, damaged);
+            this.applyWeaken(events, at, roster);
             for (const event of events) {
                 if (event.type === 'status') this.applyStatus(event, at);
             }
@@ -2072,23 +2083,71 @@
             const died = new Set(events.filter((e) => e.type === 'death' && e.side === SIDE_MONSTER).map((e) => e.index));
             for (const index of new Set(damaged[SIDE_MONSTER])) {
                 if (died.has(index)) continue;
-                const key = unitKey(SIDE_MONSTER, index);
-                const entries = this.units.get(key) || new Map();
-                const current = entries.get(CURSE_ID);
-                const live = current && current.expiresAt > at;
-                entries.set(CURSE_ID, {
+                this.addStacks(SIDE_MONSTER, index, {
                     id: CURSE_ID,
-                    kind: KIND_DEBUFF,
-                    abilityHrid: '',
                     symbol: '☠',
-                    stacks: Math.min(CURSE_MAX_STACKS, (live ? current.stacks : 0) + 1),
                     perStack,
+                    maxStacks: CURSE_MAX_STACKS,
                     durationMs: CURSE_DURATION_MS,
                     at,
-                    expiresAt: at + CURSE_DURATION_MS,
                 });
-                this.units.set(key, entries);
             }
+        }
+
+        /**
+         * Weaken, the mirror of curse: one message has one attacker, so when that monster attacked players, each
+         * one that holds weaken puts a stack on it. A miss counts, as the attack is what triggers it. Damage with
+         * no attacker, or several monsters acting at once, leaves the count alone.
+         * @param {Object[]} events
+         * @param {number} at
+         * @param {Object} roster - Players carry their `weaken` stat
+         */
+        applyWeaken(events, at, roster) {
+            const attackers = events.filter((event) => event.type === 'attack' && event.side === SIDE_MONSTER);
+            if (attackers.length !== 1) return;
+            const attacker = attackers[0].index;
+            // An attacker that died in this message has nothing left to show
+            if (events.some((e) => e.type === 'death' && e.side === SIDE_MONSTER && e.index === attacker)) return;
+
+            const attacked = new Set(
+                events.filter((e) => e.type === 'damage' && e.side === SIDE_PLAYER).map((e) => e.index)
+            );
+            for (const unit of roster?.[SIDE_PLAYER] || []) {
+                if (!attacked.has(unit.index) || !(unit.weaken > 0)) continue;
+                this.addStacks(SIDE_MONSTER, attacker, {
+                    id: WEAKEN_ID,
+                    symbol: '▼',
+                    perStack: unit.weaken,
+                    maxStacks: WEAKEN_MAX_STACKS,
+                    durationMs: WEAKEN_DURATION_MS,
+                    at,
+                });
+            }
+        }
+
+        /**
+         * Add one stack of a stacking debuff to a unit, refreshing the timer of all its stacks.
+         * @param {string} side
+         * @param {number} index
+         * @param {{id: string, symbol: string, perStack: number, maxStacks: number, durationMs: number, at: number}} stack
+         */
+        addStacks(side, index, { id, symbol, perStack, maxStacks, durationMs, at }) {
+            const key = unitKey(side, index);
+            const entries = this.units.get(key) || new Map();
+            const current = entries.get(id);
+            const live = current && current.expiresAt > at;
+            entries.set(id, {
+                id,
+                kind: KIND_DEBUFF,
+                abilityHrid: '',
+                symbol,
+                stacks: Math.min(maxStacks, (live ? current.stacks : 0) + 1),
+                perStack,
+                durationMs,
+                at,
+                expiresAt: at + durationMs,
+            });
+            this.units.set(key, entries);
         }
 
         /**
@@ -2914,10 +2973,10 @@
                     icon = this.buildIcon(buff, sprite, size);
                     entry.icons.set(buff.id, icon);
                 }
-                // Curse is judged by its stacks, which matter more than a timer that every hit resets
+                // Curse and weaken are judged by their stacks, which matter more than a timer that every hit resets
                 icon.label.textContent = buff.stacks ? String(buff.stacks) : countdownText(buff.remainingMs);
                 if (buff.stacks) {
-                    const title = i18n_js.t('combatLive.curseTooltip', {
+                    const title = i18n_js.t(`combatLive.${buff.id}Tooltip`, {
                         stacks: buff.stacks,
                         percent: Number((buff.value * 100).toFixed(1)),
                     });
@@ -2935,7 +2994,7 @@
         }; border-radius:4px; background:rgba(0,0,0,0.65); display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:${Math.round(size * 0.6)}px; overflow:visible;`;
             // The tooltip is set once, so it does not flicker while a countdown ticks
             wrap.title = buff.symbol
-                ? i18n_js.t('combatLive.curse')
+                ? i18n_js.t(`combatLive.${buff.id}`)
                 : buff.kind === 'status' && !buff.abilityHrid
                   ? i18n_js.t(`combatLive.status_${buff.status}`)
                   : getAbilityName(buff.abilityHrid, buff.abilityHrid.split('/').pop());
@@ -3193,7 +3252,7 @@
      */
 
 
-    const STORAGE_KEY$4 = 'combatLive_history';
+    const STORAGE_KEY$3 = 'combatLive_history';
     const STORAGE_STORE$5 = 'settings';
     // Fights shorter than this, or that dealt nothing, are not worth keeping
     const MIN_SECONDS = 30;
@@ -3224,7 +3283,7 @@
         load() {
             if (!this.loaded) {
                 this.loaded = (async () => {
-                    const saved = await storage.get(STORAGE_KEY$4, STORAGE_STORE$5, []);
+                    const saved = await storage.get(STORAGE_KEY$3, STORAGE_STORE$5, []);
                     this.entries = Array.isArray(saved) ? saved.filter((entry) => entry?.summary) : [];
                 })();
             }
@@ -3318,7 +3377,7 @@
         }
 
         async persist() {
-            await storage.set(STORAGE_KEY$4, this.entries, STORAGE_STORE$5);
+            await storage.set(STORAGE_KEY$3, this.entries, STORAGE_STORE$5);
             for (const listener of this.listeners) listener();
         }
     }
@@ -5252,7 +5311,12 @@
             const hits = this.stats.record(events, now);
             ownDamageFilter.noteHits(hits, now);
             this.buffs.record(events, now, {
-                p: this.tracker.players.map((unit) => ({ index: unit.index, hp: unit.hp, curse: unit.curse })),
+                p: this.tracker.players.map((unit) => ({
+                    index: unit.index,
+                    hp: unit.hp,
+                    curse: unit.curse,
+                    weaken: unit.weaken,
+                })),
                 m: this.tracker.monsters.map((unit) => ({ index: unit.index, hp: unit.hp })),
             });
             this.lastMessageAt = now;
@@ -5490,6 +5554,84 @@
 
         disable() {
             dom_js.removeStyles(STYLE_ID);
+        },
+    };
+
+    /**
+     * Hide Gathering Prompts
+     * For Non-Gathering Iron Cow (NGIC) characters, who never gather: hides the experience readouts on the
+     * Milking, Foraging and Woodcutting navigation links, and hides the tutorial quest (header task and
+     * popup) while the tutorial is unfinished.
+     *
+     * Idea from brandlythebozo's "MWI NGIC QoL" userscript.
+     *
+     * The skill links are told apart by their skill icon, so reordering the sidebar or changing the game
+     * language does not matter. Everything is hidden with CSS; the game's own elements are never removed,
+     * so React keeps working with them.
+     */
+
+
+    const NAV_STYLE_ID = 'mwi-hide-gathering-prompts-nav';
+    const TUTORIAL_STYLE_ID = 'mwi-hide-gathering-prompts-tutorial';
+
+    const GATHERING_SKILLS = ['milking', 'foraging', 'woodcutting'];
+
+    // The game's experience bar (which also holds the remaining-XP text) and our XP percentage
+    const NAV_TARGETS = ['[class*="NavigationBar_experienceBar"]', '.mwi-exp-percentage'];
+
+    const NAV_SELECTORS = GATHERING_SKILLS.flatMap((skill) =>
+        NAV_TARGETS.map((target) => `[class*="NavigationBar_nav__"]:has(use[href$="#${skill}"]) ${target}`)
+    );
+
+    const NAV_CSS = `
+    ${NAV_SELECTORS.join(',\n    ')} {
+        display: none !important;
+    }
+`;
+
+    const TUTORIAL_CSS = `
+    [class*="Header_questInfo"],
+    [class*="QuestModal_questModalContainer"] {
+        display: none !important;
+    }
+`;
+
+    const hideGatheringPrompts = {
+        questsHandler: null,
+
+        initialize() {
+            if (!config.getSetting('hideGatheringPrompts')) {
+                return;
+            }
+
+            dom_js.addStyles(NAV_CSS, NAV_STYLE_ID);
+
+            this.questsHandler = () => this.syncTutorialStyle();
+            dataManager.on('quests_updated', this.questsHandler);
+            this.syncTutorialStyle();
+        },
+
+        /**
+         * Hide the tutorial quest only while the character still has one
+         */
+        syncTutorialStyle() {
+            const hasStyle = !!document.getElementById(TUTORIAL_STYLE_ID);
+            const hasTutorial = dataManager.hasTutorialQuest();
+
+            if (hasTutorial && !hasStyle) {
+                dom_js.addStyles(TUTORIAL_CSS, TUTORIAL_STYLE_ID);
+            } else if (!hasTutorial && hasStyle) {
+                dom_js.removeStyles(TUTORIAL_STYLE_ID);
+            }
+        },
+
+        disable() {
+            if (this.questsHandler) {
+                dataManager.off('quests_updated', this.questsHandler);
+                this.questsHandler = null;
+            }
+            dom_js.removeStyles(NAV_STYLE_ID);
+            dom_js.removeStyles(TUTORIAL_STYLE_ID);
         },
     };
 
@@ -12024,7 +12166,7 @@
 
     const TRANSMUTE_ACTION_HRID = '/actions/alchemy/transmute';
     const COIN_ITEM_HRID$2 = '/items/coin';
-    const STORAGE_KEY$3 = 'transmuteSessions';
+    const STORAGE_KEY$2 = 'transmuteSessions';
     const STORAGE_STORE$3 = 'alchemyHistory';
 
     class TransmuteHistoryTracker {
@@ -12041,7 +12183,7 @@
         }
 
         getStorageKey() {
-            return this.characterId ? `${STORAGE_KEY$3}_${this.characterId}` : STORAGE_KEY$3;
+            return this.characterId ? `${STORAGE_KEY$2}_${this.characterId}` : STORAGE_KEY$2;
         }
 
         /**
@@ -12408,7 +12550,7 @@
     const COIN_ITEM_HRID$1 = '/items/coin';
     const CATALYST_OF_COINIFICATION_HRID$1 = '/items/catalyst_of_coinification';
     const PRIME_CATALYST_HRID$2 = '/items/prime_catalyst';
-    const STORAGE_KEY$2 = 'coinifySessions';
+    const STORAGE_KEY$1 = 'coinifySessions';
     const STORAGE_STORE$2 = 'alchemyHistory';
 
     class CoinifyHistoryTracker {
@@ -12425,7 +12567,7 @@
         }
 
         getStorageKey() {
-            return this.characterId ? `${STORAGE_KEY$2}_${this.characterId}` : STORAGE_KEY$2;
+            return this.characterId ? `${STORAGE_KEY$1}_${this.characterId}` : STORAGE_KEY$1;
         }
 
         /**
@@ -12781,7 +12923,7 @@
     const CATALYST_OF_DECOMPOSITION_HRID$1 = '/items/catalyst_of_decomposition';
     const PRIME_CATALYST_HRID$1 = '/items/prime_catalyst';
     const COIN_ITEM_HRID = '/items/coin';
-    const STORAGE_KEY$1 = 'decomposeSessions';
+    const STORAGE_KEY = 'decomposeSessions';
     const STORAGE_STORE$1 = 'alchemyHistory';
 
     class DecomposeHistoryTracker {
@@ -12798,7 +12940,7 @@
         }
 
         getStorageKey() {
-            return this.characterId ? `${STORAGE_KEY$1}_${this.characterId}` : STORAGE_KEY$1;
+            return this.characterId ? `${STORAGE_KEY}_${this.characterId}` : STORAGE_KEY;
         }
 
         /**
@@ -19342,7 +19484,10 @@
      * @private
      */
     function getRealisticBaseItemPrice(itemHrid) {
-        const marketPrice = marketData_js.getItemPrices(itemHrid, 0);
+        return resolveRealisticBasePrice(itemHrid, marketData_js.getItemPrices(itemHrid, 0));
+    }
+
+    function resolveRealisticBasePrice(itemHrid, marketPrice) {
         const ask = marketPrice?.ask > 0 ? marketPrice.ask : 0;
         const bid = marketPrice?.bid > 0 ? marketPrice.bid : 0;
 
@@ -19515,7 +19660,12 @@
     function getCheapestProtectionPrice(itemHrid, { useCraftingCost = false } = {}) {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData.itemDetailMap[itemHrid];
+        const craftingCost =
+            useCraftingCost && !isUntradableCape(itemHrid) ? getTooltipCraftCostCached(itemHrid, 'ask') : 0;
+        return findCheapestProtectionPrice(itemHrid, itemDetails, getRealisticBaseItemPrice, craftingCost);
+    }
 
+    function findCheapestProtectionPrice(itemHrid, itemDetails, realisticPrice, craftingCost) {
         // Build list of protection options: [item itself, mirror, ...specific items]
         const protectionOptions = [itemHrid, '/items/mirror_of_protection'];
 
@@ -19529,14 +19679,16 @@
         let cheapestItemHrid = null;
         let cheapestIsCrafted = false;
         for (const protectionHrid of protectionOptions) {
-            let price = getRealisticBaseItemPrice(protectionHrid);
+            let price = realisticPrice(protectionHrid);
             let isCrafted = false;
-            if (useCraftingCost && protectionHrid === itemHrid && !isUntradableCape(itemHrid)) {
-                const craftingCost = getTooltipCraftCostCached(itemHrid, 'ask');
-                if (craftingCost > 0 && (!(price > 0) || craftingCost < price)) {
-                    price = craftingCost;
-                    isCrafted = true;
-                }
+            if (
+                protectionHrid === itemHrid &&
+                !isUntradableCape(itemHrid) &&
+                craftingCost > 0 &&
+                (!(price > 0) || craftingCost < price)
+            ) {
+                price = craftingCost;
+                isCrafted = true;
             }
             if (price > 0 && price < cheapestPrice) {
                 cheapestPrice = price;
@@ -21808,56 +21960,6 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Custom Price Overrides
-     * Manages user-defined buy/sell price overrides for profit calculations.
-     * Overrides are stored in IndexedDB and cached in memory.
-     */
-
-
-    const STORAGE_KEY = 'Toolasha_customPriceOverrides';
-
-    /** @type {Object|null} In-memory cache of overrides */
-    let overridesCache = null;
-
-    /**
-     * Load overrides from storage into cache
-     * @returns {Promise<Object>} The overrides object
-     */
-    async function loadOverrides() {
-        if (overridesCache === null) {
-            overridesCache = (await storage.getJSON(STORAGE_KEY, 'settings', {})) || {};
-        }
-        return overridesCache;
-    }
-
-    /**
-     * Set a custom price override for an item
-     * @param {string} itemHrid - Item HRID
-     * @param {number} enhancementLevel - Enhancement level
-     * @param {number|null} buy - Buy price override (null to clear)
-     * @param {number|null} sell - Sell price override (null to clear)
-     */
-    async function setCustomPriceOverride(itemHrid, enhancementLevel, buy, sell) {
-        const overrides = await loadOverrides();
-        const key = `${itemHrid}:${enhancementLevel}`;
-
-        const entry = {};
-        if (sell !== null && sell !== undefined && sell !== '') {
-            entry.sell = Number(sell);
-        }
-
-        if (Object.keys(entry).length === 0) {
-            // Both empty — remove the override
-            delete overrides[key];
-        } else {
-            overrides[key] = entry;
-        }
-
-        overridesCache = overrides;
-        await storage.setJSON(STORAGE_KEY, overrides, 'settings', true);
-    }
-
-    /**
      * Risk of Ruin Calculator UI
      *
      * Standalone floating panel (same pattern as XPHCalculator) answering "how likely am I to hit
@@ -22050,7 +22152,7 @@ self.onmessage = function (e) {
 
             const itemHrid = button.dataset.itemHrid;
             const price = Number(button.dataset.suggestedPrice);
-            await setCustomPriceOverride(itemHrid, 0, null, price);
+            await marketData_js.setCustomPriceOverride(itemHrid, 0, null, price);
             this._run();
         }
 
@@ -25058,12 +25160,13 @@ self.onmessage = function (e) {
         const buySource = {};
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
             if (excludeHrids.includes(hrid)) continue;
-            for (const conv of item.guildCreditConversions || []) {
+            if (!item.guildCreditConversions?.length) continue;
+            const sellInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'ask' });
+            const buyInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'bid' });
+            const sellPrice = sellInfo.value;
+            const buyPrice = buyInfo.value;
+            for (const conv of item.guildCreditConversions) {
                 const creditHrid = conv.creditItemHrid;
-                const sellInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'ask' });
-                const buyInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'bid' });
-                const sellPrice = sellInfo.value;
-                const buyPrice = buyInfo.value;
                 if (sellPrice > 0) {
                     const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
                     if (!sell[creditHrid] || gpc < sell[creditHrid]) {
@@ -32470,6 +32573,7 @@ self.onmessage = function (e) {
         externalLinks,
         hideLabyrinthBadge,
         hideNavBarGlow,
+        hideGatheringPrompts,
         tabReorder: tabReorder$1,
         altClickNavigation,
         tokenShopShortcuts: tokenShopShortcuts$1,

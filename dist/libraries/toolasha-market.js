@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.35.2
+ * Version: 3.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, profitHelpers_js, warningIcon_js, enhancementConfig_js, storage, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, dom, marketplaceSession_js, materialCalculator_js, loadoutState, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
+(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, profitHelpers_js, warningIcon_js, enhancementConfig_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, dom, marketplaceSession_js, materialCalculator_js, storage, loadoutState, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -296,9 +296,10 @@
      * @param {string} itemHrid - Item HRID (e.g., '/items/cheese_sword')
      * @param {number} currentEnhancementLevel - Current enhancement level (1-20)
      * @param {Object} config - Enhancement configuration from enhancement-config.js
+     * @param {Object} [strategyStats] - Worker results indexed by item level, target, and protection level
      * @returns {Object|null} Enhancement analysis or null if not enhanceable
      */
-    function calculateEnhancementPath(itemHrid, currentEnhancementLevel, config) {
+    function calculateEnhancementPath(itemHrid, currentEnhancementLevel, config, strategyStats) {
         // Validate inputs
         if (!itemHrid || currentEnhancementLevel < 1 || currentEnhancementLevel > 20) {
             return null;
@@ -317,6 +318,26 @@
         }
 
         const itemLevel = itemDetails.itemLevel || 1;
+        const useCraftingCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost');
+        const priceCache = new Map();
+        const readPrices = (hrid) => {
+            if (!priceCache.has(hrid)) priceCache.set(hrid, marketData_js.getItemPrices(hrid, 0));
+            return priceCache.get(hrid);
+        };
+        const realisticPrices = new Map();
+        const realisticPrice = (hrid) => {
+            if (!realisticPrices.has(hrid)) realisticPrices.set(hrid, resolveRealisticBasePrice(hrid, readPrices(hrid)));
+            return realisticPrices.get(hrid);
+        };
+        const pricing = prepareEnhancementPricing(
+            itemHrid,
+            itemDetails,
+            gameData,
+            useCraftingCost,
+            currentEnhancementLevel > 2,
+            readPrices,
+            realisticPrice
+        );
 
         // Step 1: Build 2D matrix like Enhancelator (all_results)
         // For each target level (1 to currentEnhancementLevel)
@@ -329,14 +350,21 @@
             const resultsForLevel = [];
 
             // Test "never protect" (0)
-            const neverProtect = calculateCostForStrategy(itemHrid, targetLevel, 0, itemLevel, config);
+            const neverProtect = calculateCostForStrategy(targetLevel, 0, itemLevel, config, pricing, strategyStats);
             if (neverProtect) {
                 resultsForLevel.push({ protectFrom: 0, ...neverProtect });
             }
 
             // Test all "protect from X" strategies (2 through targetLevel)
             for (let protectFrom = 2; protectFrom <= targetLevel; protectFrom++) {
-                const result = calculateCostForStrategy(itemHrid, targetLevel, protectFrom, itemLevel, config);
+                const result = calculateCostForStrategy(
+                    targetLevel,
+                    protectFrom,
+                    itemLevel,
+                    config,
+                    pricing,
+                    strategyStats
+                );
                 if (result) {
                     resultsForLevel.push({ protectFrom, ...result });
                 }
@@ -350,10 +378,7 @@
         const targetCosts = new Array(currentEnhancementLevel + 1);
         const targetTimes = new Array(currentEnhancementLevel + 1);
         const targetAttempts = new Array(currentEnhancementLevel + 1);
-        targetCosts[0] = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
-            ? Math.min(getTooltipCraftCostCached(itemHrid) || Infinity, marketData_js.getItemPrices(itemHrid, 0)?.ask || Infinity) ||
-              getRealisticBaseItemPrice(itemHrid)
-            : getRealisticBaseItemPrice(itemHrid); // Level 0: base item
+        targetCosts[0] = pricing.levelZeroCost; // Level 0: base item
         targetTimes[0] = 0; // Level 0: no time needed
         targetAttempts[0] = 0; // Level 0: no attempts needed
 
@@ -372,7 +397,7 @@
 
         // Step 3: Apply Philosopher's Mirror optimization (single pass, in-place)
         // Like Enhancelator lines 456-465
-        const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
+        const mirrorPrice = realisticPrice('/items/philosophers_mirror');
         let mirrorStartLevel = null;
         let refinedFodder = null;
 
@@ -395,25 +420,42 @@
 
                 let fodderCost, fodderTime, fodderAttempts;
                 if (fodderLevel === 0) {
-                    fodderCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost')
+                    fodderCost = useCraftingCost
                         ? Math.min(
                               getTooltipCraftCostCached(baseItemHrid) || Infinity,
-                              marketData_js.getItemPrices(baseItemHrid, 0)?.ask || Infinity
-                          ) || getRealisticBaseItemPrice(baseItemHrid)
-                        : getRealisticBaseItemPrice(baseItemHrid);
+                              readPrices(baseItemHrid)?.ask || Infinity
+                          ) || realisticPrice(baseItemHrid)
+                        : realisticPrice(baseItemHrid);
                     fodderTime = 0;
                     fodderAttempts = 0;
-                } else {
+                } else if (baseItemDetails) {
+                    const fodderPricing = prepareEnhancementPricing(
+                        baseItemHrid,
+                        baseItemDetails,
+                        gameData,
+                        useCraftingCost,
+                        fodderLevel > 2,
+                        readPrices,
+                        realisticPrice
+                    );
                     const fodderResults = [];
-                    const neverProtect = calculateCostForStrategy(baseItemHrid, fodderLevel, 0, baseItemLevel, config);
+                    const neverProtect = calculateCostForStrategy(
+                        fodderLevel,
+                        0,
+                        baseItemLevel,
+                        config,
+                        fodderPricing,
+                        strategyStats
+                    );
                     if (neverProtect) fodderResults.push({ protectFrom: 0, ...neverProtect });
                     for (let protectFrom = 2; protectFrom <= fodderLevel; protectFrom++) {
                         const result = calculateCostForStrategy(
-                            baseItemHrid,
                             fodderLevel,
                             protectFrom,
                             baseItemLevel,
-                            config
+                            config,
+                            fodderPricing,
+                            strategyStats
                         );
                         if (result) fodderResults.push({ protectFrom, ...result });
                     }
@@ -521,17 +563,19 @@
         let xpPerHour = null;
         let totalExpectedXP = null;
         try {
-            const xpCalc = enhancementCalculator_js.calculateEnhancement({
-                enhancingLevel: config.enhancingLevel,
-                houseLevel: config.houseLevel,
-                toolBonus: config.toolBonus || 0,
-                speedBonus: config.speedBonus || 0,
-                itemLevel,
-                targetLevel: currentEnhancementLevel,
-                protectFrom: optimalStrategy.protectFrom,
-                blessedTea: config.teas.blessed,
-                guzzlingBonus: config.guzzlingBonus,
-            });
+            const xpCalc = strategyStats
+                ? strategyStats[itemLevel]?.[currentEnhancementLevel]?.[optimalStrategy.protectFrom]
+                : enhancementCalculator_js.calculateEnhancement({
+                      enhancingLevel: config.enhancingLevel,
+                      houseLevel: config.houseLevel,
+                      toolBonus: config.toolBonus || 0,
+                      speedBonus: config.speedBonus || 0,
+                      itemLevel,
+                      targetLevel: currentEnhancementLevel,
+                      protectFrom: optimalStrategy.protectFrom,
+                      blessedTea: config.teas.blessed,
+                      guzzlingBonus: config.guzzlingBonus,
+                  });
 
             if (xpCalc && xpCalc.visitCounts && xpCalc.totalTime > 0) {
                 const wisdomDecimal = (config.experienceBonus || 0) / 100;
@@ -567,7 +611,7 @@
      * Calculate cost for a single protection strategy to reach a target level
      * @private
      */
-    function calculateCostForStrategy(itemHrid, targetLevel, protectFrom, itemLevel, config) {
+    function calculateCostForStrategy(targetLevel, protectFrom, itemLevel, config, pricing, strategyStats) {
         try {
             const params = {
                 enhancingLevel: config.enhancingLevel,
@@ -582,7 +626,9 @@
             };
 
             // Calculate enhancement statistics
-            const result = enhancementCalculator_js.calculateEnhancement(params);
+            const result = strategyStats
+                ? strategyStats[itemLevel]?.[targetLevel]?.[protectFrom]
+                : enhancementCalculator_js.calculateEnhancement(params);
 
             if (!result || typeof result.attempts !== 'number' || typeof result.totalTime !== 'number') {
                 console.error('[Enhancement Tooltip] Invalid result from calculateEnhancement:', result);
@@ -590,7 +636,7 @@
             }
 
             // Calculate costs
-            const costs = calculateTotalCost(itemHrid, targetLevel, protectFrom, config);
+            const costs = calculateTotalCost(result, protectFrom, pricing);
 
             return {
                 expectedAttempts: result.attempts,
@@ -767,33 +813,18 @@
         };
     }
 
-    /**
-     * Calculate total cost for enhancement path
-     * Matches original MWI Tools v25.0 cost calculation
-     * @private
-     */
-    function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
-        const gameData = dataManager.getInitClientData();
-        const itemDetails = gameData.itemDetailMap[itemHrid];
-        const itemLevel = itemDetails.itemLevel || 1;
-
-        // Calculate total attempts for full path (0 to targetLevel)
-        const pathResult = enhancementCalculator_js.calculateEnhancement({
-            enhancingLevel: config.enhancingLevel,
-            houseLevel: config.houseLevel,
-            toolBonus: config.toolBonus || 0,
-            speedBonus: config.speedBonus || 0,
-            itemLevel,
-            targetLevel,
-            protectFrom,
-            blessedTea: config.teas.blessed,
-            guzzlingBonus: config.guzzlingBonus,
-        });
-
-        // Calculate per-action material cost (same for all enhancement levels)
-        // enhancementCosts is a flat array of materials needed per attempt
+    /** Resolve prices that do not depend on the target level or protection strategy. */
+    function prepareEnhancementPricing(
+        itemHrid,
+        itemDetails,
+        gameData,
+        useCraftingCost,
+        needsProtection,
+        readPrices,
+        realisticPrice
+    ) {
         let perActionCost = 0;
-        const materialBreakdown = [];
+        const materials = [];
         if (itemDetails.enhancementCosts) {
             for (const material of itemDetails.enhancementCosts) {
                 const materialDetail = gameData.itemDetailMap[material.itemHrid];
@@ -810,7 +841,7 @@
                     price = 1; // Coins have face value of 1
                     bidPrice = 1;
                 } else {
-                    const marketPrice = marketData_js.getItemPrices(material.itemHrid, 0);
+                    const marketPrice = readPrices(material.itemHrid);
                     if (marketPrice) {
                         let ask = marketPrice.ask;
                         let bid = marketPrice.bid;
@@ -836,94 +867,91 @@
                 }
                 perActionCost += price * material.count;
 
-                const totalQuantity = material.count * pathResult.attempts;
-                materialBreakdown.push({
+                materials.push({
                     itemHrid: material.itemHrid,
                     name: materialDetail?.name || material.itemHrid,
                     countPerAction: material.count,
-                    totalQuantity,
                     unitPrice: price,
                     bidPrice,
-                    totalCost: price * totalQuantity,
                     askOutlier,
                     bidOutlier,
                 });
             }
         }
 
-        // Total material cost = per-action cost × total attempts
-        const materialCost = perActionCost * pathResult.attempts;
-
-        // Protection cost = cheapest protection option × protection count
-        let protectionCost = 0;
-        let protectionItemHrid = null;
-        let protectionCount = 0;
-        let protectionAskPrice = 0;
-        let protectionBidPrice = 0;
-        let protectionBidOutlier = false;
-        if (protectFrom > 0 && pathResult.protectionCount > 0) {
-            const protectionInfo = getCheapestProtectionPrice(itemHrid, {
-                useCraftingCost: toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost'),
-            });
-            if (protectionInfo.price > 0) {
-                protectionCost = protectionInfo.price * pathResult.protectionCount;
-                protectionItemHrid = protectionInfo.itemHrid;
-                protectionCount = pathResult.protectionCount;
-                protectionAskPrice = protectionInfo.price;
-                if (protectionInfo.isCrafted) {
-                    protectionBidPrice = getTooltipCraftCostCached(itemHrid, 'bid') || protectionInfo.price;
-                } else {
-                    const protPrices = marketData_js.getItemPrices(protectionInfo.itemHrid, 0);
-                    protectionBidPrice = protPrices?.bid > 0 ? protPrices.bid : protectionInfo.price;
-                    protectionBidOutlier = protPrices?.bid > 0 ? protPrices.bidOutlier : false;
-                }
-            }
-        }
-
-        // Base item cost (initial investment) — market price or min(crafting, market) per setting
         const craftingCostAsk = getTooltipCraftCostCached(itemHrid, 'ask');
         const craftingCostBid = getTooltipCraftCostCached(itemHrid, 'bid');
-        const baseItemPrices = marketData_js.getItemPrices(itemHrid, 0);
+        const baseItemPrices = readPrices(itemHrid);
         const marketAsk = baseItemPrices?.ask > 0 ? baseItemPrices.ask : 0;
         const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
-        const useCraftingCost = toolashaConfig.getSetting('enhanceSim_baseItemCraftingCost');
+        const protection = needsProtection
+            ? findCheapestProtectionPrice(itemHrid, itemDetails, realisticPrice, useCraftingCost ? craftingCostAsk : 0)
+            : null;
+        const protectionPrices = protection?.itemHrid && !protection.isCrafted ? readPrices(protection.itemHrid) : null;
+        const levelZeroCost = useCraftingCost
+            ? Math.min(craftingCostAsk || Infinity, baseItemPrices?.ask || Infinity) || realisticPrice(itemHrid)
+            : realisticPrice(itemHrid);
         // Ask drives the decision: use crafted if ask is missing OR crafted ask is cheaper
         // An untradable cape is always priced by getRealisticBaseItemPrice so the cape setting applies
         // to its base cape too (the crafting-cost helpers know nothing about it).
         const isUntradable = isUntradableCape(itemHrid);
         const askIsCrafted =
             !isUntradable && useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
-        const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
+        const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || realisticPrice(itemHrid);
         const baseBidPrice = askIsCrafted
             ? craftingCostBid || craftingCostAsk
-            : marketBid ||
-              (isUntradable ? 0 : getTooltipCraftCostCached(itemHrid, 'bid')) ||
-              getRealisticBaseItemPrice(itemHrid);
-        const baseCost = baseAskPrice;
-        const baseAskIsCrafted = askIsCrafted;
-        const baseBidIsCrafted = askIsCrafted;
+            : marketBid || (isUntradable ? 0 : craftingCostBid) || realisticPrice(itemHrid);
         // Outlier flags only apply when the live market value is the one actually displayed -
         // not when a crafted/fallback cost took its place instead.
         const baseAskOutlier = !askIsCrafted && marketAsk > 0 && baseItemPrices?.askOutlier;
         const baseBidOutlier = !askIsCrafted && marketBid > 0 && baseItemPrices?.bidOutlier;
 
         return {
-            baseCost,
-            baseAskPrice,
-            baseBidPrice,
-            baseAskIsCrafted,
-            baseBidIsCrafted,
-            baseAskOutlier,
-            baseBidOutlier,
+            levelZeroCost,
+            base: {
+                baseCost: baseAskPrice,
+                baseAskPrice,
+                baseBidPrice,
+                baseAskIsCrafted: askIsCrafted,
+                baseBidIsCrafted: askIsCrafted,
+                baseAskOutlier,
+                baseBidOutlier,
+            },
+            materials,
+            perActionCost,
+            protection,
+            protectionBidPrice: protection?.isCrafted
+                ? craftingCostBid || protection.price
+                : protectionPrices?.bid > 0
+                  ? protectionPrices.bid
+                  : protection?.price,
+            protectionBidOutlier: protectionPrices?.bid > 0 ? protectionPrices.bidOutlier : false,
+        };
+    }
+
+    /** Scale the prepared prices by a strategy's expected attempts and protections. */
+    function calculateTotalCost(pathResult, protectFrom, pricing) {
+        const { base, perActionCost, materials, protection } = pricing;
+        const materialCost = perActionCost * pathResult.attempts;
+        const materialBreakdown = materials.map((material) => {
+            const totalQuantity = material.countPerAction * pathResult.attempts;
+            return { ...material, totalQuantity, totalCost: material.unitPrice * totalQuantity };
+        });
+        const usesProtection = protectFrom > 0 && pathResult.protectionCount > 0 && protection?.price > 0;
+        const protectionCount = usesProtection ? pathResult.protectionCount : 0;
+        const protectionCost = usesProtection ? protection.price * protectionCount : 0;
+
+        return {
+            ...base,
             materialCost,
             materialBreakdown,
             protectionCost,
-            protectionItemHrid,
+            protectionItemHrid: usesProtection ? protection.itemHrid : null,
             protectionCount,
-            protectionAskPrice,
-            protectionBidPrice,
-            protectionBidOutlier,
-            totalCost: baseCost + materialCost + protectionCost,
+            protectionAskPrice: usesProtection ? protection.price : 0,
+            protectionBidPrice: usesProtection ? pricing.protectionBidPrice : 0,
+            protectionBidOutlier: usesProtection ? pricing.protectionBidOutlier : false,
+            totalCost: base.baseCost + materialCost + protectionCost,
         };
     }
 
@@ -933,7 +961,10 @@
      * @private
      */
     function getRealisticBaseItemPrice(itemHrid) {
-        const marketPrice = marketData_js.getItemPrices(itemHrid, 0);
+        return resolveRealisticBasePrice(itemHrid, marketData_js.getItemPrices(itemHrid, 0));
+    }
+
+    function resolveRealisticBasePrice(itemHrid, marketPrice) {
         const ask = marketPrice?.ask > 0 ? marketPrice.ask : 0;
         const bid = marketPrice?.bid > 0 ? marketPrice.bid : 0;
 
@@ -1133,20 +1164,7 @@
         return totalTime;
     }
 
-    /**
-     * Get cheapest protection item price
-     * Tests: item itself, mirror of protection, and specific protection items
-     * @param {string} itemHrid
-     * @param {Object} [options]
-     * @param {boolean} [options.useCraftingCost=false] - Price a copy of the item itself at its crafting cost when
-     *     that is cheaper than the market, the same as the base item
-     * @returns {{price: number, itemHrid: string|null, isCrafted: boolean}}
-     * @private
-     */
-    function getCheapestProtectionPrice(itemHrid, { useCraftingCost = false } = {}) {
-        const gameData = dataManager.getInitClientData();
-        const itemDetails = gameData.itemDetailMap[itemHrid];
-
+    function findCheapestProtectionPrice(itemHrid, itemDetails, realisticPrice, craftingCost) {
         // Build list of protection options: [item itself, mirror, ...specific items]
         const protectionOptions = [itemHrid, '/items/mirror_of_protection'];
 
@@ -1160,14 +1178,16 @@
         let cheapestItemHrid = null;
         let cheapestIsCrafted = false;
         for (const protectionHrid of protectionOptions) {
-            let price = getRealisticBaseItemPrice(protectionHrid);
+            let price = realisticPrice(protectionHrid);
             let isCrafted = false;
-            if (useCraftingCost && protectionHrid === itemHrid && !isUntradableCape(itemHrid)) {
-                const craftingCost = getTooltipCraftCostCached(itemHrid, 'ask');
-                if (craftingCost > 0 && (!(price > 0) || craftingCost < price)) {
-                    price = craftingCost;
-                    isCrafted = true;
-                }
+            if (
+                protectionHrid === itemHrid &&
+                !isUntradableCape(itemHrid) &&
+                craftingCost > 0 &&
+                (!(price > 0) || craftingCost < price)
+            ) {
+                price = craftingCost;
+                isCrafted = true;
             }
             if (price > 0 && price < cheapestPrice) {
                 cheapestPrice = price;
@@ -2209,93 +2229,6 @@
     const profitCalculator = new ProfitCalculator();
 
     /**
-     * Custom Price Overrides
-     * Manages user-defined buy/sell price overrides for profit calculations.
-     * Overrides are stored in IndexedDB and cached in memory.
-     */
-
-
-    const STORAGE_KEY$1 = 'Toolasha_customPriceOverrides';
-
-    /** @type {Object|null} In-memory cache of overrides */
-    let overridesCache = null;
-
-    /**
-     * Load overrides from storage into cache
-     * @returns {Promise<Object>} The overrides object
-     */
-    async function loadOverrides() {
-        if (overridesCache === null) {
-            overridesCache = (await storage.getJSON(STORAGE_KEY$1, 'settings', {})) || {};
-        }
-        return overridesCache;
-    }
-
-    /**
-     * Get all custom price overrides
-     * @returns {Object} The overrides object (may be empty if not yet loaded)
-     */
-    function getCustomPriceOverrides() {
-        if (overridesCache === null) {
-            // Trigger async load but return empty for now
-            loadOverrides();
-            return {};
-        }
-        return overridesCache;
-    }
-
-    /**
-     * Get a custom price for a specific item, enhancement level, and transaction side.
-     * @param {string} itemHrid - Item HRID
-     * @param {number} enhancementLevel - Enhancement level (default 0)
-     * @param {string} side - Transaction side ('buy' or 'sell')
-     * @returns {number|null} Custom price or null if no override exists
-     */
-    function getCustomPrice(itemHrid, enhancementLevel = 0, side = 'sell') {
-        const overrides = getCustomPriceOverrides();
-        const key = `${itemHrid}:${enhancementLevel}`;
-        const override = overrides[key];
-        if (!override) {
-            return null;
-        }
-        const price = override[side];
-        if (price === undefined || price === null || price === '') {
-            return null;
-        }
-        return price;
-    }
-
-    /**
-     * Set a custom price override for an item
-     * @param {string} itemHrid - Item HRID
-     * @param {number} enhancementLevel - Enhancement level
-     * @param {number|null} buy - Buy price override (null to clear)
-     * @param {number|null} sell - Sell price override (null to clear)
-     */
-    async function setCustomPriceOverride(itemHrid, enhancementLevel, buy, sell) {
-        const overrides = await loadOverrides();
-        const key = `${itemHrid}:${enhancementLevel}`;
-
-        const entry = {};
-        if (buy !== null && buy !== undefined && buy !== '') {
-            entry.buy = Number(buy);
-        }
-        if (sell !== null && sell !== undefined && sell !== '') {
-            entry.sell = Number(sell);
-        }
-
-        if (Object.keys(entry).length === 0) {
-            // Both empty — remove the override
-            delete overrides[key];
-        } else {
-            overrides[key] = entry;
-        }
-
-        overridesCache = overrides;
-        await storage.setJSON(STORAGE_KEY$1, overrides, 'settings', true);
-    }
-
-    /**
      * Untradable cape valuation (refined and enhanced)
      *
      * value = base cape value + refinement cost + average enhancement cost
@@ -2323,7 +2256,7 @@
     function getEnhancementPathCost(itemHrid, enhancementLevel) {
         const params = enhancementConfig_js.getAutoDetectedParams();
         const key = `${itemHrid}|${enhancementLevel}|${getCapeBaseValueMode()}|${JSON.stringify(params)}|${JSON.stringify(
-        getCustomPriceOverrides()
+        marketData_js.getCustomPriceOverrides()
     )}`;
         if (_pathCostCache.has(key)) return _pathCostCache.get(key);
 
@@ -3222,7 +3155,7 @@ self.onmessage = function (e) {
                     isOutlier: currency.isOutlier || false,
                 };
             }
-            const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;
+            const hasOverride = marketData_js.getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;
             return {
                 value: dropPrice,
                 source: hasOverride ? 'custom' : 'market',
@@ -3268,7 +3201,7 @@ self.onmessage = function (e) {
             const buyPriceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { enhancementLevel, context: 'profit', side: 'buy' });
             const buyPrice = buyPriceInfo.value;
             if (!(buyPrice > 0)) return null;
-            const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'buy') !== null;
+            const hasOverride = marketData_js.getCustomPrice(itemHrid, enhancementLevel, 'buy') !== null;
             return {
                 value: buyPrice,
                 source: hasOverride ? 'custom' : 'market',
@@ -10058,13 +9991,7 @@ self.onmessage = function (e) {
          * Load initial listings from dataManager (already received via init_character_data)
          */
         loadInitialListings() {
-            const listings = dataManager.getMarketListings();
-
-            for (const listing of listings) {
-                if (listing.id && listing.createdTimestamp) {
-                    this.recordListing(listing);
-                }
-            }
+            this._recordListings(dataManager.getMarketListings().filter((listing) => listing.id));
         }
 
         /**
@@ -10147,68 +10074,42 @@ self.onmessage = function (e) {
         setupWebSocketListeners() {
             // Handle initial character data
             const initHandler = (data) => {
-                if (data.myMarketListings) {
-                    for (const listing of data.myMarketListings) {
-                        this.recordListing(listing);
-                    }
-                    // Reconcile: any previously-active listing absent from this snapshot is no longer active
-                    this._reconcileActiveListings(data.myMarketListings);
-                }
+                this._recordListings([], data.myMarketListings);
             };
 
             // Handle listing updates
             const updateHandler = (data) => {
-                // Handle newly created listings (user just placed an order)
-                if (data.newMarketListings) {
-                    for (const listing of data.newMarketListings) {
-                        // New listings should start as 'unknown' (will be marked 'active' by history viewer)
-                        listing._toolashaStatus = 'unknown';
-                        this.recordListing(listing);
-                    }
-                }
+                // The history viewer will mark new listings as active.
+                const newListings = data.newMarketListings?.map((listing) => ({ ...listing, _toolashaStatus: 'unknown' }));
 
-                // Update all active listings (if provided)
-                if (data.myMarketListings) {
-                    for (const listing of data.myMarketListings) {
-                        // Active listings - record them but don't set status (let history viewer handle it)
-                        this.recordListing(listing);
-                    }
-                    // Reconcile: any previously-active listing absent from this snapshot is no longer active
-                    this._reconcileActiveListings(data.myMarketListings);
-                }
-
-                // Handle endMarketListings (confusing name - contains both new AND ending listings)
-                if (data.endMarketListings) {
-                    for (const listing of data.endMarketListings) {
-                        // Use game's status HRID to determine what happened
-                        if (listing.status === '/market_listing_status/active') {
-                            // New listing being created - mark as unknown (history viewer will set to active)
-                            listing._toolashaStatus = 'unknown';
-                        } else if (listing.status === '/market_listing_status/cancelled') {
-                            if (listing.filledQuantity > 0) {
-                                // Partially filled before cancel (e.g. Missing Materials split) — record as filled for the amount received
-                                listing._toolashaStatus = 'filled';
-                                listing.orderQuantity = listing.filledQuantity;
-                            } else {
-                                // User canceled the listing with nothing filled
-                                listing._toolashaStatus = 'canceled';
-                            }
-                        } else if (listing.status === '/market_listing_status/filled') {
-                            // Listing was filled
-                            listing._toolashaStatus = 'filled';
-                        } else if (listing.status === '/market_listing_status/expired') {
-                            // Listing expired
-                            listing._toolashaStatus = 'expired';
-                        } else if (listing.filledQuantity >= listing.orderQuantity) {
-                            // Unknown status - fallback to old logic
-                            listing._toolashaStatus = 'filled';
+                // endMarketListings contains both new and ending listings.
+                const endedListings = data.endMarketListings?.map((listing) => {
+                    let status;
+                    let orderQuantity = listing.orderQuantity;
+                    if (listing.status === '/market_listing_status/active') {
+                        status = 'unknown';
+                    } else if (listing.status === '/market_listing_status/cancelled') {
+                        if (listing.filledQuantity > 0) {
+                            // Record a partial fill for the amount received.
+                            status = 'filled';
+                            orderQuantity = listing.filledQuantity;
                         } else {
-                            listing._toolashaStatus = 'canceled';
+                            status = 'canceled';
                         }
-
-                        this.recordListing(listing);
+                    } else if (listing.status === '/market_listing_status/expired') {
+                        status = 'expired';
+                    } else if (
+                        listing.status === '/market_listing_status/filled' ||
+                        listing.filledQuantity >= orderQuantity
+                    ) {
+                        status = 'filled';
+                    } else {
+                        status = 'canceled';
                     }
-                }
+                    return { ...listing, orderQuantity, _toolashaStatus: status };
+                });
+
+                this._recordListings(newListings, data.myMarketListings, endedListings);
             };
 
             // Handle order book updates (contains listing IDs for ALL listings)
@@ -10329,10 +10230,47 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Reconcile knownListings against a full snapshot of currently active listings.
-         * Any entry with status 'active' or 'unknown' that is absent from the snapshot
-         * is downgraded to 'unknown' — it's no longer active but we don't know why.
+         * Update the history for one payload and save it at most once.
+         * @private
+         */
+        _recordListings(listings = [], activeListings, endedListings = []) {
+            if (!listings.length && !activeListings && !endedListings.length) return;
+
+            const knownById = new Map();
+            this.knownListings.forEach((entry, index) => {
+                // Like findIndex, use the first match if old storage contains duplicate IDs.
+                if (!knownById.has(entry.id)) knownById.set(entry.id, index);
+            });
+
+            let updated = false;
+            const upsert = (batch) => {
+                for (const listing of batch) {
+                    if (!listing.createdTimestamp) continue;
+                    const index = knownById.get(listing.id) ?? -1;
+                    if (this._upsertListing(listing, index)) {
+                        if (index === -1) knownById.set(listing.id, this.knownListings.length - 1);
+                        updated = true;
+                    }
+                }
+            };
+
+            upsert(listings);
+            let reconciled = false;
+            if (activeListings) {
+                upsert(activeListings);
+                reconciled = this._reconcileActiveListings(activeListings);
+            }
+            // Final statuses take precedence over the active snapshot.
+            upsert(endedListings);
+
+            if (updated) this.knownListings.sort((a, b) => a.id - b.id);
+            if (updated || reconciled) this.saveHistoricalData();
+        }
+
+        /**
+         * Mark previously active entries absent from the snapshot as unknown.
          * @param {Array} activeListings - Current active listings from the game snapshot
+         * @returns {boolean} Whether reconciliation changed any status
          */
         _reconcileActiveListings(activeListings) {
             const activeIds = new Set(activeListings.map((l) => l.id));
@@ -10343,9 +10281,7 @@ self.onmessage = function (e) {
                     changed = true;
                 }
             }
-            if (changed) {
-                this.saveHistoricalData();
-            }
+            return changed;
         }
 
         /**
@@ -10353,34 +10289,20 @@ self.onmessage = function (e) {
          * @param {Object} listing - Full listing object from WebSocket
          */
         recordListing(listing) {
-            if (!listing.createdTimestamp) {
-                return;
-            }
+            if (!listing.createdTimestamp) return;
 
-            const timestamp = new Date(listing.createdTimestamp).getTime();
-
-            // Check if we already have this listing
             const existingIndex = this.knownListings.findIndex((entry) => entry.id === listing.id);
+            this._upsertListing(listing, existingIndex);
+            this.knownListings.sort((a, b) => a.id - b.id);
+            this.saveHistoricalData();
+        }
 
-            // Determine status (NEVER use listing.status from game data - it's an HRID like "/market_listing_status/active")
-            // Priority: new status update from WebSocket > existing status > default unknown
-            let status;
-            if (listing._toolashaStatus) {
-                // Use explicitly set status from updateHandler (canceled/filled detection)
-                // This takes priority over existing status (allows status updates)
-                status = listing._toolashaStatus;
-            } else if (existingIndex !== -1 && this.knownListings[existingIndex].status) {
-                // Preserve existing tracked status if no new update
-                status = this.knownListings[existingIndex].status;
-            } else {
-                // Default to unknown for new listings
-                status = 'unknown';
-            }
-
-            // Add new entry with full data
+        /** @private */
+        _upsertListing(listing, existingIndex) {
+            const existing = this.knownListings[existingIndex];
             const entry = {
                 id: listing.id,
-                timestamp: timestamp,
+                timestamp: new Date(listing.createdTimestamp).getTime(),
                 createdTimestamp: listing.createdTimestamp, // ISO string for display
                 itemHrid: listing.itemHrid,
                 enhancementLevel: listing.enhancementLevel || 0, // For accurate row matching
@@ -10388,22 +10310,20 @@ self.onmessage = function (e) {
                 orderQuantity: listing.orderQuantity,
                 filledQuantity: listing.filledQuantity,
                 isSell: listing.isSell,
-                status: status,
+                status: listing._toolashaStatus || existing?.status || 'unknown',
             };
 
-            if (existingIndex !== -1) {
-                // Update existing entry (in case it had incomplete data)
-                this.knownListings[existingIndex] = entry;
-            } else {
-                // Add new entry
+            if (!existing) {
                 this.knownListings.push(entry);
+                return true;
             }
 
-            // Re-sort by ID
-            this.knownListings.sort((a, b) => a.id - b.id);
-
-            // Save to storage (debounced)
-            this.saveHistoricalData();
+            const keys = Object.keys(entry);
+            const changed =
+                keys.length !== Object.keys(existing).length ||
+                keys.some((key) => !Object.hasOwn(existing, key) || !Object.is(existing[key], entry[key]));
+            this.knownListings[existingIndex] = entry;
+            return changed;
         }
 
         /**
@@ -17897,7 +17817,7 @@ self.onmessage = function (e) {
                 name: this.getItemName(itemHrid),
                 cost: costDerived(itemCost),
                 needsPrice,
-                hasCustomCost: getCustomPrice(itemHrid, 0, 'sell') !== null,
+                hasCustomCost: marketData_js.getCustomPrice(itemHrid, 0, 'sell') !== null,
                 philoChance,
                 returnChance,
                 transmuteChance: baseTransmuteRate,
@@ -18387,8 +18307,8 @@ self.onmessage = function (e) {
             }
 
             try {
-                const existing = getCustomPriceOverrides()[`${itemHrid}:0`];
-                await setCustomPriceOverride(itemHrid, 0, existing?.buy ?? null, sell);
+                const existing = marketData_js.getCustomPriceOverrides()[`${itemHrid}:0`];
+                await marketData_js.setCustomPriceOverride(itemHrid, 0, existing?.buy ?? null, sell);
             } catch (error) {
                 console.error('[PhiloCalculator] Failed to save custom price:', error);
             }
@@ -21036,6 +20956,8 @@ self.onmessage = function (e) {
 
     const networthCache = new NetworthCache();
 
+    var ENHANCEMENT_WORKER_SCRIPT = "var CombatSimWorker = (function (exports) {\n    'use strict';\n\n    /**\n     * Profit Calculation Constants\n     * Shared constants used across profit calculators\n     */\n\n\n    /**\n     * Minimum action time in seconds (game-enforced cap)\n     */\n    const MIN_ACTION_TIME_SECONDS = 3;\n\n    /**\n     * Enhancement Calculator\n     *\n     * Uses Markov Chain matrix math to calculate exact expected values for enhancement attempts.\n     * Based on the original MWI Tools Enhancelate() function.\n     *\n     * Math.js library is loaded via userscript @require header.\n     */\n\n\n    let warnedMathJsMissing = false;\n\n    /**\n     * math.js is loaded via the userscript's `@require` header from an external CDN, not bundled -\n     * a blocked/failed fetch (ad blocker, DNS filtering, offline CDN) leaves the global `math` object\n     * undefined. Every caller of calculateEnhancement() already wraps it in try/catch and treats a\n     * thrown error the same as \"no data available\", which silently degrades enhancement time/cost/XP\n     * displays to 0 or hidden instead of surfacing the real cause. Call this before touching `math` so\n     * that failure is at least logged once with an actionable message.\n     * @returns {boolean}\n     */\n    function isMathJsAvailable() {\n        if (typeof math !== 'undefined') return true;\n        if (!warnedMathJsMissing) {\n            warnedMathJsMissing = true;\n            console.error(\n                '[Toolasha] math.js failed to load (required for enhancement calculations). ' +\n                    'Enhancement time/cost/XP estimates will be unavailable. This is usually caused by an ' +\n                    'ad blocker or network filter blocking cdnjs.cloudflare.com.'\n            );\n        }\n        return false;\n    }\n\n    /**\n     * Base success rates by enhancement level (before bonuses)\n     */\n    const BASE_SUCCESS_RATES = [\n        50, // +1\n        45, // +2\n        45, // +3\n        40, // +4\n        40, // +5\n        40, // +6\n        35, // +7\n        35, // +8\n        35, // +9\n        35, // +10\n        30, // +11\n        30, // +12\n        30, // +13\n        30, // +14\n        30, // +15\n        30, // +16\n        30, // +17\n        30, // +18\n        30, // +19\n        30, // +20\n    ];\n\n    /**\n     * Calculate total success rate bonus multiplier\n     * @param {Object} params - Enhancement parameters\n     * @param {number} params.enhancingLevel - Effective enhancing level (base + tea bonus)\n     * @param {number} params.toolBonus - Tool success bonus % (already includes equipment + house bonus)\n     * @param {number} params.itemLevel - Item level being enhanced\n     * @returns {number} Success rate multiplier (e.g., 1.0519 = 105.19% of base rates)\n     */\n    function calculateSuccessMultiplier(params) {\n        const { enhancingLevel, toolBonus, itemLevel } = params;\n\n        // Total bonus calculation\n        // toolBonus already includes equipment + house success bonus from config\n        // We only need to add level advantage here\n\n        let totalBonus;\n\n        if (enhancingLevel >= itemLevel) {\n            // Above or at item level: +0.05% per level above item level\n            const levelAdvantage = 0.05 * (enhancingLevel - itemLevel);\n            totalBonus = 1 + (toolBonus + levelAdvantage) / 100;\n        } else {\n            // Below item level: Penalty based on level deficit\n            totalBonus = 1 - 0.5 * (1 - enhancingLevel / itemLevel) + toolBonus / 100;\n        }\n\n        return totalBonus;\n    }\n\n    /**\n     * Calculate enhancement statistics using Markov Chain matrix inversion\n     * @param {Object} params - Enhancement parameters\n     * @param {number} params.enhancingLevel - Effective enhancing level (includes tea bonus)\n     * @param {number} params.houseLevel - Observatory house room level (used for speed calculation only)\n     * @param {number} params.toolBonus - Tool success bonus % (already includes equipment + house success bonus from config)\n     * @param {number} params.speedBonus - Speed bonus % (for action time calculation)\n     * @param {number} params.itemLevel - Item level being enhanced\n     * @param {number} params.targetLevel - Target enhancement level (1-20)\n     * @param {number} params.startLevel - Starting enhancement level (0-19, default 0)\n     * @param {number} params.protectFrom - Start using protection items at this level (0 = never)\n     * @param {boolean} params.blessedTea - Whether Blessed Tea is active (1% double jump)\n     * @param {number} params.guzzlingBonus - Drink concentration multiplier (1.0 = no bonus, scales blessed tea)\n     * @returns {Object} Enhancement statistics\n     */\n    function calculateEnhancement(params) {\n        const {\n            enhancingLevel,\n            toolBonus,\n            speedBonus = 0,\n            itemLevel,\n            targetLevel,\n            startLevel = 0,\n            protectFrom = 0,\n            blessedTea = false,\n            guzzlingBonus = 1.0,\n        } = params;\n\n        if (!isMathJsAvailable()) {\n            const error = new Error('math.js is not loaded');\n            error.code = 'MATH_JS_UNAVAILABLE';\n            throw error;\n        }\n\n        // Validate inputs\n        if (targetLevel < 1 || targetLevel > 20) {\n            throw new Error('Target level must be between 1 and 20');\n        }\n        if (!Number.isInteger(startLevel) || startLevel < 0 || startLevel >= targetLevel) {\n            throw new Error('Start level must be an integer between 0 and target level - 1');\n        }\n        if (protectFrom < 0 || protectFrom > targetLevel) {\n            throw new Error('Protection level must be between 0 and target level');\n        }\n\n        // Calculate success rate multiplier\n        const successMultiplier = calculateSuccessMultiplier({\n            enhancingLevel,\n            toolBonus,\n            itemLevel,\n        });\n\n        // States are enhancement levels 0..targetLevel inclusive. A target of +20\n        // therefore needs 21 states; the previous fixed 20×20 matrix wrote outside\n        // its bounds at the top level.\n        const markov = math.zeros(targetLevel + 1, targetLevel + 1);\n\n        for (let i = 0; i < targetLevel; i++) {\n            const baseSuccessRate = BASE_SUCCESS_RATES[i] / 100.0;\n            const successChance = Math.max(0, Math.min(1, baseSuccessRate * successMultiplier));\n\n            // Where do we go on failure?\n            // Protection only applies when protectFrom > 0 AND we're at or above that level\n            const failureDestination = protectFrom > 0 && i >= protectFrom ? i - 1 : 0;\n\n            if (blessedTea) {\n                // Blessed Tea: 1% base chance to jump +2, scaled by guzzling bonus.\n                // Reaching or overshooting the requested target is the same absorbing\n                // completion. At target - 1 both success branches therefore merge.\n                const skipRatio = Math.max(0, Math.min(1, 0.01 * guzzlingBonus));\n                const skipChance = successChance * skipRatio;\n                const remainingSuccess = successChance - skipChance;\n                const normalDestination = Math.min(targetLevel, i + 1);\n                const skipDestination = Math.min(targetLevel, i + 2);\n\n                if (normalDestination === skipDestination) {\n                    markov.set([i, normalDestination], successChance);\n                } else {\n                    markov.set([i, skipDestination], skipChance);\n                    markov.set([i, normalDestination], remainingSuccess);\n                }\n                markov.set([i, failureDestination], 1 - successChance);\n            } else {\n                // Normal: Success goes to +1, failure goes to destination.\n                markov.set([i, Math.min(targetLevel, i + 1)], successChance);\n                markov.set([i, failureDestination], 1.0 - successChance);\n            }\n        }\n\n        // Absorbing state at target level\n        markov.set([targetLevel, targetLevel], 1.0);\n\n        // Extract transient matrix Q (all states before target)\n        const Q = markov.subset(math.index(math.range(0, targetLevel), math.range(0, targetLevel)));\n\n        // Fundamental matrix: M = (I - Q)^-1\n        const I = math.identity(targetLevel);\n        const M = math.inv(math.subtract(I, Q));\n\n        // Expected attempts from startLevel to target. A failure can send an\n        // already-enhanced item below its starting level (usually back to +0), so\n        // every transient state must be counted, not only startLevel..targetLevel.\n        let attempts = 0;\n        for (let i = 0; i < targetLevel; i++) {\n            attempts += M.get([startLevel, i]);\n        }\n\n        // Expected protection item uses\n        let protects = 0;\n        if (protectFrom > 0 && protectFrom < targetLevel) {\n            for (let i = protectFrom; i < targetLevel; i++) {\n                const timesAtLevel = M.get([startLevel, i]);\n                const failureChance = markov.get([i, i - 1]);\n                protects += timesAtLevel * failureChance;\n            }\n        }\n\n        // Action time calculation\n        const baseActionTime = 12; // seconds\n        let speedMultiplier;\n\n        if (enhancingLevel > itemLevel) {\n            // Above item level: Get speed bonus from level advantage + equipment + house\n            // Note: speedBonus already includes house level bonus (1% per level)\n            speedMultiplier = 1 + (enhancingLevel - itemLevel + speedBonus) / 100;\n        } else {\n            // Below item level: Only equipment + house speed bonus\n            // Note: speedBonus already includes house level bonus (1% per level)\n            speedMultiplier = 1 + speedBonus / 100;\n        }\n\n        const perActionTime = Math.max(MIN_ACTION_TIME_SECONDS, baseActionTime / speedMultiplier);\n        const totalTime = perActionTime * attempts;\n\n        return {\n            attempts: attempts, // Keep exact decimal value for calculations\n            attemptsRounded: Math.round(attempts), // Rounded for display\n            protectionCount: protects, // Keep decimal precision\n            perActionTime: perActionTime,\n            totalTime: totalTime,\n            successMultiplier: successMultiplier,\n\n            // Detailed success rates for each level\n            successRates: BASE_SUCCESS_RATES.slice(0, targetLevel).map((base, i) => {\n                return {\n                    level: i + 1,\n                    baseRate: base,\n                    actualRate: Math.min(100, base * successMultiplier),\n                };\n            }),\n\n            // Expected number of times each state is visited (from fundamental matrix M)\n            visitCounts: Array.from({ length: targetLevel }, (_, i) => M.get([startLevel, i])),\n        };\n    }\n\n    /** Calculate the Markov statistics used by listing valuation, without consulting prices. */\n    function calculateNetworthEnhancementStats({ itemLevel, targetLevel, fodderItemLevel, enhancementParams }) {\n        const stats = {};\n\n        const calculateLevel = (level, target, includeXP) => {\n            const byProtection = {};\n            for (let protectFrom = 0; protectFrom <= target; protectFrom++) {\n                if (protectFrom === 1) continue;\n                const { attempts, totalTime, protectionCount, visitCounts, successRates } = calculateEnhancement({\n                    enhancingLevel: enhancementParams.enhancingLevel,\n                    toolBonus: enhancementParams.toolBonus || 0,\n                    speedBonus: enhancementParams.speedBonus || 0,\n                    itemLevel: level,\n                    targetLevel: target,\n                    protectFrom,\n                    blessedTea: enhancementParams.teas.blessed,\n                    guzzlingBonus: enhancementParams.guzzlingBonus,\n                });\n                byProtection[protectFrom] = { attempts, totalTime, protectionCount };\n                if (includeXP) Object.assign(byProtection[protectFrom], { visitCounts, successRates });\n            }\n            (stats[level] ??= {})[target] = byProtection;\n        };\n\n        for (let target = 1; target <= targetLevel; target++) {\n            calculateLevel(itemLevel, target, target === targetLevel);\n        }\n        if (targetLevel > 2 && fodderItemLevel != null && fodderItemLevel !== itemLevel) {\n            calculateLevel(fodderItemLevel, targetLevel - 2, false);\n        }\n        return stats;\n    }\n\n    // The existing valuation worker includes this bundle before installing its message handler.\n    if (typeof globalThis.WorkerGlobalScope !== 'undefined' && globalThis instanceof globalThis.WorkerGlobalScope) {\n        globalThis.calculateNetworthEnhancementStats = calculateNetworthEnhancementStats;\n    }\n\n    exports.calculateNetworthEnhancementStats = calculateNetworthEnhancementStats;\n\n    return exports;\n\n})({});\n";
+
     /**
      * Networth Item Valuation Worker Manager
      * Manages parallel item valuation calculations including enhancement paths
@@ -21488,6 +21410,9 @@ self.onmessage = function (e) {
         if (action === 'calculateBatch') {
             const results = calculateItemValueBatch(params.items);
             self.postMessage({ taskId, result: results });
+        } else if (action === 'calculateEnhancementStats') {
+            const result = self.calculateNetworthEnhancementStats(params);
+            self.postMessage({ taskId, result });
         } else if (action === 'clearCache') {
             valuationCache.clear();
             self.postMessage({ taskId, result: { success: true, message: 'Cache cleared' } });
@@ -21510,7 +21435,7 @@ self.onmessage = function (e) {
 
         try {
             // Create worker blob from inline script
-            const blob = new Blob([WORKER_SCRIPT], { type: 'application/javascript' });
+            const blob = new Blob([ENHANCEMENT_WORKER_SCRIPT, WORKER_SCRIPT], { type: 'application/javascript' });
 
             // Initialize worker pool with 2-4 workers
             workerPool = new WorkerPool(blob);
@@ -21585,6 +21510,28 @@ self.onmessage = function (e) {
 
         // Extract just the values
         return flatResults.map((r) => r.value);
+    }
+
+    /** Batch the enhancement simulations for listings, leaving their existing pricing on the main thread. */
+    async function calculateEnhancementStatsBatch(items, enhancementParams, itemDetailMap) {
+        const pool = await getWorkerPool();
+        return pool.executeAll(
+            items.map(({ itemHrid, enhancementLevel }) => {
+                const details = itemDetailMap[itemHrid];
+                const itemLevel = details?.itemLevel || 1;
+                const baseItemHrid = itemHrid.includes('_refined') ? details?.baseItemHrids?.[0] : null;
+                const baseItem = itemDetailMap[baseItemHrid];
+                return {
+                    action: 'calculateEnhancementStats',
+                    params: {
+                        itemLevel,
+                        targetLevel: enhancementLevel,
+                        fodderItemLevel: baseItem ? baseItem.itemLevel || itemLevel : null,
+                        enhancementParams,
+                    },
+                };
+            })
+        );
     }
 
     /**
@@ -21739,12 +21686,13 @@ self.onmessage = function (e) {
         const buySource = {};
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
             if (excludeHrids.includes(hrid)) continue;
-            for (const conv of item.guildCreditConversions || []) {
+            if (!item.guildCreditConversions?.length) continue;
+            const sellInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'ask' });
+            const buyInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'bid' });
+            const sellPrice = sellInfo.value;
+            const buyPrice = buyInfo.value;
+            for (const conv of item.guildCreditConversions) {
                 const creditHrid = conv.creditItemHrid;
-                const sellInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'ask' });
-                const buyInfo = marketData_js.getItemPriceOutlierInfo(hrid, { mode: 'bid' });
-                const sellPrice = sellInfo.value;
-                const buyPrice = buyInfo.value;
                 if (sellPrice > 0) {
                     const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
                     if (!sell[creditHrid] || gpc < sell[creditHrid]) {
@@ -21811,14 +21759,15 @@ self.onmessage = function (e) {
      * @param {string} creditHrid
      * @param {Object} itemDetailMap
      * @param {'sell'|'buy'} [side='sell'] - ask-based ('sell') or bid-based ('buy') source prices
+     * @param {Object} [table] - Prebuilt conversion table excluding the Guild Token
      * @returns {{value: number, isOutlier: boolean, source: {itemHrid: string, itemCount: number, creditCount: number, price: number}}|null}
      */
-    function getGuildCreditValue(creditHrid, itemDetailMap, side = 'sell') {
+    function getGuildCreditValue(creditHrid, itemDetailMap, side = 'sell', table) {
         if (!GUILD_CREDIT_HRIDS.has(creditHrid) || !itemDetailMap) return null;
-        const table = buildCheapestPerCredit(itemDetailMap, [GUILD_TOKEN_HRID]);
-        const values = side === 'buy' ? table.buy : table.sell;
-        const outliers = side === 'buy' ? table.buyOutlier : table.sellOutlier;
-        const sources = side === 'buy' ? table.buySource : table.sellSource;
+        const creditTable = table ?? buildCheapestPerCredit(itemDetailMap, [GUILD_TOKEN_HRID]);
+        const values = side === 'buy' ? creditTable.buy : creditTable.sell;
+        const outliers = side === 'buy' ? creditTable.buyOutlier : creditTable.sellOutlier;
+        const sources = side === 'buy' ? creditTable.buySource : creditTable.sellSource;
         const value = values[creditHrid];
         return value > 0 ? { value, isOutlier: outliers[creditHrid] || false, source: sources[creditHrid] } : null;
     }
@@ -21833,6 +21782,21 @@ self.onmessage = function (e) {
      * - Abilities (equipped + others)
      */
 
+
+    // Net Worth owns these tables. Other consumers still build their own with their own exclusions.
+    const guildCreditTables = new WeakMap();
+
+    function getCachedGuildCreditTable(itemDetailMap, excludeToken) {
+        const priceKey = marketData_js.getMarketPriceCacheKey();
+        let entry = guildCreditTables.get(itemDetailMap);
+        if (!entry || !priceKey.every((input, i) => Object.is(input, entry.priceKey[i]))) {
+            entry = { priceKey };
+            guildCreditTables.set(itemDetailMap, entry);
+        }
+        const key = excludeToken ? 'held' : 'shrine';
+        entry[key] ??= buildCheapestPerCredit(itemDetailMap, excludeToken ? [GUILD_TOKEN_HRID] : []);
+        return entry[key];
+    }
 
     /**
      * Translated display label for a guild shrine hrid, mirroring the labels already
@@ -21856,9 +21820,11 @@ self.onmessage = function (e) {
      * Calculate the value of a single item
      * @param {Object} item - Item data {itemHrid, enhancementLevel, count}
      * @param {Map} priceCache - Optional price cache from getPricesBatch()
+     * @param {Function} [getCreditTable] - Lazy Guild Credit conversion table shared by this pass
+     * @param {Object} [strategyStats] - Precomputed enhancement strategy results from a worker
      * @returns {number} Total value in coins
      */
-    async function calculateItemValue(item, priceCache = null) {
+    async function calculateItemValue(item, priceCache = null, getCreditTable, strategyStats) {
         const { itemHrid, enhancementLevel = 0, count = 1 } = item;
 
         // Untradable capes have no market: value them at base value + refinement + the average cost of
@@ -21885,7 +21851,12 @@ self.onmessage = function (e) {
                 } else {
                     // Calculate enhancement cost (ignore market price)
                     const enhancementParams = enhancementConfig_js.getEnhancingParams();
-                    const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
+                    const enhancementPath = calculateEnhancementPath(
+                        itemHrid,
+                        enhancementLevel,
+                        enhancementParams,
+                        strategyStats
+                    );
 
                     if (enhancementPath && enhancementPath.optimalStrategy) {
                         itemValue = enhancementPath.optimalStrategy.totalCost;
@@ -21894,12 +21865,12 @@ self.onmessage = function (e) {
                     } else {
                         // Enhancement calculation failed, fallback to base item price
                         console.warn('[Networth] Enhancement calculation failed for:', itemHrid, '+' + enhancementLevel);
-                        itemValue = getMarketPrice(itemHrid, 0, priceCache);
+                        itemValue = getMarketPrice(itemHrid, 0, priceCache, getCreditTable);
                     }
                 }
             } else {
                 // Normal logic for lower enhancement levels: try market price first, then calculate
-                const marketPrice = getMarketPrice(itemHrid, enhancementLevel, priceCache);
+                const marketPrice = getMarketPrice(itemHrid, enhancementLevel, priceCache, getCreditTable);
 
                 if (marketPrice > 0) {
                     itemValue = marketPrice;
@@ -21910,7 +21881,12 @@ self.onmessage = function (e) {
                         itemValue = cachedCost;
                     } else {
                         const enhancementParams = enhancementConfig_js.getEnhancingParams();
-                        const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
+                        const enhancementPath = calculateEnhancementPath(
+                            itemHrid,
+                            enhancementLevel,
+                            enhancementParams,
+                            strategyStats
+                        );
 
                         if (enhancementPath && enhancementPath.optimalStrategy) {
                             itemValue = enhancementPath.optimalStrategy.totalCost;
@@ -21921,14 +21897,14 @@ self.onmessage = function (e) {
                                 itemHrid,
                                 '+' + enhancementLevel
                             );
-                            itemValue = getMarketPrice(itemHrid, 0, priceCache);
+                            itemValue = getMarketPrice(itemHrid, 0, priceCache, getCreditTable);
                         }
                     }
                 }
             }
         } else {
             // Unenhanced items: use market price or crafting cost
-            itemValue = getMarketPrice(itemHrid, enhancementLevel, priceCache);
+            itemValue = getMarketPrice(itemHrid, enhancementLevel, priceCache, getCreditTable);
         }
 
         return itemValue * count;
@@ -21939,11 +21915,12 @@ self.onmessage = function (e) {
      * @param {string} itemHrid - Item HRID
      * @param {number} enhancementLevel - Enhancement level
      * @param {Map} priceCache - Optional price cache from getPricesBatch()
+     * @param {Function} [getCreditTable] - Lazy Guild Credit conversion table
      * @returns {number} Price per item (uses networth pricing mode setting)
      */
-    function getMarketPrice(itemHrid, enhancementLevel, priceCache = null) {
+    function getMarketPrice(itemHrid, enhancementLevel, priceCache = null, getCreditTable) {
         // Special handling for currencies
-        const currencyValue = calculateCurrencyValue(itemHrid);
+        const currencyValue = calculateCurrencyValue(itemHrid, getCreditTable);
         if (currencyValue !== null) {
             return currencyValue;
         }
@@ -21988,7 +21965,7 @@ self.onmessage = function (e) {
             }
 
             // Try crafting cost as fallback
-            const craftingCost = calculateCraftingCost(itemHrid);
+            const craftingCost = calculateCraftingCost(itemHrid, getCreditTable);
             if (craftingCost > 0) {
                 return craftingCost;
             }
@@ -22015,9 +21992,10 @@ self.onmessage = function (e) {
     /**
      * Calculate value for currency items
      * @param {string} itemHrid - Item HRID
+     * @param {Function} [getCreditTable] - Lazy Guild Credit conversion table
      * @returns {number|null} Currency value per unit, or null if not a currency
      */
-    function calculateCurrencyValue(itemHrid) {
+    function calculateCurrencyValue(itemHrid, getCreditTable) {
         // Coins: Face value (1 coin = 1 value)
         if (itemHrid === '/items/coin') {
             return 1;
@@ -22046,7 +22024,8 @@ self.onmessage = function (e) {
                 return null;
             }
             const side = (config.getSettingValue('networth_pricingMode') || 'ask') === 'bid' ? 'buy' : 'sell';
-            const credit = getGuildCreditValue(itemHrid, dataManager.getInitClientData()?.itemDetailMap, side);
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+            const credit = getGuildCreditValue(itemHrid, itemDetailMap, side, getCreditTable?.(itemDetailMap));
             return credit ? credit.value : null;
         }
 
@@ -22098,9 +22077,10 @@ self.onmessage = function (e) {
      * Calculate crafting cost for an item (simple version without efficiency bonuses)
      * Applies Artisan Tea reduction (0.9x) to input materials
      * @param {string} itemHrid - Item HRID
+     * @param {Function} [getCreditTable] - Lazy Guild Credit conversion table
      * @returns {number} Total material cost or 0 if not craftable
      */
-    function calculateCraftingCost(itemHrid) {
+    function calculateCraftingCost(itemHrid, getCreditTable) {
         const gameData = dataManager.getInitClientData();
         if (!gameData) return 0;
 
@@ -22115,7 +22095,7 @@ self.onmessage = function (e) {
                         // Add input items
                         if (action.inputItems && action.inputItems.length > 0) {
                             for (const input of action.inputItems) {
-                                const inputPrice = getMarketPrice(input.itemHrid, 0, null);
+                                const inputPrice = getMarketPrice(input.itemHrid, 0, null, getCreditTable);
                                 inputCost += inputPrice * input.count;
                             }
                         }
@@ -22126,7 +22106,7 @@ self.onmessage = function (e) {
                         // Add upgrade item cost (not affected by Artisan Tea)
                         let upgradeCost = 0;
                         if (action.upgradeItemHrid) {
-                            const upgradePrice = getMarketPrice(action.upgradeItemHrid, 0, null);
+                            const upgradePrice = getMarketPrice(action.upgradeItemHrid, 0, null, getCreditTable);
                             upgradeCost = upgradePrice;
                         }
 
@@ -22287,8 +22267,8 @@ self.onmessage = function (e) {
         if (!gameData?.guildBuffDetailMap) return { totalCost: 0, breakdown: [] };
 
         const pricingMode = config.getSettingValue('networth_pricingMode') || 'ask';
-        const { sell, buy } = buildCheapestPerCredit(gameData.itemDetailMap || {});
-        const cheapestPerCredit = pricingMode === 'bid' ? buy : sell;
+        const itemDetailMap = gameData.itemDetailMap;
+        let cheapestPerCredit;
 
         let totalCost = 0;
         const breakdown = [];
@@ -22302,6 +22282,10 @@ self.onmessage = function (e) {
                 const levelCost = buff.levelCosts?.[String(lvl)];
                 if (!levelCost) continue;
                 for (const { itemHrid, count } of levelCost.creditCosts || []) {
+                    if (!itemDetailMap) continue;
+                    cheapestPerCredit ??= getCachedGuildCreditTable(itemDetailMap, false)[
+                        pricingMode === 'bid' ? 'buy' : 'sell'
+                    ];
                     const perCredit = cheapestPerCredit[itemHrid];
                     if (perCredit) cost += perCredit * count;
                 }
@@ -22326,9 +22310,18 @@ self.onmessage = function (e) {
      * @param {Array} items - Array of items to value
      * @param {Map} priceCache - Price cache
      * @param {Object} gameData - Game data
+     * @param {Function} getCreditTable - Lazy Guild Credit conversion table
+     * @param {boolean} [preserveListingPricing=false] - Use the same exact cost model as the original listing path
      * @returns {Promise<Array>} Array of values in same order as items
      */
-    async function calculateItemValuesParallel(items, priceCache, gameData) {
+    async function calculateItemValuesParallel(
+        items,
+        priceCache,
+        gameData,
+        getCreditTable,
+        preserveListingPricing = false
+    ) {
+        if (!items.length) return [];
         // Prepare configuration options
         const useHighEnhancementCost = config.getSetting('networth_highEnhancementUseCost');
         const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
@@ -22347,8 +22340,16 @@ self.onmessage = function (e) {
             let needsWorker = false;
 
             if (enhancementLevel >= 1 && !isUntradableCape(item.itemHrid)) {
-                // Check if high enhancement cost mode applies
-                if (useHighEnhancementCost && enhancementLevel >= minLevel) {
+                if (preserveListingPricing) {
+                    const needsCost =
+                        (useHighEnhancementCost && enhancementLevel >= minLevel) ||
+                        !(getMarketPrice(item.itemHrid, enhancementLevel, priceCache, getCreditTable) > 0);
+                    needsWorker =
+                        needsCost &&
+                        enhancementLevel <= 20 &&
+                        !!gameData.itemDetailMap[item.itemHrid]?.enhancementCosts?.length &&
+                        networthCache.get(item.itemHrid, enhancementLevel) === null;
+                } else if (useHighEnhancementCost && enhancementLevel >= minLevel) {
                     needsWorker = true;
                 } else {
                     // Check if market price is missing
@@ -22377,6 +22378,26 @@ self.onmessage = function (e) {
             // Worker group
             itemsNeedingWorkers.length > 0
                 ? (async () => {
+                      if (preserveListingPricing) {
+                          // The legacy item worker uses a different price and enhancement model. Only
+                          // delegate the simulations here so listings keep their exact prior valuation.
+                          let strategies;
+                          try {
+                              strategies = await calculateEnhancementStatsBatch(
+                                  itemsNeedingWorkers,
+                                  enhancementParams,
+                                  gameData.itemDetailMap
+                              );
+                          } catch (error) {
+                              console.warn('[NetworthCalculator] Worker failed, falling back to sequential:', error);
+                          }
+                          return Promise.all(
+                              itemsNeedingWorkers.map((item, i) =>
+                                  calculateItemValue(item, priceCache, getCreditTable, strategies?.[i])
+                              )
+                          );
+                      }
+
                       const priceMap = {};
                       if (priceCache) {
                           for (const [key, prices] of priceCache.entries()) {
@@ -22409,7 +22430,7 @@ self.onmessage = function (e) {
                           console.warn('[NetworthCalculator] Worker failed, falling back to sequential:', error);
                           const values = [];
                           for (const item of itemsNeedingWorkers) {
-                              values.push(await calculateItemValue(item, priceCache));
+                              values.push(await calculateItemValue(item, priceCache, getCreditTable));
                           }
                           return values;
                       }
@@ -22421,7 +22442,7 @@ self.onmessage = function (e) {
                 ? (async () => {
                       const values = [];
                       for (const item of itemsNotNeedingWorkers) {
-                          const value = await calculateItemValue(item, priceCache);
+                          const value = await calculateItemValue(item, priceCache, getCreditTable);
                           values.push(value);
                       }
                       return values;
@@ -22470,6 +22491,12 @@ self.onmessage = function (e) {
         const characterHouseRooms = gameData.characterHouseRoomMap || {};
         const characterAbilities = gameData.characterAbilities || [];
         const abilityCombatTriggersMap = gameData.abilityCombatTriggersMap || {};
+        let heldCreditTable;
+        const getCreditTable = (itemDetailMap) => {
+            if (!itemDetailMap) return undefined;
+            heldCreditTable ??= getCachedGuildCreditTable(itemDetailMap, true);
+            return heldCreditTable;
+        };
 
         // OPTIMIZATION: Pre-fetch all market prices in one batch
         const itemsToPrice = [];
@@ -22560,7 +22587,7 @@ self.onmessage = function (e) {
 
         const entireEquippedExcluded = isExcluded('assetType', 'equipped');
         const equippedItems = characterItems.filter((item) => item.itemLocationHrid !== '/item_locations/inventory');
-        const equippedValues = await calculateItemValuesParallel(equippedItems, priceCache, gameData);
+        const equippedValues = await calculateItemValuesParallel(equippedItems, priceCache, gameData, getCreditTable);
 
         for (let i = 0; i < equippedItems.length; i++) {
             const item = equippedItems[i];
@@ -22613,7 +22640,7 @@ self.onmessage = function (e) {
         let coinCount = 0;
 
         const inventoryItems = characterItems.filter((item) => item.itemLocationHrid === '/item_locations/inventory');
-        const inventoryValues = await calculateItemValuesParallel(inventoryItems, priceCache, gameData);
+        const inventoryValues = await calculateItemValuesParallel(inventoryItems, priceCache, gameData, getCreditTable);
 
         for (let i = 0; i < inventoryItems.length; i++) {
             const item = inventoryItems[i];
@@ -22722,7 +22749,21 @@ self.onmessage = function (e) {
         const listingsBreakdown = [];
         const clientData = dataManager.getInitClientData();
 
-        for (const listing of marketListings) {
+        const listingItems = marketListings.map((listing) => ({
+            itemHrid: listing.itemHrid,
+            enhancementLevel: listing.enhancementLevel || 0,
+            count: listing.isSell ? listing.orderQuantity - listing.filledQuantity : listing.unclaimedItemCount,
+        }));
+        const listingItemValues = await calculateItemValuesParallel(
+            listingItems,
+            priceCache,
+            gameData,
+            getCreditTable,
+            true
+        );
+
+        for (let i = 0; i < marketListings.length; i++) {
+            const listing = marketListings[i];
             const quantity = listing.orderQuantity - listing.filledQuantity;
             const enhancementLevel = listing.enhancementLevel || 0;
             const itemName = getItemName(
@@ -22730,44 +22771,19 @@ self.onmessage = function (e) {
                 clientData?.itemDetailMap?.[listing.itemHrid]?.name || listing.itemHrid
             );
 
-            if (listing.isSell) {
-                // Selling: value is locked in listing + unclaimed coins
-                // Apply marketplace fee (normal items vs. cowbells)
-                const fee = listing.itemHrid === profitConstants_js.COWBELL_BAG_HRID ? profitConstants_js.COWBELL_BAG_TAX : profitConstants_js.MARKET_TAX;
-
-                const value = await calculateItemValue(
-                    { itemHrid: listing.itemHrid, enhancementLevel, count: quantity },
-                    priceCache
-                );
-
-                const listingValue = value * (1 - fee) + listing.unclaimedCoinCount;
-                listingsValue += listingValue;
-                listingsBreakdown.push({
-                    itemHrid: listing.itemHrid,
-                    enhancementLevel,
-                    name: itemName,
-                    isSell: true,
-                    value: listingValue,
-                    isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
-                });
-            } else {
-                // Buying: value is locked coins + unclaimed items
-                const unclaimedValue = await calculateItemValue(
-                    { itemHrid: listing.itemHrid, enhancementLevel, count: listing.unclaimedItemCount },
-                    priceCache
-                );
-
-                const listingValue = quantity * listing.price + unclaimedValue;
-                listingsValue += listingValue;
-                listingsBreakdown.push({
-                    itemHrid: listing.itemHrid,
-                    enhancementLevel,
-                    name: itemName,
-                    isSell: false,
-                    value: listingValue,
-                    isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
-                });
-            }
+            const fee = listing.itemHrid === profitConstants_js.COWBELL_BAG_HRID ? profitConstants_js.COWBELL_BAG_TAX : profitConstants_js.MARKET_TAX;
+            const listingValue = listing.isSell
+                ? listingItemValues[i] * (1 - fee) + listing.unclaimedCoinCount
+                : quantity * listing.price + listingItemValues[i];
+            listingsValue += listingValue;
+            listingsBreakdown.push({
+                itemHrid: listing.itemHrid,
+                enhancementLevel,
+                name: itemName,
+                isSell: !!listing.isSell,
+                value: listingValue,
+                isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
+            });
         }
 
         listingsBreakdown.sort((a, b) => b.value - a.value);
@@ -25034,13 +25050,11 @@ self.onmessage = function (e) {
          * @param {Object} [networthData] - Updated net worth data (optional)
          */
         refresh(networthData) {
-            if (networthData) {
-                this.networthData = networthData;
-                this.searchList = this._buildSearchList(networthData);
-            }
-            if (this.container) {
-                this._refreshContent();
-            }
+            if (networthData) this.networthData = networthData;
+            if (!this.container) return;
+
+            if (networthData) this.searchList = this._buildSearchList(networthData);
+            this._refreshContent();
         }
 
         // ─── Private ────────────────────────────────────────────────
@@ -26857,6 +26871,8 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             this.itemsUpdateHandler = null;
             this.priceUpdateDebounceTimer = null;
             this.itemsUpdateDebounceTimer = null;
+            this.recalculation = null;
+            this.recalculationQueued = false;
         }
 
         /**
@@ -26955,7 +26971,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                         if (this.isActive && connectionState.isConnected()) {
                             this.recalculate();
                         }
-                    }, 5000);
+                    }, 30_000);
                 }
             };
 
@@ -26991,6 +27007,28 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
                 return;
             }
 
+            if (this.recalculation) {
+                this.recalculationQueued = true;
+                return this.recalculation;
+            }
+
+            this.recalculation = this.runRecalculations();
+            return this.recalculation;
+        }
+
+        async runRecalculations() {
+            try {
+                // Refresh once more if state changed while a worker was still running.
+                do {
+                    this.recalculationQueued = false;
+                    await this.updateNetworth();
+                } while (this.recalculationQueued && connectionState.isConnected());
+            } finally {
+                this.recalculation = null;
+            }
+        }
+
+        async updateNetworth() {
             try {
                 // Calculate networth
                 const networthData = await calculateNetworth();
@@ -27056,6 +27094,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
             networthCache.clear();
 
             this.currentData = null;
+            this.recalculationQueued = false;
             this.isActive = false;
         }
     }
@@ -39166,4 +39205,4 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.warningIcon, Toolasha.Utils.enhancementConfig, Toolasha.Core.storage, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Core.loadoutState, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.warningIcon, Toolasha.Utils.enhancementConfig, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Core.storage, Toolasha.Core.loadoutState, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
