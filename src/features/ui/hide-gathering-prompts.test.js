@@ -41,9 +41,18 @@ function navLink(skill) {
         </div>`;
 }
 
-// Whether any selector of a comma-separated list matches the element
-function matches(selectorList, element) {
-    return selectorList.split(',').some((selector) => element.matches(selector.trim()));
+// The declarations of every NAV_CSS rule whose selector list matches the element
+function declarationsFor(element) {
+    return NAV_CSS.split('}')
+        .filter((rule) => rule.includes('{'))
+        .filter((rule) =>
+            rule
+                .split('{')[0]
+                .split(',')
+                .some((selector) => element.matches(selector.trim()))
+        )
+        .map((rule) => rule.split('{')[1].replace(/\s+/g, ' ').trim())
+        .join(' ');
 }
 
 describe('hideGatheringPrompts', () => {
@@ -70,15 +79,42 @@ describe('hideGatheringPrompts', () => {
     test('hides the XP readouts of the gathering skills only', () => {
         hideGatheringPrompts.initialize();
         const links = document.querySelectorAll('[class*="NavigationBar_navigationLink"]');
-        const bars = [...links].map((link) => link.querySelector('[class*="NavigationBar_experienceBar"]'));
-        const percentages = [...links].map((link) => link.querySelector('.mwi-exp-percentage'));
-        const levels = [...links].map((link) => link.querySelector('[class*="NavigationBar_level"]'));
+        const hidden = (selector) =>
+            [...links].map((link) => declarationsFor(link.querySelector(selector)).includes('display: none'));
 
-        expect(bars.map((el) => matches(NAV_CSS.split('{')[0], el))).toEqual([true, true, true, false]);
-        expect(percentages.map((el) => matches(NAV_CSS.split('{')[0], el))).toEqual([true, true, true, false]);
+        expect(hidden('[class*="NavigationBar_experienceBar"]')).toEqual([true, true, true, false]);
+        expect(hidden('.mwi-exp-percentage')).toEqual([true, true, true, false]);
         // The level number stays
-        expect(levels.some((el) => matches(NAV_CSS.split('{')[0], el))).toBe(false);
+        expect(hidden('[class*="NavigationBar_level"]')).toEqual([false, false, false, false]);
         expect(document.getElementById('mwi-hide-gathering-prompts-nav')).not.toBeNull();
+    });
+
+    test('blocks clicks on the gathering skill links only', () => {
+        hideGatheringPrompts.initialize();
+        const links = document.querySelectorAll('[class*="NavigationBar_navigationLink"]');
+
+        expect([...links].map((link) => declarationsFor(link).includes('pointer-events: none'))).toEqual([
+            true,
+            true,
+            true,
+            false,
+        ]);
+    });
+
+    test('removes the tutorial glow from the gathering skill links only', () => {
+        hideGatheringPrompts.initialize();
+        const links = document.querySelectorAll('[class*="NavigationBar_navigationLink"]');
+        links.forEach((link) => link.classList.add('glowing'));
+        const inner = links[0].querySelector('[class*="NavigationBar_label"]');
+        inner.classList.add('glowing');
+
+        expect([...links].map((link) => declarationsFor(link).includes('animation: none'))).toEqual([
+            true,
+            true,
+            true,
+            false,
+        ]);
+        expect(declarationsFor(inner)).toContain('animation: none');
     });
 
     test('hides the tutorial quest only while a tutorial quest is unfinished', () => {

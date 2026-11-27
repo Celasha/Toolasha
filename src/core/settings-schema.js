@@ -2557,7 +2557,7 @@ export const settingsGroups = {
                 label: 'Left sidebar: Hide gathering prompts (Non-Gathering Iron Cow)',
                 type: 'checkbox',
                 default: false,
-                help: 'For characters who never gather. Hides the XP bar, XP percentage and remaining XP on the Milking, Foraging and Woodcutting links, and hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
+                help: 'For characters who never gather. On the Milking, Foraging and Woodcutting links, hides the XP bar, XP percentage and remaining XP, removes the glow and blocks clicks. Also hides the tutorial quest in the header and its popup while the tutorial is unfinished.',
             },
             tabReorder: {
                 id: 'tabReorder',
