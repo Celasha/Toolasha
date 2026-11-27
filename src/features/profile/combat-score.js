@@ -1211,6 +1211,7 @@ class CombatScore {
      * 'underScore': directly below the score panel, aligned to the score panel's outer edge (the
      * side away from the profile) so the box grows away from the profile, never over it. Falls back
      * to the bottom anchor when the score panel is not shown, and never leaves the viewport.
+     * (Setting idea and original patch by Metzli.)
      * @param {Element} panel - Abilities panel element
      */
     anchorAbilitiesPanel(panel) {

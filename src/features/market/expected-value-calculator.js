@@ -320,7 +320,7 @@ class ExpectedValueCalculator {
             // A drop priced on only one side of the book (e.g. a rare weapon with asks but no buy
             // orders) is still worth something; without this one such drop leaves a container's
             // Expected partial and blanks Luck. A market price beats a derived one, so this runs
-            // before the shop chain.
+            // before the shop chain. (Idea and original patch by Metzli.)
             if (allowOtherSide) {
                 for (const otherMode of ['bid', 'ask']) {
                     const otherSide = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, mode: otherMode });
