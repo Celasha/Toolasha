@@ -47,6 +47,8 @@ class CombatScore {
         this.isActive = false;
         this.currentPanel = null;
         this.currentAbilitiesPanel = null;
+        this.abilitiesModal = null; // Profile modal the abilities panel was opened beside
+        this.abilitiesAnchorObserver = null; // ResizeObserver following the score panel (underScore)
         this.currentPartyExportPanel = null;
         this.isInitialized = false;
         this.profileSharedHandler = null; // Store handler reference for cleanup
@@ -70,9 +72,15 @@ class CombatScore {
         });
 
         config.onSettingChange('abilitiesTriggers', (value) => {
-            if (!value && this.currentAbilitiesPanel) {
-                this.currentAbilitiesPanel.remove();
-                this.currentAbilitiesPanel = null;
+            if (!value) {
+                this.removeAbilitiesPanel();
+            }
+        });
+
+        config.onSettingChange('abilitiesTriggers_position', () => {
+            if (this.currentAbilitiesPanel) {
+                this.watchScorePanelForAbilities(this.currentAbilitiesPanel);
+                this.anchorAbilitiesPanel(this.currentAbilitiesPanel);
             }
         });
 
@@ -1082,10 +1090,7 @@ class CombatScore {
      */
     showAbilitiesTriggersPanel(profileData, modalContainer) {
         // Remove existing abilities panel if any
-        if (this.currentAbilitiesPanel) {
-            this.currentAbilitiesPanel.remove();
-            this.currentAbilitiesPanel = null;
-        }
+        this.removeAbilitiesPanel();
 
         // Build abilities and triggers HTML
         const abilitiesTriggersHTML = this.buildAbilitiesTriggersHTML(profileData);
@@ -1178,6 +1183,89 @@ class CombatScore {
         // Anchor to bottom of screen
         const bottomGap = 10;
         panel.style.top = Math.max(10, viewportHeight - panelHeight - bottomGap) + 'px';
+
+        // Optional placement (abilitiesTriggers_position): directly under the score panel
+        this.abilitiesModal = modal;
+        this.anchorAbilitiesPanel(panel);
+        this.watchScorePanelForAbilities(panel);
+    }
+
+    /**
+     * Remove the abilities panel and stop following the score panel
+     */
+    removeAbilitiesPanel() {
+        if (this.abilitiesAnchorObserver) {
+            this.abilitiesAnchorObserver.disconnect();
+            this.abilitiesAnchorObserver = null;
+        }
+        if (this.currentAbilitiesPanel) {
+            this.currentAbilitiesPanel.remove();
+            this.currentAbilitiesPanel = null;
+        }
+        this.abilitiesModal = null;
+    }
+
+    /**
+     * Anchor the abilities panel after it (or the score panel) changes size.
+     * 'bottom' (default): bottom of the screen, the original behaviour - only `top` is touched.
+     * 'underScore': directly below the score panel, aligned to the score panel's outer edge (the
+     * side away from the profile) so the box grows away from the profile, never over it. Falls back
+     * to the bottom anchor when the score panel is not shown, and never leaves the viewport.
+     * @param {Element} panel - Abilities panel element
+     */
+    anchorAbilitiesPanel(panel) {
+        if (!panel || !panel.isConnected) return;
+        const margin = 10;
+        const scorePanel = this.currentPanel;
+
+        if (
+            config.getSettingValue('abilitiesTriggers_position', 'bottom') === 'underScore' &&
+            scorePanel &&
+            scorePanel.isConnected
+        ) {
+            const scoreRect = scorePanel.getBoundingClientRect();
+            const width = panel.offsetWidth || 300;
+            const height = panel.offsetHeight || 200;
+            const modal = this.abilitiesModal;
+            const modalRect = modal && modal.isConnected ? modal.getBoundingClientRect() : null;
+
+            // Score panel to the right of the profile: share its left edge and grow rightward.
+            // Otherwise (left of the profile): share its right edge and grow leftward.
+            const scoreOnRight = modalRect !== null && scoreRect.left >= modalRect.right;
+            const left = scoreOnRight ? scoreRect.left : scoreRect.right - width;
+            const top = scoreRect.bottom + SCORE_PANEL_GAP;
+
+            const maxLeft = window.innerWidth - width - margin;
+            const maxTop = window.innerHeight - height - margin;
+            panel.style.left = Math.max(margin, Math.min(left, maxLeft)) + 'px';
+            panel.style.top = Math.max(margin, Math.min(top, maxTop)) + 'px';
+            return;
+        }
+
+        panel.style.top = Math.max(margin, window.innerHeight - panel.offsetHeight - margin) + 'px';
+    }
+
+    /**
+     * In 'underScore' placement, move the abilities panel when the score panel changes size (its
+     * details toggles, the Score arriving after first paint). One observer at a time.
+     * @param {Element} panel - Abilities panel element
+     */
+    watchScorePanelForAbilities(panel) {
+        if (this.abilitiesAnchorObserver) {
+            this.abilitiesAnchorObserver.disconnect();
+            this.abilitiesAnchorObserver = null;
+        }
+
+        const scorePanel = this.currentPanel;
+        if (typeof ResizeObserver === 'undefined' || !scorePanel) return;
+        if (config.getSettingValue('abilitiesTriggers_position', 'bottom') !== 'underScore') return;
+
+        const observer = new ResizeObserver(() => {
+            if (this.currentAbilitiesPanel !== panel || !panel.isConnected) return;
+            this.anchorAbilitiesPanel(panel);
+        });
+        observer.observe(scorePanel);
+        this.abilitiesAnchorObserver = observer;
     }
 
     /**
@@ -1189,8 +1277,11 @@ class CombatScore {
         const closeBtn = panel.querySelector('#mwi-abilities-close-btn');
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
-                panel.remove();
-                this.currentAbilitiesPanel = null;
+                if (this.currentAbilitiesPanel === panel) {
+                    this.removeAbilitiesPanel();
+                } else {
+                    panel.remove();
+                }
             });
             closeBtn.addEventListener('mouseover', () => {
                 closeBtn.style.color = '#fff';
@@ -1217,9 +1308,9 @@ class CombatScore {
                     if (toggleBtn) toggleBtn.textContent = '- ' + t('combatScore.hideDetailsLabel');
                 }
 
-                // Anchor bottom of panel to bottom of screen
+                // Anchor bottom of panel to bottom of screen (or under the score panel, by setting)
                 requestAnimationFrame(() => {
-                    panel.style.top = Math.max(10, window.innerHeight - panel.offsetHeight - 10) + 'px';
+                    this.anchorAbilitiesPanel(panel);
                 });
             });
             expandBtn.addEventListener('mouseover', () => {
@@ -1238,10 +1329,9 @@ class CombatScore {
                 toggleBtn.textContent =
                     (isCollapsed ? '- ' : '+ ') +
                     (isCollapsed ? t('combatScore.hideDetailsLabel') : t('combatScore.showDetailsLabel'));
-                // Re-anchor to bottom after size change
+                // Re-anchor after size change (bottom of screen, or under the score panel, by setting)
                 requestAnimationFrame(() => {
-                    const bottomGap = 10;
-                    panel.style.top = Math.max(10, window.innerHeight - panel.offsetHeight - bottomGap) + 'px';
+                    this.anchorAbilitiesPanel(panel);
                 });
             });
         }
@@ -1287,8 +1377,11 @@ class CombatScore {
                     !document.body.contains(modal) ||
                     !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
                 ) {
-                    panel.remove();
-                    this.currentAbilitiesPanel = null;
+                    if (this.currentAbilitiesPanel === panel) {
+                        this.removeAbilitiesPanel();
+                    } else {
+                        panel.remove();
+                    }
                     cleanupObserver();
                 }
             },
@@ -1917,10 +2010,7 @@ class CombatScore {
             this.currentPanel = null;
         }
 
-        if (this.currentAbilitiesPanel) {
-            this.currentAbilitiesPanel.remove();
-            this.currentAbilitiesPanel = null;
-        }
+        this.removeAbilitiesPanel();
 
         if (this.currentPartyExportPanel) {
             this.currentPartyExportPanel.remove();

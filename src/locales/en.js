@@ -3886,6 +3886,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 label: 'Profile panel: Show abilities & triggers',
                 help: 'Displays equipped abilities, consumables, and their combat triggers below the profile',
             },
+            abilitiesTriggers_position: {
+                label: 'Profile panel: Abilities & triggers position',
+                help: 'Where the abilities & triggers box opens. Bottom of the screen is the original placement. Under the score panel puts it directly below the gear score / export buttons panel beside the profile, and keeps it there as that panel changes size.',
+                options: {
+                    bottom: 'Bottom of the screen, centered under the profile',
+                    underScore: 'Under the score panel',
+                },
+            },
             characterCard: {
                 label: 'Profile panel: Show View Card button',
                 help: 'Adds button to open character sheet in external viewer',

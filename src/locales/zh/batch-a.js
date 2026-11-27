@@ -847,6 +847,14 @@ export default {
                 label: '资料面板：显示技能与触发器',
                 help: '在资料下方显示已装备的技能、消耗品及其战斗触发条件',
             },
+            abilitiesTriggers_position: {
+                label: '资料面板：技能与触发器的位置',
+                help: '技能与触发器面板的打开位置。“屏幕底部”为原有位置；“评分面板下方”将其放在资料旁的装备评分／导出按钮面板正下方，并在评分面板大小变化时保持在该位置。',
+                options: {
+                    bottom: '屏幕底部，资料下方居中',
+                    underScore: '评分面板下方',
+                },
+            },
             characterCard: { label: '资料面板：显示“查看卡片”按钮', help: '添加按钮，可在外部查看器中打开角色卡' },
             eliteAchievementReminder: {
                 label: '资料面板：显示精英成就提醒图标',

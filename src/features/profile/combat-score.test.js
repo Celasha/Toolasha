@@ -11,6 +11,7 @@ vi.mock('../../core/config.js', () => ({
     default: {
         onSettingChange: vi.fn(),
         getSetting: vi.fn(() => false),
+        getSettingValue: vi.fn((_key, defaultValue) => defaultValue),
         Z_FLOATING_PANEL: 1000,
         COLOR_ACCENT: '#fff',
         COLOR_PROFIT: '#0f0',
@@ -889,5 +890,156 @@ describe('lower-bound leaf rendering (TLA-041C LB-01/02/03/08)', () => {
         expect(equipmentToggle.innerHTML).toContain('Equipment is hidden in this profile');
         expect(skillerEquipmentToggle.innerHTML).toContain('N/A');
         expect(skillerEquipmentToggle.innerHTML).not.toContain('0.0');
+    });
+});
+
+describe('Abilities & Triggers panel position setting', () => {
+    const GAP = 8;
+
+    function rectEl({ left, right, top = 0, bottom = 0 }, size = {}) {
+        const el = document.createElement('div');
+        el.getBoundingClientRect = () => ({ left, right, top, bottom, width: right - left, height: bottom - top });
+        if (size.width) Object.defineProperty(el, 'offsetWidth', { value: size.width });
+        if (size.height) Object.defineProperty(el, 'offsetHeight', { value: size.height });
+        document.body.appendChild(el);
+        return el;
+    }
+
+    function setPosition(value) {
+        config.getSettingValue.mockImplementation((key, defaultValue) =>
+            key === 'abilitiesTriggers_position' ? value : defaultValue
+        );
+    }
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        vi.stubGlobal('innerWidth', 1600);
+        vi.stubGlobal('innerHeight', 900);
+        combatScore.currentPanel = null;
+        combatScore.currentAbilitiesPanel = null;
+        combatScore.abilitiesModal = null;
+        combatScore.abilitiesAnchorObserver = null;
+        setPosition('bottom');
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        config.getSettingValue.mockImplementation((_key, defaultValue) => defaultValue);
+        combatScore.removeAbilitiesPanel();
+        combatScore.currentPanel = null;
+    });
+
+    test('default (bottom) only sets top, to the bottom of the screen', () => {
+        const panel = rectEl({ left: 0, right: 0 }, { width: 326, height: 200 });
+        combatScore.currentPanel = rectEl({ left: 100, right: 380, top: 50, bottom: 120 });
+
+        combatScore.anchorAbilitiesPanel(panel);
+
+        expect(panel.style.top).toBe('690px');
+        expect(panel.style.left).toBe('');
+    });
+
+    test('underScore with the score panel left of the profile shares its right edge and sits below it', () => {
+        setPosition('underScore');
+        const panel = rectEl({ left: 0, right: 0 }, { width: 326, height: 200 });
+        combatScore.currentPanel = rectEl({ left: 100, right: 380, top: 50, bottom: 120 });
+        combatScore.abilitiesModal = rectEl({ left: 388, right: 900 });
+
+        combatScore.anchorAbilitiesPanel(panel);
+
+        expect(panel.style.left).toBe(`${380 - 326}px`);
+        expect(panel.style.top).toBe(`${120 + GAP}px`);
+    });
+
+    test('underScore with the score panel right of the profile shares its left edge, never covering the profile', () => {
+        setPosition('underScore');
+        const panel = rectEl({ left: 0, right: 0 }, { width: 326, height: 200 });
+        combatScore.currentPanel = rectEl({ left: 908, right: 1188, top: 50, bottom: 120 });
+        combatScore.abilitiesModal = rectEl({ left: 400, right: 900 });
+
+        combatScore.anchorAbilitiesPanel(panel);
+
+        expect(panel.style.left).toBe('908px');
+        expect(panel.style.top).toBe(`${120 + GAP}px`);
+    });
+
+    test('underScore keeps the panel inside the viewport', () => {
+        setPosition('underScore');
+        const panel = rectEl({ left: 0, right: 0 }, { width: 326, height: 400 });
+        combatScore.currentPanel = rectEl({ left: 1400, right: 1680, top: 700, bottom: 780 });
+        combatScore.abilitiesModal = rectEl({ left: 900, right: 1392 });
+
+        combatScore.anchorAbilitiesPanel(panel);
+
+        expect(panel.style.left).toBe(`${1600 - 326 - 10}px`);
+        expect(panel.style.top).toBe(`${900 - 400 - 10}px`);
+    });
+
+    test('underScore falls back to the bottom anchor when there is no score panel', () => {
+        setPosition('underScore');
+        const panel = rectEl({ left: 0, right: 0 }, { width: 326, height: 200 });
+
+        combatScore.anchorAbilitiesPanel(panel);
+
+        expect(panel.style.top).toBe('690px');
+        expect(panel.style.left).toBe('');
+    });
+
+    describe('score panel size watcher', () => {
+        let observers;
+
+        beforeEach(() => {
+            observers = [];
+            vi.stubGlobal(
+                'ResizeObserver',
+                class {
+                    constructor(callback) {
+                        this.callback = callback;
+                        this.observe = vi.fn();
+                        this.disconnect = vi.fn();
+                        observers.push(this);
+                    }
+                }
+            );
+        });
+
+        test('is not started for the default placement', () => {
+            combatScore.currentPanel = rectEl({ left: 100, right: 380 });
+
+            combatScore.watchScorePanelForAbilities(rectEl({ left: 0, right: 0 }));
+
+            expect(observers).toHaveLength(0);
+        });
+
+        test('re-anchors on a score panel resize and is disconnected with the abilities panel', () => {
+            setPosition('underScore');
+            const panel = rectEl({ left: 0, right: 0 }, { width: 326, height: 200 });
+            const scorePanel = rectEl({ left: 100, right: 380, top: 50, bottom: 120 });
+            combatScore.currentPanel = scorePanel;
+            combatScore.currentAbilitiesPanel = panel;
+
+            combatScore.watchScorePanelForAbilities(panel);
+            expect(observers[0].observe).toHaveBeenCalledWith(scorePanel);
+
+            scorePanel.getBoundingClientRect = () => ({ left: 100, right: 380, top: 50, bottom: 300, width: 280 });
+            observers[0].callback();
+            expect(panel.style.top).toBe(`${300 + GAP}px`);
+
+            combatScore.removeAbilitiesPanel();
+            expect(observers[0].disconnect).toHaveBeenCalled();
+            expect(combatScore.abilitiesAnchorObserver).toBeNull();
+        });
+
+        test('a second watch replaces the first observer', () => {
+            setPosition('underScore');
+            combatScore.currentPanel = rectEl({ left: 100, right: 380 });
+            const panel = rectEl({ left: 0, right: 0 });
+
+            combatScore.watchScorePanelForAbilities(panel);
+            combatScore.watchScorePanelForAbilities(panel);
+
+            expect(observers[0].disconnect).toHaveBeenCalled();
+            expect(observers).toHaveLength(2);
+        });
     });
 });

@@ -1888,6 +1888,17 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays equipped abilities, consumables, and their combat triggers below the profile',
             },
+            abilitiesTriggers_position: {
+                id: 'abilitiesTriggers_position',
+                label: 'Profile panel: Abilities & triggers position',
+                type: 'select',
+                default: 'bottom',
+                options: [
+                    { value: 'bottom', label: 'Bottom of the screen, centered under the profile' },
+                    { value: 'underScore', label: 'Under the score panel' },
+                ],
+                help: 'Where the abilities & triggers box opens. Bottom of the screen is the original placement. Under the score panel puts it directly below the gear score / export buttons panel beside the profile, and keeps it there as that panel changes size.',
+            },
             characterCard: {
                 id: 'characterCard',
                 label: 'Profile panel: Show View Card button',
