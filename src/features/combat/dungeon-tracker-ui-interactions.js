@@ -34,7 +34,7 @@ class DungeonTrackerUIInteractions {
     /**
      * Setup all interactions
      * @param {HTMLElement} container - Main container element
-     * @param {Object} callbacks - Callback functions {onUpdate, onUpdateChart, onUpdateHistory}
+     * @param {Object} callbacks - Callbacks for history changes and panel/chart expansion
      */
     setupAll(container, callbacks) {
         this.container = container;
@@ -236,8 +236,7 @@ class DungeonTrackerUIInteractions {
                 this.state.save();
                 // Clear expanded groups when grouping changes (different group labels)
                 this.state.expandedGroups.clear();
-                if (this.callbacks.onUpdateHistory) this.callbacks.onUpdateHistory();
-                if (this.callbacks.onUpdateChart) this.callbacks.onUpdateChart();
+                this.callbacks.onHistoryChange();
             });
         }
 
@@ -247,8 +246,7 @@ class DungeonTrackerUIInteractions {
             filterDungeonSelect.addEventListener('change', (e) => {
                 this.state.filterDungeon = e.target.value;
                 this.state.save();
-                if (this.callbacks.onUpdateHistory) this.callbacks.onUpdateHistory();
-                if (this.callbacks.onUpdateChart) this.callbacks.onUpdateChart();
+                this.callbacks.onHistoryChange();
             });
         }
 
@@ -258,8 +256,7 @@ class DungeonTrackerUIInteractions {
             filterTeamSelect.addEventListener('change', (e) => {
                 this.state.filterTeam = e.target.value;
                 this.state.save();
-                if (this.callbacks.onUpdateHistory) this.callbacks.onUpdateHistory();
-                if (this.callbacks.onUpdateChart) this.callbacks.onUpdateChart();
+                this.callbacks.onHistoryChange();
             });
         }
     }
@@ -278,9 +275,7 @@ class DungeonTrackerUIInteractions {
                     await dungeonTrackerStorage.clearAllRuns();
                     alert(t('dungeonTrackerUi.clearAllRunsSuccessAlert'));
 
-                    // Refresh both history and chart display
-                    if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
-                    if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
+                    await this.callbacks.onHistoryChange();
 
                     // Reset chat annotations so run numbers restart from #1
                     await dungeonTrackerChatAnnotations.refreshRunCounts();
@@ -348,9 +343,7 @@ class DungeonTrackerUIInteractions {
                     alert(t('dungeonTrackerUi.backfillNoRunsAlert'));
                 }
 
-                // Refresh both history and chart display
-                if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
-                if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
+                await this.callbacks.onHistoryChange();
 
                 // Sync chat annotations with newly stored run data
                 await dungeonTrackerChatAnnotations.refreshRunCounts();
@@ -381,6 +374,7 @@ class DungeonTrackerUIInteractions {
         // custom-dragged positions, and collapsed always uses the fixed compact width
         // regardless of any custom resize width saved while expanded.
         this.state.updatePosition(this.container);
+        if (!this.state.isCollapsed) this.callbacks.onPanelExpand();
 
         this.state.save();
     }
@@ -493,6 +487,7 @@ class DungeonTrackerUIInteractions {
 
         if (this.state.isChartExpanded) {
             this.applyChartExpandedState();
+            this.callbacks.onChartExpand();
         } else {
             this.applyChartCollapsedState();
         }
@@ -507,14 +502,7 @@ class DungeonTrackerUIInteractions {
         const chartContainer = this.container.querySelector('#mwi-dt-chart-container');
         const toggle = this.container.querySelector('#mwi-dt-chart-toggle');
 
-        if (chartContainer) {
-            chartContainer.style.display = 'block';
-            // Render chart after becoming visible (longer delay for initial page load)
-            if (this.callbacks.onUpdateChart) {
-                const chartTimeout = setTimeout(() => this.callbacks.onUpdateChart(), 300);
-                this.timerRegistry.registerTimeout(chartTimeout);
-            }
-        }
+        if (chartContainer) chartContainer.style.display = 'block';
         if (toggle) toggle.textContent = '▼';
     }
 
@@ -548,9 +536,8 @@ class DungeonTrackerUIInteractions {
             this.applyRunHistoryExpandedState();
         }
 
-        // Apply initial chart expanded state
-        if (this.state.isChartExpanded) {
-            this.applyChartExpandedState();
+        if (!this.state.isChartExpanded) {
+            this.applyChartCollapsedState();
         }
     }
 

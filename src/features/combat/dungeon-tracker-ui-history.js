@@ -96,15 +96,21 @@ class DungeonTrackerUIHistory {
             };
         }
 
-        const durations = runs.map((r) => r.duration);
-        const total = durations.reduce((sum, d) => sum + d, 0);
+        let total = 0;
+        let fastestTime = Infinity;
+        let slowestTime = -Infinity;
+        for (const { duration } of runs) {
+            total += duration;
+            fastestTime = Math.min(fastestTime, duration);
+            slowestTime = Math.max(slowestTime, duration);
+        }
         const failedOrCanceledTotal = failedOrCanceledAttempts.reduce((sum, r) => sum + (r.duration || 0), 0);
 
         return {
             totalRuns: runs.length,
             avgTime: Math.floor(total / runs.length),
-            fastestTime: Math.min(...durations),
-            slowestTime: Math.max(...durations),
+            fastestTime,
+            slowestTime,
             avgTimePerAttempt: Math.floor((total + failedOrCanceledTotal) / runs.length),
             failCount: failedAttempts.length,
             totalAttempts: runs.length + failedAttempts.length,
@@ -114,18 +120,15 @@ class DungeonTrackerUIHistory {
     /**
      * Update run history display with grouping and filtering
      * @param {HTMLElement} container - Main container element
+     * @param {Array} allRuns - Saved history
      */
-    async update(container) {
+    update(container, allRuns) {
         const runList = container.querySelector('#mwi-dt-run-list');
         if (!runList) return;
 
         try {
-            // Get all runs from unified storage
-            const allRuns = await dungeonTrackerStorage.getAllRuns();
-
             if (allRuns.length === 0) {
                 runList.innerHTML = `<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${t('dungeonTrackerUi.noRunsYet')}</div>`;
-                // Update filter dropdowns with empty options
                 this.updateFilterDropdowns(container, [], []);
                 return;
             }
@@ -151,7 +154,6 @@ class DungeonTrackerUIHistory {
             // Render grouped runs
             this.renderGroupedRuns(runList, groups);
 
-            // Update filter dropdowns
             const dungeons = [...new Set(allRuns.map((r) => r.dungeonName).filter(Boolean))].sort();
             const teams = [...new Set(allRuns.map((r) => r.teamKey).filter(Boolean))].sort();
             this.updateFilterDropdowns(container, dungeons, teams);
@@ -171,7 +173,7 @@ class DungeonTrackerUIHistory {
         // Update dungeon filter
         const dungeonFilter = container.querySelector('#mwi-dt-filter-dungeon');
         if (dungeonFilter) {
-            const currentValue = dungeonFilter.value;
+            const currentValue = this.state.filterDungeon;
             dungeonFilter.innerHTML =
                 `<option value="all">${t('dungeonTrackerUi.filterDungeonAllOption')}</option>` +
                 dungeons.map((dungeon) => `<option value="${dungeon}">${dungeon}</option>`).join('');
@@ -186,7 +188,7 @@ class DungeonTrackerUIHistory {
         // Update team filter
         const teamFilter = container.querySelector('#mwi-dt-filter-team');
         if (teamFilter) {
-            const currentValue = teamFilter.value;
+            const currentValue = this.state.filterTeam;
             teamFilter.innerHTML =
                 `<option value="all">${t('dungeonTrackerUi.filterTeamAllOption')}</option>` +
                 teams.map((team) => `<option value="${team}">${team}</option>`).join('');

@@ -34,6 +34,7 @@ class DungeonTrackerUIState {
      */
     async load() {
         const savedState = await storage.getJSON('dungeonTracker_uiState', 'settings', null);
+        this.isChartExpanded = savedState?.isChartExpanded ?? true;
         if (savedState) {
             this.isCollapsed = savedState.isCollapsed || false;
             this.isKeysExpanded = savedState.isKeysExpanded || false;
@@ -58,6 +59,7 @@ class DungeonTrackerUIState {
                 isCollapsed: this.isCollapsed,
                 isKeysExpanded: this.isKeysExpanded,
                 isRunHistoryExpanded: this.isRunHistoryExpanded,
+                isChartExpanded: this.isChartExpanded,
                 position: this.position,
                 width: this.width,
                 groupBy: this.groupBy,
@@ -74,6 +76,7 @@ class DungeonTrackerUIState {
      * @param {HTMLElement} container - Container element
      */
     updatePosition(container) {
+        const { display } = container.style;
         const zIndex = this.isCollapsed ? config.Z_HUD : config.Z_FLOATING_PANEL;
         const baseStyle = `
             position: fixed;
@@ -119,6 +122,7 @@ class DungeonTrackerUIState {
                 ${widthStyle}
             `;
         }
+        container.style.display = display;
     }
 }
 
