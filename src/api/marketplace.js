@@ -34,6 +34,7 @@ class MarketAPI {
         // Price patches from order book data (fresher than API)
         // Structure: { "itemHrid:enhLevel": { a: ask, b: bid, timestamp: ms } }
         this.pricePatchs = {};
+        this.pricePatchRevision = 0;
 
         // Event listeners for price updates
         this.listeners = [];
@@ -380,6 +381,7 @@ class MarketAPI {
             b: bid,
             timestamp: Date.now(),
         };
+        this.pricePatchRevision++;
 
         // Save patches to storage (debounced via storage module)
         this.savePatches();

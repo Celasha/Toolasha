@@ -31,6 +31,40 @@ vi.mock('../../utils/panel-z-index.js', () => ({
 
 import networthExclusionPopup from './networth-exclusion-popup.js';
 
+describe('NetworthExclusionPopup.refresh', () => {
+    test('stores new data without rebuilding a closed popup, then rebuilds on open and on refresh', () => {
+        networthExclusionPopup.container = null;
+        const buildList = vi
+            .spyOn(networthExclusionPopup, '_buildSearchList')
+            .mockReturnValue([{ name: 'Updated entry' }]);
+        const build = vi.spyOn(networthExclusionPopup, '_build').mockImplementation(() => {});
+        const render = vi.spyOn(networthExclusionPopup, '_refreshContent').mockImplementation(() => {});
+        try {
+            const closedData = { totalNetworth: 100 };
+            networthExclusionPopup.refresh(closedData);
+            expect(networthExclusionPopup.networthData).toBe(closedData);
+            expect(buildList).not.toHaveBeenCalled();
+            expect(render).not.toHaveBeenCalled();
+
+            networthExclusionPopup.open(closedData, vi.fn());
+            expect(buildList).toHaveBeenCalledExactlyOnceWith(closedData);
+            expect(build).toHaveBeenCalledOnce();
+
+            networthExclusionPopup.container = {};
+            const openData = { totalNetworth: 200 };
+            networthExclusionPopup.refresh(openData);
+            expect(buildList).toHaveBeenLastCalledWith(openData);
+            expect(networthExclusionPopup.searchList).toEqual([{ name: 'Updated entry' }]);
+            expect(render).toHaveBeenCalledOnce();
+        } finally {
+            networthExclusionPopup.container = null;
+            buildList.mockRestore();
+            build.mockRestore();
+            render.mockRestore();
+        }
+    });
+});
+
 describe('NetworthExclusionPopup - outlier guard propagation', () => {
     beforeEach(() => {
         vi.clearAllMocks();

@@ -28,8 +28,8 @@ import {
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import config from '../../core/config.js';
 import networthCache from './networth-cache.js';
-import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
-import { calculateItemValueBatch } from '../../utils/networth-worker-manager.js';
+import { getItemPrice, getItemPrices, getMarketPriceCacheKey } from '../../utils/market-data.js';
+import { calculateEnhancementStatsBatch, calculateItemValueBatch } from '../../utils/networth-worker-manager.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
 import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import { getShopCoinCost } from '../../utils/game-lookups.js';
@@ -40,8 +40,24 @@ import {
     buildCheapestPerCredit,
     getGuildCreditValue,
     GUILD_CREDIT_HRIDS,
+    GUILD_TOKEN_HRID,
 } from '../../utils/guild-credit-conversion.js';
 import { getItemName, getAbilityName, getHouseRoomName, getItemCategoryName } from '../../utils/game-i18n.js';
+
+// Net Worth owns these tables. Other consumers still build their own with their own exclusions.
+const guildCreditTables = new WeakMap();
+
+function getCachedGuildCreditTable(itemDetailMap, excludeToken) {
+    const priceKey = getMarketPriceCacheKey();
+    let entry = guildCreditTables.get(itemDetailMap);
+    if (!entry || !priceKey.every((input, i) => Object.is(input, entry.priceKey[i]))) {
+        entry = { priceKey };
+        guildCreditTables.set(itemDetailMap, entry);
+    }
+    const key = excludeToken ? 'held' : 'shrine';
+    entry[key] ??= buildCheapestPerCredit(itemDetailMap, excludeToken ? [GUILD_TOKEN_HRID] : []);
+    return entry[key];
+}
 
 /**
  * Translated display label for a guild shrine hrid, mirroring the labels already
@@ -65,9 +81,11 @@ function getGuildShrineLabel(shrineHrid) {
  * Calculate the value of a single item
  * @param {Object} item - Item data {itemHrid, enhancementLevel, count}
  * @param {Map} priceCache - Optional price cache from getPricesBatch()
+ * @param {Function} [getCreditTable] - Lazy Guild Credit conversion table shared by this pass
+ * @param {Object} [strategyStats] - Precomputed enhancement strategy results from a worker
  * @returns {number} Total value in coins
  */
-export async function calculateItemValue(item, priceCache = null) {
+export async function calculateItemValue(item, priceCache = null, getCreditTable, strategyStats) {
     const { itemHrid, enhancementLevel = 0, count = 1 } = item;
 
     // Untradable capes have no market: value them at base value + refinement + the average cost of
@@ -94,7 +112,12 @@ export async function calculateItemValue(item, priceCache = null) {
             } else {
                 // Calculate enhancement cost (ignore market price)
                 const enhancementParams = getEnhancingParams();
-                const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
+                const enhancementPath = calculateEnhancementPath(
+                    itemHrid,
+                    enhancementLevel,
+                    enhancementParams,
+                    strategyStats
+                );
 
                 if (enhancementPath && enhancementPath.optimalStrategy) {
                     itemValue = enhancementPath.optimalStrategy.totalCost;
@@ -103,12 +126,12 @@ export async function calculateItemValue(item, priceCache = null) {
                 } else {
                     // Enhancement calculation failed, fallback to base item price
                     console.warn('[Networth] Enhancement calculation failed for:', itemHrid, '+' + enhancementLevel);
-                    itemValue = getMarketPrice(itemHrid, 0, priceCache);
+                    itemValue = getMarketPrice(itemHrid, 0, priceCache, getCreditTable);
                 }
             }
         } else {
             // Normal logic for lower enhancement levels: try market price first, then calculate
-            const marketPrice = getMarketPrice(itemHrid, enhancementLevel, priceCache);
+            const marketPrice = getMarketPrice(itemHrid, enhancementLevel, priceCache, getCreditTable);
 
             if (marketPrice > 0) {
                 itemValue = marketPrice;
@@ -119,7 +142,12 @@ export async function calculateItemValue(item, priceCache = null) {
                     itemValue = cachedCost;
                 } else {
                     const enhancementParams = getEnhancingParams();
-                    const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
+                    const enhancementPath = calculateEnhancementPath(
+                        itemHrid,
+                        enhancementLevel,
+                        enhancementParams,
+                        strategyStats
+                    );
 
                     if (enhancementPath && enhancementPath.optimalStrategy) {
                         itemValue = enhancementPath.optimalStrategy.totalCost;
@@ -130,14 +158,14 @@ export async function calculateItemValue(item, priceCache = null) {
                             itemHrid,
                             '+' + enhancementLevel
                         );
-                        itemValue = getMarketPrice(itemHrid, 0, priceCache);
+                        itemValue = getMarketPrice(itemHrid, 0, priceCache, getCreditTable);
                     }
                 }
             }
         }
     } else {
         // Unenhanced items: use market price or crafting cost
-        itemValue = getMarketPrice(itemHrid, enhancementLevel, priceCache);
+        itemValue = getMarketPrice(itemHrid, enhancementLevel, priceCache, getCreditTable);
     }
 
     return itemValue * count;
@@ -148,11 +176,12 @@ export async function calculateItemValue(item, priceCache = null) {
  * @param {string} itemHrid - Item HRID
  * @param {number} enhancementLevel - Enhancement level
  * @param {Map} priceCache - Optional price cache from getPricesBatch()
+ * @param {Function} [getCreditTable] - Lazy Guild Credit conversion table
  * @returns {number} Price per item (uses networth pricing mode setting)
  */
-function getMarketPrice(itemHrid, enhancementLevel, priceCache = null) {
+function getMarketPrice(itemHrid, enhancementLevel, priceCache = null, getCreditTable) {
     // Special handling for currencies
-    const currencyValue = calculateCurrencyValue(itemHrid);
+    const currencyValue = calculateCurrencyValue(itemHrid, getCreditTable);
     if (currencyValue !== null) {
         return currencyValue;
     }
@@ -197,7 +226,7 @@ function getMarketPrice(itemHrid, enhancementLevel, priceCache = null) {
         }
 
         // Try crafting cost as fallback
-        const craftingCost = calculateCraftingCost(itemHrid);
+        const craftingCost = calculateCraftingCost(itemHrid, getCreditTable);
         if (craftingCost > 0) {
             return craftingCost;
         }
@@ -224,9 +253,10 @@ function getMarketPrice(itemHrid, enhancementLevel, priceCache = null) {
 /**
  * Calculate value for currency items
  * @param {string} itemHrid - Item HRID
+ * @param {Function} [getCreditTable] - Lazy Guild Credit conversion table
  * @returns {number|null} Currency value per unit, or null if not a currency
  */
-function calculateCurrencyValue(itemHrid) {
+function calculateCurrencyValue(itemHrid, getCreditTable) {
     // Coins: Face value (1 coin = 1 value)
     if (itemHrid === '/items/coin') {
         return 1;
@@ -255,7 +285,8 @@ function calculateCurrencyValue(itemHrid) {
             return null;
         }
         const side = (config.getSettingValue('networth_pricingMode') || 'ask') === 'bid' ? 'buy' : 'sell';
-        const credit = getGuildCreditValue(itemHrid, dataManager.getInitClientData()?.itemDetailMap, side);
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+        const credit = getGuildCreditValue(itemHrid, itemDetailMap, side, getCreditTable?.(itemDetailMap));
         return credit ? credit.value : null;
     }
 
@@ -307,9 +338,10 @@ function calculateCurrencyValue(itemHrid) {
  * Calculate crafting cost for an item (simple version without efficiency bonuses)
  * Applies Artisan Tea reduction (0.9x) to input materials
  * @param {string} itemHrid - Item HRID
+ * @param {Function} [getCreditTable] - Lazy Guild Credit conversion table
  * @returns {number} Total material cost or 0 if not craftable
  */
-function calculateCraftingCost(itemHrid) {
+function calculateCraftingCost(itemHrid, getCreditTable) {
     const gameData = dataManager.getInitClientData();
     if (!gameData) return 0;
 
@@ -324,7 +356,7 @@ function calculateCraftingCost(itemHrid) {
                     // Add input items
                     if (action.inputItems && action.inputItems.length > 0) {
                         for (const input of action.inputItems) {
-                            const inputPrice = getMarketPrice(input.itemHrid, 0, null);
+                            const inputPrice = getMarketPrice(input.itemHrid, 0, null, getCreditTable);
                             inputCost += inputPrice * input.count;
                         }
                     }
@@ -335,7 +367,7 @@ function calculateCraftingCost(itemHrid) {
                     // Add upgrade item cost (not affected by Artisan Tea)
                     let upgradeCost = 0;
                     if (action.upgradeItemHrid) {
-                        const upgradePrice = getMarketPrice(action.upgradeItemHrid, 0, null);
+                        const upgradePrice = getMarketPrice(action.upgradeItemHrid, 0, null, getCreditTable);
                         upgradeCost = upgradePrice;
                     }
 
@@ -496,8 +528,8 @@ export function calculateAllGuildShrinesCost() {
     if (!gameData?.guildBuffDetailMap) return { totalCost: 0, breakdown: [] };
 
     const pricingMode = config.getSettingValue('networth_pricingMode') || 'ask';
-    const { sell, buy } = buildCheapestPerCredit(gameData.itemDetailMap || {});
-    const cheapestPerCredit = pricingMode === 'bid' ? buy : sell;
+    const itemDetailMap = gameData.itemDetailMap;
+    let cheapestPerCredit;
 
     let totalCost = 0;
     const breakdown = [];
@@ -511,6 +543,10 @@ export function calculateAllGuildShrinesCost() {
             const levelCost = buff.levelCosts?.[String(lvl)];
             if (!levelCost) continue;
             for (const { itemHrid, count } of levelCost.creditCosts || []) {
+                if (!itemDetailMap) continue;
+                cheapestPerCredit ??= getCachedGuildCreditTable(itemDetailMap, false)[
+                    pricingMode === 'bid' ? 'buy' : 'sell'
+                ];
                 const perCredit = cheapestPerCredit[itemHrid];
                 if (perCredit) cost += perCredit * count;
             }
@@ -535,9 +571,18 @@ export function calculateAllGuildShrinesCost() {
  * @param {Array} items - Array of items to value
  * @param {Map} priceCache - Price cache
  * @param {Object} gameData - Game data
+ * @param {Function} getCreditTable - Lazy Guild Credit conversion table
+ * @param {boolean} [preserveListingPricing=false] - Use the same exact cost model as the original listing path
  * @returns {Promise<Array>} Array of values in same order as items
  */
-async function calculateItemValuesParallel(items, priceCache, gameData) {
+async function calculateItemValuesParallel(
+    items,
+    priceCache,
+    gameData,
+    getCreditTable,
+    preserveListingPricing = false
+) {
+    if (!items.length) return [];
     // Prepare configuration options
     const useHighEnhancementCost = config.getSetting('networth_highEnhancementUseCost');
     const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
@@ -556,8 +601,16 @@ async function calculateItemValuesParallel(items, priceCache, gameData) {
         let needsWorker = false;
 
         if (enhancementLevel >= 1 && !isUntradableCape(item.itemHrid)) {
-            // Check if high enhancement cost mode applies
-            if (useHighEnhancementCost && enhancementLevel >= minLevel) {
+            if (preserveListingPricing) {
+                const needsCost =
+                    (useHighEnhancementCost && enhancementLevel >= minLevel) ||
+                    !(getMarketPrice(item.itemHrid, enhancementLevel, priceCache, getCreditTable) > 0);
+                needsWorker =
+                    needsCost &&
+                    enhancementLevel <= 20 &&
+                    !!gameData.itemDetailMap[item.itemHrid]?.enhancementCosts?.length &&
+                    networthCache.get(item.itemHrid, enhancementLevel) === null;
+            } else if (useHighEnhancementCost && enhancementLevel >= minLevel) {
                 needsWorker = true;
             } else {
                 // Check if market price is missing
@@ -586,6 +639,26 @@ async function calculateItemValuesParallel(items, priceCache, gameData) {
         // Worker group
         itemsNeedingWorkers.length > 0
             ? (async () => {
+                  if (preserveListingPricing) {
+                      // The legacy item worker uses a different price and enhancement model. Only
+                      // delegate the simulations here so listings keep their exact prior valuation.
+                      let strategies;
+                      try {
+                          strategies = await calculateEnhancementStatsBatch(
+                              itemsNeedingWorkers,
+                              enhancementParams,
+                              gameData.itemDetailMap
+                          );
+                      } catch (error) {
+                          console.warn('[NetworthCalculator] Worker failed, falling back to sequential:', error);
+                      }
+                      return Promise.all(
+                          itemsNeedingWorkers.map((item, i) =>
+                              calculateItemValue(item, priceCache, getCreditTable, strategies?.[i])
+                          )
+                      );
+                  }
+
                   const priceMap = {};
                   if (priceCache) {
                       for (const [key, prices] of priceCache.entries()) {
@@ -618,7 +691,7 @@ async function calculateItemValuesParallel(items, priceCache, gameData) {
                       console.warn('[NetworthCalculator] Worker failed, falling back to sequential:', error);
                       const values = [];
                       for (const item of itemsNeedingWorkers) {
-                          values.push(await calculateItemValue(item, priceCache));
+                          values.push(await calculateItemValue(item, priceCache, getCreditTable));
                       }
                       return values;
                   }
@@ -630,7 +703,7 @@ async function calculateItemValuesParallel(items, priceCache, gameData) {
             ? (async () => {
                   const values = [];
                   for (const item of itemsNotNeedingWorkers) {
-                      const value = await calculateItemValue(item, priceCache);
+                      const value = await calculateItemValue(item, priceCache, getCreditTable);
                       values.push(value);
                   }
                   return values;
@@ -679,6 +752,12 @@ export async function calculateNetworth() {
     const characterHouseRooms = gameData.characterHouseRoomMap || {};
     const characterAbilities = gameData.characterAbilities || [];
     const abilityCombatTriggersMap = gameData.abilityCombatTriggersMap || {};
+    let heldCreditTable;
+    const getCreditTable = (itemDetailMap) => {
+        if (!itemDetailMap) return undefined;
+        heldCreditTable ??= getCachedGuildCreditTable(itemDetailMap, true);
+        return heldCreditTable;
+    };
 
     // OPTIMIZATION: Pre-fetch all market prices in one batch
     const itemsToPrice = [];
@@ -769,7 +848,7 @@ export async function calculateNetworth() {
 
     const entireEquippedExcluded = isExcluded('assetType', 'equipped');
     const equippedItems = characterItems.filter((item) => item.itemLocationHrid !== '/item_locations/inventory');
-    const equippedValues = await calculateItemValuesParallel(equippedItems, priceCache, gameData);
+    const equippedValues = await calculateItemValuesParallel(equippedItems, priceCache, gameData, getCreditTable);
 
     for (let i = 0; i < equippedItems.length; i++) {
         const item = equippedItems[i];
@@ -822,7 +901,7 @@ export async function calculateNetworth() {
     let coinCount = 0;
 
     const inventoryItems = characterItems.filter((item) => item.itemLocationHrid === '/item_locations/inventory');
-    const inventoryValues = await calculateItemValuesParallel(inventoryItems, priceCache, gameData);
+    const inventoryValues = await calculateItemValuesParallel(inventoryItems, priceCache, gameData, getCreditTable);
 
     for (let i = 0; i < inventoryItems.length; i++) {
         const item = inventoryItems[i];
@@ -931,7 +1010,21 @@ export async function calculateNetworth() {
     const listingsBreakdown = [];
     const clientData = dataManager.getInitClientData();
 
-    for (const listing of marketListings) {
+    const listingItems = marketListings.map((listing) => ({
+        itemHrid: listing.itemHrid,
+        enhancementLevel: listing.enhancementLevel || 0,
+        count: listing.isSell ? listing.orderQuantity - listing.filledQuantity : listing.unclaimedItemCount,
+    }));
+    const listingItemValues = await calculateItemValuesParallel(
+        listingItems,
+        priceCache,
+        gameData,
+        getCreditTable,
+        true
+    );
+
+    for (let i = 0; i < marketListings.length; i++) {
+        const listing = marketListings[i];
         const quantity = listing.orderQuantity - listing.filledQuantity;
         const enhancementLevel = listing.enhancementLevel || 0;
         const itemName = getItemName(
@@ -939,44 +1032,19 @@ export async function calculateNetworth() {
             clientData?.itemDetailMap?.[listing.itemHrid]?.name || listing.itemHrid
         );
 
-        if (listing.isSell) {
-            // Selling: value is locked in listing + unclaimed coins
-            // Apply marketplace fee (normal items vs. cowbells)
-            const fee = listing.itemHrid === COWBELL_BAG_HRID ? COWBELL_BAG_TAX : MARKET_TAX;
-
-            const value = await calculateItemValue(
-                { itemHrid: listing.itemHrid, enhancementLevel, count: quantity },
-                priceCache
-            );
-
-            const listingValue = value * (1 - fee) + listing.unclaimedCoinCount;
-            listingsValue += listingValue;
-            listingsBreakdown.push({
-                itemHrid: listing.itemHrid,
-                enhancementLevel,
-                name: itemName,
-                isSell: true,
-                value: listingValue,
-                isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
-            });
-        } else {
-            // Buying: value is locked coins + unclaimed items
-            const unclaimedValue = await calculateItemValue(
-                { itemHrid: listing.itemHrid, enhancementLevel, count: listing.unclaimedItemCount },
-                priceCache
-            );
-
-            const listingValue = quantity * listing.price + unclaimedValue;
-            listingsValue += listingValue;
-            listingsBreakdown.push({
-                itemHrid: listing.itemHrid,
-                enhancementLevel,
-                name: itemName,
-                isSell: false,
-                value: listingValue,
-                isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
-            });
-        }
+        const fee = listing.itemHrid === COWBELL_BAG_HRID ? COWBELL_BAG_TAX : MARKET_TAX;
+        const listingValue = listing.isSell
+            ? listingItemValues[i] * (1 - fee) + listing.unclaimedCoinCount
+            : quantity * listing.price + listingItemValues[i];
+        listingsValue += listingValue;
+        listingsBreakdown.push({
+            itemHrid: listing.itemHrid,
+            enhancementLevel,
+            name: itemName,
+            isSell: !!listing.isSell,
+            value: listingValue,
+            isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
+        });
     }
 
     listingsBreakdown.sort((a, b) => b.value - a.value);

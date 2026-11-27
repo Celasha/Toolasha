@@ -41,12 +41,13 @@ export function buildCheapestPerCredit(itemDetailMap, excludeHrids = []) {
     const buySource = {};
     for (const [hrid, item] of Object.entries(itemDetailMap)) {
         if (excludeHrids.includes(hrid)) continue;
-        for (const conv of item.guildCreditConversions || []) {
+        if (!item.guildCreditConversions?.length) continue;
+        const sellInfo = getItemPriceOutlierInfo(hrid, { mode: 'ask' });
+        const buyInfo = getItemPriceOutlierInfo(hrid, { mode: 'bid' });
+        const sellPrice = sellInfo.value;
+        const buyPrice = buyInfo.value;
+        for (const conv of item.guildCreditConversions) {
             const creditHrid = conv.creditItemHrid;
-            const sellInfo = getItemPriceOutlierInfo(hrid, { mode: 'ask' });
-            const buyInfo = getItemPriceOutlierInfo(hrid, { mode: 'bid' });
-            const sellPrice = sellInfo.value;
-            const buyPrice = buyInfo.value;
             if (sellPrice > 0) {
                 const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
                 if (!sell[creditHrid] || gpc < sell[creditHrid]) {
@@ -123,14 +124,15 @@ export function calculateGuildTokenOpportunityValue(itemDetailMap, creditValueTa
  * @param {string} creditHrid
  * @param {Object} itemDetailMap
  * @param {'sell'|'buy'} [side='sell'] - ask-based ('sell') or bid-based ('buy') source prices
+ * @param {Object} [table] - Prebuilt conversion table excluding the Guild Token
  * @returns {{value: number, isOutlier: boolean, source: {itemHrid: string, itemCount: number, creditCount: number, price: number}}|null}
  */
-export function getGuildCreditValue(creditHrid, itemDetailMap, side = 'sell') {
+export function getGuildCreditValue(creditHrid, itemDetailMap, side = 'sell', table) {
     if (!GUILD_CREDIT_HRIDS.has(creditHrid) || !itemDetailMap) return null;
-    const table = buildCheapestPerCredit(itemDetailMap, [GUILD_TOKEN_HRID]);
-    const values = side === 'buy' ? table.buy : table.sell;
-    const outliers = side === 'buy' ? table.buyOutlier : table.sellOutlier;
-    const sources = side === 'buy' ? table.buySource : table.sellSource;
+    const creditTable = table ?? buildCheapestPerCredit(itemDetailMap, [GUILD_TOKEN_HRID]);
+    const values = side === 'buy' ? creditTable.buy : creditTable.sell;
+    const outliers = side === 'buy' ? creditTable.buyOutlier : creditTable.sellOutlier;
+    const sources = side === 'buy' ? creditTable.buySource : creditTable.sellSource;
     const value = values[creditHrid];
     return value > 0 ? { value, isOutlier: outliers[creditHrid] || false, source: sources[creditHrid] } : null;
 }

@@ -5,7 +5,9 @@
 import { describe, test, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import * as mathJs from 'mathjs';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
+import config from '../../core/config.js';
 import { calculateEnhancement } from '../../utils/enhancement-calculator.js';
+import { calculateNetworthEnhancementStats } from '../../utils/networth-enhancement-worker.js';
 
 beforeAll(() => {
     globalThis.math = mathJs;
@@ -25,7 +27,7 @@ vi.mock('../../core/config.js', () => ({
         isFeatureEnabled: () => true,
         // Boolean-only accessor, mirrors the real config.js: reads .isTrue, defaults to false.
         // A text-type setting has no .isTrue, so this must NOT be used to read its value.
-        getSetting: (key) => settingsMap[key]?.isTrue ?? false,
+        getSetting: vi.fn((key) => settingsMap[key]?.isTrue ?? false),
         // Value accessor for non-boolean settings, mirrors the real config.js: reads .value.
         getSettingValue: (key, defaultValue = null) => settingsMap[key]?.value ?? defaultValue,
     },
@@ -50,6 +52,7 @@ vi.mock('../../utils/material-calculator.js', async (importOriginal) => ({
 }));
 
 vi.mock('../../utils/market-data.js', () => ({
+    getCustomPrice: vi.fn(() => null),
     getItemPrice: vi.fn(() => 0),
     getItemPrices: vi.fn(() => ({ ask: 400_000_000, bid: 390_000_000 })),
     getItemPriceOutlierInfo: vi.fn((itemHrid) => {
@@ -520,6 +523,21 @@ describe("calculateEnhancementPath - refined item Philosopher's Mirror fodder sp
         expect(primaryRow.hrid).toBe('/items/furious_spear_refined'); // the item actually being enhanced
     });
 
+    test('worker statistics give the same result for refined Mirror fodder at a different item level', () => {
+        itemDetailMap['/items/furious_spear'].itemLevel = 80;
+        const params = { ...enhancingConfig, teas: { blessed: true } };
+        const expected = calcPath('/items/furious_spear_refined', 15, params);
+        expect(expected.optimalStrategy.usedMirror).toBe(true);
+
+        const stats = calculateNetworthEnhancementStats({
+            itemLevel: 95,
+            targetLevel: 15,
+            fodderItemLevel: 80,
+            enhancementParams: params,
+        });
+        expect(calcPath('/items/furious_spear_refined', 15, params, stats)).toEqual(expected);
+    });
+
     test('the rendered materials table prices the fodder row off the non-refined market, not the refined one', () => {
         const pathResult = calcPath('/items/furious_spear_refined', 15, enhancingConfig);
         const html = buildEnhancementTooltipHTML({
@@ -533,6 +551,98 @@ describe("calculateEnhancementPath - refined item Philosopher's Mirror fodder sp
         // Non-refined fodder's own market price (1,000,000 -> "1.00M"), not the refined item's (50,000,000).
         expect(html).toContain('Furious Spear +13');
         expect(html).toContain('Furious Spear (R) +14');
+    });
+});
+
+describe('calculateEnhancementPath - strategy pricing', () => {
+    test('prices a +20 item once per HRID and matches the exact protection and material costs', () => {
+        const hrid = '/items/hoisted_sword';
+        const material = '/items/enhancement_material';
+        const protection = '/items/extra_protection';
+        const mirror = '/items/mirror_of_protection';
+        const philosophersMirror = '/items/philosophers_mirror';
+        const params = { enhancingLevel: 75, toolBonus: 5, speedBonus: 3, teas: { blessed: true }, guzzlingBonus: 1.2 };
+        itemDetailMap[hrid] = {
+            name: 'Sword',
+            itemLevel: 50,
+            enhancementCosts: [
+                { itemHrid: material, count: 2 },
+                { itemHrid: '/items/coin', count: 25 },
+            ],
+            protectionItemHrids: [protection],
+        };
+        itemDetailMap[material] = { name: 'Material' };
+        getItemPrices.mockClear().mockImplementation(
+            (itemHrid) =>
+                ({
+                    [hrid]: { ask: 1000, bid: 500 },
+                    [material]: { ask: 100, bid: 90, askOutlier: true, bidOutlier: false },
+                    [protection]: { ask: 10, bid: 9 },
+                    [mirror]: { ask: 20, bid: 19 },
+                })[itemHrid]
+        );
+        config.getSetting.mockClear();
+
+        const candidates = [0, ...Array.from({ length: 19 }, (_, i) => i + 2)].map((protectFrom) => {
+            const stats = calculateEnhancement({
+                ...params,
+                targetLevel: 20,
+                itemLevel: 50,
+                blessedTea: true,
+                protectFrom,
+            });
+            return { protectFrom, stats, cost: 1000 + 225 * stats.attempts + 10 * stats.protectionCount };
+        });
+        const best = candidates.reduce((a, b) => (b.cost < a.cost ? b : a));
+        const result = calculateEnhancementPath(hrid, 20, params);
+        expect(best.stats.protectionCount).toBeGreaterThan(0);
+        expect(result.optimalStrategy).toMatchObject({
+            protectFrom: best.protectFrom,
+            expectedAttempts: best.stats.attempts,
+            totalTime: best.stats.totalTime,
+            totalCost: best.cost,
+            baseAskPrice: 1000,
+            baseBidPrice: 500,
+            materialCost: 225 * best.stats.attempts,
+            protectionCount: best.stats.protectionCount,
+            protectionItemHrid: protection,
+            protectionAskPrice: 10,
+            protectionBidPrice: 9,
+            usedMirror: false,
+        });
+        expect(result.optimalStrategy.materialBreakdown[0]).toEqual({
+            itemHrid: material,
+            name: 'Material',
+            countPerAction: 2,
+            totalQuantity: 2 * best.stats.attempts,
+            unitPrice: 100,
+            bidPrice: 90,
+            totalCost: 100 * (2 * best.stats.attempts),
+            askOutlier: true,
+            bidOutlier: false,
+        });
+        expect(getItemPrices.mock.calls.map(([itemHrid]) => itemHrid)).toEqual([
+            material,
+            hrid,
+            mirror,
+            protection,
+            philosophersMirror,
+        ]);
+        expect(config.getSetting.mock.calls.filter(([key]) => key === 'enhanceSim_baseItemCraftingCost')).toHaveLength(
+            1
+        );
+
+        const workerStats = calculateNetworthEnhancementStats({
+            itemLevel: 50,
+            targetLevel: 20,
+            enhancementParams: params,
+        });
+        vi.stubGlobal('math', undefined); // The worker result must not rerun Markov math on the main thread.
+        try {
+            expect(calculateEnhancementPath(hrid, 20, params, workerStats)).toEqual(result);
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 });
 
