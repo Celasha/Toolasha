@@ -43,6 +43,10 @@ function buildValueSourceTooltip(item) {
     if (!info || !(item.count > 0)) return '';
     const unit = item.value / item.count;
 
+    if (info.source === 'otherSide') {
+        return t(info.side === 'ask' ? 'openableAnalytics.valueSourceAtAsk' : 'openableAnalytics.valueSourceAtBid');
+    }
+
     if (info.source === 'shopRedemption' && info.tokenCost > 0) {
         const perToken = (unit * (info.outputCount || 1)) / info.tokenCost;
         return t('openableAnalytics.valueSourceShop', {

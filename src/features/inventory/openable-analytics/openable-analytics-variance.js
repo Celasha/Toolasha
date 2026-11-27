@@ -8,7 +8,7 @@
 
 import dataManager from '../../../core/data-manager.js';
 import expectedValueCalculator from '../../market/expected-value-calculator.js';
-import { allowIndirectPricing } from './openable-analytics-pricing.js';
+import { openableValuationOptions } from './openable-analytics-pricing.js';
 import { calculatePriceAfterTax } from '../../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../../utils/profit-constants.js';
 
@@ -33,9 +33,7 @@ function dropValueVariance(drop) {
     const countVariance = n > 1 ? (n * n - 1) / 12 : 0;
     const avgCount = (minCount + maxCount) / 2;
 
-    const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid, 0, {
-        allowIndirect: allowIndirectPricing(),
-    });
+    const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid, 0, openableValuationOptions());
     if (!resolved) return 0;
 
     // Tax strictly follows the resolver's needsTax contract - never item tradability, which

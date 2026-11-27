@@ -134,6 +134,7 @@ describe('calculatePerOpeningVariance', () => {
 
         expect(expectedValueCalculator.resolveSellSideValue).toHaveBeenCalledWith('/items/seal', 0, {
             allowIndirect: true,
+            allowOtherSide: true,
         });
         // perUnit = 30000 (non-tradable, untaxed); Var = 30000^2 * (0.5*0 + 0.5*0.5*10^2) = 2.25e10
         expect(variance).toBeCloseTo(22500000000);

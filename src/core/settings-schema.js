@@ -789,6 +789,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            expectedValue_otherSideFallback: {
+                id: 'expectedValue_otherSideFallback',
+                label: 'Opened Loot: price a drop with no bid at its ask (and no ask at its bid)',
+                type: 'checkbox',
+                default: true,
+                help: 'When a drop has no price on the side used for selling, Opened Loot values it at the other side of the market instead of leaving Expected partial and Luck blank. Asking prices are optimistic for something you would have to sell.',
+            },
             showConsumTips: {
                 id: 'showConsumTips',
                 label: 'HP/MP consumables: Restore speed, cost performance',

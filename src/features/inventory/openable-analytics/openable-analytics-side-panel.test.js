@@ -347,7 +347,10 @@ describe('OpenableAnalyticsSidePanel expandable breakdown rows', () => {
         const toggle = document.querySelector('[data-toggle-key="current-expected"]');
         toggle.click();
 
-        expect(expectedValueCalculator.getDropBreakdown).toHaveBeenCalledWith('/items/chest', { allowIndirect: true });
+        expect(expectedValueCalculator.getDropBreakdown).toHaveBeenCalledWith('/items/chest', {
+            allowIndirect: true,
+            allowOtherSide: true,
+        });
     });
 
     test('"Expected income" breakdown merges multiple drop-table rows for the same item into one', () => {

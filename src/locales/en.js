@@ -260,6 +260,8 @@ export default {
         valueSourceShop:
             'Not sold on the market. Valued through the shop: {{cost}} {{currency}} at {{perToken}} each = {{unit}} per item (no market tax).',
         valueSourceCurrency: 'Valued at its best shop redemption: {{perToken}} per token (no market tax).',
+        valueSourceAtAsk: 'Nobody has bid on this item, so it is valued at its ask price.',
+        valueSourceAtBid: 'Nobody has listed this item, so it is valued at its bid price.',
         openedLabel: 'Opened',
         partialBadgeLabel: '(partial)',
         profitLabel: 'Profit',
@@ -3368,6 +3370,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             },
             expectedValue_respectPricingMode: { label: 'Use pricing mode for expected value calculations' },
             expectedValue_includeCowbells: { label: 'Include cowbell value in expected value calculations' },
+            expectedValue_otherSideFallback: {
+                label: 'Opened Loot: price a drop with no bid at its ask (and no ask at its bid)',
+                help: 'When a drop has no price on the side used for selling, Opened Loot values it at the other side of the market instead of leaving Expected partial and Luck blank. Asking prices are optimistic for something you would have to sell.',
+            },
             showConsumTips: { label: 'HP/MP consumables: Restore speed, cost performance' },
             dungeonTokenTooltips: { label: 'Currency tooltips: Show shop values for tokens, seals, and cowbells' },
             itemTooltip_gathering: {

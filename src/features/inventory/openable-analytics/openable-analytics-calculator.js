@@ -8,7 +8,7 @@
 import dataManager from '../../../core/data-manager.js';
 import config from '../../../core/config.js';
 import expectedValueCalculator from '../../market/expected-value-calculator.js';
-import { allowIndirectPricing } from './openable-analytics-pricing.js';
+import { openableValuationOptions } from './openable-analytics-pricing.js';
 import { calculatePriceAfterTax } from '../../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../../utils/profit-constants.js';
 
@@ -21,9 +21,11 @@ import { MARKET_TAX } from '../../../utils/profit-constants.js';
  * @returns {{value: number, resolved: boolean}} Value contribution and whether it could be priced
  */
 function valueGainedItemStack(itemHrid, enhancementLevel, count) {
-    const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel || 0, {
-        allowIndirect: allowIndirectPricing(),
-    });
+    const resolved = expectedValueCalculator.resolveSellSideValue(
+        itemHrid,
+        enhancementLevel || 0,
+        openableValuationOptions()
+    );
     if (!resolved) {
         return { value: 0, resolved: false };
     }
@@ -38,12 +40,14 @@ function valueGainedItemStack(itemHrid, enhancementLevel, count) {
 const DERIVED_SOURCES = new Set(['shopRedemption', 'specialCurrency', 'dungeonToken']);
 
 /**
- * Describe how a non-market price was derived, so the UI can explain it. Returns null for
+ * Describe how a non-standard price was derived, so the UI can explain it. Returns null for
  * ordinary market/custom/coin values, which need no explanation.
- * @param {{source: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}} resolved
+ * @param {{source: string, otherSide?: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}} resolved
  * @returns {{source: string, currencyHrid?: string, tokenCost?: number, outputCount?: number}|null}
  */
 function describeValueSource(resolved) {
+    // A market price taken from the other side of the book (nobody bid / nobody listed)
+    if (resolved.otherSide) return { source: 'otherSide', side: resolved.otherSide };
     if (!DERIVED_SOURCES.has(resolved.source)) return null;
     const info = { source: resolved.source };
     if (resolved.source === 'shopRedemption') {
@@ -110,7 +114,7 @@ export function calculateExpectedValueForOpening(containerHrid, containerCount) 
     // Indirect shop-redemption pricing so seal-type items price on both the Actual and Expected
     // sides (Luck stays computable); the variance sampler passes the same flag so E[income] and
     // its stdDev share one value basis.
-    const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, { allowIndirect: allowIndirectPricing() });
+    const ev = expectedValueCalculator.calculateExpectedValue(containerHrid, openableValuationOptions());
     if (!ev || !(ev.expectedValue >= 0)) {
         return { value: null, available: false, complete: false };
     }

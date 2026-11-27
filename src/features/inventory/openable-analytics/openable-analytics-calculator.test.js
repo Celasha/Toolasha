@@ -57,6 +57,19 @@ describe('calculateActualValue', () => {
         ]);
     });
 
+    test('records which side of the book a one-sided market price came from', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({
+            value: 1000,
+            source: 'market',
+            needsTax: false,
+            otherSide: 'ask',
+        });
+
+        const { breakdown } = calculateActualValue([{ itemHrid: '/items/trident', enhancementLevel: 0, count: 1 }]);
+
+        expect(breakdown[0].valueSource).toEqual({ source: 'otherSide', side: 'ask' });
+    });
+
     test('records how a shop-derived price was built, and nothing for ordinary market prices', () => {
         expectedValueCalculator.resolveSellSideValue.mockImplementation((itemHrid) =>
             itemHrid === '/items/cloak'
@@ -533,9 +546,11 @@ describe('opt-in indirect pricing (allowIndirect)', () => {
 
         expect(expectedValueCalculator.resolveSellSideValue).toHaveBeenCalledWith('/items/x', 0, {
             allowIndirect: true,
+            allowOtherSide: true,
         });
         expect(expectedValueCalculator.calculateExpectedValue).toHaveBeenCalledWith('/items/chest', {
             allowIndirect: true,
+            allowOtherSide: true,
         });
     });
 
@@ -555,9 +570,11 @@ describe('opt-in indirect pricing (allowIndirect)', () => {
 
         expect(expectedValueCalculator.resolveSellSideValue).toHaveBeenCalledWith('/items/cape', 0, {
             allowIndirect: false,
+            allowOtherSide: false,
         });
         expect(expectedValueCalculator.calculateExpectedValue).toHaveBeenCalledWith('/items/chest', {
             allowIndirect: false,
+            allowOtherSide: false,
         });
         config.getSetting.mockReturnValue(true);
     });

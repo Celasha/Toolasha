@@ -253,9 +253,13 @@ class ExpectedValueCalculator {
      * @param {Object} [options] - Options
      * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for
      *     items with no direct market price. Default off keeps existing behavior untouched.
-     * @returns {{value: number, source: string, needsTax: boolean}|null} Resolved value or null
+     * @param {boolean} [options.allowOtherSide=false] - Opt into valuing an item with no price on
+     *     the configured sell side at the other side of the book (bid, then ask). Only consulted
+     *     together with `allowIndirect`. Default off keeps existing behavior untouched.
+     * @returns {{value: number, source: string, needsTax: boolean, otherSide?: string}|null} Resolved
+     *     value or null
      */
-    resolveSellSideValue(itemHrid, enhancementLevel = 0, { allowIndirect = false } = {}) {
+    resolveSellSideValue(itemHrid, enhancementLevel = 0, { allowIndirect = false, allowOtherSide = false } = {}) {
         // Special case: Coin (face value = 1, never taxed)
         if (itemHrid === this.COIN_HRID) {
             return { value: 1, source: 'coin', needsTax: false, isOutlier: false };
@@ -313,6 +317,24 @@ class ExpectedValueCalculator {
             // the caller explicitly passes `allowIndirect` (opt-in: Openable Analytics' calculator
             // wiring is the intended consumer).
             if (!allowIndirect) return null;
+            // A drop priced on only one side of the book (e.g. a rare weapon with asks but no buy
+            // orders) is still worth something; without this one such drop leaves a container's
+            // Expected partial and blanks Luck. A market price beats a derived one, so this runs
+            // before the shop chain.
+            if (allowOtherSide) {
+                for (const otherMode of ['bid', 'ask']) {
+                    const otherSide = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, mode: otherMode });
+                    if (otherSide.value > 0) {
+                        return {
+                            value: otherSide.value,
+                            source: 'market',
+                            needsTax: true,
+                            isOutlier: otherSide.isOutlier,
+                            otherSide: otherMode,
+                        };
+                    }
+                }
+            }
             // Tier-3 hook: let the shop chain value openable, unpriced outputs (e.g. task chests)
             // from the converged container cache - a plain map read, never a recursive valuation.
             const containerValueLookup = (hrid) => this.containerCache.get(hrid) ?? 0;
@@ -433,9 +455,11 @@ class ExpectedValueCalculator {
      * @param {Object} [options] - Options
      * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
      *     with no direct market price. Default off keeps existing behavior untouched.
+     * @param {boolean} [options.allowOtherSide=false] - Opt into valuing a drop with no price on the
+     *     sell side at the other side of the book (see resolveSellSideValue).
      * @returns {Object|null} EV data or null
      */
-    calculateExpectedValue(itemHrid, { allowIndirect = false } = {}) {
+    calculateExpectedValue(itemHrid, { allowIndirect = false, allowOtherSide = false } = {}) {
         if (!this.isInitialized) {
             console.warn('[ExpectedValueCalculator] Not initialized');
             return null;
@@ -453,7 +477,7 @@ class ExpectedValueCalculator {
         }
 
         // Get detailed drop breakdown (calculates with fresh market prices)
-        const drops = this.getDropBreakdown(itemHrid, { allowIndirect });
+        const drops = this.getDropBreakdown(itemHrid, { allowIndirect, allowOtherSide });
 
         // Calculate total expected value from fresh drop data
         const expectedReturn = drops.reduce((sum, drop) => sum + drop.expectedValue, 0);
@@ -482,9 +506,11 @@ class ExpectedValueCalculator {
      * @param {Object} [options] - Options
      * @param {boolean} [options.allowIndirect=false] - Opt into the shop-redemption fallback for drops
      *     with no direct market price. Default off keeps existing behavior untouched.
+     * @param {boolean} [options.allowOtherSide=false] - Opt into valuing a drop with no price on the
+     *     sell side at the other side of the book (see resolveSellSideValue).
      * @returns {Array} Array of drop objects
      */
-    getDropBreakdown(containerHrid, { allowIndirect = false } = {}) {
+    getDropBreakdown(containerHrid, { allowIndirect = false, allowOtherSide = false } = {}) {
         const initData = dataManager.getInitClientData();
         if (!initData || !initData.openableLootDropMap) {
             return [];
@@ -517,7 +543,7 @@ class ExpectedValueCalculator {
             const avgCount = (minCount + maxCount) / 2;
 
             // Get price
-            const priceInfo = this.getDropPriceInfo(itemHrid, { allowIndirect });
+            const priceInfo = this.getDropPriceInfo(itemHrid, { allowIndirect, allowOtherSide });
             const price = priceInfo.value;
 
             // Tax strictly follows the resolver's needsTax contract - never item tradability,

@@ -93,6 +93,8 @@ export default {
         valueSourceShop:
             '市场上不出售，按商店兑换价值估算：{{cost}} 个{{currency}}，每个约 {{perToken}} = 每件 {{unit}}（不计市场税）。',
         valueSourceCurrency: '按其最佳商店兑换价值估算：每个代币 {{perToken}}（不计市场税）。',
+        valueSourceAtAsk: '该物品暂无买单，按其卖单价估算。',
+        valueSourceAtBid: '该物品暂无卖单，按其买单价估算。',
         openedLabel: '已开启',
         partialBadgeLabel: '（部分）',
         profitLabel: '利润',

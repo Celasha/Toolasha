@@ -360,6 +360,10 @@ export default {
             },
             expectedValue_respectPricingMode: { label: '期望值计算使用定价模式' },
             expectedValue_includeCowbells: { label: '期望值计算包含牛铃价值' },
+            expectedValue_otherSideFallback: {
+                label: '开箱统计：无买单的掉落按卖单价计（无卖单则按买单价）',
+                help: '当掉落物在出售所用的一侧没有价格时，开箱统计会按市场另一侧的价格估值，而不是让“预期”显示为部分、“运气”留空。对于需要出售的物品，卖单价偏乐观。',
+            },
             showConsumTips: { label: 'HP/MP 消耗品：恢复速度、性价比' },
             dungeonTokenTooltips: { label: '货币提示框：显示代币、封印、牛铃的商店价值' },
             itemTooltip_gathering: {

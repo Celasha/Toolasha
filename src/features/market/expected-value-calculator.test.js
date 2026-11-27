@@ -207,6 +207,65 @@ describe('resolveSellSideValue', () => {
         ).toBeNull();
     });
 
+    describe('allowOtherSide', () => {
+        const TRIDENT = '/items/blazing_trident';
+        // Asks exist, no buy orders: the configured sell side (no mode) and bid come back empty
+        const asksOnly = (_hrid, opts) => (opts?.mode === 'ask' ? 228800000 : null);
+
+        test('values a drop with no sell-side price at its ask, taxed, and says so', () => {
+            mockGetItemPrice.mockImplementation(asksOnly);
+
+            expect(
+                expectedValueCalculator.resolveSellSideValue(TRIDENT, 0, { allowIndirect: true, allowOtherSide: true })
+            ).toEqual({ value: 228800000, source: 'market', needsTax: true, isOutlier: false, otherSide: 'ask' });
+        });
+
+        test('prefers the bid over the ask when only the sell side is missing', () => {
+            mockGetItemPrice.mockImplementation((_hrid, opts) => {
+                if (opts?.mode === 'bid') return 1000;
+                if (opts?.mode === 'ask') return 2000;
+                return null;
+            });
+
+            expect(
+                expectedValueCalculator.resolveSellSideValue(TRIDENT, 0, { allowIndirect: true, allowOtherSide: true })
+            ).toMatchObject({ value: 1000, otherSide: 'bid' });
+        });
+
+        test('is off unless the caller opts in', () => {
+            mockGetItemPrice.mockImplementation(asksOnly);
+
+            expect(expectedValueCalculator.resolveSellSideValue(TRIDENT, 0, { allowIndirect: true })).toBeNull();
+            expect(expectedValueCalculator.resolveSellSideValue(TRIDENT)).toBeNull();
+        });
+
+        test('still returns null when neither side has a price', () => {
+            mockGetItemPrice.mockReturnValue(null);
+
+            expect(
+                expectedValueCalculator.resolveSellSideValue(TRIDENT, 0, { allowIndirect: true, allowOtherSide: true })
+            ).toBeNull();
+        });
+
+        test('an item priced on the sell side is unchanged', () => {
+            mockGetItemPrice.mockReturnValue(500);
+
+            expect(
+                expectedValueCalculator.resolveSellSideValue(TRIDENT, 0, { allowIndirect: true, allowOtherSide: true })
+            ).toEqual({ value: 500, source: 'market', needsTax: true, isOutlier: false });
+        });
+
+        test('is tried before the shop redemption chain', () => {
+            mockGetItemPrice.mockImplementation(asksOnly);
+            mockResolveShopRedemptionValue.mockReturnValue({ value: 1, isOutlier: false });
+
+            expect(
+                expectedValueCalculator.resolveSellSideValue(TRIDENT, 0, { allowIndirect: true, allowOtherSide: true })
+            ).toMatchObject({ source: 'market', otherSide: 'ask' });
+            expect(mockResolveShopRedemptionValue).not.toHaveBeenCalled();
+        });
+    });
+
     describe('untradable capes with no redemption value', () => {
         const CAPE = '/items/sinister_cape';
 
@@ -390,6 +449,19 @@ describe('allowIndirect threading through the EV path', () => {
         // 1 * 1 * 30000, no tax - untradeable drops are never taxed
         expect(ev.drops[0].expectedValue).toBe(30000);
         expect(ev.expectedValue).toBe(30000);
+    });
+
+    test('calculateExpectedValue prices an ask-only drop when allowOtherSide is on, and not otherwise', () => {
+        mockGetItemPrice.mockImplementation((_hrid, opts) => (opts?.mode === 'ask' ? 1000 : null));
+
+        const withFallback = expectedValueCalculator.calculateExpectedValue('/items/chest', {
+            allowIndirect: true,
+            allowOtherSide: true,
+        });
+        const without = expectedValueCalculator.calculateExpectedValue('/items/chest', { allowIndirect: true });
+
+        expect(withFallback.drops[0].hasPriceData).toBe(true);
+        expect(without.drops[0].hasPriceData).toBe(false);
     });
 
     test('the same drop stays hasPriceData:false by default (opt-in only)', () => {
