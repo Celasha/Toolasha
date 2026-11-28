@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.38.1](https://github.com/Celasha/Toolasha/compare/v3.38.0...v3.38.1) (2026-11-28)
+
+### Code Refactoring
+
+- share one marketplace tab host between Market History and Wishlist ([5c9a282](https://github.com/Celasha/Toolasha/commit/5c9a282e469091f52bbd3086c55b8fca8ca1dd9e))
+
+### Miscellaneous Chores
+
+- remove the temporary [ToolashaDiag] consumable tracking logs ([cbbce4e](https://github.com/Celasha/Toolasha/commit/cbbce4e53f6714d06ef25e0a3e5974ba3b3b76d2))
+
 ## [3.38.0](https://github.com/Celasha/Toolasha/compare/v3.37.0...v3.38.0) (2026-11-27)
 
 ### Features
