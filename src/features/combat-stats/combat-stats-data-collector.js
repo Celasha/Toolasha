@@ -10,7 +10,6 @@ import { calculateLevelGapDebuff, calculateCombatLevelFromLevelFields } from '..
 import dungeonTracker from '../combat/dungeon-tracker.js';
 import ExpectedLootTracker from './expected-loot-tracker.js';
 import consumableDebugRecorder from './combat-stats-consumable-debug.js';
-import { diagLog } from './combat-stats-diag-log.js';
 import {
     reconcileSnapshot,
     wavesElapsed,
@@ -324,7 +323,6 @@ class CombatStatsDataCollector {
         });
         this.applyReconciliation(tracker, result, now);
         consumableDebugRecorder.recordReconcile(result, gapSeconds, now);
-        this.logReconciliation('self', result, gapSeconds, fightingSeconds);
     }
 
     /**
@@ -353,23 +351,6 @@ class CombatStatsDataCollector {
             fightingSeconds,
         });
         this.applyReconciliation(tracker, result, now);
-        this.logReconciliation(player.character?.name || 'party', result, gapSeconds, fightingSeconds);
-    }
-
-    /**
-     * Temporary console diagnostics (#803): only outcomes worth looking at.
-     */
-    logReconciliation(who, result, gapSeconds, fightingSeconds) {
-        const notable = result.items.filter((entry) => entry.action !== 'none' && entry.action !== 'baseline');
-        if (notable.length === 0) return;
-        diagLog('reconcile', {
-            who,
-            gapSeconds: gapSeconds === null ? null : Math.round(gapSeconds),
-            fightingSeconds: fightingSeconds === null ? null : Math.round(fightingSeconds),
-            unobserved: result.unobserved,
-            excludeSeconds: Math.round(result.excludeSeconds),
-            items: notable.map((entry) => `${entry.itemHrid}:${entry.action}:${entry.missed}`),
-        });
     }
 
     /**
