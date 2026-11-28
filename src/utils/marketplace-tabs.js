@@ -69,6 +69,30 @@ function getMarketplaceTabContainerCandidates() {
 }
 
 /**
+ * The Marketplace tab container for a feature that adds a tab of its own. Unlike
+ * getVisibleMarketplaceTabContainer (which fails closed so marketplace workflows never act on the
+ * wrong panel), this still finds the tabs when the panel is mounted but hidden, or when more than one
+ * panel is mounted: it prefers a visible container and otherwise takes the first one. Adding a tab to
+ * a hidden panel is harmless, and it is there when the panel is revealed.
+ * @returns {HTMLElement|null}
+ */
+export function findMarketplaceTabContainer() {
+    const containers = [];
+    for (const panel of document.querySelectorAll('[class*="MarketplacePanel_marketplacePanel"]')) {
+        for (const tabsContainer of panel.querySelectorAll('.MuiTabs-flexContainer[role="tablist"]')) {
+            const hasNativeTab = Array.from(tabsContainer.children).some((tab) => {
+                const text = tab.textContent || '';
+                return (
+                    matchesMarketplaceTabLabel(text, 'marketListings') || matchesMarketplaceTabLabel(text, 'myListings')
+                );
+            });
+            if (hasNativeTab) containers.push(tabsContainer);
+        }
+    }
+    return containers.find(isElementActuallyVisible) ?? containers[0] ?? null;
+}
+
+/**
  * Get the unique visible Marketplace native tab container.
  * Hidden retained panels and ambiguous duplicate visible panels fail closed.
  * @returns {HTMLElement|null}

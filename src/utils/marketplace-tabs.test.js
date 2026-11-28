@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
     clickMarketplaceNavigationButton,
     createMaterialTab,
+    findMarketplaceTabContainer,
     getVisibleMarketplaceTabContainer,
     isMarketplaceMarketListingsSelected,
     setupMarketplaceCleanupObserver,
@@ -276,6 +277,66 @@ describe('marketplace-tabs', () => {
         panel.style.display = '';
         await Promise.resolve();
         expect(onTabsGone).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('findMarketplaceTabContainer', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    test('finds the tabs of a visible marketplace', () => {
+        const { tabs } = makeMarketplacePanel();
+
+        expect(findMarketplaceTabContainer()).toBe(tabs);
+    });
+
+    test('still finds the tabs of a marketplace that is mounted hidden, where the fail-closed lookup gives up', () => {
+        const { tabs } = makeMarketplacePanel({ hidden: true });
+
+        expect(getVisibleMarketplaceTabContainer()).toBeNull();
+        expect(findMarketplaceTabContainer()).toBe(tabs);
+    });
+
+    test('prefers the visible container when a hidden one is mounted as well', () => {
+        makeMarketplacePanel({ hidden: true });
+        const visible = makeMarketplacePanel();
+
+        expect(findMarketplaceTabContainer()).toBe(visible.tabs);
+        expect(getVisibleMarketplaceTabContainer()).toBe(visible.tabs);
+    });
+
+    test('takes the first when none is visible', () => {
+        const first = makeMarketplacePanel({ hidden: true });
+        makeMarketplacePanel({ hidden: true });
+
+        expect(findMarketplaceTabContainer()).toBe(first.tabs);
+    });
+
+    test('ignores tab lists outside the marketplace and ones without the native tabs', () => {
+        const other = document.createElement('div');
+        other.className = 'MuiTabs-flexContainer';
+        other.setAttribute('role', 'tablist');
+        other.innerHTML = '<button role="tab">Equipment</button>';
+        document.body.appendChild(other);
+        expect(findMarketplaceTabContainer()).toBeNull();
+
+        const { panel, tabs } = makeMarketplacePanel();
+        const inner = document.createElement('div');
+        inner.className = 'MuiTabs-flexContainer';
+        inner.setAttribute('role', 'tablist');
+        inner.innerHTML = '<button role="tab">Weapons</button>';
+        panel.insertBefore(inner, tabs);
+
+        expect(findMarketplaceTabContainer()).toBe(tabs);
+    });
+
+    test('is null when there is no marketplace', () => {
+        expect(findMarketplaceTabContainer()).toBeNull();
     });
 });
 

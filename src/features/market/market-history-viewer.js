@@ -14,22 +14,10 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { formatWithSeparator, formatKMB, formatDateTime } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
-import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { installMarketplaceTab } from '../../utils/marketplace-tab-host.js';
 import estimatedListingAge from './estimated-listing-age.js';
 import { t } from '../../core/i18n.js';
 import { getItemName as getLocalizedItemName, translateGameName } from '../../utils/game-i18n.js';
-
-/**
- * Check whether rendered game UI text matches an English label or its in-game translation
- * (tab/cell labels are localized by the game, e.g. zh: Market Listings 商品列表).
- * @param {string} text - Rendered textContent
- * @param {string} english - English label
- * @param {string} key - Game i18n key within the marketplacePanel namespace
- * @returns {boolean}
- */
-function matchesMarketplaceLabel(text, english, key) {
-    return text.includes(english) || text.includes(translateGameName('marketplacePanel', key, english));
-}
 
 /**
  * Check whether trimmed rendered game UI text equals an English label or its translation.
@@ -71,9 +59,8 @@ class MarketHistoryViewer {
         this.activeFilterPopup = null; // Track currently open filter popup
         this.popupCloseHandler = null; // Track the close handler to clean it up properly
 
-        // Marketplace tab tracking
-        this.marketplaceTab = null;
-        this.tabCleanupObserver = null;
+        // Marketplace tab (installed and kept in place by the shared tab host)
+        this.tabHost = null;
 
         // Performance optimization: cache item names to avoid repeated lookups
         this.itemNameCache = new Map();
@@ -155,112 +142,18 @@ class MarketHistoryViewer {
     }
 
     /**
-     * Add "Market History" tab to marketplace tabs
+     * Add "Market History" tab to marketplace tabs. The shared host builds and places the tab and keeps
+     * it installed across marketplace remounts, the same way as every other Marketplace tab.
      */
     addMarketplaceTab() {
-        const ensureTabExists = () => {
-            // Get tabs container
-            const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-            if (!tabsContainer) return;
-
-            // Verify this is the marketplace tabs (check for Market Listings tab)
-            const hasMarketListingsTab = Array.from(tabsContainer.children).some((btn) =>
-                matchesMarketplaceLabel(btn.textContent, 'Market Listings', 'marketListings')
-            );
-            if (!hasMarketListingsTab) return;
-
-            // Check if tab already exists
-            if (tabsContainer.querySelector('[data-mwi-market-history-tab="true"]')) {
-                return;
-            }
-
-            // Get reference tab (My Listings) to clone structure
-            const referenceTab = Array.from(tabsContainer.children).find((btn) =>
-                matchesMarketplaceLabel(btn.textContent, 'My Listings', 'myListings')
-            );
-            if (!referenceTab) return;
-
-            // Clone reference tab
-            const tab = referenceTab.cloneNode(true);
-
-            // Mark as market history tab
-            tab.setAttribute('data-mwi-market-history-tab', 'true');
-
-            // Update badge content
-            const badgeSpan = tab.querySelector('.TabsComponent_badge__1Du26');
-            if (badgeSpan) {
-                badgeSpan.innerHTML = `
-                    <div style="text-align: center;">
-                        <div>${t('marketHistory.modalTitle')}</div>
-                    </div>
-                `;
-            }
-
-            // Remove selected state
-            tab.classList.remove('Mui-selected');
-            tab.setAttribute('aria-selected', 'false');
-            tab.setAttribute('tabindex', '-1');
-
-            // Add click handler
-            tab.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.openModal();
-            });
-
-            // Insert before any missing materials custom tabs (data-mwi-custom-tab="true")
-            const firstCustomTab = Array.from(tabsContainer.children).find(
-                (btn) => btn.getAttribute('data-mwi-custom-tab') === 'true'
-            );
-
-            if (firstCustomTab) {
-                firstCustomTab.before(tab);
-            } else {
-                // No custom tabs, append to end
-                tabsContainer.appendChild(tab);
-            }
-
-            this.marketplaceTab = tab;
-        };
-
-        // Watch for marketplace tabs container to appear
-        if (!this.tabCleanupObserver) {
-            this.tabCleanupObserver = createMutationWatcher(
-                document.body,
-                () => {
-                    // Check if marketplace is still active
-                    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-                    if (!tabsContainer) {
-                        // Marketplace closed, clean up tab
-                        if (this.marketplaceTab && !document.body.contains(this.marketplaceTab)) {
-                            this.marketplaceTab = null;
-                        }
-                        return;
-                    }
-
-                    // Check if this is still the marketplace (Market Listings tab exists)
-                    const hasMarketListingsTab = Array.from(tabsContainer.children).some((btn) =>
-                        matchesMarketplaceLabel(btn.textContent, 'Market Listings', 'marketListings')
-                    );
-
-                    if (!hasMarketListingsTab) {
-                        // No longer on marketplace, clean up
-                        if (this.marketplaceTab && document.body.contains(this.marketplaceTab)) {
-                            this.marketplaceTab.remove();
-                            this.marketplaceTab = null;
-                        }
-                        return;
-                    }
-
-                    // Try to ensure tab exists
-                    ensureTabExists();
-                },
-                { childList: true, subtree: true }
-            );
-        }
-
-        // Initial attempt
-        ensureTabExists();
+        this.tabHost?.stop();
+        this.tabHost = installMarketplaceTab({
+            name: 'MarketHistoryTab',
+            attr: 'data-mwi-market-history-tab',
+            order: 10,
+            getLabel: () => t('marketHistory.modalTitle'),
+            onClick: () => this.openModal(),
+        });
     }
 
     /**
@@ -2910,7 +2803,8 @@ class MarketHistoryViewer {
      * Disable the feature
      */
     disable() {
-        // Note: We don't need to disconnect observer since we're using the shared settings UI observer
+        this.tabHost?.stop();
+        this.tabHost = null;
 
         // Clean up any active filter popup and its event listener
         if (this.activeFilterPopup) {

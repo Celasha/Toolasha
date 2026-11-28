@@ -6,17 +6,13 @@
  * tab (or the game switching tabs itself) turns it off again, so React's own state stays correct.
  */
 
-import domObserver from '../../../core/dom-observer.js';
 import dataManager from '../../../core/data-manager.js';
 import { t } from '../../../core/i18n.js';
 import { addStyles, removeStyles } from '../../../utils/dom.js';
 import { formatWithSeparator } from '../../../utils/formatters.js';
 import { getItemName } from '../../../utils/game-i18n.js';
-import {
-    getVisibleMarketplaceTabContainer,
-    navigateToMarketplace,
-    canOpenInMarketplace,
-} from '../../../utils/marketplace-tabs.js';
+import { navigateToMarketplace, canOpenInMarketplace } from '../../../utils/marketplace-tabs.js';
+import { installMarketplaceTab } from '../../../utils/marketplace-tab-host.js';
 import { getWishlistKey } from './wishlist-store.js';
 import { getCoinBalance } from './wishlist-pricing.js';
 
@@ -116,7 +112,7 @@ class WishlistUI {
         this.panel = null;
         this.tabsComponent = null;
         this.renderToken = 0;
-        this.unregisterObserver = null;
+        this.host = null;
         this.selectionObserver = null;
         this.tabClickHandler = null;
         this.draggedKey = null;
@@ -125,47 +121,63 @@ class WishlistUI {
 
     start() {
         addStyles(CSS, STYLE_ID);
-        this.unregisterObserver = domObserver.onClass(
-            'MarketWishlist',
-            ['TabsComponent_tabPanelsContainer', 'MuiTabs-flexContainer'],
-            () => this.ensureInstalled()
-        );
-        this.ensureInstalled();
+        // The shared host finds the tab bar, builds and places the tab, and re-installs it after a
+        // remount, exactly as for the other Marketplace tabs; this class adds the panel to it.
+        this.host = installMarketplaceTab({
+            name: 'MarketWishlist',
+            attr: TAB_ATTR,
+            order: 20,
+            getLabel: () => t('marketWishlist.tabLabel'),
+            onClick: () => this.activate(),
+            onEnsure: (tab, context) => this.attach(tab, context),
+            isHealthy: () => !!this.panel?.isConnected,
+        });
     }
 
     stop() {
-        this.unregisterObserver?.();
-        this.unregisterObserver = null;
+        this.host?.stop();
+        this.host = null;
         this.uninstall();
         removeStyles(STYLE_ID);
     }
 
     /**
-     * Make sure our tab and panel exist in the currently mounted marketplace. Idempotent.
+     * Check the tab and panel are in place now. Idempotent.
      */
     ensureInstalled() {
-        const tablist = getVisibleMarketplaceTabContainer();
-        if (!tablist) return;
+        this.host?.ensure();
+    }
 
+    /**
+     * Called by the host whenever our tab is confirmed in a tab bar: make sure the panel exists
+     * beside the game's own panels, and that everything else is wired to this tab bar.
+     * @param {HTMLElement} tab
+     * @param {{tablist: HTMLElement, labelEl: HTMLElement|null}} context
+     */
+    attach(tab, { tablist, labelEl }) {
         const tabsComponent = tablist.closest('[class*="TabsComponent_tabsComponent"]');
         const panels = tabsComponent?.querySelector(':scope > [class*="TabsComponent_tabPanelsContainer"]');
         if (!tabsComponent || !panels) return;
 
-        // A different tablist than the one we installed into means the marketplace was remounted
+        // A different tab bar than the one we were using means the marketplace was remounted
         if (this.tablist && this.tablist !== tablist) {
             this.uninstall();
         }
 
-        let tab = tablist.querySelector(`[${TAB_ATTR}]`);
-        if (!tab) {
-            tab = this.createTab(tablist);
-            if (!tab) return;
-        }
         let panel = panels.querySelector(`:scope > .${PANEL_CLASS}`);
         if (!panel) {
             panel = document.createElement('div');
             panel.className = PANEL_CLASS;
             panels.appendChild(panel);
+        }
+
+        if (labelEl && !labelEl.querySelector('.mwi-wishlist-tab-alert')) {
+            const alert = document.createElement('span');
+            alert.className = 'mwi-wishlist-tab-alert';
+            alert.textContent = '❗';
+            alert.title = t('marketWishlist.alertTooltip');
+            alert.hidden = true;
+            labelEl.appendChild(alert);
         }
 
         this.tablist = tablist;
@@ -188,65 +200,6 @@ class WishlistUI {
     applyTabAlert() {
         const alert = this.tab?.querySelector('.mwi-wishlist-tab-alert');
         if (alert) alert.hidden = !this.tabAlert;
-    }
-
-    /**
-     * Clone an unselected native tab into a Wishlist tab
-     * @param {HTMLElement} tablist
-     * @returns {HTMLElement|null}
-     */
-    createTab(tablist) {
-        const reference = Array.from(tablist.children).find(
-            (el) =>
-                el.getAttribute('role') === 'tab' &&
-                !el.classList.contains('Mui-selected') &&
-                !el.hasAttribute('data-mwi-custom-tab') &&
-                !el.hasAttribute('data-mwi-shrine-tab') &&
-                !el.hasAttribute('data-mwi-market-history-tab') &&
-                !el.hasAttribute(TAB_ATTR)
-        );
-        if (!reference) return null;
-
-        const tab = reference.cloneNode(true);
-        tab.setAttribute(TAB_ATTR, 'true');
-        // A clone must not duplicate the native tab/panel identity
-        tab.removeAttribute('id');
-        tab.removeAttribute('aria-controls');
-        tab.classList.remove('Mui-selected');
-        tab.setAttribute('aria-selected', 'false');
-        tab.setAttribute('tabindex', '-1');
-
-        const badge = tab.querySelector('[class*="TabsComponent_badge"]');
-        if (badge) {
-            badge.textContent = '';
-            const label = document.createElement('span');
-            label.className = 'mwi-wishlist-tab-label';
-            label.textContent = t('marketWishlist.tabLabel');
-            const alert = document.createElement('span');
-            alert.className = 'mwi-wishlist-tab-alert';
-            alert.textContent = '❗';
-            alert.title = t('marketWishlist.alertTooltip');
-            alert.hidden = true;
-            badge.append(label, alert);
-        }
-
-        tab.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.activate();
-        });
-
-        // After the Market History tab if present, else before the first material tab, else last
-        const marketHistoryTab = tablist.querySelector('[data-mwi-market-history-tab]');
-        const firstCustomTab = tablist.querySelector('[data-mwi-custom-tab]');
-        if (marketHistoryTab) {
-            marketHistoryTab.after(tab);
-        } else if (firstCustomTab) {
-            firstCustomTab.before(tab);
-        } else {
-            tablist.appendChild(tab);
-        }
-        return tab;
     }
 
     /**

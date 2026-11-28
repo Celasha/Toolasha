@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     navigateToMarketplace: vi.fn(() => true),
     canOpenInMarketplace: vi.fn(() => true),
     coins: 1000,
+    marketplaceVisible: true,
 }));
 
 vi.mock('../../../core/dom-observer.js', () => ({
@@ -30,7 +31,9 @@ vi.mock('../../../core/i18n.js', () => ({
 }));
 vi.mock('../../../utils/game-i18n.js', () => ({ getItemName: (_hrid, fallback) => fallback }));
 vi.mock('../../../utils/marketplace-tabs.js', () => ({
-    getVisibleMarketplaceTabContainer: () => document.querySelector('[role="tablist"]'),
+    // Installs even into a hidden marketplace; only visibility differs
+    findMarketplaceTabContainer: () => document.querySelector('[role="tablist"]'),
+    isElementActuallyVisible: (el) => mocks.marketplaceVisible && !!el?.isConnected,
     navigateToMarketplace: mocks.navigateToMarketplace,
     canOpenInMarketplace: mocks.canOpenInMarketplace,
 }));
@@ -86,6 +89,7 @@ describe('WishlistUI', () => {
     beforeEach(async () => {
         document.body.innerHTML = MARKETPLACE_HTML;
         mocks.coins = 1000;
+        mocks.marketplaceVisible = true;
         mocks.navigateToMarketplace.mockClear();
         mocks.canOpenInMarketplace.mockReset().mockReturnValue(true);
         prices = {
@@ -121,7 +125,9 @@ describe('WishlistUI', () => {
             'Market History',
             'marketWishlist.tabLabel❗',
         ]);
-        expect(tab().querySelector('.mwi-wishlist-tab-label').textContent).toBe('marketWishlist.tabLabel');
+        expect(tab().querySelector('.mwi-marketplace-tab-label').firstChild.textContent).toBe(
+            'marketWishlist.tabLabel'
+        );
         // A clone must not duplicate the native identity
         expect(tab().id).toBe('');
         expect(tab().hasAttribute('aria-controls')).toBe(false);
@@ -298,6 +304,45 @@ describe('WishlistUI', () => {
         document.getElementById('t2').click();
 
         expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    test('installs into a marketplace that is mounted hidden, so the tab is there when it is revealed', () => {
+        ui.stop();
+        document.body.innerHTML = MARKETPLACE_HTML;
+        mocks.marketplaceVisible = false;
+        ui = new WishlistUI({ store, getPrice: async () => prices['/items/a:0'] });
+
+        ui.start();
+
+        expect(tab()).not.toBeNull();
+        expect(panel()).not.toBeNull();
+    });
+
+    test('installs a marketplace that appears later even when no class-observer event arrives', async () => {
+        ui.stop();
+        document.body.innerHTML = '';
+        ui = new WishlistUI({ store, getPrice: async () => prices['/items/a:0'] });
+        ui.start();
+        expect(tab()).toBeNull();
+
+        document.body.innerHTML = MARKETPLACE_HTML;
+        await new Promise((resolve) => setTimeout(resolve, 400));
+
+        expect(tab()).not.toBeNull();
+        expect(panel()).not.toBeNull();
+    });
+
+    test('stop cancels a pending recheck', async () => {
+        ui.stop();
+        document.body.innerHTML = '';
+        ui = new WishlistUI({ store, getPrice: async () => prices['/items/a:0'] });
+        ui.start();
+        document.body.innerHTML = MARKETPLACE_HTML;
+
+        ui.stop();
+        await new Promise((resolve) => setTimeout(resolve, 400));
+
+        expect(tab()).toBeNull();
     });
 
     test('a marketplace remount gets a fresh tab and panel', () => {
