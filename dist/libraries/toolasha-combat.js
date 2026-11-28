@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.38.0
+ * Version: 3.38.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -26561,22 +26561,6 @@
     const consumableDebugRecorder = new ConsumableDebugRecorder();
 
     /**
-     * Temporary console diagnostics for the consumable tracking investigation (#803).
-     * Every line starts with DIAG_TAG so it can be filtered in the browser console.
-     * Remove once the tracking redesign settles.
-     */
-
-    const DIAG_TAG = '[ToolashaDiag]';
-
-    /**
-     * @param {string} kind - Short event name
-     * @param {Object} fields - JSON-serialisable details
-     */
-    function diagLog(kind, fields = {}) {
-        console.log(DIAG_TAG, kind, JSON.stringify({ at: new Date().toISOString(), ...fields }));
-    }
-
-    /**
      * Consumable reconciliation (issue #803).
      *
      * Event counting misses consumption whenever the page is not receiving events (closed tab,
@@ -27007,7 +26991,6 @@
             });
             this.applyReconciliation(tracker, result, now);
             consumableDebugRecorder.recordReconcile(result, gapSeconds, now);
-            this.logReconciliation('self', result, gapSeconds, fightingSeconds);
         }
 
         /**
@@ -27036,23 +27019,6 @@
                 fightingSeconds,
             });
             this.applyReconciliation(tracker, result, now);
-            this.logReconciliation(player.character?.name || 'party', result, gapSeconds, fightingSeconds);
-        }
-
-        /**
-         * Temporary console diagnostics (#803): only outcomes worth looking at.
-         */
-        logReconciliation(who, result, gapSeconds, fightingSeconds) {
-            const notable = result.items.filter((entry) => entry.action !== 'none' && entry.action !== 'baseline');
-            if (notable.length === 0) return;
-            diagLog('reconcile', {
-                who,
-                gapSeconds: gapSeconds === null ? null : Math.round(gapSeconds),
-                fightingSeconds: fightingSeconds === null ? null : Math.round(fightingSeconds),
-                unobserved: result.unobserved,
-                excludeSeconds: Math.round(result.excludeSeconds),
-                items: notable.map((entry) => `${entry.itemHrid}:${entry.action}:${entry.missed}`),
-            });
         }
 
         /**
