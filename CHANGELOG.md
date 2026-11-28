@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.38.0](https://github.com/Celasha/Toolasha/compare/v3.37.0...v3.38.0) (2026-11-27)
+
+### Features
+
+- add a price history chart to the Wishlist ([fc16555](https://github.com/Celasha/Toolasha/commit/fc1655571950b236471a392b6db95a107ea16e0d))
+- add a Wishlist tab to the Marketplace ([a4c69b9](https://github.com/Celasha/Toolasha/commit/a4c69b9be625ff149ea756d53ce570e46809defb))
+
+### Bug Fixes
+
+- explain every ⚠ with a hover tooltip ([78f105c](https://github.com/Celasha/Toolasha/commit/78f105c3bbbea8e6a964a29286b875d2c873367b))
+- make tooltip shrink-to-fit work on every display and for every tooltip ([8af4e4d](https://github.com/Celasha/Toolasha/commit/8af4e4d4fb7e9a54af607a36c599c215bea09df7))
+
 ## [3.37.0](https://github.com/Celasha/Toolasha/compare/v3.36.0...v3.37.0) (2026-11-27)
 
 ### Features
