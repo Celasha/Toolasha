@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.37.0
+ * Version: 3.38.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1024,6 +1024,55 @@
         marketData: {
             outlierPriceWarningTooltip:
                 "This price was outside the normal range vs. the game's own reference market value, so Toolasha substituted the reference value instead. Adjust or disable this in Settings → Pricing & Profit.",
+        },
+
+        warningHover: {
+            missingPrice:
+                "No price is available for something in this calculation, so this value can't be worked out. This usually means an item has no market listing and no crafting or shop price to estimate from.",
+            estimatedPrice:
+                "This value includes an estimated or substituted price: no live market price was available, or it was far outside the game's own reference market value so the reference value was used instead. Adjust this in Settings → Pricing & Profit.",
+            lowDrinkSupply:
+                'Running low: less of this drink is left than your warning threshold (Settings → Drink timer: warning threshold).',
+            lowConsumableSupply:
+                'Running low: this consumable will run out sooner than your warning threshold (Settings → Combat Statistics: consumable runway warning threshold).',
+        },
+
+        marketWishlist: {
+            tabLabel: 'Wishlist',
+            panelTitle: 'Wishlist',
+            coinsLabel: (p) => `You have ${p.coins} coins`,
+            emptyMessage:
+                'Your wishlist is empty. In Market Listings, open an item, click its icon at the top and choose "Add to Wishlist".',
+            addToMenu: 'Add to Wishlist',
+            removeFromMenu: 'Remove from Wishlist',
+            buyButton: 'Buy',
+            buyDisabledTooltip: 'This item cannot be bought on the market',
+            removeTooltip: 'Remove from wishlist',
+            dragTooltip: 'Drag to reorder',
+            estimatedTag: 'est.',
+            estimatedTooltip:
+                'Nothing is listed for sale. Estimated from crafting, shop, enhancement or the game reference value.',
+            noPrice: 'No price',
+            canAfford: '✓ Can afford',
+            needMore: (p) => `Need ${p.amount} more`,
+            alertTooltip: 'You can afford the first item on your wishlist',
+            historyTooltip: 'Click for price history',
+            chartTitle: (p) => `${p.name} - price history`,
+            range24h: '24h',
+            range7d: '7d',
+            range30d: '30d',
+            rangeAll: 'All',
+            connectGaps: 'Connect gaps',
+            trackingSince: (p) => `Tracking since ${p.date}`,
+            statCurrent: (p) => `Current: ${p.value}`,
+            statLowest: (p) => `Lowest: ${p.value}`,
+            statHighest: (p) => `Highest: ${p.value}`,
+            statChange: (p) => `Change: ${p.value}`,
+            priceAxisTitle: 'Price',
+            estimatedPoint: '(estimated)',
+            noHistoryYet: 'No price history recorded yet. Prices are recorded while the game is open.',
+            notEnoughHistory: 'Not enough history in this range yet. Prices are recorded while the game is open.',
+            chartUnavailable: 'The chart library is not available.',
         },
 
         marketHistory: {
@@ -4332,6 +4381,18 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     label: 'Market: Show history viewer button in settings',
                     help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
                 },
+                marketWishlist: {
+                    label: 'Market: Wishlist tab (track items you want to buy)',
+                    help: 'Adds a Wishlist tab to the Marketplace. Add items from the item menu, order them, see their current price (estimated from crafting, shop or reference value when nothing is listed), and see what you can afford. Price history is recorded from the moment you add an item.',
+                },
+                marketWishlist_alertTab: {
+                    label: 'Market: Show ❗ on the Wishlist tab when you can afford the first item',
+                    help: 'Shows a ❗ on the Wishlist tab (while the Marketplace is open) once your coins cover the price of the first item on your wishlist.',
+                },
+                marketWishlist_alertNav: {
+                    label: 'Market: Show ❗ on the Marketplace link when you can afford the first wishlist item',
+                    help: 'Shows a ❗ on the Marketplace link in the left sidebar once your coins cover the price of the first item on your wishlist, so you can see it without opening the Marketplace.',
+                },
                 market_showPhiloCalculator: {
                     label: 'Market: Show Philo Gamba calculator button in settings',
                     help: 'Adds "Philo Gamba" button to settings panel for calculating transmutation ROI into Philosopher\'s Stones',
@@ -5768,6 +5829,18 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                 market_showHistoryViewer: {
                     label: '市场：在设置中显示历史查看器按钮',
                     help: '在设置面板新增“查看市场历史”按钮，用于查看和导出全部市场挂单历史',
+                },
+                marketWishlist: {
+                    label: '市场：心愿单标签页（记录想购买的物品）',
+                    help: '在市场新增“心愿单”标签页。可从物品菜单添加物品、调整顺序、查看当前价格（无挂单时按制作、商店或参考价值估算），并显示是否买得起。价格历史从添加物品时开始记录。',
+                },
+                marketWishlist_alertTab: {
+                    label: '市场：买得起心愿单第一项时在心愿单标签页显示 ❗',
+                    help: '当金币足够购买心愿单第一项时，在心愿单标签页（市场打开时）显示 ❗。',
+                },
+                marketWishlist_alertNav: {
+                    label: '市场：买得起心愿单第一项时在市场链接上显示 ❗',
+                    help: '当金币足够购买心愿单第一项时，在左侧栏的市场链接上显示 ❗，无需打开市场即可看到。',
                 },
                 market_showPhiloCalculator: {
                     label: '市场：在设置中显示 Philo Gamba 计算器按钮',
@@ -8084,6 +8157,41 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             profitabilityTitle: '盈利能力',
             actionsCountBreakdownTitle: (p) => `${p.count} 次操作明细`,
         },
+        marketWishlist: {
+            tabLabel: '心愿单',
+            panelTitle: '心愿单',
+            coinsLabel: (p) => `你有 ${p.coins} 金币`,
+            emptyMessage: '心愿单为空。在“商品列表”中打开一个物品，点击顶部的物品图标，选择“加入心愿单”。',
+            addToMenu: '加入心愿单',
+            removeFromMenu: '从心愿单移除',
+            buyButton: '购买',
+            buyDisabledTooltip: '该物品无法在市场购买',
+            removeTooltip: '从心愿单移除',
+            dragTooltip: '拖动以排序',
+            estimatedTag: '估',
+            estimatedTooltip: '暂无在售挂单，按制作、商店、强化或游戏参考价值估算。',
+            noPrice: '暂无价格',
+            canAfford: '✓ 买得起',
+            needMore: (p) => `还差 ${p.amount}`,
+            alertTooltip: '你买得起心愿单上的第一项',
+            historyTooltip: '点击查看价格历史',
+            chartTitle: (p) => `${p.name} - 价格历史`,
+            range24h: '24小时',
+            range7d: '7天',
+            range30d: '30天',
+            rangeAll: '全部',
+            connectGaps: '连接间隔',
+            trackingSince: (p) => `记录开始于 ${p.date}`,
+            statCurrent: (p) => `当前：${p.value}`,
+            statLowest: (p) => `最低：${p.value}`,
+            statHighest: (p) => `最高：${p.value}`,
+            statChange: (p) => `变化：${p.value}`,
+            priceAxisTitle: '价格',
+            estimatedPoint: '（估算）',
+            noHistoryYet: '尚无价格历史。游戏打开期间才会记录价格。',
+            notEnoughHistory: '此范围内的历史数据还不够。游戏打开期间才会记录价格。',
+            chartUnavailable: '图表库不可用。',
+        },
         marketHistory: {
             modalTitle: '市场历史',
             searchItemsPlaceholder: '搜索物品…',
@@ -8461,6 +8569,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         marketData: {
             outlierPriceWarningTooltip:
                 '该价格明显偏离游戏官方参考市场价值的正常区间，因此 Toolasha 已改用参考价值。可在“设置 → 定价与利润”中调整或关闭此功能。',
+        },
+        warningHover: {
+            missingPrice:
+                '此计算中有物品缺少价格，因此无法算出该数值。通常是该物品没有市场挂单，也没有可用于估算的制作价或商店价。',
+            estimatedPrice:
+                '该数值包含估算或替换的价格：没有实时市场价格，或实时价格明显偏离游戏官方参考市场价值，因此改用了参考价值。可在“设置 → 定价与利润”中调整。',
+            lowDrinkSupply: '库存偏低：该饮品的剩余量低于你设置的警告阈值（设置 → 饮品计时器：警告阈值）。',
+            lowConsumableSupply: '库存偏低：该消耗品将比你设置的警告阈值更早用完（设置 → 战斗统计：消耗品续航警告阈值）。',
         },
         listingRefreshNavigator: {
             refreshButtonLabel: '刷新',
@@ -10984,6 +11100,27 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
                     type: 'checkbox',
                     default: true,
                     help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
+                },
+                marketWishlist: {
+                    id: 'marketWishlist',
+                    label: 'Market: Wishlist tab (track items you want to buy)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a Wishlist tab to the Marketplace. Add items from the item menu, order them, see their current price (estimated from crafting, shop or reference value when nothing is listed), and see what you can afford. Price history is recorded from the moment you add an item.',
+                },
+                marketWishlist_alertTab: {
+                    id: 'marketWishlist_alertTab',
+                    label: 'Market: Show ❗ on the Wishlist tab when you can afford the first item',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Shows a ❗ on the Wishlist tab (while the Marketplace is open) once your coins cover the price of the first item on your wishlist.',
+                },
+                marketWishlist_alertNav: {
+                    id: 'marketWishlist_alertNav',
+                    label: 'Market: Show ❗ on the Marketplace link when you can afford the first wishlist item',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Shows a ❗ on the Marketplace link in the left sidebar once your coins cover the price of the first item on your wishlist, so you can see it without opening the Marketplace.',
                 },
                 market_showPhiloCalculator: {
                     id: 'market_showPhiloCalculator',

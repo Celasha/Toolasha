@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.37.0
+ * Version: 3.38.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -28384,8 +28384,10 @@
             const drinkParts = drinks.map(({ itemHrid, name, totalSeconds }) => {
                 const color =
                     totalSeconds < SECONDS_PER_HOUR ? '#ef4444' : totalSeconds < thresholdSeconds ? '#f0a830' : '#9ca3af';
-                const prefix = totalSeconds < thresholdSeconds ? '⚠ ' : '';
-                return `<span style="color:${color};">${prefix}${getItemName(itemHrid, name)}: ${this._formatTime(totalSeconds)}</span>`;
+                const low = totalSeconds < thresholdSeconds;
+                const prefix = low ? '⚠ ' : '';
+                const titleAttr = low ? ` title="${i18n_js.t('warningHover.lowDrinkSupply')}"` : '';
+                return `<span style="color:${color};"${titleAttr}>${prefix}${getItemName(itemHrid, name)}: ${this._formatTime(totalSeconds)}</span>`;
             });
             const drinkRow = document.createElement('div');
             drinkRow.innerHTML = drinkParts.join('<span style="color:#4b5563;"> · </span>');
@@ -30548,6 +30550,17 @@
      */
 
 
+    /**
+     * Append the ⚠ that marks a price substituted by the outlier guard, with its explanation on hover
+     * @param {Element} line
+     */
+    function appendOutlierWarning(line) {
+        const warning = document.createElement('span');
+        warning.textContent = '⚠';
+        warning.title = i18n_js.t('marketData.outlierPriceWarningTooltip');
+        line.append(' ', warning);
+    }
+
     const ALCHEMY_TYPES = ['coinify', 'decompose', 'transmute'];
 
     // The alchemy tab labels are the game's action names for these HRIDs
@@ -31440,7 +31453,7 @@
                     });
                     const extraStyle = drop.isSelfReturn ? ' text-decoration: line-through; opacity: 0.6;' : '';
                     const line = this._appendLinkedLine(container, text, itemName, drop.itemHrid, extraStyle);
-                    if (drop.isOutlier) line.append(' ⚠');
+                    if (drop.isOutlier) appendOutlierWarning(line);
                 }
             }
 
@@ -31470,7 +31483,7 @@
                             cost: formatters_js.formatKMB(Math.round(req.costPerHour)),
                         });
                         const line = this._appendLinkedLine(container, text, itemName, req.itemHrid);
-                        if (req.isOutlier) line.append(' ⚠');
+                        if (req.isOutlier) appendOutlierWarning(line);
                     }
                 }
 
@@ -31487,7 +31500,7 @@
                         cost: formatters_js.formatKMB(Math.round(profitData.catalystCostPerHour)),
                     });
                     const line = this._appendLinkedLine(container, text, catName, profitData.catalystCost.itemHrid);
-                    if (profitData.catalystCost.isOutlier) line.append(' ⚠');
+                    if (profitData.catalystCost.isOutlier) appendOutlierWarning(line);
                 }
 
                 // Tea
@@ -31500,7 +31513,7 @@
                             cost: formatters_js.formatKMB(Math.round(tea.costPerHour)),
                         });
                         const line = this._appendLinkedLine(container, text, teaName, tea.itemHrid);
-                        if (tea.isOutlier) line.append(' ⚠');
+                        if (tea.isOutlier) appendOutlierWarning(line);
                     }
                 }
             }

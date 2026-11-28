@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.37.0
+ * Version: 3.38.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, profitHelpers_js, warningIcon_js, enhancementConfig_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, dom, marketplaceSession_js, materialCalculator_js, storage, loadoutState, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
+(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, marketValuesAPI, profitHelpers_js, warningIcon_js, enhancementConfig_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, dom, marketplaceSession_js, materialCalculator_js, storage, loadoutState, timerRegistry_js, cleanupRegistry_js, priceCacheOutlierGuard_js, domObserverHelpers_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, enhancementMultipliers_js, reactInput_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -6852,7 +6852,7 @@ self.onmessage = function (e) {
      * Get the items sprite URL from the DOM (matches pattern used across other display modules)
      * @returns {string|null} Sprite URL or null if not found
      */
-    function getItemsSpriteUrl() {
+    function getItemsSpriteUrl$1() {
         const el = document.querySelector('use[href*="items_sprite"]');
         return el ? el.getAttribute('href').split('#')[0] : null;
     }
@@ -7976,7 +7976,7 @@ self.onmessage = function (e) {
 
                 // Show item icons for the winning catalyst and/or tea (silence = no modifiers needed)
                 if (profit.winningCatalystHrid || profit.winningTeaUsed) {
-                    const spriteUrl = getItemsSpriteUrl();
+                    const spriteUrl = getItemsSpriteUrl$1();
                     if (spriteUrl) {
                         html += ` <span style="display:inline-flex;align-items:center;gap:2px;vertical-align:middle;">`;
                         if (profit.winningCatalystHrid) {
@@ -16284,6 +16284,172 @@ self.onmessage = function (e) {
 
     const marketHistoryViewer = new MarketHistoryViewer();
 
+    const CONNECTION_STATES = {
+        CONNECTED: 'connected',
+        DISCONNECTED: 'disconnected',
+        RECONNECTING: 'reconnecting',
+    };
+
+    class ConnectionState {
+        constructor() {
+            this.state = CONNECTION_STATES.RECONNECTING;
+            this.eventListeners = new Map();
+            this.lastDisconnectedAt = null;
+            this.lastConnectedAt = null;
+
+            this.setupListeners();
+        }
+
+        /**
+         * Get current connection state
+         * @returns {string} Connection state (connected, disconnected, reconnecting)
+         */
+        getState() {
+            return this.state;
+        }
+
+        /**
+         * Check if currently connected
+         * @returns {boolean} True if connected
+         */
+        isConnected() {
+            return this.state === CONNECTION_STATES.CONNECTED;
+        }
+
+        /**
+         * Register a listener for connection events
+         * @param {string} event - Event name (disconnected, reconnected)
+         * @param {Function} callback - Handler function
+         */
+        on(event, callback) {
+            if (!this.eventListeners.has(event)) {
+                this.eventListeners.set(event, []);
+            }
+            const listeners = this.eventListeners.get(event);
+            if (!listeners.includes(callback)) {
+                listeners.push(callback);
+            }
+        }
+
+        /**
+         * Unregister a connection event listener
+         * @param {string} event - Event name
+         * @param {Function} callback - Handler function to remove
+         */
+        off(event, callback) {
+            const listeners = this.eventListeners.get(event);
+            if (listeners) {
+                const index = listeners.indexOf(callback);
+                if (index > -1) {
+                    listeners.splice(index, 1);
+                }
+            }
+        }
+
+        /**
+         * Notify connection state from character initialization
+         * @param {Object} data - Character initialization payload
+         */
+        handleCharacterInitialized(data) {
+            if (!data) {
+                return;
+            }
+
+            this.setConnected('character_initialized');
+        }
+
+        setupListeners() {
+            webSocketHook.onSocketEvent('open', () => {
+                this.setReconnecting('socket_open', { allowConnected: true });
+            });
+
+            webSocketHook.onSocketEvent('close', (event) => {
+                this.setDisconnected('socket_close', event);
+            });
+
+            webSocketHook.onSocketEvent('error', (event) => {
+                this.setDisconnected('socket_error', event);
+            });
+
+            webSocketHook.on('init_character_data', () => {
+                this.setConnected('init_character_data');
+            });
+        }
+
+        setReconnecting(reason, options = {}) {
+            if (this.state === CONNECTION_STATES.CONNECTED && !options.allowConnected) {
+                return;
+            }
+
+            this.updateState(CONNECTION_STATES.RECONNECTING, {
+                reason,
+            });
+        }
+
+        setDisconnected(reason, event) {
+            if (this.state === CONNECTION_STATES.DISCONNECTED) {
+                return;
+            }
+
+            this.lastDisconnectedAt = Date.now();
+            this.updateState(CONNECTION_STATES.DISCONNECTED, {
+                reason,
+                event,
+                disconnectedAt: this.lastDisconnectedAt,
+            });
+        }
+
+        setConnected(reason) {
+            if (this.state === CONNECTION_STATES.CONNECTED) {
+                return;
+            }
+
+            this.lastConnectedAt = Date.now();
+            this.updateState(CONNECTION_STATES.CONNECTED, {
+                reason,
+                disconnectedAt: this.lastDisconnectedAt,
+                connectedAt: this.lastConnectedAt,
+            });
+        }
+
+        updateState(nextState, details) {
+            if (this.state === nextState) {
+                return;
+            }
+
+            const previousState = this.state;
+            this.state = nextState;
+
+            if (nextState === CONNECTION_STATES.DISCONNECTED) {
+                this.emit('disconnected', {
+                    previousState,
+                    ...details,
+                });
+                return;
+            }
+
+            if (nextState === CONNECTION_STATES.CONNECTED) {
+                this.emit('reconnected', {
+                    previousState,
+                    ...details,
+                });
+            }
+        }
+
+        emit(event, data) {
+            const listeners = [...(this.eventListeners.get(event) || [])];
+            for (const listener of listeners) {
+                try {
+                    listener(data);
+                } catch (error) {
+                    console.error('[ConnectionState] Listener error:', error);
+                }
+            }
+        }
+    }
+
+    const connectionState = new ConnectionState();
+
     /**
      * Marketplace Custom Tabs Utility
      * Provides shared functionality for creating and managing custom marketplace tabs
@@ -17040,3674 +17206,277 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Listing Refresh Navigator
-     *
-     * Adds a "Refresh" button next to "Upgrade Capacity" on the My Listings page that starts a
-     * cycling session through all listings. From there, listing-next-navigator.js exposes a
-     * "Next"/"Back to My Listings" button on each listing's order-book page, so the rest of the
-     * cycle never needs to come back through this table — opening a listing already refreshes it.
-     *
-     * Depends on listing-price-display.js stamping row.dataset.itemHrid / listingId.
+     * Wishlist Store
+     * The player's per-character list of items they want to buy, in the order they want them.
+     * Persisted in the settings store under `wishlist_<characterId>`. Each entry is an item at a
+     * specific enhancement level (equipment upgrades are usually enhanced).
      */
 
 
-    const LISTING_COUNT_SEL = '[class*="MarketplacePanel_listingCount"]';
-    const TABLE_SEL = '[class*="MarketplacePanel_myListingsTable"]';
-    const BTN_CLASS$1 = 'Button_button__1Fe9z Button_small__3fqC7';
+    const STORE_NAME$4 = 'settings';
 
-    class ListingRefreshNavigator {
+    /**
+     * Stable identity of a wishlist entry
+     * @param {string} itemHrid - Item HRID
+     * @param {number} [enhancementLevel=0] - Enhancement level
+     * @returns {string} e.g. "/items/expert_torch:0"
+     */
+    function getWishlistKey(itemHrid, enhancementLevel = 0) {
+        return `${itemHrid}:${enhancementLevel || 0}`;
+    }
+
+    class WishlistStore {
         constructor() {
-            this.isInitialized = false;
-            this.watcher = null;
-            this.refreshBtn = null;
-            this.session = null; // { items: [{itemHrid, enhancementLevel, listingId}], currentIndex }
+            this.characterId = null;
+            this.items = [];
+            this.listeners = new Set();
         }
 
-        initialize() {
-            if (this.isInitialized) return;
-            if (!config.getSetting('market_listingRefreshNavigator')) return;
-            this.isInitialized = true;
-            this._watch();
+        storageKey() {
+            return `wishlist_${this.characterId}`;
         }
 
-        _watch() {
-            const ensureButton = () => {
-                const countContainer = document.querySelector(LISTING_COUNT_SEL);
+        /**
+         * Load the list for a character. A load that finishes after a character switch is dropped.
+         * @param {string|number|null} characterId
+         */
+        async load(characterId) {
+            this.characterId = characterId;
+            this.items = [];
+            if (!characterId) return;
 
-                if (!countContainer) {
-                    if (this.refreshBtn && document.body.contains(this.refreshBtn)) {
-                        this.refreshBtn.remove();
-                        this.refreshBtn = null;
-                    }
-                    return;
-                }
+            let stored = null;
+            try {
+                stored = await storage.getJSON(this.storageKey(), STORE_NAME$4, []);
+            } catch (error) {
+                console.error('[Wishlist] Failed to load wishlist:', error);
+            }
+            if (this.characterId !== characterId) return;
 
-                if (this.refreshBtn && !document.body.contains(this.refreshBtn)) {
-                    this.refreshBtn = null;
-                }
-
-                if (this.refreshBtn) return;
-
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = BTN_CLASS$1;
-                btn.textContent = i18n_js.t('listingRefreshNavigator.refreshButtonLabel');
-                btn.addEventListener('click', () => this._startSession());
-
-                // The Upgrade Capacity button label is localized by the game (zh: 升级容量),
-                // so match the translated label too.
-                const upgradeLabels = [
-                    'Upgrade Capacity',
-                    translateGameName('marketplacePanel', 'upgradeCapacity', 'Upgrade Capacity'),
-                ];
-                const upgradeBtn = Array.from(countContainer.querySelectorAll('button')).find((b) =>
-                    upgradeLabels.some((label) => b.textContent.includes(label))
-                );
-
-                if (upgradeBtn) {
-                    upgradeBtn.after(btn);
-                } else {
-                    countContainer.appendChild(btn);
-                }
-
-                this.refreshBtn = btn;
-            };
-
-            if (!this.watcher) {
-                this.watcher = domObserverHelpers_js.createMutationWatcher(document.body, ensureButton, {
-                    childList: true,
-                    subtree: true,
+            const seen = new Set();
+            this.items = (Array.isArray(stored) ? stored : [])
+                .filter((entry) => entry && typeof entry.itemHrid === 'string')
+                .map((entry) => ({
+                    itemHrid: entry.itemHrid,
+                    enhancementLevel: entry.enhancementLevel || 0,
+                    addedAt: entry.addedAt || Date.now(),
+                }))
+                .filter((entry) => {
+                    const key = getWishlistKey(entry.itemHrid, entry.enhancementLevel);
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
                 });
-            }
-
-            ensureButton();
-        }
-
-        _startSession() {
-            const table = document.querySelector(TABLE_SEL);
-            if (!table) return;
-
-            const rows = Array.from(table.querySelectorAll('tbody tr'));
-            if (rows.length === 0) return;
-
-            const items = rows.map((row) => ({
-                itemHrid: row.dataset.itemHrid,
-                enhancementLevel: parseInt(row.dataset.enhancementLevel || '0', 10),
-                listingId: row.dataset.listingId || null,
-            }));
-
-            let startIndex = 0;
-            const lastListingId = this.session?.items[this.session.currentIndex]?.listingId;
-            if (lastListingId != null) {
-                const lastIdx = items.findIndex((item) => item.listingId === lastListingId);
-                if (lastIdx !== -1) startIndex = (lastIdx + 1) % items.length;
-            }
-
-            this.session = { items, currentIndex: startIndex };
-            this._navigateToCurrent();
-        }
-
-        _navigateToCurrent() {
-            const item = this.session?.items[this.session.currentIndex];
-            if (!item?.itemHrid) return;
-            navigateToMarketplace(item.itemHrid, item.enhancementLevel);
+            this.emit();
         }
 
         /**
-         * @returns {{current: {itemHrid: string, enhancementLevel: number, listingId: string|null},
-         *   index: number, total: number, isLast: boolean}|null} Null when no session is active.
+         * @returns {Array<{itemHrid: string, enhancementLevel: number, addedAt: number}>} Copy of the list
          */
-        getSessionProgress() {
-            if (!this.session) return null;
-            const { items, currentIndex } = this.session;
-            return {
-                current: items[currentIndex],
-                index: currentIndex,
-                total: items.length,
-                isLast: currentIndex >= items.length - 1,
-            };
+        getItems() {
+            return this.items.map((entry) => ({ ...entry }));
+        }
+
+        has(itemHrid, enhancementLevel = 0) {
+            const key = getWishlistKey(itemHrid, enhancementLevel);
+            return this.items.some((entry) => getWishlistKey(entry.itemHrid, entry.enhancementLevel) === key);
         }
 
         /**
-         * Advance the active session to the next listing and navigate to it.
-         * @returns {boolean} True when advanced; false when there is no session or already at the end.
+         * Add an item at the end of the list. No-op when it is already there.
+         * @returns {Promise<boolean>} True when the item was added
          */
-        advanceSession() {
-            if (!this.session || this.session.currentIndex >= this.session.items.length - 1) return false;
-            this.session.currentIndex += 1;
-            this._navigateToCurrent();
+        async add(itemHrid, enhancementLevel = 0) {
+            if (!this.characterId || !itemHrid || this.has(itemHrid, enhancementLevel)) return false;
+            this.items.push({ itemHrid, enhancementLevel: enhancementLevel || 0, addedAt: Date.now() });
+            await this.save();
+            this.emit();
             return true;
         }
 
-        endSession() {
-            this.session = null;
-        }
-
-        cleanup() {
-            if (this.watcher) {
-                this.watcher();
-                this.watcher = null;
-            }
-            if (this.refreshBtn) {
-                this.refreshBtn.remove();
-                this.refreshBtn = null;
-            }
-            this.session = null;
-            this.isInitialized = false;
-        }
-    }
-
-    const listingRefreshNavigator = new ListingRefreshNavigator();
-
-    /**
-     * Listing Next Navigator
-     *
-     * On a listing's order-book page opened via listing-refresh-navigator's "Refresh" session,
-     * replaces the native "Refresh" button with a "Next"/"Back to My Listings" button so a user can
-     * cycle through every listing without returning to the My Listings table between each one.
-     * Opening a listing's page already re-fetches its order book, so the native per-item Refresh
-     * button is redundant while a session is active — it's only hidden while the currently-open
-     * item matches the session's current listing, and restored otherwise.
-     */
-
-
-    const CONTAINER_SEL = '[class*="MarketplacePanel_marketNavButtonContainer"]';
-    const CURRENT_ITEM_SEL = '[class*="MarketplacePanel_currentItem"]';
-    const BTN_CLASS = 'Button_button__1Fe9z Button_small__3fqC7';
-    const NEXT_BTN_ID = 'mwi-listing-next-btn';
-
-    class ListingNextNavigator {
-        constructor() {
-            this.isInitialized = false;
-            this.watcher = null;
-            this.nextBtn = null;
-            this.nativeRefreshBtn = null;
-        }
-
-        initialize() {
-            if (this.isInitialized) return;
-            if (!config.getSetting('market_listingRefreshNavigator')) return;
-            this.isInitialized = true;
-            this._watch();
-        }
-
-        _watch() {
-            const update = () => this._update();
-
-            if (!this.watcher) {
-                this.watcher = domObserverHelpers_js.createMutationWatcher(document.body, update, {
-                    childList: true,
-                    subtree: true,
-                });
-            }
-
-            update();
+        /**
+         * @returns {Promise<boolean>} True when the item was in the list
+         */
+        async remove(itemHrid, enhancementLevel = 0) {
+            const key = getWishlistKey(itemHrid, enhancementLevel);
+            const index = this.items.findIndex((entry) => getWishlistKey(entry.itemHrid, entry.enhancementLevel) === key);
+            if (index === -1) return false;
+            this.items.splice(index, 1);
+            await this.save();
+            this.emit();
+            return true;
         }
 
         /**
-         * @returns {{itemHrid: string, enhancementLevel: number}|null} Item currently open in the
-         *   order-book panel, read from the DOM (same approach as market-depth-cap.js).
+         * Reorder the list. Unknown keys are ignored; entries not named keep their relative order at
+         * the end, so a stale drag can never lose an item.
+         * @param {string[]} orderedKeys - Wishlist keys in the desired order
          */
-        _getCurrentItem() {
-            const currentItemEl = document.querySelector(CURRENT_ITEM_SEL);
-            const useElement = currentItemEl?.querySelector('use');
-            const href = useElement?.href?.baseVal;
-            const itemHrid = href ? '/items/' + href.split('#')[1] : null;
-            if (!itemHrid) return null;
-
-            const enhancementEl = currentItemEl.querySelector('[class*="Item_enhancementLevel"]');
-            const match = enhancementEl?.textContent.match(/\+(\d+)/);
-            const enhancementLevel = match ? parseInt(match[1], 10) : 0;
-
-            return { itemHrid, enhancementLevel };
-        }
-
-        _restore() {
-            if (this.nativeRefreshBtn) {
-                this.nativeRefreshBtn.style.display = '';
-                this.nativeRefreshBtn = null;
-            }
-            if (this.nextBtn && document.body.contains(this.nextBtn)) {
-                this.nextBtn.remove();
-            }
-            this.nextBtn = null;
-        }
-
-        _update() {
-            const progress = listingRefreshNavigator.getSessionProgress();
-            const container = document.querySelector(CONTAINER_SEL);
-
-            if (!progress || !container) {
-                this._restore();
-                return;
-            }
-
-            const currentItem = this._getCurrentItem();
-            const matches =
-                currentItem &&
-                currentItem.itemHrid === progress.current.itemHrid &&
-                currentItem.enhancementLevel === progress.current.enhancementLevel;
-
-            if (!matches) {
-                this._restore();
-                return;
-            }
-
-            if (this.nextBtn && !document.body.contains(this.nextBtn)) {
-                this.nextBtn = null;
-            }
-            if (this.nativeRefreshBtn && !document.body.contains(this.nativeRefreshBtn)) {
-                this.nativeRefreshBtn = null;
-            }
-
-            if (!this.nativeRefreshBtn) {
-                // The Refresh button label is localized by the game (zh: 刷新), so match the
-                // translated label too.
-                const refreshLabels = new Set(['Refresh', translateGameName('marketplacePanel', 'refresh', 'Refresh')]);
-                const found = Array.from(container.querySelectorAll('button')).find(
-                    (b) => b.id !== NEXT_BTN_ID && refreshLabels.has(b.textContent.trim())
-                );
-                if (found) {
-                    found.style.display = 'none';
-                    this.nativeRefreshBtn = found;
+        async reorder(orderedKeys) {
+            const byKey = new Map(
+                this.items.map((entry) => [getWishlistKey(entry.itemHrid, entry.enhancementLevel), entry])
+            );
+            const next = [];
+            for (const key of orderedKeys) {
+                const entry = byKey.get(key);
+                if (entry) {
+                    next.push(entry);
+                    byKey.delete(key);
                 }
             }
+            next.push(...byKey.values());
 
-            const label = progress.isLast
-                ? i18n_js.t('listingNextNavigator.backToMyListingsLabel')
-                : i18n_js.t('listingNextNavigator.nextLabel', { index: progress.index + 1, total: progress.total });
-
-            if (!this.nextBtn) {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.id = NEXT_BTN_ID;
-                btn.className = BTN_CLASS;
-                btn.textContent = label;
-                btn.addEventListener('click', () => this._handleClick());
-                container.appendChild(btn);
-                this.nextBtn = btn;
-            }
-
-            // textContent write is itself an observed childList mutation (document.body,
-            // childList/subtree) — writing unconditionally re-triggers _update() indefinitely.
-            if (this.nextBtn.textContent !== label) {
-                this.nextBtn.textContent = label;
-            }
+            const unchanged = next.length === this.items.length && next.every((entry, i) => entry === this.items[i]);
+            if (unchanged) return;
+            this.items = next;
+            await this.save();
+            this.emit();
         }
 
-        _handleClick() {
-            const progress = listingRefreshNavigator.getSessionProgress();
-            if (!progress) return;
-
-            if (progress.isLast) {
-                listingRefreshNavigator.endSession();
-                this._restore();
-                navigateToMyListings();
-            } else {
-                listingRefreshNavigator.advanceSession();
-            }
-        }
-
-        cleanup() {
-            if (this.watcher) {
-                this.watcher();
-                this.watcher = null;
-            }
-            this._restore();
-            this.isInitialized = false;
-        }
-    }
-
-    const listingNextNavigator = new ListingNextNavigator();
-
-    /**
-     * Philosopher's Stone Transmutation Calculator
-     *
-     * Calculates expected value and ROI for transmuting items into Philosopher's Stones.
-     * Shows a sortable table of all items that can transmute into philos with live market data.
-     */
-
-
-    const PHILO_HRID = '/items/philosophers_stone';
-    const PRIME_CATALYST_HRID = '/items/prime_catalyst';
-    // Catalysts that raise transmute success, with their additive success boost
-    const CATALYST_BONUSES = {
-        '/items/catalyst_of_transmutation': 0.15,
-        [PRIME_CATALYST_HRID]: 0.25,
-    };
-    const NO_CATALYST = '';
-    const TRANSMUTE_ACTION_TIME_SECONDS = 20;
-    const CATALYTIC_TEA_BUFF_TYPE = '/buff_types/alchemy_success';
-
-    class PhiloCalculator {
-        constructor() {
-            this.isInitialized = false;
-            this.modal = null;
-            this.sortColumn = 'cost';
-            this.sortDirection = 'desc';
-
-            // User-editable inputs
-            this.philoPrice = 0;
-            this.catalystPrice = 0;
-            this.catalystHrid = PRIME_CATALYST_HRID; // NO_CATALYST for none
-            this.useCatalyticTea = false;
-            this.catalyticTeaRatioBoost = 0;
-            this.drinkConcentrationLevel = 0; // 0-20
-            this.hideNegativeProfitItems = true;
-            this.filterText = '';
-
-            // Cached row data
-            this.rows = [];
-        }
-
-        /**
-         * Initialize the feature
-         */
-        initialize() {
-            if (this.isInitialized) {
-                return;
-            }
-
-            if (!config.getSetting('market_showPhiloCalculator')) {
-                return;
-            }
-
-            this.isInitialized = true;
-            this.addSettingsButton();
-        }
-
-        /**
-         * Disable / cleanup the feature
-         */
-        disable() {
-            if (this.modal) {
-                this.modal.remove();
-                this.modal = null;
-            }
-            this.isInitialized = false;
-        }
-
-        /**
-         * Add "Philo Gamba" button to settings panel
-         */
-        addSettingsButton() {
-            const ensureButtonExists = () => {
-                const settingsPanel = document.querySelector('[class*="SettingsPanel"]');
-                if (!settingsPanel) return;
-
-                if (settingsPanel.querySelector('.mwi-philo-calc-button')) {
-                    return;
-                }
-
-                const button = document.createElement('button');
-                button.className = 'mwi-philo-calc-button';
-                button.textContent = i18n_js.t('philoCalculator.launcherButtonLabel');
-                button.style.cssText = `
-                margin: 10px;
-                padding: 8px 16px;
-                background: #4a90e2;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 14px;
-            `;
-
-                button.addEventListener('mouseenter', () => {
-                    button.style.background = '#357abd';
-                });
-
-                button.addEventListener('mouseleave', () => {
-                    button.style.background = '#4a90e2';
-                });
-
-                button.addEventListener('click', () => {
-                    this.openModal();
-                });
-
-                // Insert after the market history button if it exists, otherwise at top
-                const historyButton = settingsPanel.querySelector('.mwi-market-history-button');
-                if (historyButton) {
-                    historyButton.after(button);
-                } else {
-                    settingsPanel.insertBefore(button, settingsPanel.firstChild);
-                }
-            };
-
-            const settingsUI = window.Toolasha?.UI?.settingsUI;
-            if (settingsUI && typeof settingsUI.onSettingsPanelAppear === 'function') {
-                settingsUI.onSettingsPanelAppear(ensureButtonExists);
-            }
-
-            ensureButtonExists();
-        }
-
-        /**
-         * Get item name from game data
-         * @param {string} itemHrid - Item HRID
-         * @returns {string} Item name
-         */
-        getItemName(itemHrid) {
-            const initData = dataManager.getInitClientData();
-            const itemData = initData?.itemDetailMap?.[itemHrid];
-            const fallback = itemData?.name || itemHrid.replace('/items/', '').replaceAll('_', ' ');
-            return getItemName(itemHrid, fallback);
-        }
-
-        /**
-         * Load default prices from market data
-         */
-        loadDefaultPrices() {
-            const philoPriceInfo = marketData_js.getItemPriceOutlierInfo(PHILO_HRID, { mode: 'bid' });
-            this.philoPrice = philoPriceInfo.value || 0;
-            this.philoPriceIsOutlier = philoPriceInfo.value ? philoPriceInfo.isOutlier : false;
-
-            const catalystPriceInfo = this.catalystHrid
-                ? marketData_js.getItemPriceOutlierInfo(this.catalystHrid, { mode: 'ask' })
-                : { value: null, isOutlier: false };
-            this.catalystPrice = catalystPriceInfo.value || 0;
-            this.catalystPriceIsOutlier = catalystPriceInfo.value ? catalystPriceInfo.isOutlier : false;
-        }
-
-        /**
-         * Calculate catalytic tea base bonus from game data (item definition)
-         * @returns {number} Base ratioBoost from item definition
-         */
-        calculateCatalyticTeaRatioBoost() {
+        async save() {
+            if (!this.characterId) return;
             try {
-                const gameData = dataManager.getInitClientData();
-                if (!gameData?.itemDetailMap) return 0;
-
-                const teaItem = gameData.itemDetailMap['/items/catalytic_tea'];
-                if (!teaItem?.consumableDetail?.buffs) return 0;
-
-                // Find alchemy success buff
-                for (const buff of teaItem.consumableDetail.buffs) {
-                    if (buff.typeHrid === CATALYTIC_TEA_BUFF_TYPE) {
-                        return buff.ratioBoost || 0;
-                    }
-                }
-
-                return 0;
+                await storage.setJSON(this.storageKey(), this.items, STORE_NAME$4, true);
             } catch (error) {
-                console.error('[PhiloCalculator] Failed to calculate catalytic tea ratio boost:', error);
-                return 0;
+                console.error('[Wishlist] Failed to save wishlist:', error);
             }
         }
 
         /**
-         * Load settings from storage
+         * @param {Function} listener - Called after every change
+         * @returns {Function} Unsubscribe
          */
-        async loadSettings() {
-            try {
-                const saved = await storage.getJSON('philoCalculatorSettings', 'settings', null);
-                if (saved) {
-                    if (saved.catalystHrid === NO_CATALYST || saved.catalystHrid in CATALYST_BONUSES) {
-                        this.catalystHrid = saved.catalystHrid;
-                    } else {
-                        // Older saves only had a Prime Catalyst on/off flag
-                        this.catalystHrid = saved.useCatalyst === false ? NO_CATALYST : PRIME_CATALYST_HRID;
-                    }
-                    this.useCatalyticTea = saved.useCatalyticTea || false;
-                    this.drinkConcentrationLevel = saved.drinkConcentrationLevel || 0;
-                    this.hideNegativeProfitItems = saved.hideNegativeProfitItems !== false;
-                    this.filterText = saved.filterText || '';
-                }
-            } catch (error) {
-                console.error('[PhiloCalculator] Failed to load settings:', error);
-            }
+        onChange(listener) {
+            this.listeners.add(listener);
+            return () => this.listeners.delete(listener);
         }
 
-        /**
-         * Save settings to storage
-         */
-        async saveSettings() {
-            try {
-                await storage.setJSON(
-                    'philoCalculatorSettings',
-                    {
-                        catalystHrid: this.catalystHrid,
-                        useCatalyticTea: this.useCatalyticTea,
-                        drinkConcentrationLevel: this.drinkConcentrationLevel,
-                        hideNegativeProfitItems: this.hideNegativeProfitItems,
-                        filterText: this.filterText,
-                    },
-                    'settings',
-                    true
-                );
-            } catch (error) {
-                console.error('[PhiloCalculator] Failed to save settings:', error);
-            }
-        }
-
-        /**
-         * Get drink concentration for a given enhancement level
-         * @param {number} enhancementLevel - Enhancement level (0-20)
-         * @returns {number} Drink concentration as decimal (e.g., 0.1032 for 10.32%)
-         */
-        getDrinkConcentrationForLevel(enhancementLevel) {
-            try {
-                const gameData = dataManager.getInitClientData();
-                const equipment = dataManager.getEquipment();
-                if (!equipment || !gameData?.itemDetailMap) return 0;
-
-                let totalConcentration = 0;
-                const baseConcentrationByLevel = new Map();
-
-                // Scan equipment for drink concentration items and their base values
-                for (const [_slotHrid, equippedItem] of equipment) {
-                    const itemDetails = gameData.itemDetailMap[equippedItem.itemHrid];
-                    if (!itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) continue;
-
-                    const baseConcentration = itemDetails.equipmentDetail.noncombatStats.drinkConcentration;
-                    baseConcentrationByLevel.set(equippedItem.itemHrid, baseConcentration);
-                }
-
-                // If we have drink concentration items, apply the requested enhancement level
-                for (const [itemHrid, baseConcentration] of baseConcentrationByLevel) {
-                    const itemDetails = gameData.itemDetailMap[itemHrid];
-                    const multiplier = enhancementMultipliers_js.getEnhancementMultiplier(itemDetails, enhancementLevel);
-                    totalConcentration += baseConcentration * multiplier;
-                }
-
-                return totalConcentration;
-            } catch (error) {
-                console.error('[PhiloCalculator] Failed to get drink concentration:', error);
-                return 0;
-            }
-        }
-
-        /**
-         * Scan itemDetailMap for all items that can transmute into Philosopher's Stone
-         * @returns {Array} Array of { itemHrid, itemDetails } objects
-         */
-        findPhiloTransmuteItems() {
-            const gameData = dataManager.getInitClientData();
-            if (!gameData?.itemDetailMap) return [];
-
-            const results = [];
-
-            for (const [itemHrid, itemDetails] of Object.entries(gameData.itemDetailMap)) {
-                const alchemy = itemDetails?.alchemyDetail;
-                if (!alchemy?.transmuteDropTable || !alchemy.transmuteSuccessRate) continue;
-
-                const hasPhilo = alchemy.transmuteDropTable.some((drop) => drop.itemHrid === PHILO_HRID);
-                if (hasPhilo) {
-                    results.push({ itemHrid, itemDetails });
-                }
-            }
-
-            return results;
-        }
-
-        /**
-         * Calculate all columns for a single item
-         * @param {string} itemHrid - Item HRID
-         * @param {Object} itemDetails - Item detail object
-         * @returns {Object|null} Row data or null if price unavailable
-         */
-        calculateRow(itemHrid, itemDetails) {
-            const alchemy = itemDetails.alchemyDetail;
-            const baseTransmuteRate = alchemy.transmuteSuccessRate;
-
-            // Calculate additive bonuses
-            let totalBonus = 0;
-
-            // Catalytic tea bonus
-            if (this.useCatalyticTea && this.catalyticTeaRatioBoost > 0) {
-                const drinkConcentration = this.getDrinkConcentrationForLevel(this.drinkConcentrationLevel);
-                totalBonus += this.catalyticTeaRatioBoost * (1 + drinkConcentration);
-            }
-
-            // Catalyst bonus (additive, not multiplicative)
-            if (this.catalystHrid) {
-                totalBonus += CATALYST_BONUSES[this.catalystHrid] || 0;
-            }
-
-            const successRate = Math.min(1.0, baseTransmuteRate * (1 + totalBonus));
-            const bulkMultiplier = alchemy.bulkMultiplier || 1;
-
-            // Find philo drop rate
-            const philoDrop = alchemy.transmuteDropTable.find((d) => d.itemHrid === PHILO_HRID);
-            if (!philoDrop) return null;
-
-            const philoDropRate = philoDrop.dropRate;
-            const philoChance = successRate * philoDropRate;
-
-            // Get item cost (market ask price)
-            const priceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
-            let itemCost = priceInfo.value;
-            // Untradable items (the refined capes) have no market price. Keep them listed so the user
-            // can enter a price; tradable items with no market data stay hidden as before.
-            const needsPrice = itemCost === null || itemCost === undefined;
-            if (needsPrice) {
-                if (itemDetails.isTradable === true) return null;
-                itemCost = 0;
-            }
-            const itemCostIsOutlier = priceInfo.isOutlier;
-
-            // Catalyst cost per action (consumed only on success)
-            const catalystCostPerAction = this.catalystHrid ? successRate * this.catalystPrice : 0;
-
-            // Transmute coin cost: max(50, sellPrice / 5) × bulkMultiplier per action
-            const sellPrice = itemDetails.sellPrice || 0;
-            const coinCost = Math.max(50, Math.floor(sellPrice / 5)) * bulkMultiplier;
-
-            // Total cost per transmute action
-            const totalCostPerAction = itemCost * bulkMultiplier + catalystCostPerAction + coinCost;
-
-            // Calculate EV of all drops (including philo)
-            let evPerAction = 0;
-            let dropsHaveOutlier = false;
-            for (const drop of alchemy.transmuteDropTable) {
-                let dropValue;
-                if (drop.itemHrid === PHILO_HRID) {
-                    dropValue = this.philoPrice;
-                    if (this.philoPriceIsOutlier) dropsHaveOutlier = true;
-                } else {
-                    const dropPriceInfo = marketData_js.getItemPriceOutlierInfo(drop.itemHrid, { mode: 'bid' });
-                    dropValue = dropPriceInfo.value;
-                    if (dropValue === null || dropValue === undefined) continue;
-                    if (dropPriceInfo.isOutlier) dropsHaveOutlier = true;
-                }
-
-                const avgCount = (drop.minCount + drop.maxCount) / 2;
-                evPerAction += successRate * drop.dropRate * avgCount * dropValue;
-            }
-
-            const isOutlier =
-                itemCostIsOutlier || dropsHaveOutlier || (Boolean(this.catalystHrid) && this.catalystPriceIsOutlier);
-
-            // Profit per action (EV now includes philo value)
-            const profitPerAction = evPerAction - totalCostPerAction;
-
-            // Actions and items needed per philo
-            const actionsPerPhilo = 1 / philoChance;
-
-            // Net items consumed per action (input minus expected self-returns)
-            const selfDrop = alchemy.transmuteDropTable.find((d) => d.itemHrid === itemHrid);
-            const selfDropRate = selfDrop ? selfDrop.dropRate : 0;
-            const avgSelfCount = selfDrop ? (selfDrop.minCount + selfDrop.maxCount) / 2 : 0;
-            const returnChance = successRate * selfDropRate;
-            const itemsPerAction = bulkMultiplier - returnChance * avgSelfCount;
-
-            // Items needed per philo (net items consumed × actions needed)
-            const itemsPerPhilo = actionsPerPhilo * itemsPerAction;
-
-            // Profit per philo obtained
-            const profitPerPhilo = profitPerAction * actionsPerPhilo;
-
-            // Profit margin
-            const profitMargin = profitPerAction / totalCostPerAction;
-
-            // Time per philo
-            const timePerPhiloSeconds = actionsPerPhilo * TRANSMUTE_ACTION_TIME_SECONDS;
-
-            // Profit per hour
-            const actionsPerHour = 3600 / TRANSMUTE_ACTION_TIME_SECONDS;
-            const profitPerHour = profitPerAction * actionsPerHour;
-
-            // Revenue and cost per hour
-            const revenuePerHour = evPerAction * actionsPerHour;
-            const costPerHour = totalCostPerAction * actionsPerHour;
-
-            // Without a price every cost-derived figure would be misleading, so leave them blank
-            const costDerived = (value) => (needsPrice ? null : value);
-
-            return {
-                itemHrid,
-                name: this.getItemName(itemHrid),
-                cost: costDerived(itemCost),
-                needsPrice,
-                hasCustomCost: marketData_js.getCustomPrice(itemHrid, 0, 'sell') !== null,
-                philoChance,
-                returnChance,
-                transmuteChance: baseTransmuteRate,
-                effectiveTransmuteChance: successRate,
-                transmuteCost: costDerived(totalCostPerAction),
-                ev: evPerAction,
-                itemsPerAction,
-                actionsPerPhilo,
-                itemsPerPhilo,
-                profitPerPhilo: costDerived(profitPerPhilo),
-                profitMargin: costDerived(profitMargin),
-                timePerPhiloSeconds,
-                profitPerHour: costDerived(profitPerHour),
-                revenuePerHour,
-                costPerHour: costDerived(costPerHour),
-                isOutlier,
-            };
-        }
-
-        /**
-         * Calculate all rows
-         */
-        calculateAllRows() {
-            const items = this.findPhiloTransmuteItems();
-            this.rows = [];
-
-            for (const { itemHrid, itemDetails } of items) {
-                const row = this.calculateRow(itemHrid, itemDetails);
-                if (row) {
-                    this.rows.push(row);
-                }
-            }
-
-            this.sortRows();
-        }
-
-        /**
-         * Sort rows by current sort column and direction
-         */
-        sortRows() {
-            const col = this.sortColumn;
-            const dir = this.sortDirection === 'asc' ? 1 : -1;
-
-            this.rows.sort((a, b) => {
-                const aVal = a[col];
-                const bVal = b[col];
-
-                // Blank (unpriced) values always sort last
-                if (aVal === null || bVal === null) {
-                    return (aVal === null) - (bVal === null);
-                }
-                if (typeof aVal === 'string') {
-                    return dir * aVal.localeCompare(bVal);
-                }
-                return dir * (aVal - bVal);
-            });
-        }
-
-        /**
-         * Handle column header click for sorting
-         * @param {string} column - Column key to sort by
-         */
-        toggleSort(column) {
-            if (this.sortColumn === column) {
-                this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-            } else {
-                this.sortColumn = column;
-                this.sortDirection = 'desc';
-            }
-            this.sortRows();
-            this.renderTable();
-        }
-
-        /**
-         * Open the calculator modal
-         */
-        async openModal() {
-            if (this.modal) {
-                this.modal.remove();
-            }
-
-            // Load saved settings first
-            await this.loadSettings();
-
-            this.loadDefaultPrices();
-            this.catalyticTeaRatioBoost = this.calculateCatalyticTeaRatioBoost();
-
-            // Set default drink concentration level (only if not previously saved)
-            if (this.drinkConcentrationLevel === 0) {
-                let currentDrinkEnhancementLevel = 0;
-                const gameData = dataManager.getInitClientData();
-                const equipment = dataManager.getEquipment();
-                if (equipment && gameData?.itemDetailMap) {
-                    for (const [_slotHrid, equippedItem] of equipment) {
-                        const itemDetails = gameData.itemDetailMap[equippedItem.itemHrid];
-                        if (itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) {
-                            currentDrinkEnhancementLevel = equippedItem.enhancementLevel || 0;
-                            break;
-                        }
-                    }
-                }
-                this.drinkConcentrationLevel = currentDrinkEnhancementLevel;
-            }
-
-            this.calculateAllRows();
-
-            this.modal = document.createElement('div');
-            this.modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        `;
-
-            const dialog = document.createElement('div');
-            dialog.style.cssText = `
-            background: #2a2a2a;
-            color: #ffffff;
-            border-radius: 8px;
-            width: 95%;
-            max-width: 1200px;
-            max-height: 90vh;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        `;
-
-            // Header
-            const header = document.createElement('div');
-            header.style.cssText = `
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 20px;
-            border-bottom: 1px solid #444;
-        `;
-            header.innerHTML = `
-            <span style="font-size: 18px; font-weight: bold;">${i18n_js.t('philoCalculator.panelTitle')}</span>
-        `;
-
-            const closeBtn = document.createElement('button');
-            closeBtn.textContent = '\u00D7';
-            closeBtn.style.cssText = `
-            background: none;
-            border: none;
-            color: #fff;
-            font-size: 24px;
-            cursor: pointer;
-            padding: 0 4px;
-        `;
-            closeBtn.addEventListener('click', () => closeModal());
-            header.appendChild(closeBtn);
-
-            // Controls
-            const controls = this.createControls();
-
-            // Table container
-            const tableContainer = document.createElement('div');
-            tableContainer.className = 'philo-calc-table-container';
-            tableContainer.style.cssText = `
-            overflow: auto;
-            flex: 1;
-            padding: 0 20px 20px;
-        `;
-
-            dialog.appendChild(header);
-            dialog.appendChild(controls);
-            dialog.appendChild(tableContainer);
-            this.modal.appendChild(dialog);
-
-            // Single teardown used by all close paths
-            const closeModal = () => {
-                if (!this.modal) return;
-                this.modal.remove();
-                this.modal = null;
-                document.removeEventListener('keydown', escHandler);
-            };
-
-            // Close on backdrop click
-            this.modal.addEventListener('click', (e) => {
-                if (e.target === this.modal) closeModal();
-            });
-
-            // Close on Escape key
-            const escHandler = (e) => {
-                if (e.key === 'Escape') closeModal();
-            };
-            document.addEventListener('keydown', escHandler);
-
-            document.body.appendChild(this.modal);
-            this.renderTable();
-        }
-
-        /**
-         * Create the input controls section (philo price, catalyst price, checkbox)
-         * @returns {HTMLElement} Controls container
-         */
-        createControls() {
-            const container = document.createElement('div');
-            container.style.cssText = `
-            padding: 12px 20px;
-            display: flex;
-            gap: 20px;
-            align-items: center;
-            flex-wrap: wrap;
-            border-bottom: 1px solid #444;
-        `;
-
-            // Philo price input
-            const philoLabel = document.createElement('label');
-            philoLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-            philoLabel.textContent = i18n_js.t('philoCalculator.philoPriceLabel');
-            const philoInput = document.createElement('input');
-            philoInput.type = 'text';
-            philoInput.value = this.philoPrice.toLocaleString();
-            philoInput.style.cssText = `
-            width: 130px;
-            padding: 4px 8px;
-            background: #1a1a1a;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 4px;
-            font-size: 13px;
-        `;
-            philoInput.addEventListener('change', () => {
-                const parsed = parseInt(philoInput.value.replaceAll(',', '').replaceAll('.', ''), 10);
-                if (!isNaN(parsed)) {
-                    this.philoPrice = parsed;
-                    this.recalculate();
-                }
-            });
-            philoLabel.appendChild(philoInput);
-
-            // Catalyst price input
-            const catLabel = document.createElement('label');
-            catLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-            catLabel.textContent = i18n_js.t('philoCalculator.catalystPriceLabel');
-            const catInput = document.createElement('input');
-            catInput.type = 'text';
-            catInput.value = this.catalystPrice.toLocaleString();
-            catInput.style.cssText = `
-            width: 130px;
-            padding: 4px 8px;
-            background: #1a1a1a;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 4px;
-            font-size: 13px;
-        `;
-            catInput.addEventListener('change', () => {
-                const parsed = parseInt(catInput.value.replaceAll(',', '').replaceAll('.', ''), 10);
-                if (!isNaN(parsed)) {
-                    this.catalystPrice = parsed;
-                    this.recalculate();
-                }
-            });
-            catLabel.appendChild(catInput);
-
-            // Catalyst dropdown
-            const catalystLabel = document.createElement('label');
-            catalystLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-            catalystLabel.textContent = i18n_js.t('philoCalculator.catalystLabel');
-            const catalystSelect = document.createElement('select');
-            catalystSelect.className = 'philo-catalyst-select';
-            catalystSelect.style.cssText = `
-            padding: 4px 8px;
-            background: #1a1a1a;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 4px;
-            font-size: 13px;
-        `;
-            const catalystOptions = [
-                [NO_CATALYST, i18n_js.t('philoCalculator.noCatalystOption')],
-                ...Object.keys(CATALYST_BONUSES).map((hrid) => [hrid, this.getItemName(hrid)]),
-            ];
-            for (const [value, label] of catalystOptions) {
-                const option = document.createElement('option');
-                option.value = value;
-                option.textContent = label;
-                option.selected = value === this.catalystHrid;
-                catalystSelect.appendChild(option);
-            }
-            catalystSelect.addEventListener('change', () => {
-                this.catalystHrid = catalystSelect.value;
-                this.loadDefaultPrices();
-                catInput.value = this.catalystPrice.toLocaleString();
-                this.recalculate();
-                this.saveSettings();
-            });
-            catalystLabel.appendChild(catalystSelect);
-
-            container.appendChild(philoLabel);
-            container.appendChild(catalystLabel);
-            container.appendChild(catLabel);
-
-            // Catalytic Tea checkbox
-            const teaCheckLabel = document.createElement('label');
-            teaCheckLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;';
-            const teaCheckbox = document.createElement('input');
-            teaCheckbox.type = 'checkbox';
-            teaCheckbox.checked = this.useCatalyticTea;
-            teaCheckbox.style.cursor = 'pointer';
-            teaCheckbox.addEventListener('change', () => {
-                this.useCatalyticTea = teaCheckbox.checked;
-                this.recalculate();
-                this.saveSettings();
-            });
-            teaCheckLabel.appendChild(teaCheckbox);
-
-            // Display base ratioBoost if available
-            const teaLabelText =
-                this.catalyticTeaRatioBoost > 0
-                    ? i18n_js.t('philoCalculator.catalyticTeaBoostLabel', {
-                          percent: formatters_js.formatPercentage(this.catalyticTeaRatioBoost, 1),
-                      })
-                    : i18n_js.t('philoCalculator.catalyticTeaUnavailableLabel');
-            teaCheckLabel.appendChild(document.createTextNode(teaLabelText));
-            container.appendChild(teaCheckLabel);
-
-            // Drink Concentration Dropdown
-            const drinkLabel = document.createElement('label');
-            drinkLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-            drinkLabel.textContent = i18n_js.t('philoCalculator.drinkConcentrationLabel');
-            const drinkSelect = document.createElement('select');
-            drinkSelect.style.cssText = `
-            padding: 4px 8px;
-            background: #1a1a1a;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 4px;
-            font-size: 13px;
-        `;
-
-            // Populate dropdown with enhancement levels +0 through +20
-            for (let level = 0; level <= 20; level++) {
-                const concentration = this.getDrinkConcentrationForLevel(level);
-                const option = document.createElement('option');
-                option.value = level;
-                option.textContent = `+${level} (${formatters_js.formatPercentage(concentration, 2)})`;
-                if (level === this.drinkConcentrationLevel) {
-                    option.selected = true;
-                }
-                drinkSelect.appendChild(option);
-            }
-
-            drinkSelect.addEventListener('change', () => {
-                this.drinkConcentrationLevel = parseInt(drinkSelect.value, 10);
-                this.recalculate();
-                this.saveSettings();
-            });
-            drinkLabel.appendChild(drinkSelect);
-            container.appendChild(drinkLabel);
-
-            // Hide negative profit checkbox
-            const hideNegCheckLabel = document.createElement('label');
-            hideNegCheckLabel.style.cssText =
-                'display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;';
-            const hideNegCheckbox = document.createElement('input');
-            hideNegCheckbox.type = 'checkbox';
-            hideNegCheckbox.checked = this.hideNegativeProfitItems;
-            hideNegCheckbox.style.cursor = 'pointer';
-            hideNegCheckbox.addEventListener('change', () => {
-                this.hideNegativeProfitItems = hideNegCheckbox.checked;
-                this.renderTable();
-                this.saveSettings();
-            });
-            hideNegCheckLabel.appendChild(hideNegCheckbox);
-            hideNegCheckLabel.appendChild(document.createTextNode(i18n_js.t('philoCalculator.hideNegativeProfitLabel')));
-            container.appendChild(hideNegCheckLabel);
-
-            // Filter label
-            const filterLabel = document.createElement('label');
-            filterLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-            filterLabel.textContent = i18n_js.t('philoCalculator.filterLabel');
-            const filterInput = document.createElement('input');
-            filterInput.type = 'text';
-            filterInput.placeholder = i18n_js.t('alchemyHistoryViewer.itemNamePlaceholder');
-            filterInput.value = this.filterText;
-            filterInput.style.cssText = `
-            width: 140px;
-            padding: 4px 8px;
-            background: #1a1a1a;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 4px;
-            font-size: 13px;
-        `;
-            filterInput.addEventListener('input', () => {
-                this.filterText = filterInput.value;
-                this.renderTable();
-                this.saveSettings();
-            });
-            filterLabel.appendChild(filterInput);
-            container.appendChild(filterLabel);
-
-            // Refresh prices button
-            const refreshBtn = document.createElement('button');
-            refreshBtn.textContent = i18n_js.t('philoCalculator.refreshPricesButton');
-            refreshBtn.style.cssText = `
-            padding: 4px 12px;
-            background: #4a90e2;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-        `;
-            refreshBtn.addEventListener('mouseenter', () => {
-                refreshBtn.style.background = '#357abd';
-            });
-            refreshBtn.addEventListener('mouseleave', () => {
-                refreshBtn.style.background = '#4a90e2';
-            });
-            refreshBtn.addEventListener('click', async () => {
-                refreshBtn.disabled = true;
-                refreshBtn.textContent = i18n_js.t('philoCalculator.refreshingPricesStatus');
-                refreshBtn.style.opacity = '0.6';
+        emit() {
+            for (const listener of [...this.listeners]) {
                 try {
-                    await marketAPI.fetch(true);
-                    this.loadDefaultPrices();
-                    // Update the price inputs to reflect new data
-                    const inputs = container.querySelectorAll('input[type="text"]');
-                    if (inputs[0]) inputs[0].value = this.philoPrice.toLocaleString();
-                    if (inputs[1]) inputs[1].value = this.catalystPrice.toLocaleString();
-                    this.recalculate();
+                    listener();
                 } catch (error) {
-                    console.error('[PhiloCalculator] Failed to refresh prices:', error);
+                    console.error('[Wishlist] Change listener failed:', error);
                 }
-                refreshBtn.disabled = false;
-                refreshBtn.textContent = i18n_js.t('philoCalculator.refreshPricesButton');
-                refreshBtn.style.opacity = '1';
-            });
-            container.appendChild(refreshBtn);
-
-            return container;
+            }
         }
 
-        /**
-         * Editable cost cell. A typed price is saved as the item's custom price override (the same
-         * one used by the rest of Toolasha); clearing it falls back to the market price.
-         * @param {Object} row - Row data
-         * @returns {HTMLInputElement}
-         */
-        createCostInput(row) {
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.className = 'philo-cost-input';
-            input.value = row.needsPrice ? '' : Math.round(row.cost).toLocaleString();
-            input.placeholder = row.needsPrice ? i18n_js.t('philoCalculator.noMarketPricePlaceholder') : '';
-            input.title = row.hasCustomCost ? i18n_js.t('philoCalculator.customCostTooltip') : '';
-            input.style.cssText = `
-            width: 90px;
-            padding: 2px 6px;
-            background: #1a1a1a;
-            color: #fff;
-            border: 1px solid ${row.hasCustomCost ? '#4a90e2' : row.needsPrice ? '#f59e0b' : '#555'};
-            border-radius: 4px;
-            font-size: 12px;
-            text-align: right;
-        `;
-            input.addEventListener('change', () => this.setItemCost(row.itemHrid, input.value));
-            return input;
-        }
-
-        /**
-         * Save (or clear) the custom price for an item and recalculate
-         * @param {string} itemHrid - Item HRID
-         * @param {string} rawValue - Text typed into the cost cell
-         */
-        async setItemCost(itemHrid, rawValue) {
-            const trimmed = String(rawValue).trim();
-            let sell = null;
-            if (trimmed !== '') {
-                const parsed = parseInt(trimmed.replaceAll(',', '').replaceAll('.', ''), 10);
-                if (isNaN(parsed) || parsed < 0) {
-                    this.renderTable();
-                    return;
-                }
-                sell = parsed;
-            }
-
-            try {
-                const existing = marketData_js.getCustomPriceOverrides()[`${itemHrid}:0`];
-                await marketData_js.setCustomPriceOverride(itemHrid, 0, existing?.buy ?? null, sell);
-            } catch (error) {
-                console.error('[PhiloCalculator] Failed to save custom price:', error);
-            }
-            this.recalculate();
-        }
-
-        /**
-         * Recalculate all rows and re-render
-         */
-        recalculate() {
-            this.calculateAllRows();
-            this.renderTable();
-        }
-
-        /**
-         * Render the results table
-         */
-        renderTable() {
-            const container = this.modal?.querySelector('.philo-calc-table-container');
-            if (!container) return;
-
-            const columns = [
-                { key: 'name', label: i18n_js.t('riskOfRuinUi.colItem'), align: 'left' },
-                { key: 'cost', label: i18n_js.t('riskOfRuinUi.colCost') },
-                { key: 'philoChance', label: i18n_js.t('philoCalculator.colPhiloChance') },
-                { key: 'returnChance', label: i18n_js.t('philoCalculator.colReturnChance') },
-                { key: 'transmuteChance', label: i18n_js.t('philoCalculator.colBaseTransmuteChance') },
-                { key: 'effectiveTransmuteChance', label: i18n_js.t('philoCalculator.colEffTransmuteChance') },
-                { key: 'transmuteCost', label: i18n_js.t('philoCalculator.colTransmuteCost') },
-                { key: 'ev', label: i18n_js.t('riskOfRuinUi.colEv') },
-                { key: 'itemsPerAction', label: i18n_js.t('philoCalculator.colItemsPerAction') },
-                { key: 'actionsPerPhilo', label: i18n_js.t('philoCalculator.colActionsPerPhilo') },
-                { key: 'itemsPerPhilo', label: i18n_js.t('philoCalculator.colItemsPerPhilo') },
-                { key: 'profitPerPhilo', label: i18n_js.t('philoCalculator.colProfitPerPhilo') },
-                { key: 'profitMargin', label: i18n_js.t('philoCalculator.colProfitMargin') },
-                { key: 'timePerPhiloSeconds', label: i18n_js.t('philoCalculator.colTimePerPhilo') },
-                { key: 'profitPerHour', label: i18n_js.t('philoCalculator.colProfitPerHour') },
-                { key: 'revenuePerHour', label: i18n_js.t('philoCalculator.colRevenuePerHour') },
-                { key: 'costPerHour', label: i18n_js.t('philoCalculator.colCostPerHour') },
-            ];
-
-            const table = document.createElement('table');
-            table.style.cssText = `
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        `;
-
-            // Header
-            const thead = document.createElement('thead');
-            const headerRow = document.createElement('tr');
-
-            for (const col of columns) {
-                const th = document.createElement('th');
-                th.style.cssText = `
-                padding: 8px 6px;
-                text-align: ${col.align || 'right'};
-                border-bottom: 2px solid #555;
-                cursor: pointer;
-                user-select: none;
-                white-space: nowrap;
-                position: sticky;
-                top: 0;
-                background: #2a2a2a;
-                z-index: 1;
-            `;
-
-                const arrow = this.sortColumn === col.key ? (this.sortDirection === 'asc' ? ' \u25B2' : ' \u25BC') : '';
-                th.textContent = col.label + arrow;
-
-                th.addEventListener('click', () => this.toggleSort(col.key));
-                headerRow.appendChild(th);
-            }
-
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
-
-            // Body
-            const tbody = document.createElement('tbody');
-
-            // Apply item name filter
-            const filterLower = this.filterText.toLowerCase();
-            let filteredRows = filterLower
-                ? this.rows.filter((row) => row.name.toLowerCase().includes(filterLower))
-                : this.rows;
-
-            // Apply negative profit filter
-            if (this.hideNegativeProfitItems) {
-                // Unpriced rows stay visible so they can be priced
-                filteredRows = filteredRows.filter((row) => row.needsPrice || row.profitPerPhilo >= 0);
-            }
-
-            for (let i = 0; i < filteredRows.length; i++) {
-                const row = filteredRows[i];
-                const tr = document.createElement('tr');
-                const bgColor = i % 2 === 0 ? '#2a2a2a' : '#252525';
-                tr.style.cssText = `background: ${bgColor};`;
-
-                for (const col of columns) {
-                    const td = document.createElement('td');
-                    td.style.cssText = `
-                    padding: 6px;
-                    text-align: ${col.align || 'right'};
-                    white-space: nowrap;
-                `;
-
-                    const value = row[col.key];
-
-                    if (col.key === 'cost') {
-                        td.appendChild(this.createCostInput(row));
-                        tr.appendChild(td);
-                        continue;
-                    }
-
-                    // Cost-derived figures are blank until an unpriced item gets a price
-                    if (value === null || value === undefined) {
-                        td.textContent = '\u2014';
-                        tr.appendChild(td);
-                        continue;
-                    }
-
-                    // Format based on column type
-                    switch (col.key) {
-                        case 'name':
-                            td.textContent = value;
-                            break;
-                        case 'philoChance':
-                        case 'returnChance':
-                        case 'transmuteChance':
-                        case 'effectiveTransmuteChance':
-                            td.textContent = formatters_js.formatPercentage(value, 2);
-                            break;
-                        case 'profitMargin':
-                            td.textContent = formatters_js.formatPercentage(value, 1);
-                            td.style.color = value >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
-                            break;
-                        case 'timePerPhiloSeconds':
-                            td.textContent = formatters_js.timeReadable(value);
-                            break;
-                        case 'profitPerPhilo':
-                        case 'profitPerHour':
-                            td.textContent = formatters_js.formatLargeNumber(Math.round(value)) + (row.isOutlier ? ' ⚠' : '');
-                            td.style.color = value >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
-                            break;
-                        case 'revenuePerHour':
-                        case 'costPerHour':
-                            td.textContent = formatters_js.formatLargeNumber(Math.round(value));
-                            break;
-                        case 'actionsPerPhilo':
-                        case 'itemsPerPhilo':
-                            td.textContent = formatters_js.formatLargeNumber(Math.round(value));
-                            break;
-                        case 'itemsPerAction':
-                            td.textContent = value.toFixed(2);
-                            break;
-                        default:
-                            td.textContent = formatters_js.formatLargeNumber(Math.round(value));
-                            break;
-                    }
-
-                    tr.appendChild(td);
-                }
-
-                tbody.appendChild(tr);
-            }
-
-            table.appendChild(tbody);
-
-            container.innerHTML = '';
-            container.appendChild(table);
-        }
-    }
-
-    const philoCalculator = new PhiloCalculator();
-
-    /**
-     * Personal Trade History Module
-     * Tracks your buy/sell prices for marketplace items
-     */
-
-
-    /**
-     * TradeHistory class manages personal buy/sell price tracking
-     */
-    class TradeHistory {
-        constructor() {
-            this.history = {}; // itemHrid:enhancementLevel -> { buy, sell }
-            this.isInitialized = false;
-            this.isLoaded = false;
+        /** Forget the loaded character (character switch / feature disable). Listeners are kept. */
+        reset() {
             this.characterId = null;
-            this.marketUpdateHandler = null; // Store handler reference for cleanup
+            this.items = [];
         }
+    }
 
-        /**
-         * Get character-specific storage key
-         * @returns {string} Storage key with character ID suffix
-         */
-        getStorageKey() {
-            if (this.characterId) {
-                return `tradeHistory_${this.characterId}`;
+    const wishlistStore = new WishlistStore();
+
+    /**
+     * Wishlist Price History
+     * A per-character price series for every wishlist item, recorded from the moment the item is added
+     * (the game exposes no historical prices, so nothing earlier can be reconstructed). Points are
+     * [timestamp, price, estimated] where `estimated` is 1 when the price came from a fallback rather
+     * than a live market price. Runs of identical points are compacted to their first and last.
+     */
+
+
+    const STORE_NAME$3 = 'settings';
+
+    /** Hard cap per item so a very long-lived entry cannot grow without bound */
+    const MAX_POINTS_PER_ITEM = 20000;
+
+    /**
+     * Append a point, compacting a run of 3+ identical consecutive values to its first and last.
+     * @param {Array<Array<number>>} series - Existing series (mutated)
+     * @param {Array<number>} point - [t, price, estimated]
+     */
+    function pushPoint(series, point) {
+        series.push(point);
+
+        const n = series.length;
+        if (n >= 3) {
+            const [, price, estimated] = point;
+            const same = (p) => p[1] === price && p[2] === estimated;
+            if (same(series[n - 2]) && same(series[n - 3])) {
+                series.splice(n - 2, 1);
             }
-            return 'tradeHistory'; // Fallback for no character ID
         }
 
-        /**
-         * Setup setting listener for feature toggle
-         */
-        setupSettingListener() {
-            config.onSettingChange('market_tradeHistory', (value) => {
-                if (value) {
-                    this.initialize();
-                } else {
-                    this.disable();
-                }
-            });
+        if (series.length > MAX_POINTS_PER_ITEM) {
+            series.splice(0, series.length - MAX_POINTS_PER_ITEM);
+        }
+    }
+
+    class WishlistHistory {
+        constructor() {
+            this.characterId = null;
+            this.data = {};
+            this.lastRecordedAt = 0;
         }
 
-        /**
-         * Initialize trade history tracking
-         */
-        async initialize() {
-            // Guard FIRST (before feature check)
-            if (this.isInitialized) {
-                return;
-            }
-
-            if (!config.getSetting('market_tradeHistory')) {
-                return;
-            }
-
-            // Get current character ID
-            this.characterId = dataManager.getCurrentCharacterId();
-
-            // Load existing history from storage
-            await this.loadHistory();
-
-            this.marketUpdateHandler = (data) => {
-                this.handleMarketUpdate(data);
-            };
-
-            // Hook into data manager for market listing updates
-            dataManager.on('market_listings_updated', this.marketUpdateHandler);
-
-            this.isInitialized = true;
+        storageKey() {
+            return `wishlistHistory_${this.characterId}`;
         }
 
-        /**
-         * Load trade history from storage
-         */
-        async loadHistory() {
+        async load(characterId) {
+            this.characterId = characterId;
+            this.data = {};
+            if (!characterId) return;
+
+            let stored = null;
             try {
-                const storageKey = this.getStorageKey();
-                const saved = await storage.getJSON(storageKey, 'settings', {});
-                this.history = saved || {};
-                this.isLoaded = true;
+                stored = await storage.getJSON(this.storageKey(), STORE_NAME$3, {});
             } catch (error) {
-                console.error('[TradeHistory] Failed to load history:', error);
-                this.history = {};
-                this.isLoaded = true;
+                console.error('[Wishlist] Failed to load price history:', error);
             }
+            if (this.characterId !== characterId) return;
+            this.data = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
         }
 
         /**
-         * Save trade history to storage
+         * Record a price for an item.
+         * @param {string} key - Wishlist key
+         * @param {number} price - Price per item; non-positive prices are not recorded
+         * @param {boolean} estimated - True when the price is a fallback estimate
+         * @param {number} [now]
          */
-        async saveHistory() {
+        record(key, price, estimated, now = Date.now()) {
+            if (!this.characterId || !(price > 0)) return;
+            if (!this.data[key]) this.data[key] = [];
+            pushPoint(this.data[key], [now, Math.round(price), estimated ? 1 : 0]);
+            this.lastRecordedAt = now;
+        }
+
+        /**
+         * @param {string} key - Wishlist key
+         * @returns {Array<Array<number>>} Series (oldest first), empty when none
+         */
+        getSeries(key) {
+            return this.data[key] || [];
+        }
+
+        async removeKey(key) {
+            if (!(key in this.data)) return;
+            delete this.data[key];
+            await this.save();
+        }
+
+        async save() {
+            if (!this.characterId) return;
             try {
-                const storageKey = this.getStorageKey();
-                await storage.setJSON(storageKey, this.history, 'settings', true);
+                await storage.setJSON(this.storageKey(), this.data, STORE_NAME$3, true);
             } catch (error) {
-                console.error('[TradeHistory] Failed to save history:', error);
+                console.error('[Wishlist] Failed to save price history:', error);
             }
         }
 
-        /**
-         * Handle market_listings_updated WebSocket message
-         * @param {Object} data - Market update data
-         */
-        handleMarketUpdate(data) {
-            if (!data.endMarketListings) return;
-
-            let hasChanges = false;
-
-            // Process each completed order
-            data.endMarketListings.forEach((order) => {
-                // Only track orders that actually filled
-                if (order.filledQuantity === 0) return;
-
-                const key = `${order.itemHrid}:${order.enhancementLevel}`;
-
-                // Get existing history for this item or create new
-                const itemHistory = this.history[key] || {};
-
-                // Update buy or sell price
-                if (order.isSell) {
-                    itemHistory.sell = order.price;
-                } else {
-                    itemHistory.buy = order.price;
-                }
-
-                this.history[key] = itemHistory;
-                hasChanges = true;
-            });
-
-            // Save to storage if any changes
-            if (hasChanges) {
-                this.saveHistory();
-            }
-        }
-
-        /**
-         * Get trade history for a specific item
-         * @param {string} itemHrid - Item HRID
-         * @param {number} enhancementLevel - Enhancement level (default 0)
-         * @returns {Object|null} { buy, sell } or null if no history
-         */
-        getHistory(itemHrid, enhancementLevel = 0) {
-            const key = `${itemHrid}:${enhancementLevel}`;
-            return this.history[key] || null;
-        }
-
-        /**
-         * Check if history data is loaded
-         * @returns {boolean}
-         */
-        isReady() {
-            return this.isLoaded;
-        }
-
-        /**
-         * Clear all trade history
-         */
-        async clearHistory() {
-            this.history = {};
-            await this.saveHistory();
-        }
-
-        /**
-         * Disable the feature
-         */
-        disable() {
-            if (this.marketUpdateHandler) {
-                dataManager.off('market_listings_updated', this.marketUpdateHandler);
-                this.marketUpdateHandler = null;
-            }
-
-            // Don't clear history data, just stop tracking
-            this.isInitialized = false;
-        }
-
-        /**
-         * Handle character switch - clear old data and reinitialize
-         */
-        async handleCharacterSwitch() {
-            // Disable first to clean up old handlers
-            this.disable();
-
-            // Clear old character's data from memory
-            this.history = {};
-            this.isLoaded = false;
-
-            // Reinitialize with new character
-            await this.initialize();
+        reset() {
+            this.characterId = null;
+            this.data = {};
+            this.lastRecordedAt = 0;
         }
     }
 
-    const tradeHistory = new TradeHistory();
-    tradeHistory.setupSettingListener();
-
-    // Setup character switch handler
-    dataManager.on('character_switched', () => {
-        if (config.getSetting('market_tradeHistory')) {
-            tradeHistory.handleCharacterSwitch();
-        }
-    });
-
-    /**
-     * Trade History Display Module
-     * Shows your last buy/sell prices in the marketplace panel
-     */
-
-
-    class TradeHistoryDisplay {
-        constructor() {
-            this.isActive = false;
-            this.unregisterObserver = null;
-            this.unregisterWebSocket = null;
-            this.currentItemHrid = null;
-            this.currentEnhancementLevel = 0;
-            this.currentOrderBookData = null;
-            this.isInitialized = false;
-            this.needsPriceDataRetry = false; // Track if we need to retry due to missing price data
-            this.comparisonModeHandler = null;
-        }
-
-        /**
-         * Initialize the display system
-         */
-        initialize() {
-            if (this.isInitialized) {
-                return;
-            }
-
-            if (!config.getSetting('market_tradeHistory')) {
-                return;
-            }
-
-            this.isInitialized = true;
-            this.setupWebSocketListener();
-            this.setupSettingListener();
-            this.isActive = true;
-        }
-
-        /**
-         * Setup setting change listener to refresh display when comparison mode changes
-         */
-        setupSettingListener() {
-            if (this.comparisonModeHandler) return;
-
-            this.comparisonModeHandler = () => {
-                // Refresh display if currently viewing an item
-                if (this.currentItemHrid) {
-                    const history = tradeHistory.getHistory(this.currentItemHrid, this.currentEnhancementLevel);
-                    this.updateDisplay(null, history);
-                }
-            };
-            config.onSettingChange('market_tradeHistoryComparisonMode', this.comparisonModeHandler);
-        }
-
-        /**
-         * Setup WebSocket listener for order book updates
-         */
-        setupWebSocketListener() {
-            const orderBookHandler = (data) => {
-                if (data.marketItemOrderBooks) {
-                    // Store order book data for current item
-                    this.currentOrderBookData = data.marketItemOrderBooks;
-
-                    // Extract item info from WebSocket data
-                    const itemHrid = data.marketItemOrderBooks.itemHrid;
-
-                    // Get enhancement level from DOM
-                    const enhancementLevel = this.getCurrentEnhancementLevel();
-
-                    // Check if this is the same item
-                    if (itemHrid === this.currentItemHrid && enhancementLevel === this.currentEnhancementLevel) {
-                        // Re-render if display was removed by React, otherwise skip
-                        if (!this.needsPriceDataRetry && document.querySelector('.mwi-trade-history')) {
-                            return;
-                        }
-                    }
-
-                    // Update tracking
-                    this.currentItemHrid = itemHrid;
-                    this.currentEnhancementLevel = enhancementLevel;
-
-                    // Get trade history for this item
-                    const history = tradeHistory.getHistory(itemHrid, enhancementLevel);
-
-                    // Update display (pass null for panel since we don't use it)
-                    this.updateDisplay(null, history);
-                }
-            };
-
-            dataManager.on('market_item_order_books_updated', orderBookHandler);
-
-            // Store unregister function for cleanup
-            this.unregisterWebSocket = () => {
-                dataManager.off('market_item_order_books_updated', orderBookHandler);
-            };
-        }
-
-        /**
-         * Get current enhancement level being viewed in order book
-         * @returns {number} Enhancement level (0 for non-equipment)
-         */
-        getCurrentEnhancementLevel() {
-            // Check for enhancement level indicator in the current item display
-            const currentItemElement = document.querySelector('[class*="MarketplacePanel_currentItem"]');
-            if (currentItemElement) {
-                const enhancementElement = currentItemElement.querySelector('[class*="Item_enhancementLevel"]');
-                if (enhancementElement) {
-                    const match = enhancementElement.textContent.match(/\+(\d+)/);
-                    if (match) {
-                        return parseInt(match[1], 10);
-                    }
-                }
-            }
-
-            // Default to enhancement level 0 (non-equipment or base equipment)
-            return 0;
-        }
-
-        /**
-         * Update trade history display
-         * @param {HTMLElement} panel - Current item panel (unused, kept for signature compatibility)
-         * @param {Object|null} history - Trade history { buy, sell } or null
-         */
-        updateDisplay(panel, history) {
-            // Remove existing display
-            const existing = document.querySelectorAll('.mwi-trade-history');
-            existing.forEach((el) => el.remove());
-
-            // Don't show anything if no history
-            if (!history || (!history.buy && !history.sell)) {
-                return;
-            }
-
-            // Get current top order prices from the DOM
-            const currentPrices = this.extractCurrentPrices(panel);
-
-            // Don't show display if we don't have current prices yet
-            if (!currentPrices) {
-                this.needsPriceDataRetry = true;
-                return;
-            }
-
-            // Get comparison mode setting
-            const comparisonMode = config.getSettingValue('market_tradeHistoryComparisonMode', 'instant');
-
-            // Find the button container - it's outside the currentItem panel
-            // Search in the entire document since button container is at a higher level
-            const buttonContainer = document.querySelector('[class*="MarketplacePanel_marketNavButtonContainer"]');
-            if (!buttonContainer) {
-                return;
-            }
-
-            // Create history display
-            const historyDiv = document.createElement('div');
-            historyDiv.className = 'mwi-trade-history';
-
-            historyDiv.style.cssText = `
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-left: 12px;
-            font-size: 0.85rem;
-            color: #888;
-            padding: 6px 12px;
-            background: rgba(0,0,0,0.8);
-            border-radius: 4px;
-            white-space: nowrap;
-        `;
-
-            // Build content
-            const parts = [];
-            parts.push(`<span style="color: #aaa; font-weight: 500;">${i18n_js.t('tradeHistoryDisplay.lastLabel')}</span>`);
-
-            if (history.buy) {
-                const buyColor = this.getBuyColor(history.buy, currentPrices, comparisonMode);
-                parts.push(
-                    `<span style="color: ${buyColor}; font-weight: 600;" title="${i18n_js.t('tradeHistoryDisplay.buyPriceTooltip')}">${i18n_js.t('tradeHistoryDisplay.buyValueLabel', { value: formatters_js.formatKMB3Digits(history.buy) })}</span>`
-                );
-            }
-
-            if (history.buy && history.sell) {
-                parts.push(`<span style="color: #555;">|</span>`);
-            }
-
-            if (history.sell) {
-                const sellColor = this.getSellColor(history.sell, currentPrices, comparisonMode);
-                parts.push(
-                    `<span style="color: ${sellColor}; font-weight: 600;" title="${i18n_js.t('tradeHistoryDisplay.sellPriceTooltip')}">${i18n_js.t('tradeHistoryDisplay.sellValueLabel', { value: formatters_js.formatKMB3Digits(history.sell) })}</span>`
-                );
-            }
-
-            historyDiv.innerHTML = parts.join('');
-
-            // Append to button container
-            buttonContainer.appendChild(historyDiv);
-
-            // Clear retry flag since we successfully displayed
-            this.needsPriceDataRetry = false;
-        }
-
-        /**
-         * Extract current top order prices from WebSocket order book data
-         * @param {HTMLElement} panel - Current item panel (unused, kept for signature compatibility)
-         * @returns {Object|null} { ask, bid } or null
-         */
-        extractCurrentPrices(_panel) {
-            // Use WebSocket order book data instead of DOM scraping
-            if (!this.currentOrderBookData || !this.currentOrderBookData.orderBooks) {
-                return null;
-            }
-
-            // Get current enhancement level to find correct order book
-            const enhancementLevel = this.getCurrentEnhancementLevel();
-
-            // orderBooks is an array indexed by enhancement level
-            const orderBook = this.currentOrderBookData.orderBooks[enhancementLevel];
-            if (!orderBook) {
-                return null;
-            }
-
-            // Extract top ask (lowest sell price) and top bid (highest buy price)
-            const topAsk = orderBook.asks?.[0]?.price || null;
-            const topBid = orderBook.bids?.[0]?.price || null;
-
-            // Return partial data — at least one side must exist
-            if (!topAsk && !topBid) {
-                return null;
-            }
-
-            return {
-                ask: topAsk,
-                bid: topBid,
-            };
-        }
-
-        /**
-         * Get color for buy price based on comparison mode
-         * @param {number} lastBuy - Your last buy price
-         * @param {Object|null} currentPrices - Current market prices { ask, bid }
-         * @param {string} comparisonMode - 'instant' or 'listing'
-         * @returns {string} Color code
-         */
-        getBuyColor(lastBuy, currentPrices, _comparisonMode) {
-            if (!currentPrices) {
-                return '#888'; // Grey if no market data
-            }
-
-            // Both modes compare to ask (what you'd pay to buy)
-            const comparePrice = currentPrices.ask;
-
-            if (!comparePrice || comparePrice === -1) {
-                return '#888'; // Grey if no market data
-            }
-
-            // Both instant and listing modes use same logic:
-            // "If I buy now, would I pay more or less than last time?"
-            if (comparePrice > lastBuy) {
-                return config.COLOR_LOSS; // Red - would pay more now (market worse)
-            } else if (comparePrice < lastBuy) {
-                return config.COLOR_PROFIT; // Green - would pay less now (market better)
-            }
-
-            return '#888'; // Grey - same price
-        }
-
-        /**
-         * Get color for sell price based on comparison mode
-         * @param {number} lastSell - Your last sell price
-         * @param {Object|null} currentPrices - Current market prices { ask, bid }
-         * @param {string} comparisonMode - 'instant' or 'listing'
-         * @returns {string} Color code
-         */
-        getSellColor(lastSell, currentPrices, comparisonMode) {
-            if (!currentPrices) {
-                return '#888'; // Grey if no market data
-            }
-
-            // Choose comparison price based on mode
-            const comparePrice = comparisonMode === 'instant' ? currentPrices.bid : currentPrices.ask;
-
-            if (!comparePrice || comparePrice === -1) {
-                return '#888'; // Grey if no market data
-            }
-
-            // Both modes use same logic: "If I sell now, would I get more or less than last time?"
-            if (comparePrice > lastSell) {
-                return config.COLOR_PROFIT; // Green - would get more now (market better)
-            } else if (comparePrice < lastSell) {
-                return config.COLOR_LOSS; // Red - would get less now (market worse)
-            }
-
-            return '#888'; // Grey - same price
-        }
-
-        /**
-         * Disable the display
-         */
-        disable() {
-            if (this.comparisonModeHandler) {
-                config.offSettingChange('market_tradeHistoryComparisonMode', this.comparisonModeHandler);
-                this.comparisonModeHandler = null;
-            }
-
-            if (this.unregisterObserver) {
-                this.unregisterObserver();
-                this.unregisterObserver = null;
-            }
-
-            if (this.unregisterWebSocket) {
-                this.unregisterWebSocket();
-                this.unregisterWebSocket = null;
-            }
-
-            // Remove all displays
-            document.querySelectorAll('.mwi-trade-history').forEach((el) => el.remove());
-
-            this.isActive = false;
-            this.currentItemHrid = null;
-            this.currentEnhancementLevel = 0;
-            this.currentOrderBookData = null;
-            this.isInitialized = false;
-        }
-    }
-
-    const tradeHistoryDisplay = new TradeHistoryDisplay();
-
-    /**
-     * Network Alert Display
-     * Shows a warning message when market data cannot be fetched
-     */
-
-
-    class NetworkAlert {
-        constructor() {
-            this.container = null;
-            this.unregisterHandlers = [];
-            this.isVisible = false;
-        }
-
-        /**
-         * Initialize network alert display
-         */
-        initialize() {
-            if (!config.getSetting('networkAlert')) {
-                return;
-            }
-
-            // 1. Check if header exists already
-            const existingElem = document.querySelector('[class*="Header_totalLevel"]');
-            if (existingElem) {
-                this.prepareContainer(existingElem);
-            }
-
-            // 2. Watch for header to appear (handles SPA navigation)
-            const unregister = domObserver.onClass('NetworkAlert', 'Header_totalLevel', (elem) => {
-                this.prepareContainer(elem);
-            });
-            this.unregisterHandlers.push(unregister);
-        }
-
-        /**
-         * Prepare container but don't show yet
-         * @param {Element} totalLevelElem - Total level element
-         */
-        prepareContainer(totalLevelElem) {
-            // Check if already prepared
-            if (this.container && document.body.contains(this.container)) {
-                return;
-            }
-
-            // Remove any existing container
-            if (this.container) {
-                this.container.remove();
-            }
-
-            // Create container (hidden by default)
-            this.container = document.createElement('div');
-            this.container.className = 'mwi-network-alert';
-            this.container.style.cssText = `
-            display: none;
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: #ff4444;
-            text-wrap: nowrap;
-            margin-left: 16px;
-        `;
-
-            // Insert after total level (or after networth if it exists)
-            const networthElem = totalLevelElem.parentElement.querySelector('.mwi-networth-header');
-            if (networthElem) {
-                networthElem.insertAdjacentElement('afterend', this.container);
-            } else {
-                totalLevelElem.insertAdjacentElement('afterend', this.container);
-            }
-        }
-
-        /**
-         * Show the network alert
-         * @param {string} message - Alert message to display
-         */
-        show(message = i18n_js.t('networkAlert.marketDataUnavailable')) {
-            if (!config.getSetting('networkAlert')) {
-                return;
-            }
-
-            if (!this.container || !document.body.contains(this.container)) {
-                // Try to prepare container if not ready
-                const totalLevelElem = document.querySelector('[class*="Header_totalLevel"]');
-                if (totalLevelElem) {
-                    this.prepareContainer(totalLevelElem);
-                } else {
-                    // Header not found, fallback to console
-                    console.warn('[Network Alert]', message);
-                    return;
-                }
-            }
-
-            if (this.container) {
-                this.container.textContent = message;
-                this.container.style.display = 'block';
-                this.isVisible = true;
-            }
-        }
-
-        /**
-         * Hide the network alert
-         */
-        hide() {
-            if (this.container && document.body.contains(this.container)) {
-                this.container.style.display = 'none';
-                this.isVisible = false;
-            }
-        }
-
-        /**
-         * Cleanup
-         */
-        disable() {
-            this.hide();
-
-            if (this.container) {
-                this.container.remove();
-                this.container = null;
-            }
-
-            this.unregisterHandlers.forEach((unregister) => unregister());
-            this.unregisterHandlers = [];
-        }
-    }
-
-    const networkAlert = new NetworkAlert();
-
-    /**
-     * Marketplace Shortcuts Module
-     * Adds a "Marketplace Action" dropdown to the inventory item submenu
-     * with quick actions: Sell Now, Buy Now, New Sell Listing, New Buy Listing
-     */
-
-
-    /** Native input value setter for triggering React state updates */
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-
-    /**
-     * Marketplace modal title spec per shortcut action: English title plus the
-     * game's i18n key (namespace: marketplacePanel). Modal titles are localized
-     * (zh: 立即购买 / 出售挂牌 ...), so both variants must be accepted.
-     */
-    const MARKETPLACE_MODAL_TITLES = {
-        buy: { english: 'Buy Now', key: 'buyNow' },
-        sell: { english: 'Sell Now', key: 'sellNow' },
-        'buy-listing': { english: 'Buy Listing', key: 'buyListing' },
-        'sell-listing': { english: 'Sell Listing', key: 'sellListing' },
-    };
-
-    /**
-     * MarketplaceShortcuts class manages the dropdown in item submenus
-     */
-    class MarketplaceShortcuts {
-        constructor() {
-            this.unregisterHandlers = [];
-            this.isInitialized = false;
-            this.timerRegistry = timerRegistry_js.createTimerRegistry();
-            this.itemNameToHridCache = null;
-            this.closeHandler = null;
-            this.pendingAutofill = null;
-            this.pendingAutofillWriteTimers = new Set();
-            this.pendingAutofillExpiryTimer = null;
-            this.addMode = false;
-        }
-
-        /**
-         * Initialize marketplace shortcuts feature
-         */
-        initialize() {
-            if (this.isInitialized) {
-                return;
-            }
-
-            this.isInitialized = true;
-
-            // Watch for item action menu popups
-            const unregister = domObserver.onClass('MarketplaceShortcuts', 'Item_actionMenu', (actionMenu) => {
-                this.injectDropdown(actionMenu);
-            });
-            this.unregisterHandlers.push(unregister);
-
-            // Watch for marketplace modals to autofill quantity and inject quick input buttons
-            const unregisterModal = domObserver.onClass('MarketplaceShortcuts_modal', 'Modal_modalContainer', (modal) => {
-                this.autofillQuantity(modal);
-                this.injectQuickInputButtons(modal);
-                this.injectMultiplierButtons(modal);
-                this.injectOwnedCount(modal);
-                this.focusQuantityInput(modal);
-            });
-            this.unregisterHandlers.push(unregisterModal);
-
-            this.closeHandler = () => this.closeAllDropdowns();
-            document.addEventListener('click', this.closeHandler);
-        }
-
-        /**
-         * Close every currently-rendered Marketplace shortcut dropdown.
-         */
-        closeAllDropdowns() {
-            document.querySelectorAll('.mwi-marketplace-dropdown').forEach((wrapper) => {
-                const panel = wrapper._dropdownPanel;
-                if (panel) panel.style.display = 'none';
-                const chevron = wrapper.querySelector('.mwi-mp-chevron');
-                if (chevron) chevron.style.transform = '';
-            });
-        }
-
-        /**
-         * Inject marketplace dropdown into the item action menu
-         * @param {HTMLElement} actionMenu - The Item_actionMenu element
-         */
-        injectDropdown(actionMenu) {
-            // Check if feature is enabled
-            if (!config.getSetting('market_marketplaceShortcuts')) return;
-
-            // Skip if already injected
-            if (actionMenu.querySelector('.mwi-marketplace-dropdown')) {
-                return;
-            }
-
-            // Get item name
-            const nameEl = actionMenu.querySelector('[class*="Item_name"]');
-            if (!nameEl) return;
-
-            const itemName = nameEl.textContent.trim();
-            const itemHrid = this.findItemHrid(itemName);
-            if (!itemHrid) return;
-
-            // Get enhancement level (e.g. "+3" → 3, absent → 0)
-            let enhancementLevel = 0;
-            const enhEl = actionMenu.querySelector('[class*="Item_enhancementLevel"]');
-            if (enhEl) {
-                const match = enhEl.textContent.match(/\+(\d+)/);
-                if (match) {
-                    enhancementLevel = parseInt(match[1], 10);
-                }
-            }
-
-            // Check tradeability
-            const gameData = dataManager.getInitClientData();
-            if (!gameData?.itemDetailMap) return;
-
-            const itemDetails = gameData.itemDetailMap[itemHrid];
-            if (!itemDetails?.isTradable) return;
-
-            // Find "View Marketplace" button. The game renders this item-action-menu
-            // button through the same generic full-width button component as every
-            // other menu entry (no stable class/href), so match its localized label
-            // (game key: item.viewMarketplace) with English as fallback.
-            const viewMarketplaceLabel = translateGameName('item', 'viewMarketplace', 'View Marketplace');
-            const viewMarketplaceBtn = this.findButtonByText(actionMenu, 'View Marketplace', viewMarketplaceLabel);
-            if (!viewMarketplaceBtn) return;
-
-            // Build and insert dropdown
-            const dropdown = this.buildDropdown(actionMenu, itemHrid, enhancementLevel);
-            viewMarketplaceBtn.insertAdjacentElement('afterend', dropdown);
-        }
-
-        /**
-         * Build the dropdown UI
-         * @param {HTMLElement} actionMenu - The action menu container
-         * @param {string} itemHrid - Item HRID for marketplace navigation
-         * @param {number} enhancementLevel - Enhancement level (0 for base items)
-         * @returns {HTMLElement} Dropdown wrapper element
-         */
-        buildDropdown(actionMenu, itemHrid, enhancementLevel = 0) {
-            const wrapper = document.createElement('div');
-            wrapper.classList.add('mwi-marketplace-dropdown');
-            wrapper.style.cssText = 'position: relative; width: 100%;';
-
-            // Create toggle button matching game button style
-            const toggle = document.createElement('button');
-            const existingBtn = actionMenu.querySelector('button');
-            if (existingBtn) {
-                toggle.className = existingBtn.className;
-            }
-            toggle.classList.add('mwi-marketplace-dropdown-toggle');
-            toggle.style.cssText = 'display: flex; justify-content: space-between; align-items: center; width: 100%;';
-            // Build top ask age subtitle if order book data is cached
-            let ageHtml = '';
-            const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
-            if (cacheEntry) {
-                const orderBookData = cacheEntry.data || cacheEntry;
-                const orderBooks = orderBookData?.orderBooks;
-                if (orderBooks) {
-                    // Handle both array format (index = enhancement level) and object format
-                    const orderBook = Array.isArray(orderBooks)
-                        ? orderBooks[enhancementLevel]
-                        : orderBooks[enhancementLevel];
-                    const topAsk = orderBook?.asks?.[0];
-                    if (topAsk?.createdTimestamp) {
-                        const ageMs = Date.now() - new Date(topAsk.createdTimestamp).getTime();
-                        if (ageMs > 0) {
-                            const ageStr = formatters_js.formatRelativeTime(ageMs);
-                            ageHtml = `<div style="font-size: 0.7em; opacity: 0.7; margin-top: 1px;">${i18n_js.t('marketplaceShortcuts.topAskAgeSubtitle', { age: ageStr })}</div>`;
-                        }
-                    }
-                }
-            }
-
-            toggle.innerHTML =
-                '<span style="flex: 1; text-align: center;">' +
-                i18n_js.t('marketplaceShortcuts.actionDropdownLabel') +
-                ageHtml +
-                '</span>' +
-                '<span class="mwi-mp-chevron" style="font-size: 0.65em; transition: transform 0.15s; display: inline-block;">▼</span>';
-
-            // Create dropdown panel (hidden by default). Rendered as a fixed-position portal
-            // appended to <body> rather than nested inside the game's own action menu, since that
-            // native menu is a short, overflow-clipped popup that would otherwise clip the panel's
-            // extra buttons off-screen.
-            const panel = document.createElement('div');
-            panel.classList.add('mwi-marketplace-dropdown-panel');
-            panel.style.cssText = `
-            display: none;
-            position: fixed;
-            z-index: 9999;
-            flex-direction: column;
-            background: var(--color-surface, #1e1e2e);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 6px;
-            overflow: hidden;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
-            padding: 4px;
-            gap: 3px;
-            box-sizing: border-box;
-        `;
-
-            // Action buttons
-            const actions = [
-                { label: i18n_js.t('marketplaceShortcuts.sellNowLabel'), type: 'sell', color: '#c2410c' },
-                { label: i18n_js.t('marketplaceShortcuts.buyNowLabel'), type: 'buy', color: '#2fc4a7' },
-                { label: i18n_js.t('marketplaceShortcuts.newSellListingLabel'), type: 'sell-listing', color: '#9a3412' },
-                { label: i18n_js.t('marketplaceShortcuts.newBuyListingLabel'), type: 'buy-listing', color: '#2fc4a7' },
-            ];
-
-            for (const action of actions) {
-                const btn = document.createElement('button');
-                btn.textContent = action.label;
-                btn.style.cssText = `
-                display: block;
-                width: 100%;
-                padding: 6px 12px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 0.85rem;
-                font-weight: 600;
-                color: #fff;
-                background: ${action.color};
-                text-align: center;
-                transition: opacity 0.15s;
-            `;
-                btn.addEventListener('mouseenter', () => {
-                    btn.style.opacity = '0.85';
-                });
-                btn.addEventListener('mouseleave', () => {
-                    btn.style.opacity = '1';
-                });
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    closePanel();
-                    // Dismiss the game's action menu by simulating Escape
-                    document.dispatchEvent(
-                        new KeyboardEvent('keydown', {
-                            key: 'Escape',
-                            code: 'Escape',
-                            keyCode: 27,
-                            which: 27,
-                            bubbles: true,
-                            cancelable: true,
-                        })
-                    );
-                    this.executeAction(action.type, itemHrid, enhancementLevel);
-                });
-                panel.appendChild(btn);
-            }
-
-            // Toggle logic
-            let open = false;
-
-            const closePanel = () => {
-                open = false;
-                panel.style.display = 'none';
-                const chevron = toggle.querySelector('.mwi-mp-chevron');
-                if (chevron) chevron.style.transform = '';
-            };
-
-            toggle.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                open = !open;
-                if (open) {
-                    const rect = toggle.getBoundingClientRect();
-                    panel.style.top = `${rect.bottom + 4}px`;
-                    panel.style.left = `${rect.left}px`;
-                    panel.style.width = `${rect.width}px`;
-                }
-                panel.style.display = open ? 'flex' : 'none';
-                const chevron = toggle.querySelector('.mwi-mp-chevron');
-                if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
-            });
-
-            wrapper.appendChild(toggle);
-            document.body.appendChild(panel);
-            wrapper._dropdownPanel = panel;
-            return wrapper;
-        }
-
-        /**
-         * Clear local state for the active shortcut autofill without touching another owner's session.
-         * @param {number|null} [sessionId]
-         */
-        clearPendingAutofill(sessionId = null) {
-            if (sessionId !== null && this.pendingAutofill && this.pendingAutofill.sessionId !== sessionId) return;
-
-            for (const timer of this.pendingAutofillWriteTimers) {
-                clearTimeout(timer);
-            }
-            this.pendingAutofillWriteTimers.clear();
-            if (this.pendingAutofillExpiryTimer !== null) {
-                clearTimeout(this.pendingAutofillExpiryTimer);
-                this.pendingAutofillExpiryTimer = null;
-            }
-            this.pendingAutofill = null;
-        }
-
-        /**
-         * End the currently-owned shortcut session, if any.
-         */
-        endPendingAutofill() {
-            const sessionId = this.pendingAutofill?.sessionId ?? null;
-            if (sessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
-                marketplaceSession_js.marketplaceSession.end(sessionId);
-                return;
-            }
-            this.clearPendingAutofill(sessionId);
-        }
-
-        /**
-         * Claim exclusive marketplace ownership for one shortcut quantity autofill.
-         * @param {{ quantity: number, itemHrid: string, enhancementLevel: number, actionType: string }} target
-         */
-        startPendingAutofill(target) {
-            let sessionId = null;
-            sessionId = marketplaceSession_js.marketplaceSession.start({
-                owner: marketplaceSession_js.MARKETPLACE_OWNER.SHORTCUTS,
-                onEnd: () => this.clearPendingAutofill(sessionId),
-            });
-
-            this.pendingAutofill = Object.freeze({ ...target, sessionId });
-            this.pendingAutofillExpiryTimer = setTimeout(() => {
-                marketplaceSession_js.marketplaceSession.end(sessionId);
-            }, 10000);
-        }
-
-        /**
-         * Update the expected modal type while preserving the same owned session.
-         * Used when an unavailable instant order falls back to a new listing.
-         * @param {string} actionType
-         */
-        retargetPendingAutofill(actionType) {
-            const current = this.pendingAutofill;
-            if (!current || !marketplaceSession_js.marketplaceSession.isActive(current.sessionId)) return;
-            this.pendingAutofill = Object.freeze({ ...current, actionType });
-        }
-
-        /**
-         * Get the expected marketplace modal state for a shortcut action.
-         * @param {string} actionType
-         * @returns {Object|null}
-         */
-        getPendingAutofillMode(actionType) {
-            const titleSpec = MARKETPLACE_MODAL_TITLES[actionType];
-            if (!titleSpec) return null;
-            const flags = {
-                buy: { isSell: false, isPostNewListing: false, isInstantOrder: true },
-                sell: { isSell: true, isPostNewListing: false, isInstantOrder: true },
-                'buy-listing': { isSell: false, isPostNewListing: true, isInstantOrder: false },
-                'sell-listing': { isSell: true, isPostNewListing: true, isInstantOrder: false },
-            }[actionType];
-            return { header: titleSpec.english, ...flags };
-        }
-
-        /**
-         * Get every accepted modal header text for a shortcut action: the English
-         * title plus the game's current-language translation.
-         * @param {string} actionType
-         * @returns {string[]}
-         */
-        getModalHeaderLabels(actionType) {
-            const spec = MARKETPLACE_MODAL_TITLES[actionType];
-            if (!spec) return [];
-            const translated = translateGameName('marketplacePanel', spec.key, spec.english);
-            return translated === spec.english ? [spec.english] : [spec.english, translated];
-        }
-
-        /**
-         * Whether a live modal header corresponds to the given shortcut action,
-         * matching either the English title or its localized translation.
-         * @param {string} headerText
-         * @param {string} actionType
-         * @returns {boolean}
-         */
-        modalHeaderMatches(headerText, actionType) {
-            return this.getModalHeaderLabels(actionType).some((label) => headerText.includes(label));
-        }
-
-        /**
-         * Whether a modal header is any marketplace order/listing dialog
-         * (Buy/Sell Now, Buy/Sell Listing), in English or the game language.
-         * @param {string} headerText
-         * @returns {boolean}
-         */
-        isMarketplaceModalHeader(headerText) {
-            return Object.keys(MARKETPLACE_MODAL_TITLES).some((actionType) =>
-                this.modalHeaderMatches(headerText, actionType)
-            );
-        }
-
-        /**
-         * Verify that a live marketplace modal belongs to the exact shortcut target.
-         * @param {HTMLElement} modal
-         * @param {HTMLInputElement} quantityInput
-         * @param {Object} target
-         * @returns {boolean}
-         */
-        matchesPendingAutofill(modal, quantityInput, target) {
-            const expected = this.getPendingAutofillMode(target.actionType);
-            if (!expected || !modal?.isConnected || !quantityInput?.isConnected) return false;
-
-            const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
-            if (!this.modalHeaderMatches(headerText, target.actionType)) return false;
-
-            const state = readMarketplaceRuntimeStateFromElement(quantityInput);
-            if (!state) return false;
-            if (state.marketTabKey !== 'MarketListings' || state.marketListingsView !== 'OrderBook') return false;
-            if (state.itemHrid !== target.itemHrid || state.enhancementLevel !== target.enhancementLevel) return false;
-            if (state.enhancementLevelInput !== target.enhancementLevel) return false;
-            if (state.isSell !== expected.isSell) return false;
-            if (state.showPostListing !== true) return false;
-            if (state.isPostNewListing !== expected.isPostNewListing) return false;
-            return state.isInstantOrder === expected.isInstantOrder;
-        }
-
-        /**
-         * Execute a marketplace action
-         * @param {string} actionType - 'sell', 'buy', 'sell-listing', 'buy-listing'
-         * @param {string} itemHrid - Item HRID
-         * @param {number} enhancementLevel - Enhancement level (0 for base items)
-         */
-        async executeAction(actionType, itemHrid, enhancementLevel = 0) {
-            this.endPendingAutofill();
-
-            // Read quantity from item submenu input before navigating away
-            let quantity = 0;
-            const amountInput = document.querySelector('[class*="Item_amountInputContainer"] input[type="number"]');
-            if (amountInput) {
-                const captured = parseInt(amountInput.value, 10);
-                if (captured > 0) quantity = captured;
-            }
-
-            // If no quantity was captured, default to inventory count for sell actions
-            if (quantity <= 0 && (actionType === 'sell' || actionType === 'sell-listing')) {
-                const inventory = dataManager.characterItems || [];
-                const match = inventory.find(
-                    (item) =>
-                        item.itemHrid === itemHrid &&
-                        (item.enhancementLevel || 0) === enhancementLevel &&
-                        item.itemLocationHrid === '/item_locations/inventory'
-                );
-                if (match && match.count > 0) quantity = match.count;
-            }
-
-            this.startPendingAutofill({ quantity, itemHrid, enhancementLevel, actionType });
-
-            // Navigate to marketplace for this item
-            if (!navigateToMarketplace(itemHrid, enhancementLevel)) {
-                this.endPendingAutofill();
-                return;
-            }
-
-            // Wait for the marketplace panel to render
-            await new Promise((resolve) => setTimeout(resolve, 300));
-
-            try {
-                switch (actionType) {
-                    case 'sell':
-                        await this.clickInstantActionButton('Sell');
-                        break;
-                    case 'buy':
-                        await this.clickInstantActionButton('Buy');
-                        break;
-                    case 'sell-listing':
-                        await this.clickListingButton('+ New Sell Listing', 'Button_sell');
-                        break;
-                    case 'buy-listing':
-                        await this.clickListingButton('+ New Buy Listing', 'Button_buy');
-                        break;
-                }
-            } catch {
-                // Instant sell/buy failed (no matching orders) — fall back to listing form
-                if (actionType === 'sell') {
-                    this.retargetPendingAutofill('sell-listing');
-                    await this.clickListingButton('+ New Sell Listing', 'Button_sell').catch(() => {});
-                } else if (actionType === 'buy') {
-                    this.retargetPendingAutofill('buy-listing');
-                    await this.clickListingButton('+ New Buy Listing', 'Button_buy').catch(() => {});
-                }
-            }
-        }
-
-        /**
-         * Find and click an instant action button (Sell/Buy) on the marketplace order book.
-         * These buttons have text inside MarketplacePanel_actionButtonText divs.
-         * The label is localized by the game (zh: marketplacePanel.sell 出售 / buy 购买);
-         * the English label stays as a fallback.
-         * @param {string} buttonText - 'Sell' or 'Buy' (English label / i18n key)
-         * @param {number} timeout - Max wait time in ms (default 3000)
-         * @returns {Promise<void>}
-         */
-        async clickInstantActionButton(buttonText, timeout = 3000) {
-            const start = Date.now();
-            const translatedLabel = translateGameName('marketplacePanel', buttonText.toLowerCase(), buttonText);
-            const acceptedLabels = translatedLabel === buttonText ? [buttonText] : [buttonText, translatedLabel];
-
-            return new Promise((resolve, reject) => {
-                const interval = setInterval(() => {
-                    const actionTexts = document.querySelectorAll('[class*="MarketplacePanel_actionButtonText"]');
-                    for (const div of actionTexts) {
-                        // Skip entries with SVGs (those are icon-only buttons)
-                        if (!div.querySelector('svg') && acceptedLabels.includes(div.textContent.trim())) {
-                            const parentBtn = div.closest('button');
-                            if (parentBtn) {
-                                clearInterval(interval);
-                                parentBtn.click();
-                                resolve();
-                                return;
-                            }
-                        }
-                    }
-
-                    if (Date.now() - start > timeout) {
-                        clearInterval(interval);
-                        reject(new Error(`Timeout waiting for instant action button: ${buttonText}`));
-                    }
-                }, 50);
-
-                this.timerRegistry.registerInterval(interval);
-            });
-        }
-
-        /**
-         * Find and click a new listing button (+ New Sell Listing / + New Buy Listing).
-         * These buttons use game's Button_sell or Button_buy CSS classes.
-         * The label is localized (zh: marketplacePanel.newSellListing 新出售挂牌 /
-         * newBuyListing 新购买挂牌); the rendered label may keep a leading '+', so a
-         * leading '+' and whitespace are stripped from both sides before comparing.
-         * The English label stays as a fallback.
-         * @param {string} buttonText - Full English button text to match
-         * @param {string} partialClass - Partial CSS class to match (e.g. 'Button_sell')
-         * @param {number} timeout - Max wait time in ms (default 3000)
-         * @returns {Promise<void>}
-         */
-        async clickListingButton(buttonText, partialClass, timeout = 3000) {
-            const start = Date.now();
-            const i18nKey = partialClass.includes('sell') ? 'newSellListing' : 'newBuyListing';
-            const translatedLabel = translateGameName('marketplacePanel', i18nKey, buttonText);
-            const acceptedLabels = translatedLabel === buttonText ? [buttonText] : [buttonText, translatedLabel];
-            // Normalize a possible leading '+' / whitespace from rendered labels
-            const normalizeLabel = (text) =>
-                text
-                    .trim()
-                    .replace(/^[+\s]+/, '')
-                    .trim();
-
-            return new Promise((resolve, reject) => {
-                const interval = setInterval(() => {
-                    const candidates = document.querySelectorAll(`[class*="${partialClass}"]`);
-                    for (const btn of candidates) {
-                        const candidateLabel = normalizeLabel(btn.textContent);
-                        if (acceptedLabels.some((label) => normalizeLabel(label) === candidateLabel)) {
-                            clearInterval(interval);
-                            btn.click();
-                            resolve();
-                            return;
-                        }
-                    }
-
-                    if (Date.now() - start > timeout) {
-                        clearInterval(interval);
-                        reject(new Error(`Timeout waiting for listing button: ${buttonText}`));
-                    }
-                }, 50);
-
-                this.timerRegistry.registerInterval(interval);
-            });
-        }
-
-        /**
-         * Autofill quantity into a marketplace modal when it appears.
-         * Delayed slightly to run after auto-click-max has processed the modal.
-         * @param {HTMLElement} modal - Modal container element
-         */
-        autofillQuantity(modal) {
-            const target = this.pendingAutofill;
-            if (!target) return;
-            if (!marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) {
-                this.clearPendingAutofill(target.sessionId);
-                return;
-            }
-
-            const expected = this.getPendingAutofillMode(target.actionType);
-            const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
-            if (!expected || !this.modalHeaderMatches(headerText, target.actionType)) return;
-
-            // Prefer the newest matching modal if React replaces the modal during convergence.
-            for (const timer of this.pendingAutofillWriteTimers) clearTimeout(timer);
-            this.pendingAutofillWriteTimers.clear();
-
-            const delays = [100, 250, 500, 1000, 1500];
-            for (const delay of delays) {
-                const timer = setTimeout(() => {
-                    this.pendingAutofillWriteTimers.delete(timer);
-                    if (this.pendingAutofill !== target || !marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) return;
-
-                    const currentInput = this.findQuantityInput(modal);
-                    if (!currentInput || !this.matchesPendingAutofill(modal, currentInput, target)) return;
-
-                    if (target.quantity > 0) {
-                        nativeInputValueSetter.call(currentInput, target.quantity.toString());
-                        currentInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    }
-
-                    for (const pendingTimer of this.pendingAutofillWriteTimers) clearTimeout(pendingTimer);
-                    this.pendingAutofillWriteTimers.clear();
-                    marketplaceSession_js.marketplaceSession.end(target.sessionId);
-                }, delay);
-                this.pendingAutofillWriteTimers.add(timer);
-            }
-        }
-
-        /**
-         * Auto-focus the quantity input when a marketplace modal opens.
-         * Runs after autofill to avoid interfering with value setting.
-         * @param {HTMLElement} modal - Modal container element
-         */
-        focusQuantityInput(modal) {
-            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-            if (!header) return;
-
-            const headerText = header.textContent.trim();
-            // Buy-side modals only (Buy Now / Buy Listing), in English or the game language.
-            if (
-                !this.modalHeaderMatches(headerText, 'buy') &&
-                !this.modalHeaderMatches(headerText, 'buy-listing')
-                // Sell-side headers intentionally excluded for now:
-                // !this.modalHeaderMatches(headerText, 'sell')
-                // !this.modalHeaderMatches(headerText, 'sell-listing')
-            ) {
-                return;
-            }
-
-            // Delay to run after autofill (100ms) and quick input injection
-            setTimeout(() => {
-                const quantityInput = this.findQuantityInput(modal);
-                if (quantityInput) {
-                    quantityInput.focus();
-                    quantityInput.select();
-                }
-            }, 150);
-        }
-
-        /**
-         * Inject quick input buttons (10, 100, 1000, + toggle) into a marketplace modal.
-         * @param {HTMLElement} modal - Modal container element
-         */
-        injectQuickInputButtons(modal) {
-            // Check setting
-            if (!config.getSetting('market_quickInputButtons')) return;
-
-            // Check if this is a marketplace modal
-            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-            if (!header) return;
-
-            const headerText = header.textContent.trim();
-            if (!this.isMarketplaceModalHeader(headerText)) return;
-
-            // Delay to let the modal fully render
-            setTimeout(() => {
-                // Skip if already injected
-                if (modal.querySelector('.mwi-mp-quick-input')) return;
-
-                const quantityInput = this.findQuantityInput(modal);
-                if (!quantityInput) return;
-
-                // Create button row
-                const row = document.createElement('div');
-                row.className = 'mwi-mp-quick-input';
-                row.style.cssText =
-                    'display: flex; align-items: center; justify-content: center; gap: 2px; margin-top: 2px;';
-
-                // + toggle button
-                const addToggle = document.createElement('button');
-                addToggle.textContent = '+';
-                addToggle.title = i18n_js.t('marketplaceShortcuts.addModeToggleTooltip');
-                addToggle.style.cssText = `
-                font-size: 11px;
-                font-weight: 700;
-                padding: 1px 5px;
-                border-radius: 4px;
-                border: 1px solid rgba(215, 183, 255, 0.3);
-                background: transparent;
-                color: rgba(215, 183, 255, 0.5);
-                cursor: pointer;
-                margin-right: 4px;
-                line-height: 1.4;
-                transition: background 0.15s, color 0.15s, border-color 0.15s;
-            `;
-
-                const applyToggleStyle = (active) => {
-                    if (active) {
-                        addToggle.style.background = 'rgba(215, 183, 255, 0.2)';
-                        addToggle.style.color = '#d7b7ff';
-                        addToggle.style.borderColor = '#d7b7ff';
-                    } else {
-                        addToggle.style.background = 'transparent';
-                        addToggle.style.color = 'rgba(215, 183, 255, 0.5)';
-                        addToggle.style.borderColor = 'rgba(215, 183, 255, 0.3)';
-                    }
-                };
-
-                applyToggleStyle(this.addMode);
-                addToggle.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    this.addMode = !this.addMode;
-                    applyToggleStyle(this.addMode);
-                });
-                row.appendChild(addToggle);
-
-                // Preset count buttons
-                const defaults = [10, 100, 1000];
-                const raw = config.getSettingValue('market_quickInputButtons_presets', '');
-                const parsed = raw
-                    .split(',')
-                    .map((s) => parseInt(s.trim(), 10))
-                    .filter((n) => Number.isFinite(n) && n > 0);
-                const presetValues = parsed.length > 0 ? [...new Set(parsed)].sort((a, b) => a - b).slice(0, 8) : defaults;
-                for (const value of presetValues) {
-                    const btn = document.createElement('button');
-                    btn.textContent = value.toLocaleString();
-                    btn.className = 'mwi-quick-input-btn';
-                    btn.style.cssText = `
-                    background-color: white;
-                    color: black;
-                    padding: 1px 6px;
-                    margin: 1px;
-                    border: 1px solid #ccc;
-                    border-radius: 3px;
-                    cursor: pointer;
-                    font-size: 0.9em;
-                `;
-                    btn.addEventListener('mouseenter', () => {
-                        btn.style.backgroundColor = '#f0f0f0';
-                    });
-                    btn.addEventListener('mouseleave', () => {
-                        btn.style.backgroundColor = 'white';
-                    });
-                    btn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (this.addMode) {
-                            const current = parseInt(quantityInput.value) || 0;
-                            reactInput_js.setReactInputValue(quantityInput, current + value, { focus: true });
-                        } else {
-                            reactInput_js.setReactInputValue(quantityInput, value, { focus: true });
-                        }
-                    });
-                    row.appendChild(btn);
-                }
-
-                // Insert below the quantity input row (1 / input / Max)
-                const inputRow = quantityInput.closest('div')?.parentElement?.parentElement;
-                if (inputRow) {
-                    inputRow.insertAdjacentElement('afterend', row);
-                }
-            }, 150);
-        }
-
-        /**
-         * Inject "owned: X" count into Buy Now / Buy Listing modals.
-         * @param {HTMLElement} modal - Modal container element
-         */
-        injectOwnedCount(modal) {
-            if (!config.getSetting('market_showOwnedInBuyModal')) return;
-
-            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-            if (!header) return;
-
-            const headerText = header.textContent.trim();
-            if (!this.modalHeaderMatches(headerText, 'buy') && !this.modalHeaderMatches(headerText, 'buy-listing')) {
-                return;
-            }
-
-            setTimeout(() => {
-                if (modal.querySelector('.mwi-owned-count')) return;
-
-                // Extract item HRID from the SVG icon in the modal
-                const useEl = modal.querySelector('svg use[href], svg use[xlink\\:href]');
-                if (!useEl) return;
-                const href = useEl.getAttribute('href') || useEl.getAttribute('xlink:href');
-                if (!href) return;
-                const idMatch = href.match(/#(.+)$/);
-                if (!idMatch) return;
-                const itemSlug = idMatch[1];
-                const itemHrid = `/items/${itemSlug}`;
-
-                // Determine enhancement level from modal (if present). Same type="text"
-                // staleness as the quantity field elsewhere in this file - match both types.
-                // The label is localized (zh: 强化等级); match both languages.
-                const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
-                let enhancementLevel = 0;
-                const allInputs = modal.querySelectorAll('input[type="number"], input[type="text"]');
-                for (const input of allInputs) {
-                    const parent = input.closest('div');
-                    const parentText = parent?.textContent || '';
-                    if (parentText.includes('Enhancement Level') || parentText.includes(enhancementLabel)) {
-                        enhancementLevel = parseInt(input.value) || 0;
-                        break;
-                    }
-                }
-
-                // Look up inventory count for this specific item + enhancement level
-                const inventory = dataManager.characterItems || [];
-                let count = 0;
-                for (const item of inventory) {
-                    if (
-                        item.itemHrid === itemHrid &&
-                        (item.enhancementLevel || 0) === enhancementLevel &&
-                        item.itemLocationHrid === '/item_locations/inventory'
-                    ) {
-                        count += item.count || 0;
-                    }
-                }
-
-                // Inject below the "Price" label area, before "Quantity"
-                const quantityInput = this.findQuantityInput(modal);
-                if (!quantityInput) return;
-
-                // Find the Quantity label container
-                const quantityRow = quantityInput.closest('div')?.parentElement?.parentElement;
-                if (!quantityRow) return;
-
-                const ownedEl = document.createElement('div');
-                ownedEl.className = 'mwi-owned-count';
-                ownedEl.style.cssText = `text-align: center; font-size: 13px; color: ${config.COLOR_TEXT_SECONDARY}; margin: 4px 0;`;
-                ownedEl.innerHTML = `${i18n_js.t('marketplaceShortcuts.ownedLabel')} <span style="color: ${config.COLOR_ACCENT}; font-weight: 600;">${formatters_js.formatWithSeparator(count)}</span>`;
-                quantityRow.insertAdjacentElement('beforebegin', ownedEl);
-            }, 100);
-        }
-
-        /**
-         * Find the quantity input in a marketplace modal.
-         * Equipment items have multiple number inputs (enhancement level + quantity),
-         * so we identify the correct one by checking parent containers.
-         * @param {HTMLElement} modal - Modal container element
-         * @returns {HTMLInputElement|null} Quantity input element or null
-         */
-        findQuantityInput(modal) {
-            // The marketplace update switched this field from type="number" to type="text"
-            // (to support typed compact values like "5k"), so match both types.
-
-            // Structural first: the quantity field lives in MarketplacePanel_quantityInputs,
-            // which is locale-independent (the enhancement level input is in a separate row).
-            const structuralInputs = Array.from(
-                modal.querySelectorAll(
-                    '[class*="MarketplacePanel_quantityInputs"] input[type="number"], ' +
-                        '[class*="MarketplacePanel_quantityInputs"] input[type="text"]'
-                )
-            );
-            if (structuralInputs.length === 1) return structuralInputs[0];
-
-            const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
-
-            if (allInputs.length === 0) return null;
-            if (allInputs.length === 1) return allInputs[0];
-
-            // Localized labels (English kept; zh: Quantity 数量 / Enhancement Level 强化等级)
-            const quantityLabel = translateGameName('marketplacePanel', 'quantity', 'Quantity');
-            const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
-            const textNamesQuantity = (text) =>
-                (text.includes('Quantity') || text.includes(quantityLabel)) &&
-                !(text.includes('Enhancement Level') || text.includes(enhancementLabel));
-
-            // Multiple inputs — find the one near "Quantity" text, not "Enhancement Level"
-            for (let level = 0; level < 4; level++) {
-                for (const input of allInputs) {
-                    let parent = input.parentElement;
-                    for (let j = 0; j < level && parent; j++) {
-                        parent = parent.parentElement;
-                    }
-                    if (!parent) continue;
-
-                    if (textNamesQuantity(parent.textContent)) {
-                        return input;
-                    }
-                }
-            }
-
-            return allInputs[0];
-        }
-
-        /**
-         * Find a button by its text content. Every passed candidate is accepted
-         * (used to match both the English label and its localized translation).
-         * @param {HTMLElement} container - Container to search in
-         * @param {...string} texts - Button texts to find
-         * @returns {HTMLElement|null} Button element or null
-         */
-        findButtonByText(container, ...texts) {
-            const acceptedTexts = new Set(texts.filter(Boolean));
-            const buttons = container.querySelectorAll('button');
-            for (const btn of buttons) {
-                if (acceptedTexts.has(btn.textContent.trim())) return btn;
-            }
-            return null;
-        }
-
-        /**
-         * Find item HRID by name using game data
-         * @param {string} itemName - Item display name
-         * @returns {string|null} Item HRID or null
-         */
-        findItemHrid(itemName) {
-            const gameData = dataManager.getInitClientData();
-            if (!gameData?.itemDetailMap) return null;
-
-            // Build cache on first use. Index both the English data name and the
-            // game's localized display name so the lookup works in any locale.
-            if (!this.itemNameToHridCache) {
-                this.itemNameToHridCache = new Map();
-                for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-                    if (item.name) {
-                        this.itemNameToHridCache.set(item.name, hrid);
-                        const localizedName = getItemName(hrid, item.name);
-                        if (localizedName && localizedName !== item.name) {
-                            this.itemNameToHridCache.set(localizedName, hrid);
-                        }
-                    }
-                }
-            }
-
-            // 1. Exact match (handles base items and items already in "(R)" form)
-            if (this.itemNameToHridCache.has(itemName)) {
-                return this.itemNameToHridCache.get(itemName);
-            }
-
-            // 2. ★ → (R) substitution for refined items ("Griffin Bulwark ★" → "Griffin Bulwark (R)")
-            if (itemName.includes('★')) {
-                const refinedVariant = itemName.replace(/\s*★/g, ' (R)').replace(/\s+/g, ' ').trim();
-                if (this.itemNameToHridCache.has(refinedVariant)) {
-                    return this.itemNameToHridCache.get(refinedVariant);
-                }
-            }
-
-            return null;
-        }
-
-        /**
-         * Inject ÷2 and ×2 multiplier buttons into price and quantity rows.
-         * @param {HTMLElement} modal - Modal container element
-         */
-        injectMultiplierButtons(modal) {
-            if (!config.getSetting('market_multiplierButtons')) return;
-
-            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-            if (!header) return;
-
-            const headerText = header.textContent.trim();
-            if (!this.isMarketplaceModalHeader(headerText)) return;
-
-            setTimeout(() => {
-                if (modal.querySelector('.mwi-mp-multiplier')) return;
-
-                const priceRow = modal.querySelector('div[class*="MarketplacePanel_priceInputs"]');
-                const quantityRow = modal.querySelector('div[class*="MarketplacePanel_quantityInputs"]');
-
-                for (const row of [priceRow, quantityRow]) {
-                    if (!row) continue;
-
-                    const input = row.querySelector('input[type="number"], input[type="text"]');
-                    if (!input) continue;
-
-                    const buttonContainers = row.querySelectorAll('div[class*="MarketplacePanel_buttonContainer"]');
-                    if (buttonContainers.length < 2) continue;
-
-                    const firstContainer = buttonContainers[0];
-                    const lastContainer = buttonContainers[buttonContainers.length - 1];
-
-                    const existingBtn = firstContainer.querySelector('button');
-                    const btnClass = existingBtn?.className || '';
-
-                    const divideWrapper = document.createElement('div');
-                    divideWrapper.className = firstContainer.className + ' mwi-mp-multiplier';
-                    const divideBtn = document.createElement('button');
-                    divideBtn.className = btnClass;
-                    divideBtn.textContent = '÷2';
-                    divideBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const current = parseInt(input.value) || 0;
-                        reactInput_js.setReactInputValue(input, Math.max(1, Math.floor(current / 2)));
-                    });
-                    divideWrapper.appendChild(divideBtn);
-
-                    const multiplyWrapper = document.createElement('div');
-                    multiplyWrapper.className = lastContainer.className + ' mwi-mp-multiplier';
-                    const multiplyBtn = document.createElement('button');
-                    multiplyBtn.className = btnClass;
-                    multiplyBtn.textContent = '×2';
-                    multiplyBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const current = parseInt(input.value) || 0;
-                        reactInput_js.setReactInputValue(input, current * 2);
-                    });
-                    multiplyWrapper.appendChild(multiplyBtn);
-
-                    firstContainer.insertAdjacentElement('beforebegin', divideWrapper);
-                    lastContainer.insertAdjacentElement('afterend', multiplyWrapper);
-                }
-            }, 100);
-        }
-
-        /**
-         * Disable and cleanup
-         */
-        disable() {
-            this.unregisterHandlers.forEach((unregister) => unregister());
-            this.unregisterHandlers = [];
-
-            if (this.closeHandler) {
-                document.removeEventListener('click', this.closeHandler);
-                this.closeHandler = null;
-            }
-
-            this.endPendingAutofill();
-            this.timerRegistry.clearAll();
-
-            document.querySelectorAll('.mwi-marketplace-dropdown').forEach((el) => el.remove());
-            document.querySelectorAll('.mwi-marketplace-dropdown-panel').forEach((el) => el.remove());
-            document.querySelectorAll('.mwi-mp-quick-input').forEach((el) => el.remove());
-            document.querySelectorAll('.mwi-mp-multiplier').forEach((el) => el.remove());
-
-            this.itemNameToHridCache = null;
-            this.isInitialized = false;
-        }
-    }
-
-    const marketplaceShortcuts = new MarketplaceShortcuts();
-
-    // Auto-initialize (always enabled feature)
-    marketplaceShortcuts.initialize();
-
-    /**
-     * Sell Queue
-     * Shift+RightClick inventory items to queue them for selling.
-     * Creates marketplace tabs for each queued item; tabs auto-close when item count hits 0.
-     */
-
-
-    const timerRegistry = timerRegistry_js.createTimerRegistry();
-
-    /** @type {Array<{itemHrid: string, itemName: string}>} */
-    const queue = [];
-
-    /** @type {HTMLElement[]} */
-    const currentTabs = [];
-
-    let cleanupObserver = null;
-    let nativeTabExitCleanup = null;
-    let inventoryUpdateHandler = null;
-    let currentItemHrid = null;
-    let tooltipObserverUnregister = null;
-    let contextMenuHandler = null;
-    let isActive = false;
-    let sellQueueSessionId = null;
-    let sellQueueReadyPromise = null;
-
-    /**
-     * Get total inventory count for an item hrid.
-     * @param {string} itemHrid
-     * @returns {number}
-     */
-    function getInventoryCount(itemHrid) {
-        const inventory = dataManager.getInventory();
-        if (!inventory) return 0;
-        return inventory
-            .filter((i) => i.itemHrid === itemHrid && i.itemLocationHrid === '/item_locations/inventory')
-            .reduce((sum, i) => sum + (i.count || 0), 0);
-    }
-
-    /**
-     * Navigate to the marketplace by clicking its navbar button.
-     * @returns {Promise<boolean>}
-     */
-    async function openMarketplacePage(sessionId) {
-        if (!clickMarketplaceNavigationButton()) return false;
-        return await waitForMarketplace(sessionId);
-    }
-
-    /**
-     * Wait for the marketplace tabs container to appear.
-     * @returns {Promise<boolean>}
-     */
-    async function waitForMarketplace(sessionId) {
-        for (let attempt = 0; attempt < 50; attempt += 1) {
-            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
-            if (getVisibleMarketplaceTabContainer()) return true;
-            await new Promise((resolve) => timerRegistry.registerTimeout(setTimeout(resolve, 100)));
-        }
-        return false;
-    }
-
-    /**
-     * Inject tabs for all queued items into the marketplace tab strip.
-     */
-    function injectTabs(tabsContainer = getVisibleMarketplaceTabContainer(), sessionId = sellQueueSessionId) {
-        if (!tabsContainer || !marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
-
-        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE);
-        currentTabs.length = 0;
-
-        // The My Listings tab label is localized by the game (zh: 我的挂牌), so match the
-        // translated label too.
-        const myListingsLabels = ['My Listings', translateGameName('marketplacePanel', 'myListings', 'My Listings')];
-        const referenceTab = Array.from(tabsContainer.children).find((tab) =>
-            myListingsLabels.some((label) => tab.textContent.includes(label))
-        );
-        if (!referenceTab) return false;
-        tabsContainer.style.flexWrap = 'wrap';
-
-        nativeTabExitCleanup?.();
-        nativeTabExitCleanup = watchNativeTabExit(tabsContainer, () => marketplaceSession_js.marketplaceSession.end(sessionId));
-
-        for (const entry of queue) {
-            const count = getInventoryCount(entry.itemHrid);
-            const material = {
-                itemHrid: entry.itemHrid,
-                itemName: entry.itemName,
-                missing: 0,
-                required: count,
-                isTradeable: true,
-                forceActionable: count > 0,
-            };
-
-            const tab = createMaterialTab(
-                material,
-                referenceTab,
-                (_event, mat) => {
-                    if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return;
-                    if (!navigateToMarketplace(mat.itemHrid, 0)) marketplaceSession_js.marketplaceSession.end(sessionId);
-                },
-                marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE
-            );
-            const badge = tab.querySelector('[class*="TabsComponent_badge"]');
-            if (badge) badge.innerHTML = buildBadgeHtml(entry.itemHrid, entry.itemName, count);
-            tabsContainer.appendChild(tab);
-            currentTabs.push(tab);
-        }
-
-        return true;
-    }
-
-    /**
-     * Build badge HTML for a queued item tab.
-     * @param {string} itemHrid
-     * @param {string} itemName - English fallback name
-     * @param {number} count
-     * @returns {string}
-     */
-    function buildBadgeHtml(itemHrid, itemName, count) {
-        const titleCase = getItemName(itemHrid, itemName)
-            .split(' ')
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-            .join(' ');
-        const color = count > 0 ? '#4ade80' : '#6b7280';
-        const sub =
-            count > 0 ? i18n_js.t('marketplaceTabs.inBag', { count: count.toLocaleString() }) : i18n_js.t('marketplaceTabs.soldOut');
-        return `<div style="text-align:center;"><div>${titleCase}</div><div style="font-size:0.75em;color:${color};">${sub}</div></div>`;
-    }
-
-    /**
-     * Update tab badges and remove tabs for items that have sold out.
-     * Auto-navigates to the next queued item when the current one sells out.
-     */
-    function updateTabsOnInventoryChange() {
-        const connectedTabs = Array.from(
-            document.querySelectorAll(
-                `[data-mwi-custom-tab][data-mwi-tab-owner="${marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE}"][data-item-hrid]`
-            )
-        );
-        const counts = new Map(queue.map((entry) => [entry.itemHrid, getInventoryCount(entry.itemHrid)]));
-        const toRemove = queue.filter((entry) => counts.get(entry.itemHrid) === 0).map((entry) => entry.itemHrid);
-
-        connectedTabs.forEach((tab) => {
-            const itemHrid = tab.getAttribute('data-item-hrid');
-            const entry = queue.find((candidate) => candidate.itemHrid === itemHrid);
-            if (!entry) return;
-
-            const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
-            if (badgeSpan) badgeSpan.innerHTML = buildBadgeHtml(entry.itemHrid, entry.itemName, counts.get(itemHrid) || 0);
-        });
-
-        for (const hrid of toRemove) {
-            const idx = queue.findIndex((e) => e.itemHrid === hrid);
-            if (idx !== -1) queue.splice(idx, 1);
-
-            // Remove both the currently connected tab and any detached pre-remount
-            // references retained in currentTabs.
-            document
-                .querySelectorAll(
-                    `[data-mwi-custom-tab][data-mwi-tab-owner="${marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE}"]` +
-                        `[data-item-hrid="${hrid}"]`
-                )
-                .forEach((tab) => tab.remove());
-            for (let tabIndex = currentTabs.length - 1; tabIndex >= 0; tabIndex -= 1) {
-                if (currentTabs[tabIndex].getAttribute('data-item-hrid') !== hrid) continue;
-                currentTabs[tabIndex].remove();
-                currentTabs.splice(tabIndex, 1);
-            }
-        }
-
-        // After removing sold-out tabs, navigate to the first remaining queued item
-        if (toRemove.length > 0 && queue.length > 0) {
-            if (!navigateToMarketplace(queue[0].itemHrid, 0) && sellQueueSessionId !== null) {
-                marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
-            }
-        } else if (queue.length === 0 && sellQueueSessionId !== null) {
-            marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
-        }
-    }
-
-    /**
-     * Set up listener to update tabs when inventory changes.
-     */
-    function setupInventoryListener() {
-        if (inventoryUpdateHandler) {
-            dataManager.off('items_updated', inventoryUpdateHandler);
-        }
-        inventoryUpdateHandler = () => {
-            updateTabsOnInventoryChange();
-        };
-        dataManager.on('items_updated', inventoryUpdateHandler);
-    }
-
-    /**
-     * Idempotent teardown of the marketplace session and its associated state.
-     * Does NOT touch isActive, contextMenuHandler, or tooltipObserverUnregister.
-     */
-    function teardownSellQueueMarketplaceSession() {
-        sellQueueSessionId = null;
-        sellQueueReadyPromise = null;
-        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE);
-        currentTabs.length = 0;
-        queue.length = 0;
-        if (inventoryUpdateHandler) {
-            dataManager.off('items_updated', inventoryUpdateHandler);
-            inventoryUpdateHandler = null;
-        }
-        if (cleanupObserver) {
-            cleanupObserver();
-            cleanupObserver = null;
-        }
-        nativeTabExitCleanup?.();
-        nativeTabExitCleanup = null;
-        currentItemHrid = null;
-    }
-
-    /**
-     * Prepare the Marketplace UI for one captured Sell Queue session.
-     * A shared promise lets several rapid queue additions join the same navigation
-     * instead of treating the not-yet-mounted tablist as a fatal reinjection failure.
-     * Does not arm the cleanup/exit observer — that happens only after the caller's own
-     * initial navigation to the first queued item succeeds, so it can never see a retained
-     * pre-workflow "My Listings" state.
-     * @param {number} sessionId
-     * @returns {Promise<boolean>}
-     */
-    async function prepareSellQueueMarketplace(sessionId) {
-        if (!getVisibleMarketplaceTabContainer()) {
-            const success = await openMarketplacePage(sessionId);
-            if (!success || !marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
-            await new Promise((resolve) => timerRegistry.registerTimeout(setTimeout(resolve, 200)));
-        }
-
-        if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
-        return injectTabs(getVisibleMarketplaceTabContainer(), sessionId);
-    }
-
-    /**
-     * Arm the cleanup/exit observer and inventory listener for the SELL_QUEUE owner.
-     * Must only be called once, after the first queued item's own navigation has succeeded.
-     * @param {number} sessionId
-     */
-    function setupSellQueueCleanupObserver(sessionId) {
-        cleanupObserver?.();
-        cleanupObserver = setupMarketplaceCleanupObserver({
-            owner: marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE,
-            invalidStateGraceMs: MARKETPLACE_REMOUNT_GRACE_MS,
-            onTabsGone: () => {
-                if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return;
-                const container = getVisibleMarketplaceTabContainer();
-                const marketListingsSelected = Boolean(container) && isMarketplaceMarketListingsSelected(container);
-                if (container && marketListingsSelected && injectTabs(container, sessionId)) return;
-                console.warn(
-                    `[SellQueue] Marketplace tabs could not be reinjected - ending session (visible tab container found: ${Boolean(container)}, Market Listings selected: ${marketListingsSelected})`
-                );
-                marketplaceSession_js.marketplaceSession.end(sessionId);
-            },
-        });
-        setupInventoryListener();
-    }
-
-    /**
-     * Add an item to the queue and inject/update tabs.
-     * @param {string} itemHrid
-     * @param {string} itemName
-     */
-    async function addToQueue(itemHrid, itemName) {
-        if (queue.some((entry) => entry.itemHrid === itemHrid)) return;
-        if (getInventoryCount(itemHrid) <= 0) return;
-
-        const isFirstItem = queue.length === 0;
-        queue.push({ itemHrid, itemName });
-
-        if (isFirstItem) {
-            const sessionId = marketplaceSession_js.marketplaceSession.start({
-                owner: marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE,
-                onEnd: teardownSellQueueMarketplaceSession,
-            });
-            sellQueueSessionId = sessionId;
-            sellQueueReadyPromise = prepareSellQueueMarketplace(sessionId);
-        }
-
-        const capturedSessionId = sellQueueSessionId;
-        const pendingReady = sellQueueReadyPromise;
-        if (pendingReady) {
-            const ready = await pendingReady;
-            if (sellQueueReadyPromise === pendingReady) sellQueueReadyPromise = null;
-            if (!ready || !marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) {
-                if (marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
-                return;
-            }
-        }
-
-        // Subsequent callers rebuild the tab list to include items added after the first
-        // prepareSellQueueMarketplace call. The first caller's tabs are already correct.
-        if (!isFirstItem) {
-            if (!injectTabs(getVisibleMarketplaceTabContainer(), capturedSessionId)) {
-                marketplaceSession_js.marketplaceSession.end(capturedSessionId);
-                return;
-            }
-        }
-
-        // The entry may have been cleared by replacement while this caller awaited the
-        // shared navigation. Only the still-active owner may perform the final selection.
-        if (
-            !marketplaceSession_js.marketplaceSession.isActive(capturedSessionId) ||
-            !queue.some((entry) => entry.itemHrid === itemHrid) ||
-            !navigateToMarketplace(itemHrid, 0)
-        ) {
-            if (marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
-            return;
-        }
-
-        // Only arm the cleanup/exit observer once the first queued item's own navigation has
-        // succeeded, so it can never see a retained pre-workflow "My Listings" state. Later
-        // additions reuse the observer already armed by the first item's activation.
-        if (isFirstItem) {
-            setupSellQueueCleanupObserver(capturedSessionId);
-        }
-    }
-
-    /**
-     * Track the hovered item HRID via tooltip observer (same strategy as alt-click-navigation).
-     * @param {HTMLElement} tooltipElement
-     */
-    function handleTooltipAppear(tooltipElement) {
-        currentItemHrid = null;
-        try {
-            const itemLink = tooltipElement.querySelector('a[href*="/items/"]');
-            if (itemLink) {
-                const match = itemLink.getAttribute('href').match(/\/items\/(.+?)(?:\/|$)/);
-                if (match) {
-                    currentItemHrid = `/items/${match[1]}`;
-                    return;
-                }
-            }
-            const svgUse = tooltipElement.querySelector('use[href*="items_sprite"]');
-            if (svgUse) {
-                const match = svgUse.getAttribute('href').match(/#(.+)$/);
-                if (match) {
-                    currentItemHrid = `/items/${match[1]}`;
-                    return;
-                }
-            }
-            const nameEl = tooltipElement.querySelector(
-                '[class*="ItemTooltipText_name"] span, .ItemTooltipText_name__2JAHA span'
-            );
-            if (nameEl) {
-                const itemName = nameEl.textContent.trim();
-                // Strip any enhancement level (e.g. "+10"), then resolve through the shared
-                // dual-name lookup (English + localized) instead of reconstructing a slug
-                // from the display name, which cannot work for translated names.
-                const baseName = itemName.replace(/\s*\+\d+\s*$/, '').trim();
-                const itemHrid = getItemHridFromName(baseName);
-                if (itemHrid) {
-                    currentItemHrid = itemHrid;
-                }
-            }
-        } catch (error) {
-            console.error('[SellQueue] Error parsing tooltip:', error);
-        }
-    }
-
-    function initialize$1() {
-        if (isActive) return;
-        if (!config.getSetting('sellQueue')) return;
-
-        tooltipObserverUnregister = domObserver.onClass('SellQueue-Tooltip', 'MuiTooltip-popper', (el) =>
-            handleTooltipAppear(el)
-        );
-
-        contextMenuHandler = async (event) => {
-            if (!event.shiftKey) return;
-
-            const inventoryEl = event.target.closest('[class*="Inventory_items"], [class*="Inventory_inventory"]');
-            if (!inventoryEl) return;
-            if (!currentItemHrid) return;
-
-            event.preventDefault();
-            event.stopPropagation();
-
-            const gameData = dataManager.getInitClientData();
-            const itemDetails = gameData?.itemDetailMap?.[currentItemHrid];
-            if (!itemDetails?.isTradable) return;
-
-            try {
-                await addToQueue(currentItemHrid, getItemName(currentItemHrid, itemDetails.name));
-            } catch (error) {
-                console.error('[SellQueue] Failed to add item to the Marketplace queue:', error);
-                if (sellQueueSessionId !== null) marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
-            }
-        };
-
-        document.addEventListener('contextmenu', contextMenuHandler, true);
-        isActive = true;
-    }
-
-    function cleanup$1() {
-        if (sellQueueSessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sellQueueSessionId)) {
-            marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
-        } else {
-            teardownSellQueueMarketplaceSession();
-        }
-        if (contextMenuHandler) {
-            document.removeEventListener('contextmenu', contextMenuHandler, true);
-            contextMenuHandler = null;
-        }
-        if (tooltipObserverUnregister) {
-            tooltipObserverUnregister();
-            tooltipObserverUnregister = null;
-        }
-        timerRegistry.clearAll();
-        isActive = false;
-    }
-
-    config.onSettingChange('sellQueue', (value) => {
-        if (value) initialize$1();
-        else cleanup$1();
-    });
-
-    var sellQueue = {
-        name: 'Sell Queue',
-        initialize: initialize$1,
-        cleanup: cleanup$1,
-    };
-
-    const CONNECTION_STATES = {
-        CONNECTED: 'connected',
-        DISCONNECTED: 'disconnected',
-        RECONNECTING: 'reconnecting',
-    };
-
-    class ConnectionState {
-        constructor() {
-            this.state = CONNECTION_STATES.RECONNECTING;
-            this.eventListeners = new Map();
-            this.lastDisconnectedAt = null;
-            this.lastConnectedAt = null;
-
-            this.setupListeners();
-        }
-
-        /**
-         * Get current connection state
-         * @returns {string} Connection state (connected, disconnected, reconnecting)
-         */
-        getState() {
-            return this.state;
-        }
-
-        /**
-         * Check if currently connected
-         * @returns {boolean} True if connected
-         */
-        isConnected() {
-            return this.state === CONNECTION_STATES.CONNECTED;
-        }
-
-        /**
-         * Register a listener for connection events
-         * @param {string} event - Event name (disconnected, reconnected)
-         * @param {Function} callback - Handler function
-         */
-        on(event, callback) {
-            if (!this.eventListeners.has(event)) {
-                this.eventListeners.set(event, []);
-            }
-            const listeners = this.eventListeners.get(event);
-            if (!listeners.includes(callback)) {
-                listeners.push(callback);
-            }
-        }
-
-        /**
-         * Unregister a connection event listener
-         * @param {string} event - Event name
-         * @param {Function} callback - Handler function to remove
-         */
-        off(event, callback) {
-            const listeners = this.eventListeners.get(event);
-            if (listeners) {
-                const index = listeners.indexOf(callback);
-                if (index > -1) {
-                    listeners.splice(index, 1);
-                }
-            }
-        }
-
-        /**
-         * Notify connection state from character initialization
-         * @param {Object} data - Character initialization payload
-         */
-        handleCharacterInitialized(data) {
-            if (!data) {
-                return;
-            }
-
-            this.setConnected('character_initialized');
-        }
-
-        setupListeners() {
-            webSocketHook.onSocketEvent('open', () => {
-                this.setReconnecting('socket_open', { allowConnected: true });
-            });
-
-            webSocketHook.onSocketEvent('close', (event) => {
-                this.setDisconnected('socket_close', event);
-            });
-
-            webSocketHook.onSocketEvent('error', (event) => {
-                this.setDisconnected('socket_error', event);
-            });
-
-            webSocketHook.on('init_character_data', () => {
-                this.setConnected('init_character_data');
-            });
-        }
-
-        setReconnecting(reason, options = {}) {
-            if (this.state === CONNECTION_STATES.CONNECTED && !options.allowConnected) {
-                return;
-            }
-
-            this.updateState(CONNECTION_STATES.RECONNECTING, {
-                reason,
-            });
-        }
-
-        setDisconnected(reason, event) {
-            if (this.state === CONNECTION_STATES.DISCONNECTED) {
-                return;
-            }
-
-            this.lastDisconnectedAt = Date.now();
-            this.updateState(CONNECTION_STATES.DISCONNECTED, {
-                reason,
-                event,
-                disconnectedAt: this.lastDisconnectedAt,
-            });
-        }
-
-        setConnected(reason) {
-            if (this.state === CONNECTION_STATES.CONNECTED) {
-                return;
-            }
-
-            this.lastConnectedAt = Date.now();
-            this.updateState(CONNECTION_STATES.CONNECTED, {
-                reason,
-                disconnectedAt: this.lastDisconnectedAt,
-                connectedAt: this.lastConnectedAt,
-            });
-        }
-
-        updateState(nextState, details) {
-            if (this.state === nextState) {
-                return;
-            }
-
-            const previousState = this.state;
-            this.state = nextState;
-
-            if (nextState === CONNECTION_STATES.DISCONNECTED) {
-                this.emit('disconnected', {
-                    previousState,
-                    ...details,
-                });
-                return;
-            }
-
-            if (nextState === CONNECTION_STATES.CONNECTED) {
-                this.emit('reconnected', {
-                    previousState,
-                    ...details,
-                });
-            }
-        }
-
-        emit(event, data) {
-            const listeners = [...(this.eventListeners.get(event) || [])];
-            for (const listener of listeners) {
-                try {
-                    listener(data);
-                } catch (error) {
-                    console.error('[ConnectionState] Listener error:', error);
-                }
-            }
-        }
-    }
-
-    const connectionState = new ConnectionState();
+    const wishlistHistory = new WishlistHistory();
 
     /**
      * Task Profit Calculator
@@ -22905,6 +19674,4786 @@ self.onmessage = function (e) {
             },
         };
     }
+
+    /**
+     * Wishlist Pricing
+     * Prices a wishlist item with the same rules net worth uses (market price, then openable value,
+     * crafting cost, shop cost, the game's reference value, and the enhancement path for enhanced items),
+     * so a wishlist price always matches what net worth shows for that item.
+     */
+
+
+    /**
+     * @typedef {Object} WishlistPrice
+     * @property {number} price - Price per item (0 when nothing could price it)
+     * @property {boolean} available - True when a price was found
+     * @property {boolean} estimated - True when the price is a fallback, not a live market price
+     */
+
+    /**
+     * Price one wishlist item.
+     * @param {{itemHrid: string, enhancementLevel?: number}} item
+     * @returns {Promise<WishlistPrice>}
+     */
+    async function getWishlistPrice(item) {
+        const enhancementLevel = item.enhancementLevel || 0;
+
+        let price = 0;
+        try {
+            price = await calculateItemValue({ itemHrid: item.itemHrid, enhancementLevel, count: 1 });
+        } catch (error) {
+            console.error('[Wishlist] Pricing failed for', item.itemHrid, error);
+        }
+        if (!(price > 0)) return { price: 0, available: false, estimated: false };
+
+        // The same price field net worth reads, so "live" means that field actually has a price
+        const mode = config.getSettingValue('networth_pricingMode') || 'ask';
+        const live = marketData_js.getItemPrices(item.itemHrid, enhancementLevel)?.[mode];
+
+        return { price, available: true, estimated: !(live > 0) };
+    }
+
+    /**
+     * Current coin balance
+     * @returns {number}
+     */
+    function getCoinBalance() {
+        const coin = dataManager.getInventory()?.find((item) => item.itemHrid === '/items/coin');
+        return coin?.count || 0;
+    }
+
+    /**
+     * Wishlist Alert
+     * The ❗ on the Marketplace link in the left sidebar, shown while the player can afford the first
+     * item on their wishlist. (The matching ❗ on the Wishlist tab itself lives in the tab UI.)
+     */
+
+
+    const NAV_ALERT_CLASS = 'mwi-wishlist-nav-alert';
+
+    /**
+     * The sidebar element of the Marketplace link. Toolasha's own header order-totals link carries the
+     * same icon label, so only a match inside the navigation bar counts.
+     * @returns {HTMLElement|null}
+     */
+    function findMarketplaceNav() {
+        for (const nav of document.querySelectorAll('[class*="NavigationBar_nav__"]')) {
+            if (nav.querySelector('svg[aria-label="navigationBar.marketplace"]')) return nav;
+        }
+        return null;
+    }
+
+    /**
+     * Show or hide the ❗ on the sidebar Marketplace link. Idempotent.
+     * @param {boolean} show
+     */
+    function setNavAlert(show) {
+        const existing = document.querySelectorAll(`.${NAV_ALERT_CLASS}`);
+
+        if (!show) {
+            existing.forEach((el) => el.remove());
+            return;
+        }
+
+        const nav = findMarketplaceNav();
+        const container = nav?.querySelector('[class*="NavigationBar_textContainer"]');
+        if (!container) {
+            existing.forEach((el) => el.remove());
+            return;
+        }
+        if (container.querySelector(`.${NAV_ALERT_CLASS}`)) return;
+
+        existing.forEach((el) => el.remove());
+        const alert = document.createElement('span');
+        alert.className = NAV_ALERT_CLASS;
+        alert.textContent = '❗';
+        alert.title = i18n_js.t('marketWishlist.alertTooltip');
+        alert.style.marginLeft = '4px';
+        container.appendChild(alert);
+    }
+
+    /**
+     * Wishlist UI
+     * A real "Wishlist" tab on the Marketplace: a cloned native tab button plus a panel of our own
+     * inside the tabs' panel container. The game's two native panels are never touched - while the
+     * wishlist is active a class on the tabs component hides them with CSS, and any click on another
+     * tab (or the game switching tabs itself) turns it off again, so React's own state stays correct.
+     */
+
+
+    const STYLE_ID = 'mwi-wishlist-styles';
+    const TAB_ATTR = 'data-mwi-wishlist-tab';
+    const PANEL_CLASS = 'mwi-wishlist-panel';
+    const ACTIVE_CLASS = 'mwi-wishlist-active';
+    const RESTYLED_ATTR = 'data-mwi-wishlist-restyled';
+
+    const CSS$1 = `
+    .${PANEL_CLASS} {
+        display: none;
+        padding: 12px 16px;
+        overflow-y: auto;
+        max-height: 100%;
+    }
+    .${ACTIVE_CLASS} > [class*="TabsComponent_tabPanelsContainer"] > [class*="TabPanel_tabPanel"]:not(.${PANEL_CLASS}) {
+        display: none !important;
+    }
+    .${ACTIVE_CLASS} > [class*="TabsComponent_tabPanelsContainer"] > .${PANEL_CLASS} {
+        display: block;
+    }
+    .${ACTIVE_CLASS} [class*="MuiTabs-indicator"] {
+        display: none;
+    }
+    .mwi-wishlist-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 10px;
+    }
+    .mwi-wishlist-title { font-size: 1.1rem; font-weight: bold; }
+    .mwi-wishlist-coins { opacity: 0.8; }
+    .mwi-wishlist-empty { opacity: 0.75; padding: 24px 0; line-height: 1.5; }
+    .mwi-wishlist-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 8px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        margin-bottom: 6px;
+        background: rgba(255, 255, 255, 0.04);
+    }
+    .mwi-wishlist-row.mwi-wishlist-dragging { opacity: 0.4; }
+    .mwi-wishlist-row.mwi-wishlist-drop-before { box-shadow: 0 -2px 0 0 #f59e0b; }
+    .mwi-wishlist-row.mwi-wishlist-drop-after { box-shadow: 0 2px 0 0 #f59e0b; }
+    .mwi-wishlist-handle { cursor: grab; opacity: 0.6; user-select: none; }
+    .mwi-wishlist-row:hover { background: rgba(255, 255, 255, 0.08); }
+    .mwi-wishlist-name { flex: 1 1 auto; min-width: 0; }
+    .mwi-wishlist-price { min-width: 110px; text-align: right; }
+    .mwi-wishlist-est { opacity: 0.7; font-size: 0.75rem; margin-left: 4px; cursor: help; }
+    .mwi-wishlist-afford { min-width: 140px; text-align: right; font-size: 0.85rem; }
+    .mwi-wishlist-afford.mwi-wishlist-yes { color: #4ade80; }
+    .mwi-wishlist-afford.mwi-wishlist-no { opacity: 0.75; }
+    .mwi-wishlist-buy, .mwi-wishlist-remove {
+        cursor: pointer;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        background: rgba(255, 255, 255, 0.08);
+        color: inherit;
+        padding: 3px 10px;
+    }
+    .mwi-wishlist-buy:disabled { opacity: 0.4; cursor: not-allowed; }
+    .mwi-wishlist-menu-btn { width: 100%; }
+    .mwi-wishlist-tab-alert { margin-left: 4px; }
+`;
+
+    /**
+     * Items sprite URL, taken from any rendered item icon (it is content-hashed per game build)
+     * @returns {string|null}
+     */
+    function getItemsSpriteUrl() {
+        const href = document.querySelector('use[href*="items_sprite"]')?.getAttribute('href');
+        return href ? href.split('#')[0] : null;
+    }
+
+    class WishlistUI {
+        /**
+         * @param {Object} deps
+         * @param {import('./wishlist-store.js').WishlistStore} deps.store
+         * @param {Function} deps.getPrice - async (item) => {price, available, estimated}
+         * @param {Function} [deps.onOpen] - Called when the wishlist panel becomes active
+         * @param {Function} [deps.onClose] - Called when the wishlist panel is left
+         * @param {Function} [deps.onOpenChart] - Called with (item, price) when a row is clicked
+         */
+        constructor({ store, getPrice, onOpen, onClose, onOpenChart }) {
+            this.store = store;
+            this.getPrice = getPrice;
+            this.onOpen = onOpen;
+            this.onClose = onClose;
+            this.onOpenChart = onOpenChart;
+
+            this.active = false;
+            this.tablist = null;
+            this.tab = null;
+            this.panel = null;
+            this.tabsComponent = null;
+            this.renderToken = 0;
+            this.unregisterObserver = null;
+            this.selectionObserver = null;
+            this.tabClickHandler = null;
+            this.draggedKey = null;
+            this.tabAlert = false;
+        }
+
+        start() {
+            dom.addStyles(CSS$1, STYLE_ID);
+            this.unregisterObserver = domObserver.onClass(
+                'MarketWishlist',
+                ['TabsComponent_tabPanelsContainer', 'MuiTabs-flexContainer'],
+                () => this.ensureInstalled()
+            );
+            this.ensureInstalled();
+        }
+
+        stop() {
+            this.unregisterObserver?.();
+            this.unregisterObserver = null;
+            this.uninstall();
+            dom.removeStyles(STYLE_ID);
+        }
+
+        /**
+         * Make sure our tab and panel exist in the currently mounted marketplace. Idempotent.
+         */
+        ensureInstalled() {
+            const tablist = getVisibleMarketplaceTabContainer();
+            if (!tablist) return;
+
+            const tabsComponent = tablist.closest('[class*="TabsComponent_tabsComponent"]');
+            const panels = tabsComponent?.querySelector(':scope > [class*="TabsComponent_tabPanelsContainer"]');
+            if (!tabsComponent || !panels) return;
+
+            // A different tablist than the one we installed into means the marketplace was remounted
+            if (this.tablist && this.tablist !== tablist) {
+                this.uninstall();
+            }
+
+            let tab = tablist.querySelector(`[${TAB_ATTR}]`);
+            if (!tab) {
+                tab = this.createTab(tablist);
+                if (!tab) return;
+            }
+            let panel = panels.querySelector(`:scope > .${PANEL_CLASS}`);
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.className = PANEL_CLASS;
+                panels.appendChild(panel);
+            }
+
+            this.tablist = tablist;
+            this.tab = tab;
+            this.panel = panel;
+            this.tabsComponent = tabsComponent;
+            this.watchTabs(tablist);
+            this.applyTabAlert();
+        }
+
+        /**
+         * Show or hide the ❗ on the tab
+         * @param {boolean} show
+         */
+        setTabAlert(show) {
+            this.tabAlert = !!show;
+            this.applyTabAlert();
+        }
+
+        applyTabAlert() {
+            const alert = this.tab?.querySelector('.mwi-wishlist-tab-alert');
+            if (alert) alert.hidden = !this.tabAlert;
+        }
+
+        /**
+         * Clone an unselected native tab into a Wishlist tab
+         * @param {HTMLElement} tablist
+         * @returns {HTMLElement|null}
+         */
+        createTab(tablist) {
+            const reference = Array.from(tablist.children).find(
+                (el) =>
+                    el.getAttribute('role') === 'tab' &&
+                    !el.classList.contains('Mui-selected') &&
+                    !el.hasAttribute('data-mwi-custom-tab') &&
+                    !el.hasAttribute('data-mwi-shrine-tab') &&
+                    !el.hasAttribute('data-mwi-market-history-tab') &&
+                    !el.hasAttribute(TAB_ATTR)
+            );
+            if (!reference) return null;
+
+            const tab = reference.cloneNode(true);
+            tab.setAttribute(TAB_ATTR, 'true');
+            // A clone must not duplicate the native tab/panel identity
+            tab.removeAttribute('id');
+            tab.removeAttribute('aria-controls');
+            tab.classList.remove('Mui-selected');
+            tab.setAttribute('aria-selected', 'false');
+            tab.setAttribute('tabindex', '-1');
+
+            const badge = tab.querySelector('[class*="TabsComponent_badge"]');
+            if (badge) {
+                badge.textContent = '';
+                const label = document.createElement('span');
+                label.className = 'mwi-wishlist-tab-label';
+                label.textContent = i18n_js.t('marketWishlist.tabLabel');
+                const alert = document.createElement('span');
+                alert.className = 'mwi-wishlist-tab-alert';
+                alert.textContent = '❗';
+                alert.title = i18n_js.t('marketWishlist.alertTooltip');
+                alert.hidden = true;
+                badge.append(label, alert);
+            }
+
+            tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.activate();
+            });
+
+            // After the Market History tab if present, else before the first material tab, else last
+            const marketHistoryTab = tablist.querySelector('[data-mwi-market-history-tab]');
+            const firstCustomTab = tablist.querySelector('[data-mwi-custom-tab]');
+            if (marketHistoryTab) {
+                marketHistoryTab.after(tab);
+            } else if (firstCustomTab) {
+                firstCustomTab.before(tab);
+            } else {
+                tablist.appendChild(tab);
+            }
+            return tab;
+        }
+
+        /**
+         * Turn the wishlist off when another tab is clicked or the game switches tabs itself
+         * @param {HTMLElement} tablist
+         */
+        watchTabs(tablist) {
+            if (this.tabClickHandler && this.watchedTablist === tablist) return;
+            this.unwatchTabs();
+
+            this.watchedTablist = tablist;
+            this.tabClickHandler = (e) => {
+                const origin = typeof e.target?.closest === 'function' ? e.target : e.target?.parentElement;
+                const clicked = origin?.closest('[role="tab"]');
+                if (!clicked || !tablist.contains(clicked)) return;
+                if (clicked.hasAttribute(TAB_ATTR) || clicked.hasAttribute('data-mwi-market-history-tab')) return;
+                this.deactivate();
+            };
+            tablist.addEventListener('click', this.tabClickHandler, { capture: true });
+
+            this.selectionObserver = new MutationObserver((mutations) => {
+                if (!this.active) return;
+                for (const mutation of mutations) {
+                    const el = mutation.target;
+                    if (el.hasAttribute?.(TAB_ATTR)) continue;
+                    if (el.getAttribute?.('aria-selected') === 'true') {
+                        this.deactivate();
+                        return;
+                    }
+                }
+            });
+            this.selectionObserver.observe(tablist, {
+                attributes: true,
+                attributeFilter: ['aria-selected'],
+                subtree: true,
+            });
+        }
+
+        unwatchTabs() {
+            if (this.watchedTablist && this.tabClickHandler) {
+                this.watchedTablist.removeEventListener('click', this.tabClickHandler, { capture: true });
+            }
+            this.selectionObserver?.disconnect();
+            this.selectionObserver = null;
+            this.tabClickHandler = null;
+            this.watchedTablist = null;
+        }
+
+        activate() {
+            if (!this.tab || !this.tabsComponent || !this.tablist) return;
+            this.active = true;
+
+            // The native tab that is still marked selected must stop looking selected
+            const nativeTabs = Array.from(this.tablist.querySelectorAll('[role="tab"]')).filter(
+                (el) => !el.hasAttribute(TAB_ATTR) && !el.hasAttribute('data-mwi-custom-tab')
+            );
+            const unselected = nativeTabs.find((el) => !el.classList.contains('Mui-selected'));
+            const unselectedColor = unselected ? window.getComputedStyle(unselected).color : '';
+            const indicator = this.tablist.parentElement?.querySelector('[class*="MuiTabs-indicator"]');
+            const indicatorColor = indicator ? window.getComputedStyle(indicator).backgroundColor : '';
+
+            for (const el of nativeTabs) {
+                if (el.classList.contains('Mui-selected') && unselectedColor) {
+                    el.style.color = unselectedColor;
+                    el.setAttribute(RESTYLED_ATTR, 'true');
+                }
+            }
+
+            this.tabsComponent.classList.add(ACTIVE_CLASS);
+            this.tab.classList.add('Mui-selected');
+            this.tab.setAttribute('aria-selected', 'true');
+            this.tab.setAttribute('tabindex', '0');
+            if (indicatorColor) this.tab.style.boxShadow = `inset 0 -2px 0 ${indicatorColor}`;
+
+            this.onOpen?.();
+            this.render();
+        }
+
+        deactivate() {
+            if (!this.active) return;
+            this.active = false;
+            this.renderToken++;
+            this.onClose?.();
+
+            this.tabsComponent?.classList.remove(ACTIVE_CLASS);
+            if (this.tab) {
+                this.tab.classList.remove('Mui-selected');
+                this.tab.setAttribute('aria-selected', 'false');
+                this.tab.setAttribute('tabindex', '-1');
+                this.tab.style.boxShadow = '';
+            }
+            this.tablist?.querySelectorAll(`[${RESTYLED_ATTR}]`).forEach((el) => {
+                el.style.color = '';
+                el.removeAttribute(RESTYLED_ATTR);
+            });
+        }
+
+        /** Remove everything we added to the marketplace */
+        uninstall() {
+            this.deactivate();
+            this.unwatchTabs();
+            this.tab?.remove();
+            this.panel?.remove();
+            this.tablist?.querySelectorAll(`[${TAB_ATTR}]`).forEach((el) => el.remove());
+            this.tab = null;
+            this.panel = null;
+            this.tablist = null;
+            this.tabsComponent = null;
+        }
+
+        /**
+         * Rebuild the list. Prices are resolved first, so a render never shows half-filled rows;
+         * a render superseded by a newer one is dropped.
+         */
+        async render() {
+            if (!this.active || !this.panel) return;
+            const token = ++this.renderToken;
+
+            const items = this.store.getItems();
+            const prices = await Promise.all(items.map((item) => this.getPrice(item)));
+            if (token !== this.renderToken || !this.active || !this.panel) return;
+
+            const coins = getCoinBalance();
+            const header = document.createElement('div');
+            header.className = 'mwi-wishlist-header';
+            const title = document.createElement('div');
+            title.className = 'mwi-wishlist-title';
+            title.textContent = i18n_js.t('marketWishlist.panelTitle');
+            const coinsEl = document.createElement('div');
+            coinsEl.className = 'mwi-wishlist-coins';
+            coinsEl.textContent = i18n_js.t('marketWishlist.coinsLabel', { coins: formatters_js.formatWithSeparator(coins) });
+            header.append(title, coinsEl);
+
+            const children = [header];
+            if (items.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'mwi-wishlist-empty';
+                empty.textContent = i18n_js.t('marketWishlist.emptyMessage');
+                children.push(empty);
+            } else {
+                items.forEach((item, i) => children.push(this.buildRow(item, prices[i], coins)));
+            }
+            this.panel.replaceChildren(...children);
+        }
+
+        /**
+         * @param {{itemHrid: string, enhancementLevel: number}} item
+         * @param {import('./wishlist-pricing.js').WishlistPrice} price
+         * @param {number} coins
+         * @returns {HTMLElement}
+         */
+        buildRow(item, price, coins) {
+            const key = getWishlistKey(item.itemHrid, item.enhancementLevel);
+            const row = document.createElement('div');
+            row.className = 'mwi-wishlist-row';
+            row.dataset.wishlistKey = key;
+            row.draggable = true;
+
+            const handle = document.createElement('span');
+            handle.className = 'mwi-wishlist-handle';
+            handle.textContent = '⋮⋮';
+            handle.title = i18n_js.t('marketWishlist.dragTooltip');
+            row.appendChild(handle);
+
+            const spriteUrl = getItemsSpriteUrl();
+            if (spriteUrl) {
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('width', '28');
+                svg.setAttribute('height', '28');
+                const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                use.setAttribute('href', `${spriteUrl}#${item.itemHrid.split('/').pop()}`);
+                svg.appendChild(use);
+                row.appendChild(svg);
+            }
+
+            const itemName = getItemName(item.itemHrid, dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid);
+            const name = document.createElement('div');
+            name.className = 'mwi-wishlist-name';
+            name.textContent = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
+            name.title = i18n_js.t('marketWishlist.historyTooltip');
+            row.appendChild(name);
+
+            const priceEl = document.createElement('div');
+            priceEl.className = 'mwi-wishlist-price';
+            if (price.available) {
+                priceEl.textContent = formatters_js.formatWithSeparator(Math.round(price.price));
+                if (price.estimated) {
+                    const est = document.createElement('span');
+                    est.className = 'mwi-wishlist-est';
+                    est.textContent = i18n_js.t('marketWishlist.estimatedTag');
+                    est.title = i18n_js.t('marketWishlist.estimatedTooltip');
+                    priceEl.appendChild(est);
+                }
+            } else {
+                priceEl.textContent = i18n_js.t('marketWishlist.noPrice');
+            }
+            row.appendChild(priceEl);
+
+            const afford = document.createElement('div');
+            afford.className = 'mwi-wishlist-afford';
+            if (price.available) {
+                if (coins >= price.price) {
+                    afford.classList.add('mwi-wishlist-yes');
+                    afford.textContent = i18n_js.t('marketWishlist.canAfford');
+                } else {
+                    afford.classList.add('mwi-wishlist-no');
+                    afford.textContent = i18n_js.t('marketWishlist.needMore', {
+                        amount: formatters_js.formatWithSeparator(Math.ceil(price.price - coins)),
+                    });
+                }
+            }
+            row.appendChild(afford);
+
+            const buy = document.createElement('button');
+            buy.type = 'button';
+            buy.className = 'mwi-wishlist-buy';
+            buy.textContent = i18n_js.t('marketWishlist.buyButton');
+            if (canOpenInMarketplace(item.itemHrid)) {
+                buy.addEventListener('click', () => {
+                    this.deactivate();
+                    navigateToMarketplace(item.itemHrid, item.enhancementLevel);
+                });
+            } else {
+                buy.disabled = true;
+                buy.title = i18n_js.t('marketWishlist.buyDisabledTooltip');
+            }
+            row.appendChild(buy);
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'mwi-wishlist-remove';
+            remove.textContent = '✕';
+            remove.title = i18n_js.t('marketWishlist.removeTooltip');
+            remove.addEventListener('click', () => {
+                this.store.remove(item.itemHrid, item.enhancementLevel);
+            });
+            row.appendChild(remove);
+
+            // A click on the row itself (not its buttons or the drag handle) opens the price history
+            row.style.cursor = 'pointer';
+            row.addEventListener('click', (e) => {
+                if (e.target.closest('button, .mwi-wishlist-handle')) return;
+                this.onOpenChart?.(item, price);
+            });
+
+            this.attachDrag(row, key);
+            return row;
+        }
+
+        /**
+         * Native drag-and-drop reordering of the rows
+         * @param {HTMLElement} row
+         * @param {string} key
+         */
+        attachDrag(row, key) {
+            const clearMarkers = () => {
+                this.panel?.querySelectorAll('.mwi-wishlist-drop-before, .mwi-wishlist-drop-after').forEach((el) => {
+                    el.classList.remove('mwi-wishlist-drop-before', 'mwi-wishlist-drop-after');
+                });
+            };
+
+            row.addEventListener('dragstart', (e) => {
+                this.draggedKey = key;
+                row.classList.add('mwi-wishlist-dragging');
+                if (e.dataTransfer) {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', key);
+                }
+            });
+            row.addEventListener('dragend', () => {
+                this.draggedKey = null;
+                row.classList.remove('mwi-wishlist-dragging');
+                clearMarkers();
+            });
+            row.addEventListener('dragover', (e) => {
+                if (!this.draggedKey || this.draggedKey === key) return;
+                e.preventDefault();
+                const rect = row.getBoundingClientRect();
+                const after = e.clientY > rect.top + rect.height / 2;
+                clearMarkers();
+                row.classList.add(after ? 'mwi-wishlist-drop-after' : 'mwi-wishlist-drop-before');
+            });
+            row.addEventListener('dragleave', () => {
+                row.classList.remove('mwi-wishlist-drop-before', 'mwi-wishlist-drop-after');
+            });
+            row.addEventListener('drop', (e) => {
+                if (!this.draggedKey || this.draggedKey === key) return;
+                e.preventDefault();
+                const after = row.classList.contains('mwi-wishlist-drop-after');
+                const dragged = this.draggedKey;
+                clearMarkers();
+
+                const order = this.store
+                    .getItems()
+                    .map((item) => getWishlistKey(item.itemHrid, item.enhancementLevel))
+                    .filter((k) => k !== dragged);
+                const targetIndex = order.indexOf(key);
+                order.splice(after ? targetIndex + 1 : targetIndex, 0, dragged);
+                this.store.reorder(order);
+            });
+        }
+    }
+
+    /**
+     * Wishlist Price Chart
+     * Pop-out modal with a Chart.js line chart of a wishlist item's price since it was added.
+     * Prices are only recorded while the game is open, so long stretches without data are shown as
+     * breaks in the line (or joined, with the "Connect gaps" toggle).
+     */
+
+
+    /** Gap that breaks the line (the recorder samples hourly) */
+    const GAP_THRESHOLD_MS$1 = 2 * 60 * 60 * 1000;
+
+    const RANGE_MS$1 = {
+        '24h': 24 * 60 * 60 * 1000,
+        '7d': 7 * 24 * 60 * 60 * 1000,
+        '30d': 30 * 24 * 60 * 60 * 1000,
+        all: Infinity,
+    };
+
+    const MODAL_ID = 'mwi-wishlist-chart-modal';
+    const LIVE_COLOR = '#4ade80';
+    const ESTIMATED_COLOR = '#f59e0b';
+
+    /**
+     * Turn a recorded series into chart points for a time range.
+     * @param {Array<Array<number>>} series - [t, price, estimated] points, oldest first
+     * @param {Object} options
+     * @param {number} [options.rangeMs=Infinity] - Only points newer than now - rangeMs
+     * @param {number} [options.now=Date.now()]
+     * @param {boolean} [options.connectGaps=false] - Join across gaps instead of breaking the line
+     * @returns {Array<{x: number, y: number, estimated?: boolean}>} y is NaN for a break
+     */
+    function buildChartPoints(series, { rangeMs = Infinity, now = Date.now(), connectGaps = false } = {}) {
+        const cutoff = rangeMs === Infinity ? 0 : now - rangeMs;
+        const kept = series.filter((point) => point[0] >= cutoff);
+
+        const points = [];
+        kept.forEach((point, i) => {
+            if (!connectGaps && i > 0 && point[0] - kept[i - 1][0] > GAP_THRESHOLD_MS$1) {
+                points.push({ x: kept[i - 1][0] + 1, y: NaN });
+            }
+            points.push({ x: point[0], y: point[1], estimated: point[2] === 1 });
+        });
+        return points;
+    }
+
+    /**
+     * Summary numbers for a recorded series.
+     * @param {Array<Array<number>>} series - [t, price, estimated] points
+     * @returns {{first: number, last: number, lowest: number, highest: number, change: number, changePercent: number}|null}
+     */
+    function summarizeSeries(series) {
+        if (series.length === 0) return null;
+        const prices = series.map((point) => point[1]);
+        const first = prices[0];
+        const last = prices[prices.length - 1];
+        return {
+            first,
+            last,
+            lowest: Math.min(...prices),
+            highest: Math.max(...prices),
+            change: last - first,
+            changePercent: first > 0 ? ((last - first) / first) * 100 : 0,
+        };
+    }
+
+    class WishlistChart {
+        constructor() {
+            this.chartInstance = null;
+            this.modal = null;
+            this.escHandler = null;
+            this.outsideClickHandler = null;
+            this.outsideClickTimer = null;
+            this.item = null;
+            this.series = [];
+            this.range = 'all';
+            this.connectGaps = false;
+        }
+
+        /**
+         * Open the chart for one item.
+         * @param {Object} params
+         * @param {string} params.title - Display name (with +N for enhanced items)
+         * @param {Array<Array<number>>} params.series - Recorded [t, price, estimated] points
+         * @param {number|null} [params.currentPrice] - Live price, shown as "Current" when available
+         */
+        open({ title, series, currentPrice = null }) {
+            this.close();
+            this.series = series;
+            this.currentPrice = currentPrice;
+            this.range = 'all';
+            this.connectGaps = false;
+
+            const modal = document.createElement('div');
+            modal.id = MODAL_ID;
+            modal.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 900px;
+            height: 70%;
+            max-height: 560px;
+            background: #1a1a1a;
+            border: 2px solid #555;
+            border-radius: 8px;
+            padding: 20px;
+            z-index: 100000;
+            display: flex;
+            flex-direction: column;
+            color: #ccc;
+        `;
+
+            const header = document.createElement('div');
+            header.style.cssText =
+                'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
+            const heading = document.createElement('h3');
+            heading.textContent = i18n_js.t('marketWishlist.chartTitle', { name: title });
+            heading.style.cssText = 'margin: 0; font-size: 18px;';
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText =
+                'background: #a33; color: #fff; border: none; cursor: pointer; font-size: 20px; padding: 4px 12px; border-radius: 4px; font-weight: bold;';
+            closeBtn.addEventListener('click', () => this.close());
+            header.append(heading, closeBtn);
+
+            const controls = document.createElement('div');
+            controls.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;';
+            const rangeLabels = {
+                '24h': i18n_js.t('marketWishlist.range24h'),
+                '7d': i18n_js.t('marketWishlist.range7d'),
+                '30d': i18n_js.t('marketWishlist.range30d'),
+                all: i18n_js.t('marketWishlist.rangeAll'),
+            };
+            for (const range of Object.keys(RANGE_MS$1)) {
+                const btn = document.createElement('button');
+                btn.textContent = rangeLabels[range];
+                btn.dataset.range = range;
+                btn.className = 'mwi-wishlist-range-btn';
+                btn.addEventListener('click', () => {
+                    this.range = range;
+                    this.styleRangeButtons();
+                    this.renderChart();
+                });
+                controls.appendChild(btn);
+            }
+            const gapLabel = document.createElement('label');
+            gapLabel.style.cssText = 'margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer;';
+            const gapToggle = document.createElement('input');
+            gapToggle.type = 'checkbox';
+            gapToggle.className = 'mwi-wishlist-connect-gaps';
+            gapToggle.addEventListener('change', () => {
+                this.connectGaps = gapToggle.checked;
+                this.renderChart();
+            });
+            gapLabel.append(gapToggle, document.createTextNode(i18n_js.t('marketWishlist.connectGaps')));
+            controls.appendChild(gapLabel);
+
+            const stats = document.createElement('div');
+            stats.className = 'mwi-wishlist-chart-stats';
+            stats.style.cssText = 'display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 8px; font-size: 13px;';
+
+            const canvasContainer = document.createElement('div');
+            canvasContainer.style.cssText = 'position: relative; flex: 1; min-height: 0;';
+            const canvas = document.createElement('canvas');
+            canvas.className = 'mwi-wishlist-chart-canvas';
+            canvasContainer.appendChild(canvas);
+
+            modal.append(header, controls, stats, canvasContainer);
+            document.body.appendChild(modal);
+            this.modal = modal;
+            this.styleRangeButtons();
+
+            this.escHandler = (e) => {
+                if (e.key === 'Escape') this.close();
+            };
+            document.addEventListener('keydown', this.escHandler);
+
+            // Registered on the next tick so the click that opened the modal does not close it
+            this.outsideClickHandler = (e) => {
+                if (!modal.contains(e.target)) this.close();
+            };
+            const queued = this.outsideClickHandler;
+            this.outsideClickTimer = setTimeout(() => {
+                this.outsideClickTimer = null;
+                if (this.outsideClickHandler === queued) document.addEventListener('mousedown', queued);
+            }, 0);
+
+            this.renderChart();
+        }
+
+        styleRangeButtons() {
+            this.modal?.querySelectorAll('.mwi-wishlist-range-btn').forEach((btn) => {
+                const active = btn.dataset.range === this.range;
+                btn.style.cssText = `
+                background: ${active ? '#444' : '#2a2a2a'};
+                color: ${active ? '#fff' : '#999'};
+                border: 1px solid #555;
+                cursor: pointer;
+                padding: 4px 14px;
+                border-radius: 4px;
+                font-size: 13px;
+            `;
+            });
+        }
+
+        /**
+         * (Re)draw the stats row and the chart for the current range
+         */
+        renderChart() {
+            if (!this.modal) return;
+            if (this.chartInstance) {
+                this.chartInstance.destroy();
+                this.chartInstance = null;
+            }
+
+            const now = Date.now();
+            const rangeMs = RANGE_MS$1[this.range];
+            const inRange = this.series.filter((point) => rangeMs === Infinity || point[0] >= now - rangeMs);
+            this.renderStats(inRange);
+
+            const canvasContainer = this.modal.querySelector('.mwi-wishlist-chart-canvas').parentElement;
+            canvasContainer.querySelector('.mwi-wishlist-chart-message')?.remove();
+            const canvas = canvasContainer.querySelector('canvas');
+
+            const message = (key) => {
+                canvas.style.display = 'none';
+                const el = document.createElement('div');
+                el.className = 'mwi-wishlist-chart-message';
+                el.style.cssText = 'padding: 40px 0; text-align: center; opacity: 0.75;';
+                el.textContent = i18n_js.t(key);
+                canvasContainer.appendChild(el);
+            };
+
+            if (typeof Chart === 'undefined') {
+                message('marketWishlist.chartUnavailable');
+                return;
+            }
+            if (inRange.length < 2) {
+                message(this.series.length === 0 ? 'marketWishlist.noHistoryYet' : 'marketWishlist.notEnoughHistory');
+                return;
+            }
+            canvas.style.display = '';
+
+            const points = buildChartPoints(this.series, { rangeMs, now, connectGaps: this.connectGaps });
+            const shortRange = inRange[inRange.length - 1][0] - inRange[0][0] <= 48 * 60 * 60 * 1000;
+            const estimatedLabel = i18n_js.t('marketWishlist.estimatedPoint');
+
+            this.chartInstance = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: i18n_js.t('marketWishlist.priceAxisTitle'),
+                            data: points,
+                            borderColor: LIVE_COLOR,
+                            borderWidth: 2,
+                            pointRadius: points.length > 120 ? 0 : 3,
+                            pointHoverRadius: 5,
+                            pointBackgroundColor: (ctx) => (ctx.raw?.estimated ? ESTIMATED_COLOR : LIVE_COLOR),
+                            pointBorderColor: (ctx) => (ctx.raw?.estimated ? ESTIMATED_COLOR : LIVE_COLOR),
+                            spanGaps: false,
+                            tension: 0,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    parsing: false,
+                    interaction: { mode: 'nearest', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { display: false },
+                        tooltip: {
+                            filter: (item) => !Number.isNaN(item.raw?.y),
+                            callbacks: {
+                                title: (items) => formatters_js.formatDateTime(new Date(items[0].raw.x), { includeSeconds: false }),
+                                label: (item) =>
+                                    `${formatters_js.formatWithSeparator(item.raw.y)}${item.raw.estimated ? ` ${estimatedLabel}` : ''}`,
+                            },
+                        },
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            offset: false,
+                            min: points[0].x,
+                            max: points[points.length - 1].x,
+                            ticks: {
+                                color: '#999',
+                                maxTicksLimit: 10,
+                                callback: (value) =>
+                                    shortRange
+                                        ? formatters_js.formatDateTime(new Date(value), { includeDate: false, includeSeconds: false })
+                                        : formatters_js.formatDateTime(new Date(value), { includeTime: false }),
+                            },
+                            grid: { color: '#333' },
+                        },
+                        y: {
+                            beginAtZero: false,
+                            title: { display: true, text: i18n_js.t('marketWishlist.priceAxisTitle'), color: '#ccc' },
+                            ticks: { color: '#999', callback: (value) => formatters_js.networthFormatter(value) },
+                            grid: { color: '#333' },
+                        },
+                    },
+                },
+            });
+        }
+
+        renderStats(inRange) {
+            const stats = this.modal.querySelector('.mwi-wishlist-chart-stats');
+            const summary = summarizeSeries(inRange);
+            const parts = [];
+
+            if (this.series.length > 0) {
+                parts.push(
+                    i18n_js.t('marketWishlist.trackingSince', {
+                        date: formatters_js.formatDateTime(new Date(this.series[0][0]), { includeSeconds: false }),
+                    })
+                );
+            }
+            if (this.currentPrice > 0) {
+                parts.push(i18n_js.t('marketWishlist.statCurrent', { value: formatters_js.formatWithSeparator(Math.round(this.currentPrice)) }));
+            }
+            if (summary) {
+                parts.push(
+                    i18n_js.t('marketWishlist.statLowest', { value: formatters_js.formatWithSeparator(summary.lowest) }),
+                    i18n_js.t('marketWishlist.statHighest', { value: formatters_js.formatWithSeparator(summary.highest) })
+                );
+                const sign = summary.change > 0 ? '+' : '';
+                parts.push(
+                    i18n_js.t('marketWishlist.statChange', {
+                        value: `${sign}${formatters_js.formatWithSeparator(summary.change)} (${sign}${summary.changePercent.toFixed(1)}%)`,
+                    })
+                );
+            }
+            stats.replaceChildren(
+                ...parts.map((text) => {
+                    const span = document.createElement('span');
+                    span.textContent = text;
+                    return span;
+                })
+            );
+        }
+
+        close() {
+            if (this.chartInstance) {
+                this.chartInstance.destroy();
+                this.chartInstance = null;
+            }
+            if (this.escHandler) {
+                document.removeEventListener('keydown', this.escHandler);
+                this.escHandler = null;
+            }
+            if (this.outsideClickTimer) {
+                clearTimeout(this.outsideClickTimer);
+                this.outsideClickTimer = null;
+            }
+            if (this.outsideClickHandler) {
+                document.removeEventListener('mousedown', this.outsideClickHandler);
+                this.outsideClickHandler = null;
+            }
+            this.modal?.remove();
+            this.modal = null;
+        }
+    }
+
+    const wishlistChart = new WishlistChart();
+
+    /**
+     * Marketplace Wishlist
+     * Keep a per-character list of items you want to buy (equipment upgrades and the like), in the
+     * order you want them. Items are added from the item action menu in the Marketplace, shown on a
+     * "Wishlist" tab with their current price (net worth's pricing rules, so items with no sell
+     * listing still get an estimate), and a price history is recorded from the moment each is added.
+     */
+
+
+    const SETTING_KEY = 'marketWishlist';
+    const SAMPLE_INTERVAL = 60 * 60 * 1000; // 1 hour, like the net worth history
+    const MIN_SAMPLE_GAP = 10 * 60 * 1000; // opening the tab never samples more often than this
+    const MENU_BUTTON_CLASS = 'mwi-wishlist-menu-btn';
+    const ALERT_TAB_SETTING = 'marketWishlist_alertTab';
+    const ALERT_NAV_SETTING = 'marketWishlist_alertNav';
+
+    class MarketWishlist {
+        constructor() {
+            this.isInitialized = false;
+            this.ui = null;
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.unregisterMenu = null;
+            this.unsubscribeStore = null;
+            this.itemsUpdatedHandler = null;
+            this.itemsRefreshTimeout = null;
+            this.knownKeys = new Set();
+            this.alertToken = 0;
+            this.navAlert = false;
+            this.unregisterNav = null;
+            this.priceUpdateHandler = null;
+            this.alertSettingHandler = null;
+        }
+
+        async initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting(SETTING_KEY)) return;
+            this.isInitialized = true;
+
+            const characterId = dataManager.getCurrentCharacterId();
+            if (!characterId) {
+                console.warn('[Wishlist] No character ID available');
+                this.isInitialized = false;
+                return;
+            }
+
+            await Promise.all([wishlistStore.load(characterId), wishlistHistory.load(characterId)]);
+            if (!this.isInitialized) return; // disabled while loading
+            this.knownKeys = this.currentKeys();
+
+            this.ui = new WishlistUI({
+                store: wishlistStore,
+                getPrice: getWishlistPrice,
+                onOpen: () => this.sampleAll(MIN_SAMPLE_GAP),
+                onClose: () => wishlistChart.close(),
+                onOpenChart: (item, price) => this.openChart(item, price),
+            });
+            this.ui.start();
+
+            this.unsubscribeStore = wishlistStore.onChange(() => this.handleStoreChange());
+
+            this.unregisterMenu = domObserver.onClass('MarketWishlist_itemAction', 'Item_actionMenu', (menu) =>
+                this.injectMenuButton(menu)
+            );
+
+            // Coins change as the player earns and spends, which changes what they can afford
+            this.itemsUpdatedHandler = () => {
+                if (this.itemsRefreshTimeout) return;
+                this.itemsRefreshTimeout = setTimeout(() => {
+                    this.itemsRefreshTimeout = null;
+                    if (this.ui?.active) this.ui.render();
+                    this.refreshAlert();
+                }, 500);
+            };
+            dataManager.on('items_updated', this.itemsUpdatedHandler);
+
+            // The ❗ follows prices (market data refreshes), the list, and the two alert settings
+            this.priceUpdateHandler = () => this.refreshAlert();
+            marketAPI.on(this.priceUpdateHandler);
+            this.alertSettingHandler = () => this.refreshAlert();
+            config.onSettingChange(ALERT_TAB_SETTING, this.alertSettingHandler);
+            config.onSettingChange(ALERT_NAV_SETTING, this.alertSettingHandler);
+            // The sidebar re-renders now and then and drops our ❗; put it back
+            this.unregisterNav = domObserver.onClass('MarketWishlist_nav', 'NavigationBar_navigationLink', () => {
+                if (this.navAlert) setNavAlert(true);
+            });
+
+            this.timerRegistry.registerInterval(setInterval(() => this.sampleAll(), SAMPLE_INTERVAL));
+            this.sampleAll();
+            this.refreshAlert();
+        }
+
+        currentKeys() {
+            return new Set(wishlistStore.getItems().map((item) => getWishlistKey(item.itemHrid, item.enhancementLevel)));
+        }
+
+        /**
+         * A change to the list: drop history for removed items, start a series for new ones, redraw
+         */
+        handleStoreChange() {
+            const keys = this.currentKeys();
+            for (const key of this.knownKeys) {
+                if (!keys.has(key)) wishlistHistory.removeKey(key);
+            }
+            const added = [...keys].some((key) => !this.knownKeys.has(key));
+            this.knownKeys = keys;
+
+            if (added) this.sampleAll();
+            this.ui?.render();
+            this.refreshAlert();
+        }
+
+        /**
+         * Open the price history chart for a wishlist item
+         * @param {{itemHrid: string, enhancementLevel: number}} item
+         * @param {import('./wishlist-pricing.js').WishlistPrice} price - Its current price
+         */
+        openChart(item, price) {
+            const name = getItemName(item.itemHrid, dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid);
+            wishlistChart.open({
+                title: item.enhancementLevel > 0 ? `${name} +${item.enhancementLevel}` : name,
+                series: wishlistHistory.getSeries(getWishlistKey(item.itemHrid, item.enhancementLevel)),
+                currentPrice: price?.available ? price.price : null,
+            });
+        }
+
+        /**
+         * Show the ❗ (on the tab and/or the sidebar Marketplace link, each behind its own setting)
+         * while the player has enough coins for the first item on the list.
+         */
+        async refreshAlert() {
+            const tabOn = !!config.getSetting(ALERT_TAB_SETTING);
+            const navOn = !!config.getSetting(ALERT_NAV_SETTING);
+            const token = ++this.alertToken;
+
+            let affordable = false;
+            const first = wishlistStore.getItems()[0];
+            if ((tabOn || navOn) && first) {
+                const price = await getWishlistPrice(first);
+                affordable = price.available && getCoinBalance() >= price.price;
+            }
+            if (token !== this.alertToken || !this.isInitialized) return;
+
+            this.navAlert = navOn && affordable;
+            this.ui?.setTabAlert(tabOn && affordable);
+            setNavAlert(this.navAlert);
+        }
+
+        /**
+         * Record the current price of every wishlist item.
+         * @param {number} [minGap=0] - Skip when a sample was taken more recently than this
+         */
+        async sampleAll(minGap = 0) {
+            if (!connectionState.isConnected() || !marketAPI.isLoaded()) return;
+            if (minGap && Date.now() - wishlistHistory.lastRecordedAt < minGap) return;
+
+            const items = wishlistStore.getItems();
+            if (items.length === 0) return;
+
+            const now = Date.now();
+            for (const item of items) {
+                const price = await getWishlistPrice(item);
+                if (price.available) {
+                    wishlistHistory.record(
+                        getWishlistKey(item.itemHrid, item.enhancementLevel),
+                        price.price,
+                        price.estimated,
+                        now
+                    );
+                }
+            }
+            wishlistHistory.lastRecordedAt = now;
+            await wishlistHistory.save();
+        }
+
+        /**
+         * Add an Add/Remove Wishlist button to an item action menu opened in the Marketplace
+         * @param {HTMLElement} menu - The Item_actionMenu element
+         */
+        injectMenuButton(menu) {
+            if (!config.getSetting(SETTING_KEY) || !this.isInitialized) return;
+            if (menu.querySelector(`.${MENU_BUTTON_CLASS}`)) return;
+
+            const marketplace = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+            if (!marketplace || !isElementActuallyVisible(marketplace)) return;
+
+            const nameEl = menu.querySelector('[class*="Item_name"]');
+            if (!nameEl) return;
+            const itemHrid = getItemHridFromName(nameEl.textContent.trim());
+            if (!itemHrid) return;
+            if (dataManager.getItemDetails(itemHrid)?.isTradable !== true) return;
+
+            let enhancementLevel = 0;
+            const enhEl = menu.querySelector('[class*="Item_enhancementLevel"]');
+            const match = enhEl?.textContent.match(/\+(\d+)/);
+            if (match) enhancementLevel = parseInt(match[1], 10);
+
+            const buttons = menu.querySelectorAll('button');
+            const lastButton = buttons[buttons.length - 1];
+            if (!lastButton) return;
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `${lastButton.className} ${MENU_BUTTON_CLASS}`;
+            const label = () =>
+                i18n_js.t(
+                    wishlistStore.has(itemHrid, enhancementLevel)
+                        ? 'marketWishlist.removeFromMenu'
+                        : 'marketWishlist.addToMenu'
+                );
+            button.textContent = label();
+            button.addEventListener('click', async () => {
+                if (wishlistStore.has(itemHrid, enhancementLevel)) {
+                    await wishlistStore.remove(itemHrid, enhancementLevel);
+                } else {
+                    await wishlistStore.add(itemHrid, enhancementLevel);
+                }
+                button.textContent = label();
+            });
+            lastButton.insertAdjacentElement('afterend', button);
+        }
+
+        cleanup() {
+            this.isInitialized = false;
+
+            wishlistChart.close();
+            this.ui?.stop();
+            this.ui = null;
+
+            this.unregisterMenu?.();
+            this.unregisterMenu = null;
+            this.unsubscribeStore?.();
+            this.unsubscribeStore = null;
+
+            this.alertToken++;
+            this.unregisterNav?.();
+            this.unregisterNav = null;
+            if (this.priceUpdateHandler) {
+                marketAPI.off(this.priceUpdateHandler);
+                this.priceUpdateHandler = null;
+            }
+            if (this.alertSettingHandler) {
+                config.offSettingChange(ALERT_TAB_SETTING, this.alertSettingHandler);
+                config.offSettingChange(ALERT_NAV_SETTING, this.alertSettingHandler);
+                this.alertSettingHandler = null;
+            }
+            this.navAlert = false;
+            setNavAlert(false);
+
+            if (this.itemsUpdatedHandler) {
+                dataManager.off('items_updated', this.itemsUpdatedHandler);
+                this.itemsUpdatedHandler = null;
+            }
+            clearTimeout(this.itemsRefreshTimeout);
+            this.itemsRefreshTimeout = null;
+
+            this.timerRegistry.clearAll();
+            document.querySelectorAll(`.${MENU_BUTTON_CLASS}`).forEach((el) => el.remove());
+            wishlistStore.reset();
+            wishlistHistory.reset();
+            this.knownKeys = new Set();
+        }
+
+        disable() {
+            this.cleanup();
+        }
+    }
+
+    const marketWishlist = new MarketWishlist();
+
+    /**
+     * Listing Refresh Navigator
+     *
+     * Adds a "Refresh" button next to "Upgrade Capacity" on the My Listings page that starts a
+     * cycling session through all listings. From there, listing-next-navigator.js exposes a
+     * "Next"/"Back to My Listings" button on each listing's order-book page, so the rest of the
+     * cycle never needs to come back through this table — opening a listing already refreshes it.
+     *
+     * Depends on listing-price-display.js stamping row.dataset.itemHrid / listingId.
+     */
+
+
+    const LISTING_COUNT_SEL = '[class*="MarketplacePanel_listingCount"]';
+    const TABLE_SEL = '[class*="MarketplacePanel_myListingsTable"]';
+    const BTN_CLASS$1 = 'Button_button__1Fe9z Button_small__3fqC7';
+
+    class ListingRefreshNavigator {
+        constructor() {
+            this.isInitialized = false;
+            this.watcher = null;
+            this.refreshBtn = null;
+            this.session = null; // { items: [{itemHrid, enhancementLevel, listingId}], currentIndex }
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('market_listingRefreshNavigator')) return;
+            this.isInitialized = true;
+            this._watch();
+        }
+
+        _watch() {
+            const ensureButton = () => {
+                const countContainer = document.querySelector(LISTING_COUNT_SEL);
+
+                if (!countContainer) {
+                    if (this.refreshBtn && document.body.contains(this.refreshBtn)) {
+                        this.refreshBtn.remove();
+                        this.refreshBtn = null;
+                    }
+                    return;
+                }
+
+                if (this.refreshBtn && !document.body.contains(this.refreshBtn)) {
+                    this.refreshBtn = null;
+                }
+
+                if (this.refreshBtn) return;
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = BTN_CLASS$1;
+                btn.textContent = i18n_js.t('listingRefreshNavigator.refreshButtonLabel');
+                btn.addEventListener('click', () => this._startSession());
+
+                // The Upgrade Capacity button label is localized by the game (zh: 升级容量),
+                // so match the translated label too.
+                const upgradeLabels = [
+                    'Upgrade Capacity',
+                    translateGameName('marketplacePanel', 'upgradeCapacity', 'Upgrade Capacity'),
+                ];
+                const upgradeBtn = Array.from(countContainer.querySelectorAll('button')).find((b) =>
+                    upgradeLabels.some((label) => b.textContent.includes(label))
+                );
+
+                if (upgradeBtn) {
+                    upgradeBtn.after(btn);
+                } else {
+                    countContainer.appendChild(btn);
+                }
+
+                this.refreshBtn = btn;
+            };
+
+            if (!this.watcher) {
+                this.watcher = domObserverHelpers_js.createMutationWatcher(document.body, ensureButton, {
+                    childList: true,
+                    subtree: true,
+                });
+            }
+
+            ensureButton();
+        }
+
+        _startSession() {
+            const table = document.querySelector(TABLE_SEL);
+            if (!table) return;
+
+            const rows = Array.from(table.querySelectorAll('tbody tr'));
+            if (rows.length === 0) return;
+
+            const items = rows.map((row) => ({
+                itemHrid: row.dataset.itemHrid,
+                enhancementLevel: parseInt(row.dataset.enhancementLevel || '0', 10),
+                listingId: row.dataset.listingId || null,
+            }));
+
+            let startIndex = 0;
+            const lastListingId = this.session?.items[this.session.currentIndex]?.listingId;
+            if (lastListingId != null) {
+                const lastIdx = items.findIndex((item) => item.listingId === lastListingId);
+                if (lastIdx !== -1) startIndex = (lastIdx + 1) % items.length;
+            }
+
+            this.session = { items, currentIndex: startIndex };
+            this._navigateToCurrent();
+        }
+
+        _navigateToCurrent() {
+            const item = this.session?.items[this.session.currentIndex];
+            if (!item?.itemHrid) return;
+            navigateToMarketplace(item.itemHrid, item.enhancementLevel);
+        }
+
+        /**
+         * @returns {{current: {itemHrid: string, enhancementLevel: number, listingId: string|null},
+         *   index: number, total: number, isLast: boolean}|null} Null when no session is active.
+         */
+        getSessionProgress() {
+            if (!this.session) return null;
+            const { items, currentIndex } = this.session;
+            return {
+                current: items[currentIndex],
+                index: currentIndex,
+                total: items.length,
+                isLast: currentIndex >= items.length - 1,
+            };
+        }
+
+        /**
+         * Advance the active session to the next listing and navigate to it.
+         * @returns {boolean} True when advanced; false when there is no session or already at the end.
+         */
+        advanceSession() {
+            if (!this.session || this.session.currentIndex >= this.session.items.length - 1) return false;
+            this.session.currentIndex += 1;
+            this._navigateToCurrent();
+            return true;
+        }
+
+        endSession() {
+            this.session = null;
+        }
+
+        cleanup() {
+            if (this.watcher) {
+                this.watcher();
+                this.watcher = null;
+            }
+            if (this.refreshBtn) {
+                this.refreshBtn.remove();
+                this.refreshBtn = null;
+            }
+            this.session = null;
+            this.isInitialized = false;
+        }
+    }
+
+    const listingRefreshNavigator = new ListingRefreshNavigator();
+
+    /**
+     * Listing Next Navigator
+     *
+     * On a listing's order-book page opened via listing-refresh-navigator's "Refresh" session,
+     * replaces the native "Refresh" button with a "Next"/"Back to My Listings" button so a user can
+     * cycle through every listing without returning to the My Listings table between each one.
+     * Opening a listing's page already re-fetches its order book, so the native per-item Refresh
+     * button is redundant while a session is active — it's only hidden while the currently-open
+     * item matches the session's current listing, and restored otherwise.
+     */
+
+
+    const CONTAINER_SEL = '[class*="MarketplacePanel_marketNavButtonContainer"]';
+    const CURRENT_ITEM_SEL = '[class*="MarketplacePanel_currentItem"]';
+    const BTN_CLASS = 'Button_button__1Fe9z Button_small__3fqC7';
+    const NEXT_BTN_ID = 'mwi-listing-next-btn';
+
+    class ListingNextNavigator {
+        constructor() {
+            this.isInitialized = false;
+            this.watcher = null;
+            this.nextBtn = null;
+            this.nativeRefreshBtn = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('market_listingRefreshNavigator')) return;
+            this.isInitialized = true;
+            this._watch();
+        }
+
+        _watch() {
+            const update = () => this._update();
+
+            if (!this.watcher) {
+                this.watcher = domObserverHelpers_js.createMutationWatcher(document.body, update, {
+                    childList: true,
+                    subtree: true,
+                });
+            }
+
+            update();
+        }
+
+        /**
+         * @returns {{itemHrid: string, enhancementLevel: number}|null} Item currently open in the
+         *   order-book panel, read from the DOM (same approach as market-depth-cap.js).
+         */
+        _getCurrentItem() {
+            const currentItemEl = document.querySelector(CURRENT_ITEM_SEL);
+            const useElement = currentItemEl?.querySelector('use');
+            const href = useElement?.href?.baseVal;
+            const itemHrid = href ? '/items/' + href.split('#')[1] : null;
+            if (!itemHrid) return null;
+
+            const enhancementEl = currentItemEl.querySelector('[class*="Item_enhancementLevel"]');
+            const match = enhancementEl?.textContent.match(/\+(\d+)/);
+            const enhancementLevel = match ? parseInt(match[1], 10) : 0;
+
+            return { itemHrid, enhancementLevel };
+        }
+
+        _restore() {
+            if (this.nativeRefreshBtn) {
+                this.nativeRefreshBtn.style.display = '';
+                this.nativeRefreshBtn = null;
+            }
+            if (this.nextBtn && document.body.contains(this.nextBtn)) {
+                this.nextBtn.remove();
+            }
+            this.nextBtn = null;
+        }
+
+        _update() {
+            const progress = listingRefreshNavigator.getSessionProgress();
+            const container = document.querySelector(CONTAINER_SEL);
+
+            if (!progress || !container) {
+                this._restore();
+                return;
+            }
+
+            const currentItem = this._getCurrentItem();
+            const matches =
+                currentItem &&
+                currentItem.itemHrid === progress.current.itemHrid &&
+                currentItem.enhancementLevel === progress.current.enhancementLevel;
+
+            if (!matches) {
+                this._restore();
+                return;
+            }
+
+            if (this.nextBtn && !document.body.contains(this.nextBtn)) {
+                this.nextBtn = null;
+            }
+            if (this.nativeRefreshBtn && !document.body.contains(this.nativeRefreshBtn)) {
+                this.nativeRefreshBtn = null;
+            }
+
+            if (!this.nativeRefreshBtn) {
+                // The Refresh button label is localized by the game (zh: 刷新), so match the
+                // translated label too.
+                const refreshLabels = new Set(['Refresh', translateGameName('marketplacePanel', 'refresh', 'Refresh')]);
+                const found = Array.from(container.querySelectorAll('button')).find(
+                    (b) => b.id !== NEXT_BTN_ID && refreshLabels.has(b.textContent.trim())
+                );
+                if (found) {
+                    found.style.display = 'none';
+                    this.nativeRefreshBtn = found;
+                }
+            }
+
+            const label = progress.isLast
+                ? i18n_js.t('listingNextNavigator.backToMyListingsLabel')
+                : i18n_js.t('listingNextNavigator.nextLabel', { index: progress.index + 1, total: progress.total });
+
+            if (!this.nextBtn) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.id = NEXT_BTN_ID;
+                btn.className = BTN_CLASS;
+                btn.textContent = label;
+                btn.addEventListener('click', () => this._handleClick());
+                container.appendChild(btn);
+                this.nextBtn = btn;
+            }
+
+            // textContent write is itself an observed childList mutation (document.body,
+            // childList/subtree) — writing unconditionally re-triggers _update() indefinitely.
+            if (this.nextBtn.textContent !== label) {
+                this.nextBtn.textContent = label;
+            }
+        }
+
+        _handleClick() {
+            const progress = listingRefreshNavigator.getSessionProgress();
+            if (!progress) return;
+
+            if (progress.isLast) {
+                listingRefreshNavigator.endSession();
+                this._restore();
+                navigateToMyListings();
+            } else {
+                listingRefreshNavigator.advanceSession();
+            }
+        }
+
+        cleanup() {
+            if (this.watcher) {
+                this.watcher();
+                this.watcher = null;
+            }
+            this._restore();
+            this.isInitialized = false;
+        }
+    }
+
+    const listingNextNavigator = new ListingNextNavigator();
+
+    /**
+     * Philosopher's Stone Transmutation Calculator
+     *
+     * Calculates expected value and ROI for transmuting items into Philosopher's Stones.
+     * Shows a sortable table of all items that can transmute into philos with live market data.
+     */
+
+
+    const PHILO_HRID = '/items/philosophers_stone';
+    const PRIME_CATALYST_HRID = '/items/prime_catalyst';
+    // Catalysts that raise transmute success, with their additive success boost
+    const CATALYST_BONUSES = {
+        '/items/catalyst_of_transmutation': 0.15,
+        [PRIME_CATALYST_HRID]: 0.25,
+    };
+    const NO_CATALYST = '';
+    const TRANSMUTE_ACTION_TIME_SECONDS = 20;
+    const CATALYTIC_TEA_BUFF_TYPE = '/buff_types/alchemy_success';
+
+    class PhiloCalculator {
+        constructor() {
+            this.isInitialized = false;
+            this.modal = null;
+            this.sortColumn = 'cost';
+            this.sortDirection = 'desc';
+
+            // User-editable inputs
+            this.philoPrice = 0;
+            this.catalystPrice = 0;
+            this.catalystHrid = PRIME_CATALYST_HRID; // NO_CATALYST for none
+            this.useCatalyticTea = false;
+            this.catalyticTeaRatioBoost = 0;
+            this.drinkConcentrationLevel = 0; // 0-20
+            this.hideNegativeProfitItems = true;
+            this.filterText = '';
+
+            // Cached row data
+            this.rows = [];
+        }
+
+        /**
+         * Initialize the feature
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            if (!config.getSetting('market_showPhiloCalculator')) {
+                return;
+            }
+
+            this.isInitialized = true;
+            this.addSettingsButton();
+        }
+
+        /**
+         * Disable / cleanup the feature
+         */
+        disable() {
+            if (this.modal) {
+                this.modal.remove();
+                this.modal = null;
+            }
+            this.isInitialized = false;
+        }
+
+        /**
+         * Add "Philo Gamba" button to settings panel
+         */
+        addSettingsButton() {
+            const ensureButtonExists = () => {
+                const settingsPanel = document.querySelector('[class*="SettingsPanel"]');
+                if (!settingsPanel) return;
+
+                if (settingsPanel.querySelector('.mwi-philo-calc-button')) {
+                    return;
+                }
+
+                const button = document.createElement('button');
+                button.className = 'mwi-philo-calc-button';
+                button.textContent = i18n_js.t('philoCalculator.launcherButtonLabel');
+                button.style.cssText = `
+                margin: 10px;
+                padding: 8px 16px;
+                background: #4a90e2;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+            `;
+
+                button.addEventListener('mouseenter', () => {
+                    button.style.background = '#357abd';
+                });
+
+                button.addEventListener('mouseleave', () => {
+                    button.style.background = '#4a90e2';
+                });
+
+                button.addEventListener('click', () => {
+                    this.openModal();
+                });
+
+                // Insert after the market history button if it exists, otherwise at top
+                const historyButton = settingsPanel.querySelector('.mwi-market-history-button');
+                if (historyButton) {
+                    historyButton.after(button);
+                } else {
+                    settingsPanel.insertBefore(button, settingsPanel.firstChild);
+                }
+            };
+
+            const settingsUI = window.Toolasha?.UI?.settingsUI;
+            if (settingsUI && typeof settingsUI.onSettingsPanelAppear === 'function') {
+                settingsUI.onSettingsPanelAppear(ensureButtonExists);
+            }
+
+            ensureButtonExists();
+        }
+
+        /**
+         * Get item name from game data
+         * @param {string} itemHrid - Item HRID
+         * @returns {string} Item name
+         */
+        getItemName(itemHrid) {
+            const initData = dataManager.getInitClientData();
+            const itemData = initData?.itemDetailMap?.[itemHrid];
+            const fallback = itemData?.name || itemHrid.replace('/items/', '').replaceAll('_', ' ');
+            return getItemName(itemHrid, fallback);
+        }
+
+        /**
+         * Load default prices from market data
+         */
+        loadDefaultPrices() {
+            const philoPriceInfo = marketData_js.getItemPriceOutlierInfo(PHILO_HRID, { mode: 'bid' });
+            this.philoPrice = philoPriceInfo.value || 0;
+            this.philoPriceIsOutlier = philoPriceInfo.value ? philoPriceInfo.isOutlier : false;
+
+            const catalystPriceInfo = this.catalystHrid
+                ? marketData_js.getItemPriceOutlierInfo(this.catalystHrid, { mode: 'ask' })
+                : { value: null, isOutlier: false };
+            this.catalystPrice = catalystPriceInfo.value || 0;
+            this.catalystPriceIsOutlier = catalystPriceInfo.value ? catalystPriceInfo.isOutlier : false;
+        }
+
+        /**
+         * Calculate catalytic tea base bonus from game data (item definition)
+         * @returns {number} Base ratioBoost from item definition
+         */
+        calculateCatalyticTeaRatioBoost() {
+            try {
+                const gameData = dataManager.getInitClientData();
+                if (!gameData?.itemDetailMap) return 0;
+
+                const teaItem = gameData.itemDetailMap['/items/catalytic_tea'];
+                if (!teaItem?.consumableDetail?.buffs) return 0;
+
+                // Find alchemy success buff
+                for (const buff of teaItem.consumableDetail.buffs) {
+                    if (buff.typeHrid === CATALYTIC_TEA_BUFF_TYPE) {
+                        return buff.ratioBoost || 0;
+                    }
+                }
+
+                return 0;
+            } catch (error) {
+                console.error('[PhiloCalculator] Failed to calculate catalytic tea ratio boost:', error);
+                return 0;
+            }
+        }
+
+        /**
+         * Load settings from storage
+         */
+        async loadSettings() {
+            try {
+                const saved = await storage.getJSON('philoCalculatorSettings', 'settings', null);
+                if (saved) {
+                    if (saved.catalystHrid === NO_CATALYST || saved.catalystHrid in CATALYST_BONUSES) {
+                        this.catalystHrid = saved.catalystHrid;
+                    } else {
+                        // Older saves only had a Prime Catalyst on/off flag
+                        this.catalystHrid = saved.useCatalyst === false ? NO_CATALYST : PRIME_CATALYST_HRID;
+                    }
+                    this.useCatalyticTea = saved.useCatalyticTea || false;
+                    this.drinkConcentrationLevel = saved.drinkConcentrationLevel || 0;
+                    this.hideNegativeProfitItems = saved.hideNegativeProfitItems !== false;
+                    this.filterText = saved.filterText || '';
+                }
+            } catch (error) {
+                console.error('[PhiloCalculator] Failed to load settings:', error);
+            }
+        }
+
+        /**
+         * Save settings to storage
+         */
+        async saveSettings() {
+            try {
+                await storage.setJSON(
+                    'philoCalculatorSettings',
+                    {
+                        catalystHrid: this.catalystHrid,
+                        useCatalyticTea: this.useCatalyticTea,
+                        drinkConcentrationLevel: this.drinkConcentrationLevel,
+                        hideNegativeProfitItems: this.hideNegativeProfitItems,
+                        filterText: this.filterText,
+                    },
+                    'settings',
+                    true
+                );
+            } catch (error) {
+                console.error('[PhiloCalculator] Failed to save settings:', error);
+            }
+        }
+
+        /**
+         * Get drink concentration for a given enhancement level
+         * @param {number} enhancementLevel - Enhancement level (0-20)
+         * @returns {number} Drink concentration as decimal (e.g., 0.1032 for 10.32%)
+         */
+        getDrinkConcentrationForLevel(enhancementLevel) {
+            try {
+                const gameData = dataManager.getInitClientData();
+                const equipment = dataManager.getEquipment();
+                if (!equipment || !gameData?.itemDetailMap) return 0;
+
+                let totalConcentration = 0;
+                const baseConcentrationByLevel = new Map();
+
+                // Scan equipment for drink concentration items and their base values
+                for (const [_slotHrid, equippedItem] of equipment) {
+                    const itemDetails = gameData.itemDetailMap[equippedItem.itemHrid];
+                    if (!itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) continue;
+
+                    const baseConcentration = itemDetails.equipmentDetail.noncombatStats.drinkConcentration;
+                    baseConcentrationByLevel.set(equippedItem.itemHrid, baseConcentration);
+                }
+
+                // If we have drink concentration items, apply the requested enhancement level
+                for (const [itemHrid, baseConcentration] of baseConcentrationByLevel) {
+                    const itemDetails = gameData.itemDetailMap[itemHrid];
+                    const multiplier = enhancementMultipliers_js.getEnhancementMultiplier(itemDetails, enhancementLevel);
+                    totalConcentration += baseConcentration * multiplier;
+                }
+
+                return totalConcentration;
+            } catch (error) {
+                console.error('[PhiloCalculator] Failed to get drink concentration:', error);
+                return 0;
+            }
+        }
+
+        /**
+         * Scan itemDetailMap for all items that can transmute into Philosopher's Stone
+         * @returns {Array} Array of { itemHrid, itemDetails } objects
+         */
+        findPhiloTransmuteItems() {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData?.itemDetailMap) return [];
+
+            const results = [];
+
+            for (const [itemHrid, itemDetails] of Object.entries(gameData.itemDetailMap)) {
+                const alchemy = itemDetails?.alchemyDetail;
+                if (!alchemy?.transmuteDropTable || !alchemy.transmuteSuccessRate) continue;
+
+                const hasPhilo = alchemy.transmuteDropTable.some((drop) => drop.itemHrid === PHILO_HRID);
+                if (hasPhilo) {
+                    results.push({ itemHrid, itemDetails });
+                }
+            }
+
+            return results;
+        }
+
+        /**
+         * Calculate all columns for a single item
+         * @param {string} itemHrid - Item HRID
+         * @param {Object} itemDetails - Item detail object
+         * @returns {Object|null} Row data or null if price unavailable
+         */
+        calculateRow(itemHrid, itemDetails) {
+            const alchemy = itemDetails.alchemyDetail;
+            const baseTransmuteRate = alchemy.transmuteSuccessRate;
+
+            // Calculate additive bonuses
+            let totalBonus = 0;
+
+            // Catalytic tea bonus
+            if (this.useCatalyticTea && this.catalyticTeaRatioBoost > 0) {
+                const drinkConcentration = this.getDrinkConcentrationForLevel(this.drinkConcentrationLevel);
+                totalBonus += this.catalyticTeaRatioBoost * (1 + drinkConcentration);
+            }
+
+            // Catalyst bonus (additive, not multiplicative)
+            if (this.catalystHrid) {
+                totalBonus += CATALYST_BONUSES[this.catalystHrid] || 0;
+            }
+
+            const successRate = Math.min(1.0, baseTransmuteRate * (1 + totalBonus));
+            const bulkMultiplier = alchemy.bulkMultiplier || 1;
+
+            // Find philo drop rate
+            const philoDrop = alchemy.transmuteDropTable.find((d) => d.itemHrid === PHILO_HRID);
+            if (!philoDrop) return null;
+
+            const philoDropRate = philoDrop.dropRate;
+            const philoChance = successRate * philoDropRate;
+
+            // Get item cost (market ask price)
+            const priceInfo = marketData_js.getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+            let itemCost = priceInfo.value;
+            // Untradable items (the refined capes) have no market price. Keep them listed so the user
+            // can enter a price; tradable items with no market data stay hidden as before.
+            const needsPrice = itemCost === null || itemCost === undefined;
+            if (needsPrice) {
+                if (itemDetails.isTradable === true) return null;
+                itemCost = 0;
+            }
+            const itemCostIsOutlier = priceInfo.isOutlier;
+
+            // Catalyst cost per action (consumed only on success)
+            const catalystCostPerAction = this.catalystHrid ? successRate * this.catalystPrice : 0;
+
+            // Transmute coin cost: max(50, sellPrice / 5) × bulkMultiplier per action
+            const sellPrice = itemDetails.sellPrice || 0;
+            const coinCost = Math.max(50, Math.floor(sellPrice / 5)) * bulkMultiplier;
+
+            // Total cost per transmute action
+            const totalCostPerAction = itemCost * bulkMultiplier + catalystCostPerAction + coinCost;
+
+            // Calculate EV of all drops (including philo)
+            let evPerAction = 0;
+            let dropsHaveOutlier = false;
+            for (const drop of alchemy.transmuteDropTable) {
+                let dropValue;
+                if (drop.itemHrid === PHILO_HRID) {
+                    dropValue = this.philoPrice;
+                    if (this.philoPriceIsOutlier) dropsHaveOutlier = true;
+                } else {
+                    const dropPriceInfo = marketData_js.getItemPriceOutlierInfo(drop.itemHrid, { mode: 'bid' });
+                    dropValue = dropPriceInfo.value;
+                    if (dropValue === null || dropValue === undefined) continue;
+                    if (dropPriceInfo.isOutlier) dropsHaveOutlier = true;
+                }
+
+                const avgCount = (drop.minCount + drop.maxCount) / 2;
+                evPerAction += successRate * drop.dropRate * avgCount * dropValue;
+            }
+
+            const isOutlier =
+                itemCostIsOutlier || dropsHaveOutlier || (Boolean(this.catalystHrid) && this.catalystPriceIsOutlier);
+
+            // Profit per action (EV now includes philo value)
+            const profitPerAction = evPerAction - totalCostPerAction;
+
+            // Actions and items needed per philo
+            const actionsPerPhilo = 1 / philoChance;
+
+            // Net items consumed per action (input minus expected self-returns)
+            const selfDrop = alchemy.transmuteDropTable.find((d) => d.itemHrid === itemHrid);
+            const selfDropRate = selfDrop ? selfDrop.dropRate : 0;
+            const avgSelfCount = selfDrop ? (selfDrop.minCount + selfDrop.maxCount) / 2 : 0;
+            const returnChance = successRate * selfDropRate;
+            const itemsPerAction = bulkMultiplier - returnChance * avgSelfCount;
+
+            // Items needed per philo (net items consumed × actions needed)
+            const itemsPerPhilo = actionsPerPhilo * itemsPerAction;
+
+            // Profit per philo obtained
+            const profitPerPhilo = profitPerAction * actionsPerPhilo;
+
+            // Profit margin
+            const profitMargin = profitPerAction / totalCostPerAction;
+
+            // Time per philo
+            const timePerPhiloSeconds = actionsPerPhilo * TRANSMUTE_ACTION_TIME_SECONDS;
+
+            // Profit per hour
+            const actionsPerHour = 3600 / TRANSMUTE_ACTION_TIME_SECONDS;
+            const profitPerHour = profitPerAction * actionsPerHour;
+
+            // Revenue and cost per hour
+            const revenuePerHour = evPerAction * actionsPerHour;
+            const costPerHour = totalCostPerAction * actionsPerHour;
+
+            // Without a price every cost-derived figure would be misleading, so leave them blank
+            const costDerived = (value) => (needsPrice ? null : value);
+
+            return {
+                itemHrid,
+                name: this.getItemName(itemHrid),
+                cost: costDerived(itemCost),
+                needsPrice,
+                hasCustomCost: marketData_js.getCustomPrice(itemHrid, 0, 'sell') !== null,
+                philoChance,
+                returnChance,
+                transmuteChance: baseTransmuteRate,
+                effectiveTransmuteChance: successRate,
+                transmuteCost: costDerived(totalCostPerAction),
+                ev: evPerAction,
+                itemsPerAction,
+                actionsPerPhilo,
+                itemsPerPhilo,
+                profitPerPhilo: costDerived(profitPerPhilo),
+                profitMargin: costDerived(profitMargin),
+                timePerPhiloSeconds,
+                profitPerHour: costDerived(profitPerHour),
+                revenuePerHour,
+                costPerHour: costDerived(costPerHour),
+                isOutlier,
+            };
+        }
+
+        /**
+         * Calculate all rows
+         */
+        calculateAllRows() {
+            const items = this.findPhiloTransmuteItems();
+            this.rows = [];
+
+            for (const { itemHrid, itemDetails } of items) {
+                const row = this.calculateRow(itemHrid, itemDetails);
+                if (row) {
+                    this.rows.push(row);
+                }
+            }
+
+            this.sortRows();
+        }
+
+        /**
+         * Sort rows by current sort column and direction
+         */
+        sortRows() {
+            const col = this.sortColumn;
+            const dir = this.sortDirection === 'asc' ? 1 : -1;
+
+            this.rows.sort((a, b) => {
+                const aVal = a[col];
+                const bVal = b[col];
+
+                // Blank (unpriced) values always sort last
+                if (aVal === null || bVal === null) {
+                    return (aVal === null) - (bVal === null);
+                }
+                if (typeof aVal === 'string') {
+                    return dir * aVal.localeCompare(bVal);
+                }
+                return dir * (aVal - bVal);
+            });
+        }
+
+        /**
+         * Handle column header click for sorting
+         * @param {string} column - Column key to sort by
+         */
+        toggleSort(column) {
+            if (this.sortColumn === column) {
+                this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.sortColumn = column;
+                this.sortDirection = 'desc';
+            }
+            this.sortRows();
+            this.renderTable();
+        }
+
+        /**
+         * Open the calculator modal
+         */
+        async openModal() {
+            if (this.modal) {
+                this.modal.remove();
+            }
+
+            // Load saved settings first
+            await this.loadSettings();
+
+            this.loadDefaultPrices();
+            this.catalyticTeaRatioBoost = this.calculateCatalyticTeaRatioBoost();
+
+            // Set default drink concentration level (only if not previously saved)
+            if (this.drinkConcentrationLevel === 0) {
+                let currentDrinkEnhancementLevel = 0;
+                const gameData = dataManager.getInitClientData();
+                const equipment = dataManager.getEquipment();
+                if (equipment && gameData?.itemDetailMap) {
+                    for (const [_slotHrid, equippedItem] of equipment) {
+                        const itemDetails = gameData.itemDetailMap[equippedItem.itemHrid];
+                        if (itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) {
+                            currentDrinkEnhancementLevel = equippedItem.enhancementLevel || 0;
+                            break;
+                        }
+                    }
+                }
+                this.drinkConcentrationLevel = currentDrinkEnhancementLevel;
+            }
+
+            this.calculateAllRows();
+
+            this.modal = document.createElement('div');
+            this.modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+            background: #2a2a2a;
+            color: #ffffff;
+            border-radius: 8px;
+            width: 95%;
+            max-width: 1200px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        `;
+
+            // Header
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid #444;
+        `;
+            header.innerHTML = `
+            <span style="font-size: 18px; font-weight: bold;">${i18n_js.t('philoCalculator.panelTitle')}</span>
+        `;
+
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '\u00D7';
+            closeBtn.style.cssText = `
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0 4px;
+        `;
+            closeBtn.addEventListener('click', () => closeModal());
+            header.appendChild(closeBtn);
+
+            // Controls
+            const controls = this.createControls();
+
+            // Table container
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'philo-calc-table-container';
+            tableContainer.style.cssText = `
+            overflow: auto;
+            flex: 1;
+            padding: 0 20px 20px;
+        `;
+
+            dialog.appendChild(header);
+            dialog.appendChild(controls);
+            dialog.appendChild(tableContainer);
+            this.modal.appendChild(dialog);
+
+            // Single teardown used by all close paths
+            const closeModal = () => {
+                if (!this.modal) return;
+                this.modal.remove();
+                this.modal = null;
+                document.removeEventListener('keydown', escHandler);
+            };
+
+            // Close on backdrop click
+            this.modal.addEventListener('click', (e) => {
+                if (e.target === this.modal) closeModal();
+            });
+
+            // Close on Escape key
+            const escHandler = (e) => {
+                if (e.key === 'Escape') closeModal();
+            };
+            document.addEventListener('keydown', escHandler);
+
+            document.body.appendChild(this.modal);
+            this.renderTable();
+        }
+
+        /**
+         * Create the input controls section (philo price, catalyst price, checkbox)
+         * @returns {HTMLElement} Controls container
+         */
+        createControls() {
+            const container = document.createElement('div');
+            container.style.cssText = `
+            padding: 12px 20px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+            border-bottom: 1px solid #444;
+        `;
+
+            // Philo price input
+            const philoLabel = document.createElement('label');
+            philoLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
+            philoLabel.textContent = i18n_js.t('philoCalculator.philoPriceLabel');
+            const philoInput = document.createElement('input');
+            philoInput.type = 'text';
+            philoInput.value = this.philoPrice.toLocaleString();
+            philoInput.style.cssText = `
+            width: 130px;
+            padding: 4px 8px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 13px;
+        `;
+            philoInput.addEventListener('change', () => {
+                const parsed = parseInt(philoInput.value.replaceAll(',', '').replaceAll('.', ''), 10);
+                if (!isNaN(parsed)) {
+                    this.philoPrice = parsed;
+                    this.recalculate();
+                }
+            });
+            philoLabel.appendChild(philoInput);
+
+            // Catalyst price input
+            const catLabel = document.createElement('label');
+            catLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
+            catLabel.textContent = i18n_js.t('philoCalculator.catalystPriceLabel');
+            const catInput = document.createElement('input');
+            catInput.type = 'text';
+            catInput.value = this.catalystPrice.toLocaleString();
+            catInput.style.cssText = `
+            width: 130px;
+            padding: 4px 8px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 13px;
+        `;
+            catInput.addEventListener('change', () => {
+                const parsed = parseInt(catInput.value.replaceAll(',', '').replaceAll('.', ''), 10);
+                if (!isNaN(parsed)) {
+                    this.catalystPrice = parsed;
+                    this.recalculate();
+                }
+            });
+            catLabel.appendChild(catInput);
+
+            // Catalyst dropdown
+            const catalystLabel = document.createElement('label');
+            catalystLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
+            catalystLabel.textContent = i18n_js.t('philoCalculator.catalystLabel');
+            const catalystSelect = document.createElement('select');
+            catalystSelect.className = 'philo-catalyst-select';
+            catalystSelect.style.cssText = `
+            padding: 4px 8px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 13px;
+        `;
+            const catalystOptions = [
+                [NO_CATALYST, i18n_js.t('philoCalculator.noCatalystOption')],
+                ...Object.keys(CATALYST_BONUSES).map((hrid) => [hrid, this.getItemName(hrid)]),
+            ];
+            for (const [value, label] of catalystOptions) {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                option.selected = value === this.catalystHrid;
+                catalystSelect.appendChild(option);
+            }
+            catalystSelect.addEventListener('change', () => {
+                this.catalystHrid = catalystSelect.value;
+                this.loadDefaultPrices();
+                catInput.value = this.catalystPrice.toLocaleString();
+                this.recalculate();
+                this.saveSettings();
+            });
+            catalystLabel.appendChild(catalystSelect);
+
+            container.appendChild(philoLabel);
+            container.appendChild(catalystLabel);
+            container.appendChild(catLabel);
+
+            // Catalytic Tea checkbox
+            const teaCheckLabel = document.createElement('label');
+            teaCheckLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;';
+            const teaCheckbox = document.createElement('input');
+            teaCheckbox.type = 'checkbox';
+            teaCheckbox.checked = this.useCatalyticTea;
+            teaCheckbox.style.cursor = 'pointer';
+            teaCheckbox.addEventListener('change', () => {
+                this.useCatalyticTea = teaCheckbox.checked;
+                this.recalculate();
+                this.saveSettings();
+            });
+            teaCheckLabel.appendChild(teaCheckbox);
+
+            // Display base ratioBoost if available
+            const teaLabelText =
+                this.catalyticTeaRatioBoost > 0
+                    ? i18n_js.t('philoCalculator.catalyticTeaBoostLabel', {
+                          percent: formatters_js.formatPercentage(this.catalyticTeaRatioBoost, 1),
+                      })
+                    : i18n_js.t('philoCalculator.catalyticTeaUnavailableLabel');
+            teaCheckLabel.appendChild(document.createTextNode(teaLabelText));
+            container.appendChild(teaCheckLabel);
+
+            // Drink Concentration Dropdown
+            const drinkLabel = document.createElement('label');
+            drinkLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
+            drinkLabel.textContent = i18n_js.t('philoCalculator.drinkConcentrationLabel');
+            const drinkSelect = document.createElement('select');
+            drinkSelect.style.cssText = `
+            padding: 4px 8px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 13px;
+        `;
+
+            // Populate dropdown with enhancement levels +0 through +20
+            for (let level = 0; level <= 20; level++) {
+                const concentration = this.getDrinkConcentrationForLevel(level);
+                const option = document.createElement('option');
+                option.value = level;
+                option.textContent = `+${level} (${formatters_js.formatPercentage(concentration, 2)})`;
+                if (level === this.drinkConcentrationLevel) {
+                    option.selected = true;
+                }
+                drinkSelect.appendChild(option);
+            }
+
+            drinkSelect.addEventListener('change', () => {
+                this.drinkConcentrationLevel = parseInt(drinkSelect.value, 10);
+                this.recalculate();
+                this.saveSettings();
+            });
+            drinkLabel.appendChild(drinkSelect);
+            container.appendChild(drinkLabel);
+
+            // Hide negative profit checkbox
+            const hideNegCheckLabel = document.createElement('label');
+            hideNegCheckLabel.style.cssText =
+                'display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;';
+            const hideNegCheckbox = document.createElement('input');
+            hideNegCheckbox.type = 'checkbox';
+            hideNegCheckbox.checked = this.hideNegativeProfitItems;
+            hideNegCheckbox.style.cursor = 'pointer';
+            hideNegCheckbox.addEventListener('change', () => {
+                this.hideNegativeProfitItems = hideNegCheckbox.checked;
+                this.renderTable();
+                this.saveSettings();
+            });
+            hideNegCheckLabel.appendChild(hideNegCheckbox);
+            hideNegCheckLabel.appendChild(document.createTextNode(i18n_js.t('philoCalculator.hideNegativeProfitLabel')));
+            container.appendChild(hideNegCheckLabel);
+
+            // Filter label
+            const filterLabel = document.createElement('label');
+            filterLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
+            filterLabel.textContent = i18n_js.t('philoCalculator.filterLabel');
+            const filterInput = document.createElement('input');
+            filterInput.type = 'text';
+            filterInput.placeholder = i18n_js.t('alchemyHistoryViewer.itemNamePlaceholder');
+            filterInput.value = this.filterText;
+            filterInput.style.cssText = `
+            width: 140px;
+            padding: 4px 8px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 13px;
+        `;
+            filterInput.addEventListener('input', () => {
+                this.filterText = filterInput.value;
+                this.renderTable();
+                this.saveSettings();
+            });
+            filterLabel.appendChild(filterInput);
+            container.appendChild(filterLabel);
+
+            // Refresh prices button
+            const refreshBtn = document.createElement('button');
+            refreshBtn.textContent = i18n_js.t('philoCalculator.refreshPricesButton');
+            refreshBtn.style.cssText = `
+            padding: 4px 12px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        `;
+            refreshBtn.addEventListener('mouseenter', () => {
+                refreshBtn.style.background = '#357abd';
+            });
+            refreshBtn.addEventListener('mouseleave', () => {
+                refreshBtn.style.background = '#4a90e2';
+            });
+            refreshBtn.addEventListener('click', async () => {
+                refreshBtn.disabled = true;
+                refreshBtn.textContent = i18n_js.t('philoCalculator.refreshingPricesStatus');
+                refreshBtn.style.opacity = '0.6';
+                try {
+                    await marketAPI.fetch(true);
+                    this.loadDefaultPrices();
+                    // Update the price inputs to reflect new data
+                    const inputs = container.querySelectorAll('input[type="text"]');
+                    if (inputs[0]) inputs[0].value = this.philoPrice.toLocaleString();
+                    if (inputs[1]) inputs[1].value = this.catalystPrice.toLocaleString();
+                    this.recalculate();
+                } catch (error) {
+                    console.error('[PhiloCalculator] Failed to refresh prices:', error);
+                }
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = i18n_js.t('philoCalculator.refreshPricesButton');
+                refreshBtn.style.opacity = '1';
+            });
+            container.appendChild(refreshBtn);
+
+            return container;
+        }
+
+        /**
+         * Editable cost cell. A typed price is saved as the item's custom price override (the same
+         * one used by the rest of Toolasha); clearing it falls back to the market price.
+         * @param {Object} row - Row data
+         * @returns {HTMLInputElement}
+         */
+        createCostInput(row) {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'philo-cost-input';
+            input.value = row.needsPrice ? '' : Math.round(row.cost).toLocaleString();
+            input.placeholder = row.needsPrice ? i18n_js.t('philoCalculator.noMarketPricePlaceholder') : '';
+            input.title = row.hasCustomCost ? i18n_js.t('philoCalculator.customCostTooltip') : '';
+            input.style.cssText = `
+            width: 90px;
+            padding: 2px 6px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid ${row.hasCustomCost ? '#4a90e2' : row.needsPrice ? '#f59e0b' : '#555'};
+            border-radius: 4px;
+            font-size: 12px;
+            text-align: right;
+        `;
+            input.addEventListener('change', () => this.setItemCost(row.itemHrid, input.value));
+            return input;
+        }
+
+        /**
+         * Save (or clear) the custom price for an item and recalculate
+         * @param {string} itemHrid - Item HRID
+         * @param {string} rawValue - Text typed into the cost cell
+         */
+        async setItemCost(itemHrid, rawValue) {
+            const trimmed = String(rawValue).trim();
+            let sell = null;
+            if (trimmed !== '') {
+                const parsed = parseInt(trimmed.replaceAll(',', '').replaceAll('.', ''), 10);
+                if (isNaN(parsed) || parsed < 0) {
+                    this.renderTable();
+                    return;
+                }
+                sell = parsed;
+            }
+
+            try {
+                const existing = marketData_js.getCustomPriceOverrides()[`${itemHrid}:0`];
+                await marketData_js.setCustomPriceOverride(itemHrid, 0, existing?.buy ?? null, sell);
+            } catch (error) {
+                console.error('[PhiloCalculator] Failed to save custom price:', error);
+            }
+            this.recalculate();
+        }
+
+        /**
+         * Recalculate all rows and re-render
+         */
+        recalculate() {
+            this.calculateAllRows();
+            this.renderTable();
+        }
+
+        /**
+         * Render the results table
+         */
+        renderTable() {
+            const container = this.modal?.querySelector('.philo-calc-table-container');
+            if (!container) return;
+
+            const columns = [
+                { key: 'name', label: i18n_js.t('riskOfRuinUi.colItem'), align: 'left' },
+                { key: 'cost', label: i18n_js.t('riskOfRuinUi.colCost') },
+                { key: 'philoChance', label: i18n_js.t('philoCalculator.colPhiloChance') },
+                { key: 'returnChance', label: i18n_js.t('philoCalculator.colReturnChance') },
+                { key: 'transmuteChance', label: i18n_js.t('philoCalculator.colBaseTransmuteChance') },
+                { key: 'effectiveTransmuteChance', label: i18n_js.t('philoCalculator.colEffTransmuteChance') },
+                { key: 'transmuteCost', label: i18n_js.t('philoCalculator.colTransmuteCost') },
+                { key: 'ev', label: i18n_js.t('riskOfRuinUi.colEv') },
+                { key: 'itemsPerAction', label: i18n_js.t('philoCalculator.colItemsPerAction') },
+                { key: 'actionsPerPhilo', label: i18n_js.t('philoCalculator.colActionsPerPhilo') },
+                { key: 'itemsPerPhilo', label: i18n_js.t('philoCalculator.colItemsPerPhilo') },
+                { key: 'profitPerPhilo', label: i18n_js.t('philoCalculator.colProfitPerPhilo') },
+                { key: 'profitMargin', label: i18n_js.t('philoCalculator.colProfitMargin') },
+                { key: 'timePerPhiloSeconds', label: i18n_js.t('philoCalculator.colTimePerPhilo') },
+                { key: 'profitPerHour', label: i18n_js.t('philoCalculator.colProfitPerHour') },
+                { key: 'revenuePerHour', label: i18n_js.t('philoCalculator.colRevenuePerHour') },
+                { key: 'costPerHour', label: i18n_js.t('philoCalculator.colCostPerHour') },
+            ];
+
+            const table = document.createElement('table');
+            table.style.cssText = `
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        `;
+
+            // Header
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+
+            for (const col of columns) {
+                const th = document.createElement('th');
+                th.style.cssText = `
+                padding: 8px 6px;
+                text-align: ${col.align || 'right'};
+                border-bottom: 2px solid #555;
+                cursor: pointer;
+                user-select: none;
+                white-space: nowrap;
+                position: sticky;
+                top: 0;
+                background: #2a2a2a;
+                z-index: 1;
+            `;
+
+                const arrow = this.sortColumn === col.key ? (this.sortDirection === 'asc' ? ' \u25B2' : ' \u25BC') : '';
+                th.textContent = col.label + arrow;
+
+                th.addEventListener('click', () => this.toggleSort(col.key));
+                headerRow.appendChild(th);
+            }
+
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Body
+            const tbody = document.createElement('tbody');
+
+            // Apply item name filter
+            const filterLower = this.filterText.toLowerCase();
+            let filteredRows = filterLower
+                ? this.rows.filter((row) => row.name.toLowerCase().includes(filterLower))
+                : this.rows;
+
+            // Apply negative profit filter
+            if (this.hideNegativeProfitItems) {
+                // Unpriced rows stay visible so they can be priced
+                filteredRows = filteredRows.filter((row) => row.needsPrice || row.profitPerPhilo >= 0);
+            }
+
+            for (let i = 0; i < filteredRows.length; i++) {
+                const row = filteredRows[i];
+                const tr = document.createElement('tr');
+                const bgColor = i % 2 === 0 ? '#2a2a2a' : '#252525';
+                tr.style.cssText = `background: ${bgColor};`;
+
+                for (const col of columns) {
+                    const td = document.createElement('td');
+                    td.style.cssText = `
+                    padding: 6px;
+                    text-align: ${col.align || 'right'};
+                    white-space: nowrap;
+                `;
+
+                    const value = row[col.key];
+
+                    if (col.key === 'cost') {
+                        td.appendChild(this.createCostInput(row));
+                        tr.appendChild(td);
+                        continue;
+                    }
+
+                    // Cost-derived figures are blank until an unpriced item gets a price
+                    if (value === null || value === undefined) {
+                        td.textContent = '\u2014';
+                        tr.appendChild(td);
+                        continue;
+                    }
+
+                    // Format based on column type
+                    switch (col.key) {
+                        case 'name':
+                            td.textContent = value;
+                            break;
+                        case 'philoChance':
+                        case 'returnChance':
+                        case 'transmuteChance':
+                        case 'effectiveTransmuteChance':
+                            td.textContent = formatters_js.formatPercentage(value, 2);
+                            break;
+                        case 'profitMargin':
+                            td.textContent = formatters_js.formatPercentage(value, 1);
+                            td.style.color = value >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                            break;
+                        case 'timePerPhiloSeconds':
+                            td.textContent = formatters_js.timeReadable(value);
+                            break;
+                        case 'profitPerPhilo':
+                        case 'profitPerHour':
+                            td.textContent = formatters_js.formatLargeNumber(Math.round(value)) + (row.isOutlier ? ' ⚠' : '');
+                            if (row.isOutlier) td.title = i18n_js.t('marketData.outlierPriceWarningTooltip');
+                            td.style.color = value >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                            break;
+                        case 'revenuePerHour':
+                        case 'costPerHour':
+                            td.textContent = formatters_js.formatLargeNumber(Math.round(value));
+                            break;
+                        case 'actionsPerPhilo':
+                        case 'itemsPerPhilo':
+                            td.textContent = formatters_js.formatLargeNumber(Math.round(value));
+                            break;
+                        case 'itemsPerAction':
+                            td.textContent = value.toFixed(2);
+                            break;
+                        default:
+                            td.textContent = formatters_js.formatLargeNumber(Math.round(value));
+                            break;
+                    }
+
+                    tr.appendChild(td);
+                }
+
+                tbody.appendChild(tr);
+            }
+
+            table.appendChild(tbody);
+
+            container.innerHTML = '';
+            container.appendChild(table);
+        }
+    }
+
+    const philoCalculator = new PhiloCalculator();
+
+    /**
+     * Personal Trade History Module
+     * Tracks your buy/sell prices for marketplace items
+     */
+
+
+    /**
+     * TradeHistory class manages personal buy/sell price tracking
+     */
+    class TradeHistory {
+        constructor() {
+            this.history = {}; // itemHrid:enhancementLevel -> { buy, sell }
+            this.isInitialized = false;
+            this.isLoaded = false;
+            this.characterId = null;
+            this.marketUpdateHandler = null; // Store handler reference for cleanup
+        }
+
+        /**
+         * Get character-specific storage key
+         * @returns {string} Storage key with character ID suffix
+         */
+        getStorageKey() {
+            if (this.characterId) {
+                return `tradeHistory_${this.characterId}`;
+            }
+            return 'tradeHistory'; // Fallback for no character ID
+        }
+
+        /**
+         * Setup setting listener for feature toggle
+         */
+        setupSettingListener() {
+            config.onSettingChange('market_tradeHistory', (value) => {
+                if (value) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+        }
+
+        /**
+         * Initialize trade history tracking
+         */
+        async initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                return;
+            }
+
+            if (!config.getSetting('market_tradeHistory')) {
+                return;
+            }
+
+            // Get current character ID
+            this.characterId = dataManager.getCurrentCharacterId();
+
+            // Load existing history from storage
+            await this.loadHistory();
+
+            this.marketUpdateHandler = (data) => {
+                this.handleMarketUpdate(data);
+            };
+
+            // Hook into data manager for market listing updates
+            dataManager.on('market_listings_updated', this.marketUpdateHandler);
+
+            this.isInitialized = true;
+        }
+
+        /**
+         * Load trade history from storage
+         */
+        async loadHistory() {
+            try {
+                const storageKey = this.getStorageKey();
+                const saved = await storage.getJSON(storageKey, 'settings', {});
+                this.history = saved || {};
+                this.isLoaded = true;
+            } catch (error) {
+                console.error('[TradeHistory] Failed to load history:', error);
+                this.history = {};
+                this.isLoaded = true;
+            }
+        }
+
+        /**
+         * Save trade history to storage
+         */
+        async saveHistory() {
+            try {
+                const storageKey = this.getStorageKey();
+                await storage.setJSON(storageKey, this.history, 'settings', true);
+            } catch (error) {
+                console.error('[TradeHistory] Failed to save history:', error);
+            }
+        }
+
+        /**
+         * Handle market_listings_updated WebSocket message
+         * @param {Object} data - Market update data
+         */
+        handleMarketUpdate(data) {
+            if (!data.endMarketListings) return;
+
+            let hasChanges = false;
+
+            // Process each completed order
+            data.endMarketListings.forEach((order) => {
+                // Only track orders that actually filled
+                if (order.filledQuantity === 0) return;
+
+                const key = `${order.itemHrid}:${order.enhancementLevel}`;
+
+                // Get existing history for this item or create new
+                const itemHistory = this.history[key] || {};
+
+                // Update buy or sell price
+                if (order.isSell) {
+                    itemHistory.sell = order.price;
+                } else {
+                    itemHistory.buy = order.price;
+                }
+
+                this.history[key] = itemHistory;
+                hasChanges = true;
+            });
+
+            // Save to storage if any changes
+            if (hasChanges) {
+                this.saveHistory();
+            }
+        }
+
+        /**
+         * Get trade history for a specific item
+         * @param {string} itemHrid - Item HRID
+         * @param {number} enhancementLevel - Enhancement level (default 0)
+         * @returns {Object|null} { buy, sell } or null if no history
+         */
+        getHistory(itemHrid, enhancementLevel = 0) {
+            const key = `${itemHrid}:${enhancementLevel}`;
+            return this.history[key] || null;
+        }
+
+        /**
+         * Check if history data is loaded
+         * @returns {boolean}
+         */
+        isReady() {
+            return this.isLoaded;
+        }
+
+        /**
+         * Clear all trade history
+         */
+        async clearHistory() {
+            this.history = {};
+            await this.saveHistory();
+        }
+
+        /**
+         * Disable the feature
+         */
+        disable() {
+            if (this.marketUpdateHandler) {
+                dataManager.off('market_listings_updated', this.marketUpdateHandler);
+                this.marketUpdateHandler = null;
+            }
+
+            // Don't clear history data, just stop tracking
+            this.isInitialized = false;
+        }
+
+        /**
+         * Handle character switch - clear old data and reinitialize
+         */
+        async handleCharacterSwitch() {
+            // Disable first to clean up old handlers
+            this.disable();
+
+            // Clear old character's data from memory
+            this.history = {};
+            this.isLoaded = false;
+
+            // Reinitialize with new character
+            await this.initialize();
+        }
+    }
+
+    const tradeHistory = new TradeHistory();
+    tradeHistory.setupSettingListener();
+
+    // Setup character switch handler
+    dataManager.on('character_switched', () => {
+        if (config.getSetting('market_tradeHistory')) {
+            tradeHistory.handleCharacterSwitch();
+        }
+    });
+
+    /**
+     * Trade History Display Module
+     * Shows your last buy/sell prices in the marketplace panel
+     */
+
+
+    class TradeHistoryDisplay {
+        constructor() {
+            this.isActive = false;
+            this.unregisterObserver = null;
+            this.unregisterWebSocket = null;
+            this.currentItemHrid = null;
+            this.currentEnhancementLevel = 0;
+            this.currentOrderBookData = null;
+            this.isInitialized = false;
+            this.needsPriceDataRetry = false; // Track if we need to retry due to missing price data
+            this.comparisonModeHandler = null;
+        }
+
+        /**
+         * Initialize the display system
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            if (!config.getSetting('market_tradeHistory')) {
+                return;
+            }
+
+            this.isInitialized = true;
+            this.setupWebSocketListener();
+            this.setupSettingListener();
+            this.isActive = true;
+        }
+
+        /**
+         * Setup setting change listener to refresh display when comparison mode changes
+         */
+        setupSettingListener() {
+            if (this.comparisonModeHandler) return;
+
+            this.comparisonModeHandler = () => {
+                // Refresh display if currently viewing an item
+                if (this.currentItemHrid) {
+                    const history = tradeHistory.getHistory(this.currentItemHrid, this.currentEnhancementLevel);
+                    this.updateDisplay(null, history);
+                }
+            };
+            config.onSettingChange('market_tradeHistoryComparisonMode', this.comparisonModeHandler);
+        }
+
+        /**
+         * Setup WebSocket listener for order book updates
+         */
+        setupWebSocketListener() {
+            const orderBookHandler = (data) => {
+                if (data.marketItemOrderBooks) {
+                    // Store order book data for current item
+                    this.currentOrderBookData = data.marketItemOrderBooks;
+
+                    // Extract item info from WebSocket data
+                    const itemHrid = data.marketItemOrderBooks.itemHrid;
+
+                    // Get enhancement level from DOM
+                    const enhancementLevel = this.getCurrentEnhancementLevel();
+
+                    // Check if this is the same item
+                    if (itemHrid === this.currentItemHrid && enhancementLevel === this.currentEnhancementLevel) {
+                        // Re-render if display was removed by React, otherwise skip
+                        if (!this.needsPriceDataRetry && document.querySelector('.mwi-trade-history')) {
+                            return;
+                        }
+                    }
+
+                    // Update tracking
+                    this.currentItemHrid = itemHrid;
+                    this.currentEnhancementLevel = enhancementLevel;
+
+                    // Get trade history for this item
+                    const history = tradeHistory.getHistory(itemHrid, enhancementLevel);
+
+                    // Update display (pass null for panel since we don't use it)
+                    this.updateDisplay(null, history);
+                }
+            };
+
+            dataManager.on('market_item_order_books_updated', orderBookHandler);
+
+            // Store unregister function for cleanup
+            this.unregisterWebSocket = () => {
+                dataManager.off('market_item_order_books_updated', orderBookHandler);
+            };
+        }
+
+        /**
+         * Get current enhancement level being viewed in order book
+         * @returns {number} Enhancement level (0 for non-equipment)
+         */
+        getCurrentEnhancementLevel() {
+            // Check for enhancement level indicator in the current item display
+            const currentItemElement = document.querySelector('[class*="MarketplacePanel_currentItem"]');
+            if (currentItemElement) {
+                const enhancementElement = currentItemElement.querySelector('[class*="Item_enhancementLevel"]');
+                if (enhancementElement) {
+                    const match = enhancementElement.textContent.match(/\+(\d+)/);
+                    if (match) {
+                        return parseInt(match[1], 10);
+                    }
+                }
+            }
+
+            // Default to enhancement level 0 (non-equipment or base equipment)
+            return 0;
+        }
+
+        /**
+         * Update trade history display
+         * @param {HTMLElement} panel - Current item panel (unused, kept for signature compatibility)
+         * @param {Object|null} history - Trade history { buy, sell } or null
+         */
+        updateDisplay(panel, history) {
+            // Remove existing display
+            const existing = document.querySelectorAll('.mwi-trade-history');
+            existing.forEach((el) => el.remove());
+
+            // Don't show anything if no history
+            if (!history || (!history.buy && !history.sell)) {
+                return;
+            }
+
+            // Get current top order prices from the DOM
+            const currentPrices = this.extractCurrentPrices(panel);
+
+            // Don't show display if we don't have current prices yet
+            if (!currentPrices) {
+                this.needsPriceDataRetry = true;
+                return;
+            }
+
+            // Get comparison mode setting
+            const comparisonMode = config.getSettingValue('market_tradeHistoryComparisonMode', 'instant');
+
+            // Find the button container - it's outside the currentItem panel
+            // Search in the entire document since button container is at a higher level
+            const buttonContainer = document.querySelector('[class*="MarketplacePanel_marketNavButtonContainer"]');
+            if (!buttonContainer) {
+                return;
+            }
+
+            // Create history display
+            const historyDiv = document.createElement('div');
+            historyDiv.className = 'mwi-trade-history';
+
+            historyDiv.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-left: 12px;
+            font-size: 0.85rem;
+            color: #888;
+            padding: 6px 12px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 4px;
+            white-space: nowrap;
+        `;
+
+            // Build content
+            const parts = [];
+            parts.push(`<span style="color: #aaa; font-weight: 500;">${i18n_js.t('tradeHistoryDisplay.lastLabel')}</span>`);
+
+            if (history.buy) {
+                const buyColor = this.getBuyColor(history.buy, currentPrices, comparisonMode);
+                parts.push(
+                    `<span style="color: ${buyColor}; font-weight: 600;" title="${i18n_js.t('tradeHistoryDisplay.buyPriceTooltip')}">${i18n_js.t('tradeHistoryDisplay.buyValueLabel', { value: formatters_js.formatKMB3Digits(history.buy) })}</span>`
+                );
+            }
+
+            if (history.buy && history.sell) {
+                parts.push(`<span style="color: #555;">|</span>`);
+            }
+
+            if (history.sell) {
+                const sellColor = this.getSellColor(history.sell, currentPrices, comparisonMode);
+                parts.push(
+                    `<span style="color: ${sellColor}; font-weight: 600;" title="${i18n_js.t('tradeHistoryDisplay.sellPriceTooltip')}">${i18n_js.t('tradeHistoryDisplay.sellValueLabel', { value: formatters_js.formatKMB3Digits(history.sell) })}</span>`
+                );
+            }
+
+            historyDiv.innerHTML = parts.join('');
+
+            // Append to button container
+            buttonContainer.appendChild(historyDiv);
+
+            // Clear retry flag since we successfully displayed
+            this.needsPriceDataRetry = false;
+        }
+
+        /**
+         * Extract current top order prices from WebSocket order book data
+         * @param {HTMLElement} panel - Current item panel (unused, kept for signature compatibility)
+         * @returns {Object|null} { ask, bid } or null
+         */
+        extractCurrentPrices(_panel) {
+            // Use WebSocket order book data instead of DOM scraping
+            if (!this.currentOrderBookData || !this.currentOrderBookData.orderBooks) {
+                return null;
+            }
+
+            // Get current enhancement level to find correct order book
+            const enhancementLevel = this.getCurrentEnhancementLevel();
+
+            // orderBooks is an array indexed by enhancement level
+            const orderBook = this.currentOrderBookData.orderBooks[enhancementLevel];
+            if (!orderBook) {
+                return null;
+            }
+
+            // Extract top ask (lowest sell price) and top bid (highest buy price)
+            const topAsk = orderBook.asks?.[0]?.price || null;
+            const topBid = orderBook.bids?.[0]?.price || null;
+
+            // Return partial data — at least one side must exist
+            if (!topAsk && !topBid) {
+                return null;
+            }
+
+            return {
+                ask: topAsk,
+                bid: topBid,
+            };
+        }
+
+        /**
+         * Get color for buy price based on comparison mode
+         * @param {number} lastBuy - Your last buy price
+         * @param {Object|null} currentPrices - Current market prices { ask, bid }
+         * @param {string} comparisonMode - 'instant' or 'listing'
+         * @returns {string} Color code
+         */
+        getBuyColor(lastBuy, currentPrices, _comparisonMode) {
+            if (!currentPrices) {
+                return '#888'; // Grey if no market data
+            }
+
+            // Both modes compare to ask (what you'd pay to buy)
+            const comparePrice = currentPrices.ask;
+
+            if (!comparePrice || comparePrice === -1) {
+                return '#888'; // Grey if no market data
+            }
+
+            // Both instant and listing modes use same logic:
+            // "If I buy now, would I pay more or less than last time?"
+            if (comparePrice > lastBuy) {
+                return config.COLOR_LOSS; // Red - would pay more now (market worse)
+            } else if (comparePrice < lastBuy) {
+                return config.COLOR_PROFIT; // Green - would pay less now (market better)
+            }
+
+            return '#888'; // Grey - same price
+        }
+
+        /**
+         * Get color for sell price based on comparison mode
+         * @param {number} lastSell - Your last sell price
+         * @param {Object|null} currentPrices - Current market prices { ask, bid }
+         * @param {string} comparisonMode - 'instant' or 'listing'
+         * @returns {string} Color code
+         */
+        getSellColor(lastSell, currentPrices, comparisonMode) {
+            if (!currentPrices) {
+                return '#888'; // Grey if no market data
+            }
+
+            // Choose comparison price based on mode
+            const comparePrice = comparisonMode === 'instant' ? currentPrices.bid : currentPrices.ask;
+
+            if (!comparePrice || comparePrice === -1) {
+                return '#888'; // Grey if no market data
+            }
+
+            // Both modes use same logic: "If I sell now, would I get more or less than last time?"
+            if (comparePrice > lastSell) {
+                return config.COLOR_PROFIT; // Green - would get more now (market better)
+            } else if (comparePrice < lastSell) {
+                return config.COLOR_LOSS; // Red - would get less now (market worse)
+            }
+
+            return '#888'; // Grey - same price
+        }
+
+        /**
+         * Disable the display
+         */
+        disable() {
+            if (this.comparisonModeHandler) {
+                config.offSettingChange('market_tradeHistoryComparisonMode', this.comparisonModeHandler);
+                this.comparisonModeHandler = null;
+            }
+
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+
+            if (this.unregisterWebSocket) {
+                this.unregisterWebSocket();
+                this.unregisterWebSocket = null;
+            }
+
+            // Remove all displays
+            document.querySelectorAll('.mwi-trade-history').forEach((el) => el.remove());
+
+            this.isActive = false;
+            this.currentItemHrid = null;
+            this.currentEnhancementLevel = 0;
+            this.currentOrderBookData = null;
+            this.isInitialized = false;
+        }
+    }
+
+    const tradeHistoryDisplay = new TradeHistoryDisplay();
+
+    /**
+     * Network Alert Display
+     * Shows a warning message when market data cannot be fetched
+     */
+
+
+    class NetworkAlert {
+        constructor() {
+            this.container = null;
+            this.unregisterHandlers = [];
+            this.isVisible = false;
+        }
+
+        /**
+         * Initialize network alert display
+         */
+        initialize() {
+            if (!config.getSetting('networkAlert')) {
+                return;
+            }
+
+            // 1. Check if header exists already
+            const existingElem = document.querySelector('[class*="Header_totalLevel"]');
+            if (existingElem) {
+                this.prepareContainer(existingElem);
+            }
+
+            // 2. Watch for header to appear (handles SPA navigation)
+            const unregister = domObserver.onClass('NetworkAlert', 'Header_totalLevel', (elem) => {
+                this.prepareContainer(elem);
+            });
+            this.unregisterHandlers.push(unregister);
+        }
+
+        /**
+         * Prepare container but don't show yet
+         * @param {Element} totalLevelElem - Total level element
+         */
+        prepareContainer(totalLevelElem) {
+            // Check if already prepared
+            if (this.container && document.body.contains(this.container)) {
+                return;
+            }
+
+            // Remove any existing container
+            if (this.container) {
+                this.container.remove();
+            }
+
+            // Create container (hidden by default)
+            this.container = document.createElement('div');
+            this.container.className = 'mwi-network-alert';
+            this.container.style.cssText = `
+            display: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #ff4444;
+            text-wrap: nowrap;
+            margin-left: 16px;
+        `;
+
+            // Insert after total level (or after networth if it exists)
+            const networthElem = totalLevelElem.parentElement.querySelector('.mwi-networth-header');
+            if (networthElem) {
+                networthElem.insertAdjacentElement('afterend', this.container);
+            } else {
+                totalLevelElem.insertAdjacentElement('afterend', this.container);
+            }
+        }
+
+        /**
+         * Show the network alert
+         * @param {string} message - Alert message to display
+         */
+        show(message = i18n_js.t('networkAlert.marketDataUnavailable')) {
+            if (!config.getSetting('networkAlert')) {
+                return;
+            }
+
+            if (!this.container || !document.body.contains(this.container)) {
+                // Try to prepare container if not ready
+                const totalLevelElem = document.querySelector('[class*="Header_totalLevel"]');
+                if (totalLevelElem) {
+                    this.prepareContainer(totalLevelElem);
+                } else {
+                    // Header not found, fallback to console
+                    console.warn('[Network Alert]', message);
+                    return;
+                }
+            }
+
+            if (this.container) {
+                this.container.textContent = message;
+                this.container.style.display = 'block';
+                this.isVisible = true;
+            }
+        }
+
+        /**
+         * Hide the network alert
+         */
+        hide() {
+            if (this.container && document.body.contains(this.container)) {
+                this.container.style.display = 'none';
+                this.isVisible = false;
+            }
+        }
+
+        /**
+         * Cleanup
+         */
+        disable() {
+            this.hide();
+
+            if (this.container) {
+                this.container.remove();
+                this.container = null;
+            }
+
+            this.unregisterHandlers.forEach((unregister) => unregister());
+            this.unregisterHandlers = [];
+        }
+    }
+
+    const networkAlert = new NetworkAlert();
+
+    /**
+     * Marketplace Shortcuts Module
+     * Adds a "Marketplace Action" dropdown to the inventory item submenu
+     * with quick actions: Sell Now, Buy Now, New Sell Listing, New Buy Listing
+     */
+
+
+    /** Native input value setter for triggering React state updates */
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+
+    /**
+     * Marketplace modal title spec per shortcut action: English title plus the
+     * game's i18n key (namespace: marketplacePanel). Modal titles are localized
+     * (zh: 立即购买 / 出售挂牌 ...), so both variants must be accepted.
+     */
+    const MARKETPLACE_MODAL_TITLES = {
+        buy: { english: 'Buy Now', key: 'buyNow' },
+        sell: { english: 'Sell Now', key: 'sellNow' },
+        'buy-listing': { english: 'Buy Listing', key: 'buyListing' },
+        'sell-listing': { english: 'Sell Listing', key: 'sellListing' },
+    };
+
+    /**
+     * MarketplaceShortcuts class manages the dropdown in item submenus
+     */
+    class MarketplaceShortcuts {
+        constructor() {
+            this.unregisterHandlers = [];
+            this.isInitialized = false;
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.itemNameToHridCache = null;
+            this.closeHandler = null;
+            this.pendingAutofill = null;
+            this.pendingAutofillWriteTimers = new Set();
+            this.pendingAutofillExpiryTimer = null;
+            this.addMode = false;
+        }
+
+        /**
+         * Initialize marketplace shortcuts feature
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            this.isInitialized = true;
+
+            // Watch for item action menu popups
+            const unregister = domObserver.onClass('MarketplaceShortcuts', 'Item_actionMenu', (actionMenu) => {
+                this.injectDropdown(actionMenu);
+            });
+            this.unregisterHandlers.push(unregister);
+
+            // Watch for marketplace modals to autofill quantity and inject quick input buttons
+            const unregisterModal = domObserver.onClass('MarketplaceShortcuts_modal', 'Modal_modalContainer', (modal) => {
+                this.autofillQuantity(modal);
+                this.injectQuickInputButtons(modal);
+                this.injectMultiplierButtons(modal);
+                this.injectOwnedCount(modal);
+                this.focusQuantityInput(modal);
+            });
+            this.unregisterHandlers.push(unregisterModal);
+
+            this.closeHandler = () => this.closeAllDropdowns();
+            document.addEventListener('click', this.closeHandler);
+        }
+
+        /**
+         * Close every currently-rendered Marketplace shortcut dropdown.
+         */
+        closeAllDropdowns() {
+            document.querySelectorAll('.mwi-marketplace-dropdown').forEach((wrapper) => {
+                const panel = wrapper._dropdownPanel;
+                if (panel) panel.style.display = 'none';
+                const chevron = wrapper.querySelector('.mwi-mp-chevron');
+                if (chevron) chevron.style.transform = '';
+            });
+        }
+
+        /**
+         * Inject marketplace dropdown into the item action menu
+         * @param {HTMLElement} actionMenu - The Item_actionMenu element
+         */
+        injectDropdown(actionMenu) {
+            // Check if feature is enabled
+            if (!config.getSetting('market_marketplaceShortcuts')) return;
+
+            // Skip if already injected
+            if (actionMenu.querySelector('.mwi-marketplace-dropdown')) {
+                return;
+            }
+
+            // Get item name
+            const nameEl = actionMenu.querySelector('[class*="Item_name"]');
+            if (!nameEl) return;
+
+            const itemName = nameEl.textContent.trim();
+            const itemHrid = this.findItemHrid(itemName);
+            if (!itemHrid) return;
+
+            // Get enhancement level (e.g. "+3" → 3, absent → 0)
+            let enhancementLevel = 0;
+            const enhEl = actionMenu.querySelector('[class*="Item_enhancementLevel"]');
+            if (enhEl) {
+                const match = enhEl.textContent.match(/\+(\d+)/);
+                if (match) {
+                    enhancementLevel = parseInt(match[1], 10);
+                }
+            }
+
+            // Check tradeability
+            const gameData = dataManager.getInitClientData();
+            if (!gameData?.itemDetailMap) return;
+
+            const itemDetails = gameData.itemDetailMap[itemHrid];
+            if (!itemDetails?.isTradable) return;
+
+            // Find "View Marketplace" button. The game renders this item-action-menu
+            // button through the same generic full-width button component as every
+            // other menu entry (no stable class/href), so match its localized label
+            // (game key: item.viewMarketplace) with English as fallback.
+            const viewMarketplaceLabel = translateGameName('item', 'viewMarketplace', 'View Marketplace');
+            const viewMarketplaceBtn = this.findButtonByText(actionMenu, 'View Marketplace', viewMarketplaceLabel);
+            if (!viewMarketplaceBtn) return;
+
+            // Build and insert dropdown
+            const dropdown = this.buildDropdown(actionMenu, itemHrid, enhancementLevel);
+            viewMarketplaceBtn.insertAdjacentElement('afterend', dropdown);
+        }
+
+        /**
+         * Build the dropdown UI
+         * @param {HTMLElement} actionMenu - The action menu container
+         * @param {string} itemHrid - Item HRID for marketplace navigation
+         * @param {number} enhancementLevel - Enhancement level (0 for base items)
+         * @returns {HTMLElement} Dropdown wrapper element
+         */
+        buildDropdown(actionMenu, itemHrid, enhancementLevel = 0) {
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('mwi-marketplace-dropdown');
+            wrapper.style.cssText = 'position: relative; width: 100%;';
+
+            // Create toggle button matching game button style
+            const toggle = document.createElement('button');
+            const existingBtn = actionMenu.querySelector('button');
+            if (existingBtn) {
+                toggle.className = existingBtn.className;
+            }
+            toggle.classList.add('mwi-marketplace-dropdown-toggle');
+            toggle.style.cssText = 'display: flex; justify-content: space-between; align-items: center; width: 100%;';
+            // Build top ask age subtitle if order book data is cached
+            let ageHtml = '';
+            const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
+            if (cacheEntry) {
+                const orderBookData = cacheEntry.data || cacheEntry;
+                const orderBooks = orderBookData?.orderBooks;
+                if (orderBooks) {
+                    // Handle both array format (index = enhancement level) and object format
+                    const orderBook = Array.isArray(orderBooks)
+                        ? orderBooks[enhancementLevel]
+                        : orderBooks[enhancementLevel];
+                    const topAsk = orderBook?.asks?.[0];
+                    if (topAsk?.createdTimestamp) {
+                        const ageMs = Date.now() - new Date(topAsk.createdTimestamp).getTime();
+                        if (ageMs > 0) {
+                            const ageStr = formatters_js.formatRelativeTime(ageMs);
+                            ageHtml = `<div style="font-size: 0.7em; opacity: 0.7; margin-top: 1px;">${i18n_js.t('marketplaceShortcuts.topAskAgeSubtitle', { age: ageStr })}</div>`;
+                        }
+                    }
+                }
+            }
+
+            toggle.innerHTML =
+                '<span style="flex: 1; text-align: center;">' +
+                i18n_js.t('marketplaceShortcuts.actionDropdownLabel') +
+                ageHtml +
+                '</span>' +
+                '<span class="mwi-mp-chevron" style="font-size: 0.65em; transition: transform 0.15s; display: inline-block;">▼</span>';
+
+            // Create dropdown panel (hidden by default). Rendered as a fixed-position portal
+            // appended to <body> rather than nested inside the game's own action menu, since that
+            // native menu is a short, overflow-clipped popup that would otherwise clip the panel's
+            // extra buttons off-screen.
+            const panel = document.createElement('div');
+            panel.classList.add('mwi-marketplace-dropdown-panel');
+            panel.style.cssText = `
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            flex-direction: column;
+            background: var(--color-surface, #1e1e2e);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+            padding: 4px;
+            gap: 3px;
+            box-sizing: border-box;
+        `;
+
+            // Action buttons
+            const actions = [
+                { label: i18n_js.t('marketplaceShortcuts.sellNowLabel'), type: 'sell', color: '#c2410c' },
+                { label: i18n_js.t('marketplaceShortcuts.buyNowLabel'), type: 'buy', color: '#2fc4a7' },
+                { label: i18n_js.t('marketplaceShortcuts.newSellListingLabel'), type: 'sell-listing', color: '#9a3412' },
+                { label: i18n_js.t('marketplaceShortcuts.newBuyListingLabel'), type: 'buy-listing', color: '#2fc4a7' },
+            ];
+
+            for (const action of actions) {
+                const btn = document.createElement('button');
+                btn.textContent = action.label;
+                btn.style.cssText = `
+                display: block;
+                width: 100%;
+                padding: 6px 12px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 0.85rem;
+                font-weight: 600;
+                color: #fff;
+                background: ${action.color};
+                text-align: center;
+                transition: opacity 0.15s;
+            `;
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.opacity = '0.85';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.opacity = '1';
+                });
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    closePanel();
+                    // Dismiss the game's action menu by simulating Escape
+                    document.dispatchEvent(
+                        new KeyboardEvent('keydown', {
+                            key: 'Escape',
+                            code: 'Escape',
+                            keyCode: 27,
+                            which: 27,
+                            bubbles: true,
+                            cancelable: true,
+                        })
+                    );
+                    this.executeAction(action.type, itemHrid, enhancementLevel);
+                });
+                panel.appendChild(btn);
+            }
+
+            // Toggle logic
+            let open = false;
+
+            const closePanel = () => {
+                open = false;
+                panel.style.display = 'none';
+                const chevron = toggle.querySelector('.mwi-mp-chevron');
+                if (chevron) chevron.style.transform = '';
+            };
+
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                open = !open;
+                if (open) {
+                    const rect = toggle.getBoundingClientRect();
+                    panel.style.top = `${rect.bottom + 4}px`;
+                    panel.style.left = `${rect.left}px`;
+                    panel.style.width = `${rect.width}px`;
+                }
+                panel.style.display = open ? 'flex' : 'none';
+                const chevron = toggle.querySelector('.mwi-mp-chevron');
+                if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
+            });
+
+            wrapper.appendChild(toggle);
+            document.body.appendChild(panel);
+            wrapper._dropdownPanel = panel;
+            return wrapper;
+        }
+
+        /**
+         * Clear local state for the active shortcut autofill without touching another owner's session.
+         * @param {number|null} [sessionId]
+         */
+        clearPendingAutofill(sessionId = null) {
+            if (sessionId !== null && this.pendingAutofill && this.pendingAutofill.sessionId !== sessionId) return;
+
+            for (const timer of this.pendingAutofillWriteTimers) {
+                clearTimeout(timer);
+            }
+            this.pendingAutofillWriteTimers.clear();
+            if (this.pendingAutofillExpiryTimer !== null) {
+                clearTimeout(this.pendingAutofillExpiryTimer);
+                this.pendingAutofillExpiryTimer = null;
+            }
+            this.pendingAutofill = null;
+        }
+
+        /**
+         * End the currently-owned shortcut session, if any.
+         */
+        endPendingAutofill() {
+            const sessionId = this.pendingAutofill?.sessionId ?? null;
+            if (sessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+                return;
+            }
+            this.clearPendingAutofill(sessionId);
+        }
+
+        /**
+         * Claim exclusive marketplace ownership for one shortcut quantity autofill.
+         * @param {{ quantity: number, itemHrid: string, enhancementLevel: number, actionType: string }} target
+         */
+        startPendingAutofill(target) {
+            let sessionId = null;
+            sessionId = marketplaceSession_js.marketplaceSession.start({
+                owner: marketplaceSession_js.MARKETPLACE_OWNER.SHORTCUTS,
+                onEnd: () => this.clearPendingAutofill(sessionId),
+            });
+
+            this.pendingAutofill = Object.freeze({ ...target, sessionId });
+            this.pendingAutofillExpiryTimer = setTimeout(() => {
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+            }, 10000);
+        }
+
+        /**
+         * Update the expected modal type while preserving the same owned session.
+         * Used when an unavailable instant order falls back to a new listing.
+         * @param {string} actionType
+         */
+        retargetPendingAutofill(actionType) {
+            const current = this.pendingAutofill;
+            if (!current || !marketplaceSession_js.marketplaceSession.isActive(current.sessionId)) return;
+            this.pendingAutofill = Object.freeze({ ...current, actionType });
+        }
+
+        /**
+         * Get the expected marketplace modal state for a shortcut action.
+         * @param {string} actionType
+         * @returns {Object|null}
+         */
+        getPendingAutofillMode(actionType) {
+            const titleSpec = MARKETPLACE_MODAL_TITLES[actionType];
+            if (!titleSpec) return null;
+            const flags = {
+                buy: { isSell: false, isPostNewListing: false, isInstantOrder: true },
+                sell: { isSell: true, isPostNewListing: false, isInstantOrder: true },
+                'buy-listing': { isSell: false, isPostNewListing: true, isInstantOrder: false },
+                'sell-listing': { isSell: true, isPostNewListing: true, isInstantOrder: false },
+            }[actionType];
+            return { header: titleSpec.english, ...flags };
+        }
+
+        /**
+         * Get every accepted modal header text for a shortcut action: the English
+         * title plus the game's current-language translation.
+         * @param {string} actionType
+         * @returns {string[]}
+         */
+        getModalHeaderLabels(actionType) {
+            const spec = MARKETPLACE_MODAL_TITLES[actionType];
+            if (!spec) return [];
+            const translated = translateGameName('marketplacePanel', spec.key, spec.english);
+            return translated === spec.english ? [spec.english] : [spec.english, translated];
+        }
+
+        /**
+         * Whether a live modal header corresponds to the given shortcut action,
+         * matching either the English title or its localized translation.
+         * @param {string} headerText
+         * @param {string} actionType
+         * @returns {boolean}
+         */
+        modalHeaderMatches(headerText, actionType) {
+            return this.getModalHeaderLabels(actionType).some((label) => headerText.includes(label));
+        }
+
+        /**
+         * Whether a modal header is any marketplace order/listing dialog
+         * (Buy/Sell Now, Buy/Sell Listing), in English or the game language.
+         * @param {string} headerText
+         * @returns {boolean}
+         */
+        isMarketplaceModalHeader(headerText) {
+            return Object.keys(MARKETPLACE_MODAL_TITLES).some((actionType) =>
+                this.modalHeaderMatches(headerText, actionType)
+            );
+        }
+
+        /**
+         * Verify that a live marketplace modal belongs to the exact shortcut target.
+         * @param {HTMLElement} modal
+         * @param {HTMLInputElement} quantityInput
+         * @param {Object} target
+         * @returns {boolean}
+         */
+        matchesPendingAutofill(modal, quantityInput, target) {
+            const expected = this.getPendingAutofillMode(target.actionType);
+            if (!expected || !modal?.isConnected || !quantityInput?.isConnected) return false;
+
+            const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
+            if (!this.modalHeaderMatches(headerText, target.actionType)) return false;
+
+            const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+            if (!state) return false;
+            if (state.marketTabKey !== 'MarketListings' || state.marketListingsView !== 'OrderBook') return false;
+            if (state.itemHrid !== target.itemHrid || state.enhancementLevel !== target.enhancementLevel) return false;
+            if (state.enhancementLevelInput !== target.enhancementLevel) return false;
+            if (state.isSell !== expected.isSell) return false;
+            if (state.showPostListing !== true) return false;
+            if (state.isPostNewListing !== expected.isPostNewListing) return false;
+            return state.isInstantOrder === expected.isInstantOrder;
+        }
+
+        /**
+         * Execute a marketplace action
+         * @param {string} actionType - 'sell', 'buy', 'sell-listing', 'buy-listing'
+         * @param {string} itemHrid - Item HRID
+         * @param {number} enhancementLevel - Enhancement level (0 for base items)
+         */
+        async executeAction(actionType, itemHrid, enhancementLevel = 0) {
+            this.endPendingAutofill();
+
+            // Read quantity from item submenu input before navigating away
+            let quantity = 0;
+            const amountInput = document.querySelector('[class*="Item_amountInputContainer"] input[type="number"]');
+            if (amountInput) {
+                const captured = parseInt(amountInput.value, 10);
+                if (captured > 0) quantity = captured;
+            }
+
+            // If no quantity was captured, default to inventory count for sell actions
+            if (quantity <= 0 && (actionType === 'sell' || actionType === 'sell-listing')) {
+                const inventory = dataManager.characterItems || [];
+                const match = inventory.find(
+                    (item) =>
+                        item.itemHrid === itemHrid &&
+                        (item.enhancementLevel || 0) === enhancementLevel &&
+                        item.itemLocationHrid === '/item_locations/inventory'
+                );
+                if (match && match.count > 0) quantity = match.count;
+            }
+
+            this.startPendingAutofill({ quantity, itemHrid, enhancementLevel, actionType });
+
+            // Navigate to marketplace for this item
+            if (!navigateToMarketplace(itemHrid, enhancementLevel)) {
+                this.endPendingAutofill();
+                return;
+            }
+
+            // Wait for the marketplace panel to render
+            await new Promise((resolve) => setTimeout(resolve, 300));
+
+            try {
+                switch (actionType) {
+                    case 'sell':
+                        await this.clickInstantActionButton('Sell');
+                        break;
+                    case 'buy':
+                        await this.clickInstantActionButton('Buy');
+                        break;
+                    case 'sell-listing':
+                        await this.clickListingButton('+ New Sell Listing', 'Button_sell');
+                        break;
+                    case 'buy-listing':
+                        await this.clickListingButton('+ New Buy Listing', 'Button_buy');
+                        break;
+                }
+            } catch {
+                // Instant sell/buy failed (no matching orders) — fall back to listing form
+                if (actionType === 'sell') {
+                    this.retargetPendingAutofill('sell-listing');
+                    await this.clickListingButton('+ New Sell Listing', 'Button_sell').catch(() => {});
+                } else if (actionType === 'buy') {
+                    this.retargetPendingAutofill('buy-listing');
+                    await this.clickListingButton('+ New Buy Listing', 'Button_buy').catch(() => {});
+                }
+            }
+        }
+
+        /**
+         * Find and click an instant action button (Sell/Buy) on the marketplace order book.
+         * These buttons have text inside MarketplacePanel_actionButtonText divs.
+         * The label is localized by the game (zh: marketplacePanel.sell 出售 / buy 购买);
+         * the English label stays as a fallback.
+         * @param {string} buttonText - 'Sell' or 'Buy' (English label / i18n key)
+         * @param {number} timeout - Max wait time in ms (default 3000)
+         * @returns {Promise<void>}
+         */
+        async clickInstantActionButton(buttonText, timeout = 3000) {
+            const start = Date.now();
+            const translatedLabel = translateGameName('marketplacePanel', buttonText.toLowerCase(), buttonText);
+            const acceptedLabels = translatedLabel === buttonText ? [buttonText] : [buttonText, translatedLabel];
+
+            return new Promise((resolve, reject) => {
+                const interval = setInterval(() => {
+                    const actionTexts = document.querySelectorAll('[class*="MarketplacePanel_actionButtonText"]');
+                    for (const div of actionTexts) {
+                        // Skip entries with SVGs (those are icon-only buttons)
+                        if (!div.querySelector('svg') && acceptedLabels.includes(div.textContent.trim())) {
+                            const parentBtn = div.closest('button');
+                            if (parentBtn) {
+                                clearInterval(interval);
+                                parentBtn.click();
+                                resolve();
+                                return;
+                            }
+                        }
+                    }
+
+                    if (Date.now() - start > timeout) {
+                        clearInterval(interval);
+                        reject(new Error(`Timeout waiting for instant action button: ${buttonText}`));
+                    }
+                }, 50);
+
+                this.timerRegistry.registerInterval(interval);
+            });
+        }
+
+        /**
+         * Find and click a new listing button (+ New Sell Listing / + New Buy Listing).
+         * These buttons use game's Button_sell or Button_buy CSS classes.
+         * The label is localized (zh: marketplacePanel.newSellListing 新出售挂牌 /
+         * newBuyListing 新购买挂牌); the rendered label may keep a leading '+', so a
+         * leading '+' and whitespace are stripped from both sides before comparing.
+         * The English label stays as a fallback.
+         * @param {string} buttonText - Full English button text to match
+         * @param {string} partialClass - Partial CSS class to match (e.g. 'Button_sell')
+         * @param {number} timeout - Max wait time in ms (default 3000)
+         * @returns {Promise<void>}
+         */
+        async clickListingButton(buttonText, partialClass, timeout = 3000) {
+            const start = Date.now();
+            const i18nKey = partialClass.includes('sell') ? 'newSellListing' : 'newBuyListing';
+            const translatedLabel = translateGameName('marketplacePanel', i18nKey, buttonText);
+            const acceptedLabels = translatedLabel === buttonText ? [buttonText] : [buttonText, translatedLabel];
+            // Normalize a possible leading '+' / whitespace from rendered labels
+            const normalizeLabel = (text) =>
+                text
+                    .trim()
+                    .replace(/^[+\s]+/, '')
+                    .trim();
+
+            return new Promise((resolve, reject) => {
+                const interval = setInterval(() => {
+                    const candidates = document.querySelectorAll(`[class*="${partialClass}"]`);
+                    for (const btn of candidates) {
+                        const candidateLabel = normalizeLabel(btn.textContent);
+                        if (acceptedLabels.some((label) => normalizeLabel(label) === candidateLabel)) {
+                            clearInterval(interval);
+                            btn.click();
+                            resolve();
+                            return;
+                        }
+                    }
+
+                    if (Date.now() - start > timeout) {
+                        clearInterval(interval);
+                        reject(new Error(`Timeout waiting for listing button: ${buttonText}`));
+                    }
+                }, 50);
+
+                this.timerRegistry.registerInterval(interval);
+            });
+        }
+
+        /**
+         * Autofill quantity into a marketplace modal when it appears.
+         * Delayed slightly to run after auto-click-max has processed the modal.
+         * @param {HTMLElement} modal - Modal container element
+         */
+        autofillQuantity(modal) {
+            const target = this.pendingAutofill;
+            if (!target) return;
+            if (!marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) {
+                this.clearPendingAutofill(target.sessionId);
+                return;
+            }
+
+            const expected = this.getPendingAutofillMode(target.actionType);
+            const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
+            if (!expected || !this.modalHeaderMatches(headerText, target.actionType)) return;
+
+            // Prefer the newest matching modal if React replaces the modal during convergence.
+            for (const timer of this.pendingAutofillWriteTimers) clearTimeout(timer);
+            this.pendingAutofillWriteTimers.clear();
+
+            const delays = [100, 250, 500, 1000, 1500];
+            for (const delay of delays) {
+                const timer = setTimeout(() => {
+                    this.pendingAutofillWriteTimers.delete(timer);
+                    if (this.pendingAutofill !== target || !marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) return;
+
+                    const currentInput = this.findQuantityInput(modal);
+                    if (!currentInput || !this.matchesPendingAutofill(modal, currentInput, target)) return;
+
+                    if (target.quantity > 0) {
+                        nativeInputValueSetter.call(currentInput, target.quantity.toString());
+                        currentInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+
+                    for (const pendingTimer of this.pendingAutofillWriteTimers) clearTimeout(pendingTimer);
+                    this.pendingAutofillWriteTimers.clear();
+                    marketplaceSession_js.marketplaceSession.end(target.sessionId);
+                }, delay);
+                this.pendingAutofillWriteTimers.add(timer);
+            }
+        }
+
+        /**
+         * Auto-focus the quantity input when a marketplace modal opens.
+         * Runs after autofill to avoid interfering with value setting.
+         * @param {HTMLElement} modal - Modal container element
+         */
+        focusQuantityInput(modal) {
+            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+            if (!header) return;
+
+            const headerText = header.textContent.trim();
+            // Buy-side modals only (Buy Now / Buy Listing), in English or the game language.
+            if (
+                !this.modalHeaderMatches(headerText, 'buy') &&
+                !this.modalHeaderMatches(headerText, 'buy-listing')
+                // Sell-side headers intentionally excluded for now:
+                // !this.modalHeaderMatches(headerText, 'sell')
+                // !this.modalHeaderMatches(headerText, 'sell-listing')
+            ) {
+                return;
+            }
+
+            // Delay to run after autofill (100ms) and quick input injection
+            setTimeout(() => {
+                const quantityInput = this.findQuantityInput(modal);
+                if (quantityInput) {
+                    quantityInput.focus();
+                    quantityInput.select();
+                }
+            }, 150);
+        }
+
+        /**
+         * Inject quick input buttons (10, 100, 1000, + toggle) into a marketplace modal.
+         * @param {HTMLElement} modal - Modal container element
+         */
+        injectQuickInputButtons(modal) {
+            // Check setting
+            if (!config.getSetting('market_quickInputButtons')) return;
+
+            // Check if this is a marketplace modal
+            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+            if (!header) return;
+
+            const headerText = header.textContent.trim();
+            if (!this.isMarketplaceModalHeader(headerText)) return;
+
+            // Delay to let the modal fully render
+            setTimeout(() => {
+                // Skip if already injected
+                if (modal.querySelector('.mwi-mp-quick-input')) return;
+
+                const quantityInput = this.findQuantityInput(modal);
+                if (!quantityInput) return;
+
+                // Create button row
+                const row = document.createElement('div');
+                row.className = 'mwi-mp-quick-input';
+                row.style.cssText =
+                    'display: flex; align-items: center; justify-content: center; gap: 2px; margin-top: 2px;';
+
+                // + toggle button
+                const addToggle = document.createElement('button');
+                addToggle.textContent = '+';
+                addToggle.title = i18n_js.t('marketplaceShortcuts.addModeToggleTooltip');
+                addToggle.style.cssText = `
+                font-size: 11px;
+                font-weight: 700;
+                padding: 1px 5px;
+                border-radius: 4px;
+                border: 1px solid rgba(215, 183, 255, 0.3);
+                background: transparent;
+                color: rgba(215, 183, 255, 0.5);
+                cursor: pointer;
+                margin-right: 4px;
+                line-height: 1.4;
+                transition: background 0.15s, color 0.15s, border-color 0.15s;
+            `;
+
+                const applyToggleStyle = (active) => {
+                    if (active) {
+                        addToggle.style.background = 'rgba(215, 183, 255, 0.2)';
+                        addToggle.style.color = '#d7b7ff';
+                        addToggle.style.borderColor = '#d7b7ff';
+                    } else {
+                        addToggle.style.background = 'transparent';
+                        addToggle.style.color = 'rgba(215, 183, 255, 0.5)';
+                        addToggle.style.borderColor = 'rgba(215, 183, 255, 0.3)';
+                    }
+                };
+
+                applyToggleStyle(this.addMode);
+                addToggle.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.addMode = !this.addMode;
+                    applyToggleStyle(this.addMode);
+                });
+                row.appendChild(addToggle);
+
+                // Preset count buttons
+                const defaults = [10, 100, 1000];
+                const raw = config.getSettingValue('market_quickInputButtons_presets', '');
+                const parsed = raw
+                    .split(',')
+                    .map((s) => parseInt(s.trim(), 10))
+                    .filter((n) => Number.isFinite(n) && n > 0);
+                const presetValues = parsed.length > 0 ? [...new Set(parsed)].sort((a, b) => a - b).slice(0, 8) : defaults;
+                for (const value of presetValues) {
+                    const btn = document.createElement('button');
+                    btn.textContent = value.toLocaleString();
+                    btn.className = 'mwi-quick-input-btn';
+                    btn.style.cssText = `
+                    background-color: white;
+                    color: black;
+                    padding: 1px 6px;
+                    margin: 1px;
+                    border: 1px solid #ccc;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font-size: 0.9em;
+                `;
+                    btn.addEventListener('mouseenter', () => {
+                        btn.style.backgroundColor = '#f0f0f0';
+                    });
+                    btn.addEventListener('mouseleave', () => {
+                        btn.style.backgroundColor = 'white';
+                    });
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (this.addMode) {
+                            const current = parseInt(quantityInput.value) || 0;
+                            reactInput_js.setReactInputValue(quantityInput, current + value, { focus: true });
+                        } else {
+                            reactInput_js.setReactInputValue(quantityInput, value, { focus: true });
+                        }
+                    });
+                    row.appendChild(btn);
+                }
+
+                // Insert below the quantity input row (1 / input / Max)
+                const inputRow = quantityInput.closest('div')?.parentElement?.parentElement;
+                if (inputRow) {
+                    inputRow.insertAdjacentElement('afterend', row);
+                }
+            }, 150);
+        }
+
+        /**
+         * Inject "owned: X" count into Buy Now / Buy Listing modals.
+         * @param {HTMLElement} modal - Modal container element
+         */
+        injectOwnedCount(modal) {
+            if (!config.getSetting('market_showOwnedInBuyModal')) return;
+
+            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+            if (!header) return;
+
+            const headerText = header.textContent.trim();
+            if (!this.modalHeaderMatches(headerText, 'buy') && !this.modalHeaderMatches(headerText, 'buy-listing')) {
+                return;
+            }
+
+            setTimeout(() => {
+                if (modal.querySelector('.mwi-owned-count')) return;
+
+                // Extract item HRID from the SVG icon in the modal
+                const useEl = modal.querySelector('svg use[href], svg use[xlink\\:href]');
+                if (!useEl) return;
+                const href = useEl.getAttribute('href') || useEl.getAttribute('xlink:href');
+                if (!href) return;
+                const idMatch = href.match(/#(.+)$/);
+                if (!idMatch) return;
+                const itemSlug = idMatch[1];
+                const itemHrid = `/items/${itemSlug}`;
+
+                // Determine enhancement level from modal (if present). Same type="text"
+                // staleness as the quantity field elsewhere in this file - match both types.
+                // The label is localized (zh: 强化等级); match both languages.
+                const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
+                let enhancementLevel = 0;
+                const allInputs = modal.querySelectorAll('input[type="number"], input[type="text"]');
+                for (const input of allInputs) {
+                    const parent = input.closest('div');
+                    const parentText = parent?.textContent || '';
+                    if (parentText.includes('Enhancement Level') || parentText.includes(enhancementLabel)) {
+                        enhancementLevel = parseInt(input.value) || 0;
+                        break;
+                    }
+                }
+
+                // Look up inventory count for this specific item + enhancement level
+                const inventory = dataManager.characterItems || [];
+                let count = 0;
+                for (const item of inventory) {
+                    if (
+                        item.itemHrid === itemHrid &&
+                        (item.enhancementLevel || 0) === enhancementLevel &&
+                        item.itemLocationHrid === '/item_locations/inventory'
+                    ) {
+                        count += item.count || 0;
+                    }
+                }
+
+                // Inject below the "Price" label area, before "Quantity"
+                const quantityInput = this.findQuantityInput(modal);
+                if (!quantityInput) return;
+
+                // Find the Quantity label container
+                const quantityRow = quantityInput.closest('div')?.parentElement?.parentElement;
+                if (!quantityRow) return;
+
+                const ownedEl = document.createElement('div');
+                ownedEl.className = 'mwi-owned-count';
+                ownedEl.style.cssText = `text-align: center; font-size: 13px; color: ${config.COLOR_TEXT_SECONDARY}; margin: 4px 0;`;
+                ownedEl.innerHTML = `${i18n_js.t('marketplaceShortcuts.ownedLabel')} <span style="color: ${config.COLOR_ACCENT}; font-weight: 600;">${formatters_js.formatWithSeparator(count)}</span>`;
+                quantityRow.insertAdjacentElement('beforebegin', ownedEl);
+            }, 100);
+        }
+
+        /**
+         * Find the quantity input in a marketplace modal.
+         * Equipment items have multiple number inputs (enhancement level + quantity),
+         * so we identify the correct one by checking parent containers.
+         * @param {HTMLElement} modal - Modal container element
+         * @returns {HTMLInputElement|null} Quantity input element or null
+         */
+        findQuantityInput(modal) {
+            // The marketplace update switched this field from type="number" to type="text"
+            // (to support typed compact values like "5k"), so match both types.
+
+            // Structural first: the quantity field lives in MarketplacePanel_quantityInputs,
+            // which is locale-independent (the enhancement level input is in a separate row).
+            const structuralInputs = Array.from(
+                modal.querySelectorAll(
+                    '[class*="MarketplacePanel_quantityInputs"] input[type="number"], ' +
+                        '[class*="MarketplacePanel_quantityInputs"] input[type="text"]'
+                )
+            );
+            if (structuralInputs.length === 1) return structuralInputs[0];
+
+            const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
+
+            if (allInputs.length === 0) return null;
+            if (allInputs.length === 1) return allInputs[0];
+
+            // Localized labels (English kept; zh: Quantity 数量 / Enhancement Level 强化等级)
+            const quantityLabel = translateGameName('marketplacePanel', 'quantity', 'Quantity');
+            const enhancementLabel = translateGameName('marketplacePanel', 'enhancementLevel', 'Enhancement Level');
+            const textNamesQuantity = (text) =>
+                (text.includes('Quantity') || text.includes(quantityLabel)) &&
+                !(text.includes('Enhancement Level') || text.includes(enhancementLabel));
+
+            // Multiple inputs — find the one near "Quantity" text, not "Enhancement Level"
+            for (let level = 0; level < 4; level++) {
+                for (const input of allInputs) {
+                    let parent = input.parentElement;
+                    for (let j = 0; j < level && parent; j++) {
+                        parent = parent.parentElement;
+                    }
+                    if (!parent) continue;
+
+                    if (textNamesQuantity(parent.textContent)) {
+                        return input;
+                    }
+                }
+            }
+
+            return allInputs[0];
+        }
+
+        /**
+         * Find a button by its text content. Every passed candidate is accepted
+         * (used to match both the English label and its localized translation).
+         * @param {HTMLElement} container - Container to search in
+         * @param {...string} texts - Button texts to find
+         * @returns {HTMLElement|null} Button element or null
+         */
+        findButtonByText(container, ...texts) {
+            const acceptedTexts = new Set(texts.filter(Boolean));
+            const buttons = container.querySelectorAll('button');
+            for (const btn of buttons) {
+                if (acceptedTexts.has(btn.textContent.trim())) return btn;
+            }
+            return null;
+        }
+
+        /**
+         * Find item HRID by name using game data
+         * @param {string} itemName - Item display name
+         * @returns {string|null} Item HRID or null
+         */
+        findItemHrid(itemName) {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData?.itemDetailMap) return null;
+
+            // Build cache on first use. Index both the English data name and the
+            // game's localized display name so the lookup works in any locale.
+            if (!this.itemNameToHridCache) {
+                this.itemNameToHridCache = new Map();
+                for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
+                    if (item.name) {
+                        this.itemNameToHridCache.set(item.name, hrid);
+                        const localizedName = getItemName(hrid, item.name);
+                        if (localizedName && localizedName !== item.name) {
+                            this.itemNameToHridCache.set(localizedName, hrid);
+                        }
+                    }
+                }
+            }
+
+            // 1. Exact match (handles base items and items already in "(R)" form)
+            if (this.itemNameToHridCache.has(itemName)) {
+                return this.itemNameToHridCache.get(itemName);
+            }
+
+            // 2. ★ → (R) substitution for refined items ("Griffin Bulwark ★" → "Griffin Bulwark (R)")
+            if (itemName.includes('★')) {
+                const refinedVariant = itemName.replace(/\s*★/g, ' (R)').replace(/\s+/g, ' ').trim();
+                if (this.itemNameToHridCache.has(refinedVariant)) {
+                    return this.itemNameToHridCache.get(refinedVariant);
+                }
+            }
+
+            return null;
+        }
+
+        /**
+         * Inject ÷2 and ×2 multiplier buttons into price and quantity rows.
+         * @param {HTMLElement} modal - Modal container element
+         */
+        injectMultiplierButtons(modal) {
+            if (!config.getSetting('market_multiplierButtons')) return;
+
+            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+            if (!header) return;
+
+            const headerText = header.textContent.trim();
+            if (!this.isMarketplaceModalHeader(headerText)) return;
+
+            setTimeout(() => {
+                if (modal.querySelector('.mwi-mp-multiplier')) return;
+
+                const priceRow = modal.querySelector('div[class*="MarketplacePanel_priceInputs"]');
+                const quantityRow = modal.querySelector('div[class*="MarketplacePanel_quantityInputs"]');
+
+                for (const row of [priceRow, quantityRow]) {
+                    if (!row) continue;
+
+                    const input = row.querySelector('input[type="number"], input[type="text"]');
+                    if (!input) continue;
+
+                    const buttonContainers = row.querySelectorAll('div[class*="MarketplacePanel_buttonContainer"]');
+                    if (buttonContainers.length < 2) continue;
+
+                    const firstContainer = buttonContainers[0];
+                    const lastContainer = buttonContainers[buttonContainers.length - 1];
+
+                    const existingBtn = firstContainer.querySelector('button');
+                    const btnClass = existingBtn?.className || '';
+
+                    const divideWrapper = document.createElement('div');
+                    divideWrapper.className = firstContainer.className + ' mwi-mp-multiplier';
+                    const divideBtn = document.createElement('button');
+                    divideBtn.className = btnClass;
+                    divideBtn.textContent = '÷2';
+                    divideBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const current = parseInt(input.value) || 0;
+                        reactInput_js.setReactInputValue(input, Math.max(1, Math.floor(current / 2)));
+                    });
+                    divideWrapper.appendChild(divideBtn);
+
+                    const multiplyWrapper = document.createElement('div');
+                    multiplyWrapper.className = lastContainer.className + ' mwi-mp-multiplier';
+                    const multiplyBtn = document.createElement('button');
+                    multiplyBtn.className = btnClass;
+                    multiplyBtn.textContent = '×2';
+                    multiplyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const current = parseInt(input.value) || 0;
+                        reactInput_js.setReactInputValue(input, current * 2);
+                    });
+                    multiplyWrapper.appendChild(multiplyBtn);
+
+                    firstContainer.insertAdjacentElement('beforebegin', divideWrapper);
+                    lastContainer.insertAdjacentElement('afterend', multiplyWrapper);
+                }
+            }, 100);
+        }
+
+        /**
+         * Disable and cleanup
+         */
+        disable() {
+            this.unregisterHandlers.forEach((unregister) => unregister());
+            this.unregisterHandlers = [];
+
+            if (this.closeHandler) {
+                document.removeEventListener('click', this.closeHandler);
+                this.closeHandler = null;
+            }
+
+            this.endPendingAutofill();
+            this.timerRegistry.clearAll();
+
+            document.querySelectorAll('.mwi-marketplace-dropdown').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-marketplace-dropdown-panel').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-mp-quick-input').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-mp-multiplier').forEach((el) => el.remove());
+
+            this.itemNameToHridCache = null;
+            this.isInitialized = false;
+        }
+    }
+
+    const marketplaceShortcuts = new MarketplaceShortcuts();
+
+    // Auto-initialize (always enabled feature)
+    marketplaceShortcuts.initialize();
+
+    /**
+     * Sell Queue
+     * Shift+RightClick inventory items to queue them for selling.
+     * Creates marketplace tabs for each queued item; tabs auto-close when item count hits 0.
+     */
+
+
+    const timerRegistry = timerRegistry_js.createTimerRegistry();
+
+    /** @type {Array<{itemHrid: string, itemName: string}>} */
+    const queue = [];
+
+    /** @type {HTMLElement[]} */
+    const currentTabs = [];
+
+    let cleanupObserver = null;
+    let nativeTabExitCleanup = null;
+    let inventoryUpdateHandler = null;
+    let currentItemHrid = null;
+    let tooltipObserverUnregister = null;
+    let contextMenuHandler = null;
+    let isActive = false;
+    let sellQueueSessionId = null;
+    let sellQueueReadyPromise = null;
+
+    /**
+     * Get total inventory count for an item hrid.
+     * @param {string} itemHrid
+     * @returns {number}
+     */
+    function getInventoryCount(itemHrid) {
+        const inventory = dataManager.getInventory();
+        if (!inventory) return 0;
+        return inventory
+            .filter((i) => i.itemHrid === itemHrid && i.itemLocationHrid === '/item_locations/inventory')
+            .reduce((sum, i) => sum + (i.count || 0), 0);
+    }
+
+    /**
+     * Navigate to the marketplace by clicking its navbar button.
+     * @returns {Promise<boolean>}
+     */
+    async function openMarketplacePage(sessionId) {
+        if (!clickMarketplaceNavigationButton()) return false;
+        return await waitForMarketplace(sessionId);
+    }
+
+    /**
+     * Wait for the marketplace tabs container to appear.
+     * @returns {Promise<boolean>}
+     */
+    async function waitForMarketplace(sessionId) {
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
+            if (getVisibleMarketplaceTabContainer()) return true;
+            await new Promise((resolve) => timerRegistry.registerTimeout(setTimeout(resolve, 100)));
+        }
+        return false;
+    }
+
+    /**
+     * Inject tabs for all queued items into the marketplace tab strip.
+     */
+    function injectTabs(tabsContainer = getVisibleMarketplaceTabContainer(), sessionId = sellQueueSessionId) {
+        if (!tabsContainer || !marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
+
+        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE);
+        currentTabs.length = 0;
+
+        // The My Listings tab label is localized by the game (zh: 我的挂牌), so match the
+        // translated label too.
+        const myListingsLabels = ['My Listings', translateGameName('marketplacePanel', 'myListings', 'My Listings')];
+        const referenceTab = Array.from(tabsContainer.children).find((tab) =>
+            myListingsLabels.some((label) => tab.textContent.includes(label))
+        );
+        if (!referenceTab) return false;
+        tabsContainer.style.flexWrap = 'wrap';
+
+        nativeTabExitCleanup?.();
+        nativeTabExitCleanup = watchNativeTabExit(tabsContainer, () => marketplaceSession_js.marketplaceSession.end(sessionId));
+
+        for (const entry of queue) {
+            const count = getInventoryCount(entry.itemHrid);
+            const material = {
+                itemHrid: entry.itemHrid,
+                itemName: entry.itemName,
+                missing: 0,
+                required: count,
+                isTradeable: true,
+                forceActionable: count > 0,
+            };
+
+            const tab = createMaterialTab(
+                material,
+                referenceTab,
+                (_event, mat) => {
+                    if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return;
+                    if (!navigateToMarketplace(mat.itemHrid, 0)) marketplaceSession_js.marketplaceSession.end(sessionId);
+                },
+                marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE
+            );
+            const badge = tab.querySelector('[class*="TabsComponent_badge"]');
+            if (badge) badge.innerHTML = buildBadgeHtml(entry.itemHrid, entry.itemName, count);
+            tabsContainer.appendChild(tab);
+            currentTabs.push(tab);
+        }
+
+        return true;
+    }
+
+    /**
+     * Build badge HTML for a queued item tab.
+     * @param {string} itemHrid
+     * @param {string} itemName - English fallback name
+     * @param {number} count
+     * @returns {string}
+     */
+    function buildBadgeHtml(itemHrid, itemName, count) {
+        const titleCase = getItemName(itemHrid, itemName)
+            .split(' ')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+        const color = count > 0 ? '#4ade80' : '#6b7280';
+        const sub =
+            count > 0 ? i18n_js.t('marketplaceTabs.inBag', { count: count.toLocaleString() }) : i18n_js.t('marketplaceTabs.soldOut');
+        return `<div style="text-align:center;"><div>${titleCase}</div><div style="font-size:0.75em;color:${color};">${sub}</div></div>`;
+    }
+
+    /**
+     * Update tab badges and remove tabs for items that have sold out.
+     * Auto-navigates to the next queued item when the current one sells out.
+     */
+    function updateTabsOnInventoryChange() {
+        const connectedTabs = Array.from(
+            document.querySelectorAll(
+                `[data-mwi-custom-tab][data-mwi-tab-owner="${marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE}"][data-item-hrid]`
+            )
+        );
+        const counts = new Map(queue.map((entry) => [entry.itemHrid, getInventoryCount(entry.itemHrid)]));
+        const toRemove = queue.filter((entry) => counts.get(entry.itemHrid) === 0).map((entry) => entry.itemHrid);
+
+        connectedTabs.forEach((tab) => {
+            const itemHrid = tab.getAttribute('data-item-hrid');
+            const entry = queue.find((candidate) => candidate.itemHrid === itemHrid);
+            if (!entry) return;
+
+            const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+            if (badgeSpan) badgeSpan.innerHTML = buildBadgeHtml(entry.itemHrid, entry.itemName, counts.get(itemHrid) || 0);
+        });
+
+        for (const hrid of toRemove) {
+            const idx = queue.findIndex((e) => e.itemHrid === hrid);
+            if (idx !== -1) queue.splice(idx, 1);
+
+            // Remove both the currently connected tab and any detached pre-remount
+            // references retained in currentTabs.
+            document
+                .querySelectorAll(
+                    `[data-mwi-custom-tab][data-mwi-tab-owner="${marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE}"]` +
+                        `[data-item-hrid="${hrid}"]`
+                )
+                .forEach((tab) => tab.remove());
+            for (let tabIndex = currentTabs.length - 1; tabIndex >= 0; tabIndex -= 1) {
+                if (currentTabs[tabIndex].getAttribute('data-item-hrid') !== hrid) continue;
+                currentTabs[tabIndex].remove();
+                currentTabs.splice(tabIndex, 1);
+            }
+        }
+
+        // After removing sold-out tabs, navigate to the first remaining queued item
+        if (toRemove.length > 0 && queue.length > 0) {
+            if (!navigateToMarketplace(queue[0].itemHrid, 0) && sellQueueSessionId !== null) {
+                marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
+            }
+        } else if (queue.length === 0 && sellQueueSessionId !== null) {
+            marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
+        }
+    }
+
+    /**
+     * Set up listener to update tabs when inventory changes.
+     */
+    function setupInventoryListener() {
+        if (inventoryUpdateHandler) {
+            dataManager.off('items_updated', inventoryUpdateHandler);
+        }
+        inventoryUpdateHandler = () => {
+            updateTabsOnInventoryChange();
+        };
+        dataManager.on('items_updated', inventoryUpdateHandler);
+    }
+
+    /**
+     * Idempotent teardown of the marketplace session and its associated state.
+     * Does NOT touch isActive, contextMenuHandler, or tooltipObserverUnregister.
+     */
+    function teardownSellQueueMarketplaceSession() {
+        sellQueueSessionId = null;
+        sellQueueReadyPromise = null;
+        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE);
+        currentTabs.length = 0;
+        queue.length = 0;
+        if (inventoryUpdateHandler) {
+            dataManager.off('items_updated', inventoryUpdateHandler);
+            inventoryUpdateHandler = null;
+        }
+        if (cleanupObserver) {
+            cleanupObserver();
+            cleanupObserver = null;
+        }
+        nativeTabExitCleanup?.();
+        nativeTabExitCleanup = null;
+        currentItemHrid = null;
+    }
+
+    /**
+     * Prepare the Marketplace UI for one captured Sell Queue session.
+     * A shared promise lets several rapid queue additions join the same navigation
+     * instead of treating the not-yet-mounted tablist as a fatal reinjection failure.
+     * Does not arm the cleanup/exit observer — that happens only after the caller's own
+     * initial navigation to the first queued item succeeds, so it can never see a retained
+     * pre-workflow "My Listings" state.
+     * @param {number} sessionId
+     * @returns {Promise<boolean>}
+     */
+    async function prepareSellQueueMarketplace(sessionId) {
+        if (!getVisibleMarketplaceTabContainer()) {
+            const success = await openMarketplacePage(sessionId);
+            if (!success || !marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
+            await new Promise((resolve) => timerRegistry.registerTimeout(setTimeout(resolve, 200)));
+        }
+
+        if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
+        return injectTabs(getVisibleMarketplaceTabContainer(), sessionId);
+    }
+
+    /**
+     * Arm the cleanup/exit observer and inventory listener for the SELL_QUEUE owner.
+     * Must only be called once, after the first queued item's own navigation has succeeded.
+     * @param {number} sessionId
+     */
+    function setupSellQueueCleanupObserver(sessionId) {
+        cleanupObserver?.();
+        cleanupObserver = setupMarketplaceCleanupObserver({
+            owner: marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE,
+            invalidStateGraceMs: MARKETPLACE_REMOUNT_GRACE_MS,
+            onTabsGone: () => {
+                if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return;
+                const container = getVisibleMarketplaceTabContainer();
+                const marketListingsSelected = Boolean(container) && isMarketplaceMarketListingsSelected(container);
+                if (container && marketListingsSelected && injectTabs(container, sessionId)) return;
+                console.warn(
+                    `[SellQueue] Marketplace tabs could not be reinjected - ending session (visible tab container found: ${Boolean(container)}, Market Listings selected: ${marketListingsSelected})`
+                );
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+            },
+        });
+        setupInventoryListener();
+    }
+
+    /**
+     * Add an item to the queue and inject/update tabs.
+     * @param {string} itemHrid
+     * @param {string} itemName
+     */
+    async function addToQueue(itemHrid, itemName) {
+        if (queue.some((entry) => entry.itemHrid === itemHrid)) return;
+        if (getInventoryCount(itemHrid) <= 0) return;
+
+        const isFirstItem = queue.length === 0;
+        queue.push({ itemHrid, itemName });
+
+        if (isFirstItem) {
+            const sessionId = marketplaceSession_js.marketplaceSession.start({
+                owner: marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE,
+                onEnd: teardownSellQueueMarketplaceSession,
+            });
+            sellQueueSessionId = sessionId;
+            sellQueueReadyPromise = prepareSellQueueMarketplace(sessionId);
+        }
+
+        const capturedSessionId = sellQueueSessionId;
+        const pendingReady = sellQueueReadyPromise;
+        if (pendingReady) {
+            const ready = await pendingReady;
+            if (sellQueueReadyPromise === pendingReady) sellQueueReadyPromise = null;
+            if (!ready || !marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) {
+                if (marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+                return;
+            }
+        }
+
+        // Subsequent callers rebuild the tab list to include items added after the first
+        // prepareSellQueueMarketplace call. The first caller's tabs are already correct.
+        if (!isFirstItem) {
+            if (!injectTabs(getVisibleMarketplaceTabContainer(), capturedSessionId)) {
+                marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+                return;
+            }
+        }
+
+        // The entry may have been cleared by replacement while this caller awaited the
+        // shared navigation. Only the still-active owner may perform the final selection.
+        if (
+            !marketplaceSession_js.marketplaceSession.isActive(capturedSessionId) ||
+            !queue.some((entry) => entry.itemHrid === itemHrid) ||
+            !navigateToMarketplace(itemHrid, 0)
+        ) {
+            if (marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        // Only arm the cleanup/exit observer once the first queued item's own navigation has
+        // succeeded, so it can never see a retained pre-workflow "My Listings" state. Later
+        // additions reuse the observer already armed by the first item's activation.
+        if (isFirstItem) {
+            setupSellQueueCleanupObserver(capturedSessionId);
+        }
+    }
+
+    /**
+     * Track the hovered item HRID via tooltip observer (same strategy as alt-click-navigation).
+     * @param {HTMLElement} tooltipElement
+     */
+    function handleTooltipAppear(tooltipElement) {
+        currentItemHrid = null;
+        try {
+            const itemLink = tooltipElement.querySelector('a[href*="/items/"]');
+            if (itemLink) {
+                const match = itemLink.getAttribute('href').match(/\/items\/(.+?)(?:\/|$)/);
+                if (match) {
+                    currentItemHrid = `/items/${match[1]}`;
+                    return;
+                }
+            }
+            const svgUse = tooltipElement.querySelector('use[href*="items_sprite"]');
+            if (svgUse) {
+                const match = svgUse.getAttribute('href').match(/#(.+)$/);
+                if (match) {
+                    currentItemHrid = `/items/${match[1]}`;
+                    return;
+                }
+            }
+            const nameEl = tooltipElement.querySelector(
+                '[class*="ItemTooltipText_name"] span, .ItemTooltipText_name__2JAHA span'
+            );
+            if (nameEl) {
+                const itemName = nameEl.textContent.trim();
+                // Strip any enhancement level (e.g. "+10"), then resolve through the shared
+                // dual-name lookup (English + localized) instead of reconstructing a slug
+                // from the display name, which cannot work for translated names.
+                const baseName = itemName.replace(/\s*\+\d+\s*$/, '').trim();
+                const itemHrid = getItemHridFromName(baseName);
+                if (itemHrid) {
+                    currentItemHrid = itemHrid;
+                }
+            }
+        } catch (error) {
+            console.error('[SellQueue] Error parsing tooltip:', error);
+        }
+    }
+
+    function initialize$1() {
+        if (isActive) return;
+        if (!config.getSetting('sellQueue')) return;
+
+        tooltipObserverUnregister = domObserver.onClass('SellQueue-Tooltip', 'MuiTooltip-popper', (el) =>
+            handleTooltipAppear(el)
+        );
+
+        contextMenuHandler = async (event) => {
+            if (!event.shiftKey) return;
+
+            const inventoryEl = event.target.closest('[class*="Inventory_items"], [class*="Inventory_inventory"]');
+            if (!inventoryEl) return;
+            if (!currentItemHrid) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const gameData = dataManager.getInitClientData();
+            const itemDetails = gameData?.itemDetailMap?.[currentItemHrid];
+            if (!itemDetails?.isTradable) return;
+
+            try {
+                await addToQueue(currentItemHrid, getItemName(currentItemHrid, itemDetails.name));
+            } catch (error) {
+                console.error('[SellQueue] Failed to add item to the Marketplace queue:', error);
+                if (sellQueueSessionId !== null) marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
+            }
+        };
+
+        document.addEventListener('contextmenu', contextMenuHandler, true);
+        isActive = true;
+    }
+
+    function cleanup$1() {
+        if (sellQueueSessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sellQueueSessionId)) {
+            marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
+        } else {
+            teardownSellQueueMarketplaceSession();
+        }
+        if (contextMenuHandler) {
+            document.removeEventListener('contextmenu', contextMenuHandler, true);
+            contextMenuHandler = null;
+        }
+        if (tooltipObserverUnregister) {
+            tooltipObserverUnregister();
+            tooltipObserverUnregister = null;
+        }
+        timerRegistry.clearAll();
+        isActive = false;
+    }
+
+    config.onSettingChange('sellQueue', (value) => {
+        if (value) initialize$1();
+        else cleanup$1();
+    });
+
+    var sellQueue = {
+        name: 'Sell Queue',
+        initialize: initialize$1,
+        cleanup: cleanup$1,
+    };
 
     /**
      * Networth History Tracker
@@ -25480,6 +27029,7 @@ self.onmessage = function (e) {
                 amountSpan.style.cssText = `color: rgba(255,255,255,0.5); white-space: nowrap; font-size: 0.78rem;`;
                 amountSpan.textContent =
                     entry.amount > 0 ? formatters_js.networthFormatter(Math.round(entry.amount)) + (entry.isOutlier ? ' ⚠' : '') : '';
+                if (entry.amount > 0 && entry.isOutlier) amountSpan.title = i18n_js.t('marketData.outlierPriceWarningTooltip');
 
                 const actionBtn = document.createElement('button');
                 actionBtn.style.cssText = `
@@ -25540,6 +27090,7 @@ self.onmessage = function (e) {
                         subVal.style.cssText = `white-space: nowrap; color: rgba(255,255,255,0.4);`;
                         subVal.textContent =
                             sub.value > 0 ? formatters_js.networthFormatter(Math.round(sub.value)) + (sub.isOutlier ? ' ⚠' : '') : '';
+                        if (sub.value > 0 && sub.isOutlier) subVal.title = i18n_js.t('marketData.outlierPriceWarningTooltip');
 
                         subRow.appendChild(subName);
                         subRow.appendChild(subVal);
@@ -39124,6 +40675,7 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
         instantOrderGap,
         marketOrderTotals,
         marketHistoryViewer,
+        marketWishlist,
         listingRefreshNavigator,
         listingNextNavigator,
         philoCalculator,
@@ -39149,4 +40701,4 @@ details.mwi-nw-node[open] > summary .mwi-nw-chev { transform: rotate(90deg); }
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.warningIcon, Toolasha.Utils.enhancementConfig, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Core.storage, Toolasha.Core.loadoutState, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Core.marketValuesAPI, Toolasha.Utils.profitHelpers, Toolasha.Utils.warningIcon, Toolasha.Utils.enhancementConfig, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Core.storage, Toolasha.Core.loadoutState, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.priceCacheOutlierGuard, Toolasha.Utils.domObserverHelpers, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.tooltipObserver);

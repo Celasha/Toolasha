@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.37.0
+ * Version: 3.38.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8851,6 +8851,19 @@
         }
 
         /**
+         * Set a price span's text, and explain the ⚠ on hover when the outlier guard substituted the price.
+         * The span takes pointer events so the hover works inside the (otherwise click-through) container.
+         * @param {Element} span
+         * @param {number} value
+         * @param {boolean} isOutlier
+         */
+        setPriceText(span, value, isOutlier) {
+            span.textContent = formatters_js.formatKMB(value) + (isOutlier ? ' ⚠' : '');
+            span.title = isOutlier ? i18n_js.t('marketData.outlierPriceWarningTooltip') : '';
+            span.style.pointerEvents = isOutlier ? 'auto' : '';
+        }
+
+        /**
          * Inject or update the ask/bid price element inside an item
          * @param {Element} itemEl
          * @param {{ ask: number, bid: number, askOutlier: boolean, bidOutlier: boolean }} price
@@ -8859,8 +8872,8 @@
             const existing = itemEl.querySelector('.mwi-labyrinth-shop-price');
 
             if (existing) {
-                existing.querySelector('.mwi-lsp-ask').textContent = formatters_js.formatKMB(price.ask) + (price.askOutlier ? ' ⚠' : '');
-                existing.querySelector('.mwi-lsp-bid').textContent = formatters_js.formatKMB(price.bid) + (price.bidOutlier ? ' ⚠' : '');
+                this.setPriceText(existing.querySelector('.mwi-lsp-ask'), price.ask, price.askOutlier);
+                this.setPriceText(existing.querySelector('.mwi-lsp-bid'), price.bid, price.bidOutlier);
                 return;
             }
 
@@ -8877,7 +8890,7 @@
             const askSpan = document.createElement('span');
             askSpan.className = 'mwi-lsp-ask';
             askSpan.style.color = config.COLOR_INVBADGE_ASK;
-            askSpan.textContent = formatters_js.formatKMB(price.ask) + (price.askOutlier ? ' ⚠' : '');
+            this.setPriceText(askSpan, price.ask, price.askOutlier);
 
             const sepSpan = document.createElement('span');
             sepSpan.style.color = '#888';
@@ -8886,7 +8899,7 @@
             const bidSpan = document.createElement('span');
             bidSpan.className = 'mwi-lsp-bid';
             bidSpan.style.color = config.COLOR_INVBADGE_BID;
-            bidSpan.textContent = formatters_js.formatKMB(price.bid) + (price.bidOutlier ? ' ⚠' : '');
+            this.setPriceText(bidSpan, price.bid, price.bidOutlier);
 
             container.appendChild(askSpan);
             container.appendChild(sepSpan);
@@ -31371,6 +31384,7 @@
                 label.className = 'mwi-combat-consumable-timer';
                 label.style.cssText = `color:${color}; font-size: 10px; text-align: center; line-height: 1.3;`;
                 label.textContent = `${prefix}${formatRunway(timeToZeroSeconds)}`;
+                if (prefix) label.title = i18n_js.t('warningHover.lowConsumableSupply');
 
                 itemEl.insertAdjacentElement('afterend', label);
             });
